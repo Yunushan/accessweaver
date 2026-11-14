@@ -16,7 +16,8 @@ from macos_product import component_inputs,product_name,product_members,inspect_
 from macos_package_archive import flat_members,cpio,inflate
 from sbom import validate,prop_map
 from verify_macos_deployment_provenance import VERSIONS,subjects as core_subjects,validate_packages,copy_subject,check_rejections as shared_rejections
-from verify_release_provenance import BUNDLE_NAME as PROVENANCE_BUNDLE,REPOSITORY,validate_identity,verification_command as portable_command
+from verify_release_provenance import (BUNDLE_NAME as PROVENANCE_BUNDLE, REPOSITORY, authenticate_run,
+                                       validate_identity, validate_run_id, verification_command as portable_command)
 from verify_release_rebuild import snapshot
 
 WORKFLOW=REPOSITORY+"/.github/workflows/macos-desktop.yml"
@@ -49,9 +50,8 @@ def verification_command(path,bundle,commit,ref,gh="gh"):
     command=portable_command(path,bundle,commit,ref,gh);command[command.index("--signer-workflow")+1]=WORKFLOW;return command
 
 
-def authenticate(path,bundle,commit,ref,gh):
-    try:subprocess.run(verification_command(path,bundle,commit,ref,gh),check=True,capture_output=True,timeout=120)
-    except subprocess.CalledProcessError as error:raise ValueError("Desktop cryptographic provenance verification failed") from error
+def authenticate(path,bundle,commit,ref,gh,run_id):
+    authenticate_run(verification_command(path,bundle,commit,ref,gh),run_id)
 
 
 def check_rejections(path,bundle,commit,ref,gh):
@@ -294,22 +294,22 @@ def stage(build_root,destination,commit,ref,arch,run_id=None):
     return {"producerValidation":result,"sourceCommit":commit,"cryptographicAuthenticationPerformed":False}
 
 
-def verify(directory,commit,ref,arch,gh="gh",rejections=False,run_id=None):
-    validate_identity(commit,ref);names=set(subjects(arch))
+def verify(directory,commit,ref,arch,gh="gh",rejections=False,*,run_id):
+    validate_identity(commit,ref);validate_run_id(run_id);names=set(subjects(arch))
     with tempfile.TemporaryDirectory(prefix="accessweaver-desktop-verify-") as temporary:
         root=Path(temporary);present=snapshot(directory,root,len(names)+1)
         require(present==names|{PROVENANCE_BUNDLE},"Desktop input inventory differs")
         for name in present:require((root/name).stat().st_size<=limit(name),"Desktop input exceeds budget")
-        for name in sorted(names):authenticate(root/name,root/PROVENANCE_BUNDLE,commit,ref,gh)
+        for name in sorted(names):authenticate(root/name,root/PROVENANCE_BUNDLE,commit,ref,gh,run_id)
         result=validate_contents(root,commit,arch)
-        if run_id is not None:require(result["lifecycleRunID"]==run_id,"Authenticated desktop native run differs")
+        require(result["lifecycleRunID"]==run_id,"Authenticated native run differs from caller expectation")
         negative=check_rejections(root/next(n for n in sorted(names) if n.endswith(".pkg")),root/PROVENANCE_BUNDLE,commit,ref,gh) if rejections else None
-        return {"schemaVersion":1,"repository":REPOSITORY,"workflow":WORKFLOW,"sourceCommit":commit,"sourceRef":ref,"target":"darwin/"+arch,"subjectsVerified":len(names),"subjects":[{"file":n,"sha256":digest((root/n).read_bytes())} for n in sorted(names)],"authenticatedBeforeParsing":True,"hostedRunnerRequired":True,"desktop":result,"rejectionChecks":negative,"localTargetExecution":False,"publisherSignatureVerified":False,"notarized":False,"productionQualificationComplete":False}
+        return {"schemaVersion":1,"repository":REPOSITORY,"workflow":WORKFLOW,"sourceCommit":commit,"sourceRef":ref,"target":"darwin/"+arch,"subjectsVerified":len(names),"subjects":[{"file":n,"sha256":digest((root/n).read_bytes())} for n in sorted(names)],"authenticatedBeforeParsing":True,"hostedRunnerRequired":True,"attestationRunID":run_id,"desktop":result,"rejectionChecks":negative,"localTargetExecution":False,"publisherSignatureVerified":False,"notarized":False,"productionQualificationComplete":False}
 
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument("directory",type=Path);p.add_argument("--source-commit",required=True);p.add_argument("--source-ref",required=True);p.add_argument("--architecture",choices=("amd64","arm64"),required=True);p.add_argument("--run-id");p.add_argument("--gh",default="gh");p.add_argument("--check-rejections",action="store_true");p.add_argument("--stage-build-root",type=Path);a=p.parse_args()
-    try:result=stage(a.stage_build_root,a.directory,a.source_commit,a.source_ref,a.architecture,a.run_id) if a.stage_build_root else verify(a.directory,a.source_commit,a.source_ref,a.architecture,a.gh,a.check_rejections,a.run_id)
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument("directory",type=Path);p.add_argument("--source-commit",required=True);p.add_argument("--source-ref",required=True);p.add_argument("--architecture",choices=("amd64","arm64"),required=True);p.add_argument("--run-id",required=True);p.add_argument("--gh",default="gh");p.add_argument("--check-rejections",action="store_true");p.add_argument("--stage-build-root",type=Path);a=p.parse_args()
+    try:result=stage(a.stage_build_root,a.directory,a.source_commit,a.source_ref,a.architecture,a.run_id) if a.stage_build_root else verify(a.directory,a.source_commit,a.source_ref,a.architecture,a.gh,a.check_rejections,run_id=a.run_id)
     except Exception as e:raise SystemExit("Desktop provenance refused: "+type(e).__name__)
     print(json.dumps(result,indent=2))
 

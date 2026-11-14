@@ -117,7 +117,7 @@ jobs:
           esac
           test -n "$bundle"
           cp "$bundle" "$PACKAGE_DIRECTORY/BUILD-PROVENANCE.sigstore.json"
-          python3 scripts/verify_macos_installer_provenance.py "$PACKAGE_DIRECTORY" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" --version 0.1.0-alpha --architecture "$PACKAGE_ARCH" --check-rejections > "$PROVENANCE_REPORT"
+          python3 scripts/verify_macos_installer_provenance.py "$PACKAGE_DIRECTORY" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" --version 0.1.0-alpha --architecture "$PACKAGE_ARCH" --run-id "$GITHUB_RUN_ID" --check-rejections > "$PROVENANCE_REPORT"
       - name: Retain actual package, SBOM and scoped compiler/inspection evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -127,7 +127,7 @@ jobs:
           CANDIDATE_DIRECTORY: build/installer-lifecycle-provenance/${{ matrix.arch }}/candidate
           TARGET_ARCH: '${{ matrix.arch }}'
         run: |
-          python scripts/verify_windows_installer_provenance.py "$env:CANDIDATE_DIRECTORY" --stage-build-root build --source-commit "$env:GITHUB_SHA" --source-ref "$env:GITHUB_REF" --architecture "$env:TARGET_ARCH"
+          python scripts/verify_windows_installer_provenance.py "$env:CANDIDATE_DIRECTORY" --stage-build-root build --source-commit "$env:GITHUB_SHA" --source-ref "$env:GITHUB_REF" --architecture "$env:TARGET_ARCH" --run-id "$env:GITHUB_RUN_ID"
           if ($LASTEXITCODE -ne 0) { throw 'Native installer staging/acceptance failed' }
       - name: Attest installer, SBOM and actual native acceptance subjects
         id: provenance
@@ -147,7 +147,7 @@ jobs:
           [void](New-Item -ItemType Directory -Path "$env:PROVENANCE_DIRECTORY")
           $bundle=Join-Path $env:CANDIDATE_DIRECTORY 'BUILD-PROVENANCE.sigstore.json'
           Copy-Item -LiteralPath "$env:ATTESTATION_BUNDLE" -Destination $bundle
-          $verification=& python scripts/verify_windows_installer_provenance.py "$env:CANDIDATE_DIRECTORY" --source-commit "$env:GITHUB_SHA" --source-ref "$env:GITHUB_REF" --architecture "$env:TARGET_ARCH" --check-rejections
+          $verification=& python scripts/verify_windows_installer_provenance.py "$env:CANDIDATE_DIRECTORY" --source-commit "$env:GITHUB_SHA" --source-ref "$env:GITHUB_REF" --architecture "$env:TARGET_ARCH" --run-id "$env:GITHUB_RUN_ID" --check-rejections
           if ($LASTEXITCODE -ne 0) { throw 'Native installer cryptographic verification failed' }
           [IO.File]::WriteAllText((Join-Path $env:PROVENANCE_DIRECTORY 'verified.json'),(($verification -join [Environment]::NewLine)+[Environment]::NewLine),[Text.UTF8Encoding]::new($false))
           Copy-Item -LiteralPath $bundle -Destination (Join-Path $env:PROVENANCE_DIRECTORY 'BUILD-PROVENANCE.sigstore.json')

@@ -16,7 +16,8 @@ from threading import Timer
 from urllib.parse import urlencode
 
 from verify_release import TARGETS, inspect_archive, snapshot
-from verify_release_provenance import BUNDLE_NAME, REPOSITORY, WORKFLOW, validate_identity, verification_command, verify
+from verify_release_provenance import (BUNDLE_NAME, REPOSITORY, WORKFLOW, authenticate_run, validate_identity,
+                                       verification_command, verify)
 from verify_release_rebuild import digest
 
 REMOTE = "https://github.com/" + REPOSITORY + ".git"
@@ -192,14 +193,7 @@ def verify_target_execution(report, receipt, system):
 
 
 def authenticate_qualification(path, bundle, commit, ref, run_id):
-    command = verification_command(path, bundle, commit, ref)
-    command += ["--jq", ".[] | .verificationResult.signature.certificate.runInvocationURI"]
-    result = subprocess.run(command, capture_output=True, text=True, timeout=120)
-    require_success(result)
-    run = re.escape(f"https://github.com/{REPOSITORY}/actions/runs/{run_id}/attempts/")
-    # Successful matrix jobs can be reused by GitHub when only failed jobs rerun.
-    if not any(re.fullmatch(run + r"[1-9][0-9]{0,19}", line) for line in result.stdout.splitlines()):
-        raise ValueError("Qualification attestation does not match the release workflow run")
+    authenticate_run(verification_command(path, bundle, commit, ref), run_id)
 
 
 def verify_native_qualification(directory, package, manifest, commit, ref, expected, run_id=None):

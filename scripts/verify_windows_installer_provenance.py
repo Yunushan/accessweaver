@@ -14,7 +14,8 @@ import sys
 import tempfile
 
 from sbom import WINDOWS_BUILD_INFO_PROPERTY, validate,prop_map
-from verify_release_provenance import BUNDLE_NAME,REPOSITORY,validate_identity,verification_command as portable_command
+from verify_release_provenance import (BUNDLE_NAME, REPOSITORY, authenticate_run,
+                                       validate_identity, validate_run_id, verification_command as portable_command)
 from verify_release_rebuild import snapshot
 
 WORKFLOW=REPOSITORY+"/.github/workflows/installer-lifecycle.yml"
@@ -46,9 +47,8 @@ def verification_command(path,bundle,commit,ref,gh="gh"):
     command[command.index("--signer-workflow")+1]=WORKFLOW
     return command
 
-def authenticate(path,bundle,commit,ref,gh):
-    try:subprocess.run(verification_command(path,bundle,commit,ref,gh),check=True,capture_output=True,timeout=120)
-    except subprocess.CalledProcessError as error:raise ValueError("Windows installer cryptographic verification failed") from error
+def authenticate(path,bundle,commit,ref,gh,run_id):
+    authenticate_run(verification_command(path,bundle,commit,ref,gh),run_id)
 
 def load(root,name):
     data=(root/name).read_bytes();require(len(data)<=4<<20,"Installer metadata exceeds budget")
@@ -453,7 +453,7 @@ def validate_contents(root,commit,ref,arch,versions):
         candidates.append({"file":name,"sha256":digest(binary),"bytes":len(binary),"payloadSHA256":build["payloadSha256"],"payloadTarget":"windows/"+arch,"bootstrapPEMachine":"0x014c","sbomSHA256":digest((root/(name+".cdx.json")).read_bytes())})
     return {"candidates":candidates,**detection_counts,**architecture,**restoration,**uninstall_registration,**redirected_upgrade,**path_refusals,**setup_readback,**locked_upgrade,**failed_copy_recovery,**marker_access,**state_counts,**origin_counts,**event_counts,**attempt_counts,"nativeLifecycleOperationsVerified":len(expected),"nativeRunID":str(report["runID"]),"nativeDependencyClosureComplete":False}
 
-def stage(build_root,destination,commit,ref,arch,versions):
+def stage(build_root,destination,commit,ref,arch,versions,run_id=None):
     validate_identity(commit,ref);names=subject_names(arch,versions)
     require(not destination.exists() and not destination.is_symlink(),"Staging destination must be new")
     destination.mkdir(parents=True,mode=0o700)
@@ -471,7 +471,9 @@ def stage(build_root,destination,commit,ref,arch,versions):
         finally:os.close(descriptor)
         with (destination/name).open("xb") as stream:stream.write(data)
     # Producer validation precedes signing; it is not cryptographic authentication.
-    return validate_contents(destination,commit,ref,arch,versions)
+    result=validate_contents(destination,commit,ref,arch,versions)
+    if run_id is not None:require(result["nativeRunID"]==run_id,"Native producer run differs from caller expectation")
+    return result
 
 def check_rejections(path,bundle,commit,ref,gh):
     base=verification_command(path,bundle,commit,ref,gh)
@@ -486,29 +488,30 @@ def check_rejections(path,bundle,commit,ref,gh):
         command=list(base);command[3]=str(changed.resolve());run(command,False);rejected.append("changed-subject-digest")
     run(base,True);return {"rejected":rejected,"realBundleVerifiedBeforeAndAfter":True}
 
-def verify(directory,commit,ref,arch,versions=DEFAULT_VERSIONS,gh="gh",rejections=False):
-    validate_identity(commit,ref);names=subject_names(arch,versions)
+def verify(directory,commit,ref,arch,versions=DEFAULT_VERSIONS,gh="gh",rejections=False,*,run_id):
+    validate_identity(commit,ref);validate_run_id(run_id);names=subject_names(arch,versions)
     with tempfile.TemporaryDirectory(prefix="accessweaver-installer-auth-") as temporary:
         root=Path(temporary);require(snapshot(Path(directory),root,6)==names|{BUNDLE_NAME},"Expected five native subjects and one provenance bundle")
         for name in names|{BUNDLE_NAME}:
             maximum=(64<<20) if name.endswith(".exe") else (16<<20) if name==BUNDLE_NAME else (4<<20)
             require((root/name).stat().st_size<=maximum,"Native subject exceeds its type limit")
-        for name in sorted(names):authenticate(root/name,root/BUNDLE_NAME,commit,ref,gh)
+        for name in sorted(names):authenticate(root/name,root/BUNDLE_NAME,commit,ref,gh,run_id)
         contents=validate_contents(root,commit,ref,arch,versions)
-        result={"schemaVersion":1,"repository":REPOSITORY,"workflow":WORKFLOW,"sourceCommit":commit,"sourceRef":ref,"target":"windows/"+arch,"approvedVersions":list(versions),"subjectsVerified":5,"hostedRunnerRequired":True,"authenticatedBeforeParsing":True,"subjects":[{"file":name,"sha256":digest((root/name).read_bytes())} for name in sorted(names)],"nativeAcceptance":contents,"publisherSignatureVerified":False,"targetExecutionPerformedByVerifier":False,"productionQualificationComplete":False}
+        require(contents["nativeRunID"]==run_id,"Authenticated native run differs from caller expectation")
+        result={"schemaVersion":1,"repository":REPOSITORY,"workflow":WORKFLOW,"sourceCommit":commit,"sourceRef":ref,"target":"windows/"+arch,"approvedVersions":list(versions),"subjectsVerified":5,"hostedRunnerRequired":True,"attestationRunID":run_id,"authenticatedBeforeParsing":True,"subjects":[{"file":name,"sha256":digest((root/name).read_bytes())} for name in sorted(names)],"nativeAcceptance":contents,"publisherSignatureVerified":False,"targetExecutionPerformedByVerifier":False,"productionQualificationComplete":False}
         if rejections:result["rejectionChecks"]=check_rejections(root/(arch+".json"),root/BUNDLE_NAME,commit,ref,gh)
         return result
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("directory",type=Path)
     parser.add_argument("--source-commit",required=True);parser.add_argument("--source-ref",required=True);parser.add_argument("--architecture",required=True)
-    parser.add_argument("--versions",nargs=2,default=DEFAULT_VERSIONS);parser.add_argument("--gh",default="gh");parser.add_argument("--check-rejections",action="store_true");parser.add_argument("--stage-build-root",type=Path)
+    parser.add_argument("--versions",nargs=2,default=DEFAULT_VERSIONS);parser.add_argument("--gh",default="gh");parser.add_argument("--check-rejections",action="store_true");parser.add_argument("--stage-build-root",type=Path);parser.add_argument("--run-id",required=True)
     args=parser.parse_args()
     try:
         if args.stage_build_root is not None:
-            result=stage(args.stage_build_root,args.directory,args.source_commit,args.source_ref,args.architecture,args.versions)
+            result=stage(args.stage_build_root,args.directory,args.source_commit,args.source_ref,args.architecture,args.versions,args.run_id)
             print(json.dumps({"producerContentsValidatedBeforeSigning":True,"cryptographicProvenanceAuthenticated":False,"publisherSignatureVerified":False,"productionQualificationComplete":False,"nativeAcceptance":result}));return 0
-        print(json.dumps(verify(args.directory,args.source_commit,args.source_ref,args.architecture,args.versions,args.gh,args.check_rejections)));return 0
+        print(json.dumps(verify(args.directory,args.source_commit,args.source_ref,args.architecture,args.versions,args.gh,args.check_rejections,run_id=args.run_id)));return 0
     except (ValueError,OSError,KeyError,TypeError,RecursionError,subprocess.SubprocessError,struct.error) as error:
         print("Windows installer provenance verification failed ("+type(error).__name__+")",file=sys.stderr);return 1
 

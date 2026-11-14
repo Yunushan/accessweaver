@@ -17,7 +17,8 @@ from macos_installer import MAX_BYTES,require,digest
 from macos_launcher import archive_name,inspect_launcher
 from macos_package_archive import flat_members,cpio,inflate
 from sbom import validate,prop_map
-from verify_release_provenance import BUNDLE_NAME as PROVENANCE_BUNDLE,REPOSITORY,validate_identity,verification_command as portable_command
+from verify_release_provenance import (BUNDLE_NAME as PROVENANCE_BUNDLE, REPOSITORY, authenticate_run,
+                                       validate_identity, validate_run_id, verification_command as portable_command)
 from verify_release_rebuild import snapshot
 
 VERSIONS=("0.1.0-alpha","0.1.1-alpha")
@@ -40,9 +41,8 @@ def verification_command(path,bundle,commit,ref,gh="gh"):
     return command
 
 
-def authenticate(path,bundle,commit,ref,gh):
-    try:subprocess.run(verification_command(path,bundle,commit,ref,gh),check=True,capture_output=True,timeout=120)
-    except subprocess.CalledProcessError as error:raise ValueError("Deployment cryptographic provenance verification failed") from error
+def authenticate(path,bundle,commit,ref,gh,run_id):
+    authenticate_run(verification_command(path,bundle,commit,ref,gh),run_id)
 
 
 def validate_packages(root,commit,arch):
@@ -182,23 +182,23 @@ def check_rejections(path,bundle,commit,ref,gh,command_builder=None):
     return {"rejected":rejected,"realBundleVerifiedBeforeAndAfter":True}
 
 
-def verify(directory,commit,ref,arch,gh="gh",rejections=False,run_id=None):
-    validate_identity(commit,ref);names=set(subjects(arch))
+def verify(directory,commit,ref,arch,gh="gh",rejections=False,*,run_id):
+    validate_identity(commit,ref);validate_run_id(run_id);names=set(subjects(arch))
     with tempfile.TemporaryDirectory(prefix="accessweaver-deployment-verify-") as temporary:
         root=Path(temporary);present=snapshot(directory,root,len(names)+1)
         require(present==names|{PROVENANCE_BUNDLE},"Deployment input inventory differs")
         for name in present:require((root/name).stat().st_size<=(64<<20 if name.endswith(".pkg") else 16<<20 if name==PROVENANCE_BUNDLE or name.endswith(".zip") else 8<<20),"Deployment verification input exceeds budget")
-        for name in sorted(names):authenticate(root/name,root/PROVENANCE_BUNDLE,commit,ref,gh)
+        for name in sorted(names):authenticate(root/name,root/PROVENANCE_BUNDLE,commit,ref,gh,run_id)
         result=validate_contents(root,commit,arch)
-        if run_id is not None:require(result.get("lifecycleRunID")==run_id,"Authenticated native run differs from caller expectation")
+        require(result["lifecycleRunID"]==run_id,"Authenticated native run differs from caller expectation")
         negative=check_rejections(root/next(n for n in sorted(names) if n.endswith(".pkg")),root/PROVENANCE_BUNDLE,commit,ref,gh) if rejections else None
-        return {"schemaVersion":1,"repository":REPOSITORY,"workflow":WORKFLOW,"sourceCommit":commit,"sourceRef":ref,"target":"darwin/"+arch,"subjectsVerified":len(names),"subjects":[{"file":name,"sha256":digest((root/name).read_bytes())} for name in sorted(names)],"authenticatedBeforeParsing":True,"hostedRunnerRequired":True,"deployment":result,"rejectionChecks":negative,"publisherSignatureVerified":False,"notarized":False,"localTargetExecution":False,"productionQualificationComplete":False}
+        return {"schemaVersion":1,"repository":REPOSITORY,"workflow":WORKFLOW,"sourceCommit":commit,"sourceRef":ref,"target":"darwin/"+arch,"subjectsVerified":len(names),"subjects":[{"file":name,"sha256":digest((root/name).read_bytes())} for name in sorted(names)],"authenticatedBeforeParsing":True,"hostedRunnerRequired":True,"attestationRunID":run_id,"deployment":result,"rejectionChecks":negative,"publisherSignatureVerified":False,"notarized":False,"localTargetExecution":False,"productionQualificationComplete":False}
 
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("directory",type=Path);parser.add_argument("--source-commit",required=True);parser.add_argument("--source-ref",required=True);parser.add_argument("--architecture",choices=("amd64","arm64"),required=True);parser.add_argument("--gh",default="gh");parser.add_argument("--check-rejections",action="store_true");parser.add_argument("--stage-build-root",type=Path);parser.add_argument("--run-id")
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("directory",type=Path);parser.add_argument("--source-commit",required=True);parser.add_argument("--source-ref",required=True);parser.add_argument("--architecture",choices=("amd64","arm64"),required=True);parser.add_argument("--gh",default="gh");parser.add_argument("--check-rejections",action="store_true");parser.add_argument("--stage-build-root",type=Path);parser.add_argument("--run-id",required=True)
     args=parser.parse_args()
-    try:result=stage(args.stage_build_root,args.directory,args.source_commit,args.source_ref,args.architecture,args.run_id) if args.stage_build_root else verify(args.directory,args.source_commit,args.source_ref,args.architecture,args.gh,args.check_rejections,args.run_id)
+    try:result=stage(args.stage_build_root,args.directory,args.source_commit,args.source_ref,args.architecture,args.run_id) if args.stage_build_root else verify(args.directory,args.source_commit,args.source_ref,args.architecture,args.gh,args.check_rejections,run_id=args.run_id)
     except Exception as error:raise SystemExit("Deployment provenance refused: "+type(error).__name__)
     print(json.dumps(result,indent=2))
 

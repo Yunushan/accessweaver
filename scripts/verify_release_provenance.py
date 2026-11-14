@@ -29,6 +29,26 @@ def validate_identity(commit, ref):
             "Expected a complete trusted heads/tags ref")
 
 
+def validate_run_id(run_id):
+    require(isinstance(run_id, str) and re.fullmatch(r"[1-9][0-9]{0,19}", run_id),
+            "Expected an independently approved GitHub Actions run ID")
+
+
+def authenticate_run(command, run_id, *, command_failure=None):
+    """Check the invocation in the certificate returned by the trusted verifier."""
+    validate_run_id(run_id)
+    command = [*command, "--jq", ".[] | .verificationResult.signature.certificate.runInvocationURI"]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=120)
+    if result.returncode != 0:
+        if command_failure is not None:
+            raise command_failure(result)
+        raise ValueError("GitHub cryptographic provenance verification failed")
+    prefix = re.escape(f"https://github.com/{REPOSITORY}/actions/runs/{run_id}/attempts/")
+    # A rerun can reuse successful jobs from a previous attempt of the same run.
+    require(any(re.fullmatch(prefix + r"[1-9][0-9]{0,19}", line) for line in result.stdout.splitlines()),
+            "Verified attestation does not match the expected GitHub Actions run")
+
+
 def regular_file(path, maximum):
     info = path.lstat()
     require(stat.S_ISREG(info.st_mode) and 0 < info.st_size <= maximum,

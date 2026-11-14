@@ -14,6 +14,7 @@ from verify_windows_installer_provenance import BUNDLE_NAME,DEFAULT_VERSIONS,WOR
 
 COMMIT='a'*40
 REF='refs/heads/main'
+RUN_URI = "https://github.com/Yunushan/accessweaver/actions/runs/7/attempts/2\n"
 class ArchitectureRefusalTests(unittest.TestCase):
     def test_only_opposite_native_target_with_complete_refusal_evidence_passes(self):
         for host, other in (("amd64", "arm64"), ("arm64", "amd64")):
@@ -319,13 +320,13 @@ class WindowsInstallerProvenanceTests(unittest.TestCase):
     def test_all_five_private_snapshot_subjects_authenticate_before_any_parse(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);names=self.fixture(root);seen=[]
-            def authenticate(path,bundle,commit,ref,gh):
+            def authenticate(path,bundle,commit,ref,gh,run_id):
                 self.assertNotEqual(path.parent,root);self.assertEqual(bundle.parent,path.parent)
                 self.assertEqual((commit,ref,gh),(COMMIT,REF,'trusted-gh'));seen.append(path.name)
             def contents(private,*args):
                 self.assertEqual(set(seen),names);(root/'amd64.json').write_bytes(b'changed original input')
-                self.assertNotEqual((private/'amd64.json').read_bytes(),(root/'amd64.json').read_bytes());return {'mocked':True}
-            with patch('verify_windows_installer_provenance.authenticate',side_effect=authenticate),patch('verify_windows_installer_provenance.validate_contents',side_effect=contents):result=verify(root,COMMIT,REF,'amd64',gh='trusted-gh')
+                self.assertNotEqual((private/'amd64.json').read_bytes(),(root/'amd64.json').read_bytes());return {'mocked':True,'nativeRunID':'7'}
+            with patch('verify_windows_installer_provenance.authenticate',side_effect=authenticate),patch('verify_windows_installer_provenance.validate_contents',side_effect=contents):result=verify(root,COMMIT,REF,'amd64',gh='trusted-gh',run_id='7')
             self.assertEqual(result['subjectsVerified'],5);self.assertFalse(result['publisherSignatureVerified']);self.assertFalse(result['targetExecutionPerformedByVerifier'])
     def test_any_signature_failure_blocks_parsing_without_fallback(self):
         for at in (1,5):
@@ -333,11 +334,24 @@ class WindowsInstallerProvenanceTests(unittest.TestCase):
                 root=Path(folder);self.fixture(root);calls=[]
                 def run(command,**kwargs):
                     calls.append(command)
-                    if len(calls)==at:raise subprocess.CalledProcessError(1,command,stderr=b'private response')
-                    return subprocess.CompletedProcess(command,0)
+                    status = 1 if len(calls) == at else 0
+                    return subprocess.CompletedProcess(command, status, stdout=RUN_URI, stderr="private response")
                 with patch('verify_windows_installer_provenance.subprocess.run',side_effect=run),patch('verify_windows_installer_provenance.validate_contents') as contents:
-                    with self.assertRaisesRegex(ValueError,'cryptographic'):verify(root,COMMIT,REF,'amd64')
+                    with self.assertRaisesRegex(ValueError,'cryptographic'):verify(root,COMMIT,REF,'amd64',run_id='7')
                     self.assertEqual(len(calls),at);contents.assert_not_called()
+    def test_a_subject_from_another_successful_run_refuses_before_parsing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            good = subprocess.CompletedProcess(["gh"], 0, stdout=RUN_URI)
+            other = subprocess.CompletedProcess(["gh"], 0, stdout=RUN_URI.replace("/runs/7/", "/runs/8/"))
+            with patch("verify_windows_installer_provenance.subprocess.run", side_effect=[good] * 4 + [other]) as run, patch(
+                "verify_windows_installer_provenance.validate_contents"
+            ) as parse, self.assertRaisesRegex(ValueError, "expected GitHub Actions run"):
+                verify(root, COMMIT, REF, 'amd64', run_id="7")
+            self.assertEqual(run.call_count, 5)
+            parse.assert_not_called()
+
     def test_bad_input_set_and_wrong_target_fail_before_authentication(self):
         for kind in ('extra','missing','hardlink','target'):
             with self.subTest(kind=kind),tempfile.TemporaryDirectory() as folder:
@@ -347,8 +361,18 @@ class WindowsInstallerProvenanceTests(unittest.TestCase):
                 if kind=='hardlink':
                     (root/'amd64.json').unlink();os.link(root/BUNDLE_NAME,root/'amd64.json')
                 with patch('verify_windows_installer_provenance.authenticate') as auth:
-                    with self.assertRaises(ValueError):verify(root,COMMIT,REF,'arm64' if kind=='target' else 'amd64')
+                    with self.assertRaises(ValueError):verify(root,COMMIT,REF,'arm64' if kind=='target' else 'amd64',run_id='7')
                     auth.assert_not_called()
+    def test_lifecycle_report_must_match_the_attested_run(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            with patch('verify_windows_installer_provenance.authenticate') as auth, patch(
+                'verify_windows_installer_provenance.validate_contents', return_value={'nativeRunID': '8'}
+            ), self.assertRaisesRegex(ValueError, 'native run'):
+                verify(root, COMMIT, REF, 'amd64', run_id='7')
+            self.assertEqual(auth.call_count, 5)
+
     def test_producer_does_not_replace_existing_staging_directory(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)

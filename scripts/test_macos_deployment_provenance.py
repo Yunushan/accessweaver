@@ -9,6 +9,7 @@ from verify_macos_deployment_provenance import subjects,verification_command,ver
 
 COMMIT="a"*40
 REF="refs/heads/main"
+RUN_URI = "https://github.com/Yunushan/accessweaver/actions/runs/7/attempts/2\n"
 
 class DeploymentProvenanceContracts(unittest.TestCase):
     def fixture(self,root):
@@ -22,14 +23,14 @@ class DeploymentProvenanceContracts(unittest.TestCase):
     def test_every_subject_authenticates_before_parsing_in_a_private_snapshot(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);self.fixture(root);authenticated=[]
-            def auth(path,bundle,commit,ref,gh):
+            def auth(path,bundle,commit,ref,gh,run_id):
                 self.assertNotEqual(path.parent,root);self.assertEqual(bundle.parent,path.parent);authenticated.append(path.name)
             def parse(private,*args):
                 self.assertEqual(set(authenticated),set(subjects("amd64")))
                 name=next(n for n in subjects("amd64") if n.endswith(".pkg"));(root/name).write_bytes(b"changed outside snapshot")
                 self.assertEqual((private/name).read_bytes(),b"not parsed before authentication")
-                return {"mocked":True}
-            with patch("verify_macos_deployment_provenance.authenticate",side_effect=auth),patch("verify_macos_deployment_provenance.validate_contents",side_effect=parse):result=verify(root,COMMIT,REF,"amd64","trusted-gh")
+                return {"mocked":True,"lifecycleRunID":"7"}
+            with patch("verify_macos_deployment_provenance.authenticate",side_effect=auth),patch("verify_macos_deployment_provenance.validate_contents",side_effect=parse):result=verify(root,COMMIT,REF,"amd64","trusted-gh",run_id="7")
             self.assertEqual(result["subjectsVerified"],18);self.assertFalse(result["localTargetExecution"])
     def test_first_and_last_signature_failure_stop_before_parsing(self):
         for failed in (1,18):
@@ -37,11 +38,24 @@ class DeploymentProvenanceContracts(unittest.TestCase):
                 root=Path(folder);self.fixture(root);calls=[]
                 def invoke(*args,**kwargs):
                     calls.append(args[0])
-                    if len(calls)==failed:raise subprocess.CalledProcessError(1,args[0],stderr=b"private child error")
-                    return subprocess.CompletedProcess(args[0],0)
+                    status = 1 if len(calls) == failed else 0
+                    return subprocess.CompletedProcess(args[0], status, stdout=RUN_URI, stderr="private child error")
                 with patch("verify_macos_deployment_provenance.subprocess.run",side_effect=invoke),patch("verify_macos_deployment_provenance.validate_contents") as contents:
-                    with self.assertRaisesRegex(ValueError,"cryptographic"):verify(root,COMMIT,REF,"amd64","trusted-gh")
+                    with self.assertRaisesRegex(ValueError,"cryptographic"):verify(root,COMMIT,REF,"amd64","trusted-gh",run_id="7")
                     contents.assert_not_called();self.assertEqual(len(calls),failed)
+    def test_a_subject_from_another_successful_run_refuses_before_parsing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            good = subprocess.CompletedProcess(["gh"], 0, stdout=RUN_URI)
+            other = subprocess.CompletedProcess(["gh"], 0, stdout=RUN_URI.replace("/runs/7/", "/runs/8/"))
+            with patch("verify_macos_deployment_provenance.subprocess.run", side_effect=[good] * 17 + [other]) as run, patch(
+                "verify_macos_deployment_provenance.validate_contents"
+            ) as parse, self.assertRaisesRegex(ValueError, "expected GitHub Actions run"):
+                verify(root, COMMIT, REF, "amd64", run_id="7")
+            self.assertEqual(run.call_count, 18)
+            parse.assert_not_called()
+
     def test_missing_extra_linked_and_wrong_target_inputs_fail_closed(self):
         for kind in ("missing","extra","link","wrong-target"):
             with tempfile.TemporaryDirectory() as folder:
@@ -51,7 +65,7 @@ class DeploymentProvenanceContracts(unittest.TestCase):
                 elif kind=="link":
                     target=root/"outside";target.write_bytes((root/name).read_bytes());(root/name).unlink();(root/name).hardlink_to(target)
                 with patch("verify_macos_deployment_provenance.authenticate") as auth:
-                    with self.assertRaises(ValueError):verify(root,COMMIT,REF,"arm64" if kind=="wrong-target" else "amd64","trusted-gh")
+                    with self.assertRaises(ValueError):verify(root,COMMIT,REF,"arm64" if kind=="wrong-target" else "amd64","trusted-gh",run_id="7")
                     auth.assert_not_called()
     def test_caller_run_identity_is_checked_after_all_subject_authentication(self):
         with tempfile.TemporaryDirectory() as folder:
