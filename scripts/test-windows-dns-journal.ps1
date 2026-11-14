@@ -24,7 +24,8 @@ function Wait-RecordedServiceStopped([string]$Name) {
     if($Name -cne 'AccessWeaver-dnscrypt'){throw 'Unexpected service stop wait'}
     $script:order.Add('wait-stopped')
     if($script:serviceFault -ceq 'stop-timeout'){throw 'Synthetic service stop timeout'}
-    if($script:serviceFault -ceq 'replace-during-stop'){
+    if($script:serviceFault -cin @('dependency-during-stop','dependency-with-replacement')){$script:resolverInUse=$true}
+    if($script:serviceFault -cin @('replace-during-stop','dependency-with-replacement')){
         $script:serviceCommand='replacement service command'
         $script:serviceState='running'
     }
@@ -60,6 +61,7 @@ function Native {
             $exitCode=if($script:serviceState -ceq 'stopped'){1062}else{0}
             $script:serviceState='stopped'
             if($script:serviceFault -ceq 'replace-already-stopped'){$script:serviceCommand='replacement service command'}
+            if($script:serviceFault -ceq 'dependency-already-stopped'){$script:resolverInUse=$true}
         }
         'delete' {
             if($script:serviceState -cne 'stopped'){throw 'Unstopped service reached deletion'}
@@ -493,6 +495,41 @@ try {
         $script:serviceState -ceq 'running' -and ($script:order -join ',') -ceq 'query,query' -and
         (Get-FileHash -LiteralPath $serviceConfig).Hash -ceq $configHash) 'Rollback stopped a resolver that was still needed'
     $script:resolverInUse=$false
+    & {
+        function Get-Service {
+            [CmdletBinding()]param($Name)
+            Require ($Name -ceq 'AccessWeaver-dnscrypt') 'Unexpected service restart lookup'
+            $service=[pscustomobject]@{Name=$Name;Status=$script:serviceState}
+            $service | Add-Member ScriptMethod WaitForStatus {
+                param($Status,$Timeout)
+                Require ($Status -ceq 'Running' -and $Timeout.TotalSeconds -eq 20 -and
+                    $script:serviceState -ceq 'running') 'Resolver restart was not verified'
+                $script:order.Add('wait-running')
+            }
+            return $service
+        }
+        function Start-Service {
+            [CmdletBinding()]param($InputObject)
+            Require ($InputObject.Name -ceq 'AccessWeaver-dnscrypt') 'Unexpected service restart'
+            $script:serviceState='running'
+            $script:order.Add('start')
+        }
+        foreach($case in @(
+            @{fault='dependency-during-stop';state='running';trace='query,query,query,stop,wait-stopped,query,start,wait-running,query';reason='^DNSCrypt service retained';final='running'},
+            @{fault='dependency-already-stopped';state='stopped';trace='query,query,query,stop';reason='^DNSCrypt service retained';final='stopped'},
+            @{fault='dependency-with-replacement';state='running';trace='query,query,query,stop,wait-stopped,query';reason='^Recovery journal does not match';final='running'}
+        )){
+            $script:serviceFault=$case.fault
+            $script:serviceState=$case.state
+            $script:order.Clear()
+            $rollback=@(Rollback)
+            Require ($rollback.Count -eq 1 -and $rollback[0] -match $case.reason -and
+                ($script:order -join ',') -ceq $case.trace -and $script:serviceState -ceq $case.final -and
+                (Get-FileHash -LiteralPath $serviceConfig).Hash -ceq $configHash) 'Late DNS dependency did not retain the owned service and configuration'
+            $script:resolverInUse=$false
+            $script:serviceCommand=$originalCommand
+        }
+    }
     foreach($case in @(
         @{fault='replace-during-dns-inventory';state='running';trace='query,query,query'},
         @{fault='replace-during-stop';state='running';trace='query,query,query,stop,wait-stopped,query'},

@@ -3239,8 +3239,27 @@ function Remove-RecordedService([string]$Name,$Entry) {
         }
         $stopped=Invoke-ManagedServiceControl 'stop' $Name @(0,1060,1062,1072)
         if($stopped -eq 0){Wait-RecordedServiceStopped $Name}
-        if($stopped -in @(0,1062) -and (Assert-RecordedServiceBinding $Entry) -eq 0){
-            [void](Invoke-ManagedServiceControl 'delete' $Name @(0,1060,1072))
+        if($stopped -in @(0,1062)){
+            if($Name -ieq 'AccessWeaver-dnscrypt'){
+                try {Assert-DNSCryptCanBeRemoved}catch{
+                    if($stopped -eq 0 -and (Assert-RecordedServiceBinding $Entry) -eq 0){
+                        $service=Get-Service -Name $Name -ErrorAction Stop
+                        try {
+                            if($service.Status -eq 'Stopped'){
+                                Start-Service -InputObject $service -ErrorAction Stop
+                            }
+                            $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
+                        } finally {if($service -is [IDisposable]){$service.Dispose()}}
+                        if((Assert-RecordedServiceBinding $Entry) -ne 0){
+                            throw 'DNSCrypt disappeared while restoring the listener after removal was refused'
+                        }
+                    }
+                    throw
+                }
+            }
+            if((Assert-RecordedServiceBinding $Entry) -eq 0){
+                [void](Invoke-ManagedServiceControl 'delete' $Name @(0,1060,1072))
+            }
         }
     }
     Wait-RecordedServiceAbsent $Name
