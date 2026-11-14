@@ -201,6 +201,24 @@ def generate(binary,module_root,main,identity,notices,go="go"):
     return document
 
 
+def license_evidence(component):
+    values = prop_map(component)
+    key = "accessweaver:license-evidence"
+    if key not in values and component.get("type") == "file" and not component.get("licenses"):
+        return []
+    raw = values.get(key)
+    require(isinstance(raw, str), "Missing component license evidence")
+    records = json.loads(raw)
+    require(isinstance(records, list) and records, "Missing component license evidence")
+    for record in records:
+        require(isinstance(record, dict) and record.keys() == {"path", "sha256"}
+                and isinstance(record["path"], str) and re.fullmatch(r"licenses/[A-Za-z0-9._-]+", record["path"])
+                and record["path"] not in ("licenses/.", "licenses/..")
+                and isinstance(record["sha256"], str) and re.fullmatch(r"[a-f0-9]{64}", record["sha256"]),
+                "Invalid license evidence")
+    return records
+
+
 def validate(document,binary,identity=None):
     return validate_digest(document,sha(binary),identity)
 
@@ -218,12 +236,7 @@ def validate_digest(document,artifact_sha256,identity=None):
     refs=[c["bom-ref"] for c in all_components]
     require(len(refs)==len(set(refs)),"Duplicated SBOM component reference")
     for c in all_components:
-        values=prop_map(c)
-        if c.get("type")!="file" or c.get("licenses"):
-            records=json.loads(values.get("accessweaver:license-evidence","[]"))
-            require(isinstance(records,list) and records,"Missing component license evidence")
-            for record in records:
-                require(re.fullmatch(r"licenses/[A-Za-z0-9._-]+",record["path"]) and re.fullmatch(r"[a-f0-9]{64}",record["sha256"]),"Invalid license evidence")
+        license_evidence(c)
     known=set(refs);graph={}
     for edge in document.get("dependencies",[]):
         require(edge["ref"] in known and edge["ref"] not in graph,"Invalid dependency node")

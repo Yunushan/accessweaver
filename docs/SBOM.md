@@ -38,6 +38,8 @@ go -C scripts/sbom-tools run . --schemas ../sbom/schema ABSOLUTE_SBOM_PATH
 
 This validates structure/profile, not publisher identity. For downloaded portable artifacts, [verify build provenance first](RELEASE_PROVENANCE.md), using an independently approved source commit/ref. Only then inspect/extract the authenticated archive. Public fixture/installer reports belong to their exact source/binary hashes, not automatically to a later rebuild.
 
+Signed macOS managed-package verification checks the detached payload SBOM against the packaged controller, its build identity, and the notice bytes covered by the install manifest. The `--deployment-release` verifier requires these checks before staging the management detector.
+
 ## Remaining acceptance
 
 Complete native installer/runtime notice review, independently validate representative downstream SBOM ingestion and maintain reviewed license/version changes. Include signed production installers and their full build ingredients when that release path exists. Qualify every supported platform/architecture and operational SBOM update/revocation process. The supply-chain gate remains partial until all of those requirements and complete license closure are evidenced.

@@ -978,7 +978,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 self.assertEqual(native_update["nativePublisherVerification"], {
                     "developerTeamID": team, "installerCertificateSHA256": installer_pin,
                     "applicationCertificateSHA256": application_pin, "gatekeeperAccepted": True,
-                    "packagedInstallationHelperVerified": True, "stapledTicketValidated": True,
+                    "packagedInstallationHelperVerified": True, "packagedPayloadSBOMVerified": True,
+                    "stapledTicketValidated": True,
                 })
                 checked_path = package_check.call_args.args[0]
                 self.assertEqual(checked_path.name, pkg_name)

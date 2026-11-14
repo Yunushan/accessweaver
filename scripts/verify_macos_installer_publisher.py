@@ -13,10 +13,12 @@ import tempfile
 from xml.etree.ElementTree import ParseError
 
 from macos_deployment import (
-    DETACHED_MANIFEST, install_location, manifest_contract, validate_deployment_metadata, verify_deployment_bundle,
+    DETACHED_MANIFEST, MAX_PAYLOAD_SBOM, PAYLOAD_SBOM, install_location, manifest_contract,
+    validate_deployment_metadata, verify_deployment_bundle,
 )
 from macos_installer import BUNDLE_ID, BUNDLE_NAME, macho_identity, version_parts
 from macos_package_archive import xml
+from sbom import license_evidence, validate as validate_sbom
 from verify_release import publish_staged_file, require
 from verify_release_rebuild import digest, snapshot
 
@@ -141,6 +143,24 @@ def check_helper_publisher(helper, team, application_pin):
         check_application_certificate(helper, application_pin)
 
 
+def verify_packaged_payload_sbom(payload, manifest, core, identity):
+    data = read_expanded_file(payload / PAYLOAD_SBOM, MAX_PAYLOAD_SBOM)
+    seal = manifest["payloadSBOM"]
+    require(len(data) == seal["bytes"] and hashlib.sha256(data).hexdigest() == seal["sha256"],
+            "Packaged payload SBOM differs from the detached seal")
+    try:
+        document = json.loads(data)
+        validate_sbom(document, core, identity)
+        files = {record["path"]: record["sha256"] for record in manifest["files"]}
+        for component in [document["metadata"]["component"]] + document.get("components", []):
+            for record in license_evidence(component):
+                path = "Contents/Resources/" + record["path"]
+                require(files.get(path) == record["sha256"],
+                        "Packaged payload SBOM notice differs from the sealed app inventory")
+    except (AttributeError, KeyError, TypeError, RecursionError) as error:
+        raise ValueError("Malformed packaged payload SBOM") from error
+
+
 def verify_packaged_deployment(package, team, architecture, application_pin, *,
                                commit, version, helper_sha256, manifest_sha256, payload_sha256):
     expanded = verify_packaged_application(package, team, architecture, application_pin)
@@ -169,6 +189,7 @@ def verify_packaged_deployment(package, team, architecture, application_pin, *,
                 "platform": "darwin", "arch": architecture}
     require(isinstance(identity, dict) and all(identity.get(key) == value for key, value in expected.items()),
             "Managed package build identity differs from the approved release")
+    verify_packaged_payload_sbom(payload, manifest, core, identity)
     verify_deployment_bundle(app, manifest, identity, manifest_bytes)
 
     data = read_packaged_helper(expanded, architecture)
@@ -290,6 +311,7 @@ def verify(directory, artifact_sha256, team, certificate_sha256, *,
         report["deploymentRelease"] = {
             "sourceCommit": commit, "version": version,
             "manifestSHA256": manifest_pin.lower(), "payloadSHA256": payload_pin.lower(),
+            "payloadSBOMVerified": True,
         }
     return report
 

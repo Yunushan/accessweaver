@@ -11,7 +11,8 @@ from unittest.mock import MagicMock, patch
 
 import test_macos_deployment
 from test_macos_deployment import image
-from macos_deployment import PACKAGE_ID
+from macos_deployment import DETACHED_MANIFEST, PACKAGE_ID, PAYLOAD_SBOM
+from sbom import properties
 
 import verify_macos_installer_publisher as publisher
 
@@ -123,10 +124,9 @@ class PublisherTests(unittest.TestCase):
         application_pin = hashlib.sha256(approved_certificate).hexdigest()
         helper = image("arm64")
         phases = '<preinstall file="./preinstall"/><postinstall file="./postinstall"/>'
-        identity, _, manifest, payload_files, *_ = test_macos_deployment.DeploymentPackageContracts().fixture("arm64")
+        identity, _, original_manifest, original_payload, *_ = test_macos_deployment.DeploymentPackageContracts().fixture("arm64")
         real_verify_bundle = publisher.verify_deployment_bundle
         version = identity["version"]
-        location = publisher.install_location(hashlib.sha256(manifest).hexdigest())
         for scenario, error in (
             ("approved", None),
             ("redirected-phase", "phase entry points differ"),
@@ -139,6 +139,12 @@ class PublisherTests(unittest.TestCase):
             ("wrong-source", "build identity differs from the approved release"),
             ("changed-payload", "controller differs from the approved SBOM digest"),
             ("wrong-payload-digest", "controller differs from the approved SBOM digest"),
+            ("changed-detached-sbom", "payload SBOM differs from the detached seal"),
+            ("wrong-sbom-controller", "SBOM does not match artifact bytes"),
+            ("wrong-sbom-source", "SBOM build identity mismatch"),
+            ("broken-sbom-graph", "Dangling SBOM dependency"),
+            ("missing-license-notice", "notice differs from the sealed app inventory"),
+            ("different-license-notice", "notice differs from the sealed app inventory"),
             ("duplicate-scripts", "phase entry points differ"),
             ("different-helpers", "do not use the same helper"),
             ("wrong-architecture", "matching thin native 64-bit executable"),
@@ -152,6 +158,45 @@ class PublisherTests(unittest.TestCase):
                 expanded = root / "expanded"
                 app = expanded / "Payload" / publisher.BUNDLE_NAME
                 scripts = expanded / "Scripts"
+                payload_files = dict(original_payload)
+                sealed = json.loads(original_manifest)
+                notice_directory = "Contents/Resources/licenses"
+                notice_path = notice_directory + "/notice.txt"
+                notice_bytes = b"approved fixture license"
+                notice_pin = hashlib.sha256(notice_bytes).hexdigest()
+                sealed["directories"].append({"path": notice_directory, "mode": "0755"})
+                sealed["files"].append({"path": notice_path, "bytes": len(notice_bytes),
+                                        "mode": "0644", "sha256": notice_pin})
+                payload_files[publisher.BUNDLE_NAME + "/" + notice_directory] = {"mode": 0o40755}
+                payload_files[publisher.BUNDLE_NAME + "/" + notice_path] = {"data": notice_bytes, "mode": 0o100644}
+                core = payload_files[publisher.BUNDLE_NAME + "/Contents/MacOS/accessweaver"]["data"]
+                evidence = [{
+                    "path": "licenses/missing.txt" if scenario == "missing-license-notice" else "licenses/notice.txt",
+                    "sha256": "0" * 64 if scenario == "different-license-notice" else notice_pin,
+                }]
+                bom = {
+                    "bomFormat": "CycloneDX", "specVersion": "1.6",
+                    "metadata": {"component": {
+                        "type": "application", "name": "AccessWeaver", "bom-ref": "application", "version": version,
+                        "hashes": [{"alg": "SHA-256", "content": hashlib.sha256(
+                            b"wrong executable" if scenario == "wrong-sbom-controller" else core
+                        ).hexdigest()}],
+                        "properties": properties({
+                            "source-commit": "0" * 40 if scenario == "wrong-sbom-source" else identity["commit"],
+                            "source-state": "clean", "target-os": "darwin", "target-arch": "arm64",
+                            "license-evidence": json.dumps(evidence),
+                        }),
+                    }},
+                    "dependencies": [{"ref": "application",
+                                      "dependsOn": ["missing"] if scenario == "broken-sbom-graph" else []}],
+                    "compositions": [{"aggregate": "incomplete"}],
+                }
+                bom_bytes = json.dumps(bom).encode()
+                sealed["payloadSBOM"].update(bytes=len(bom_bytes), sha256=hashlib.sha256(bom_bytes).hexdigest())
+                manifest = json.dumps(sealed).encode()
+                location = publisher.install_location(hashlib.sha256(manifest).hexdigest())
+                payload_files[DETACHED_MANIFEST] = {"data": manifest}
+                payload_files[PAYLOAD_SBOM] = {"data": bom_bytes + b" " if scenario == "changed-detached-sbom" else bom_bytes}
                 signature_subjects = []
                 certificate_subjects = []
 
@@ -220,7 +265,6 @@ class PublisherTests(unittest.TestCase):
 
                 helper_pin = "0" * 64 if scenario == "wrong-helper-digest" else hashlib.sha256(helper).hexdigest()
                 manifest_pin = "0" * 64 if scenario == "wrong-manifest-digest" else hashlib.sha256(manifest).hexdigest()
-                core = payload_files[publisher.BUNDLE_NAME + "/Contents/MacOS/accessweaver"]["data"]
                 payload_pin = "0" * 64 if scenario == "wrong-payload-digest" else hashlib.sha256(core).hexdigest()
                 options = {"commit": identity["commit"], "version": version,
                            "helper_sha256": helper_pin, "manifest_sha256": manifest_pin, "payload_sha256": payload_pin}
@@ -356,6 +400,7 @@ with patch.object(publisher, "tool"), patch.object(publisher, "publish_staged_fi
                 self.assertEqual(stage.call_args.args[-1], "e" * 64)
                 self.assertEqual(result["deploymentRelease"], {
                     "sourceCommit": auth[0], "version": auth[1], "manifestSHA256": "b" * 64, "payloadSHA256": "c" * 64,
+                    "payloadSBOMVerified": True,
                 })
 
     def test_stage_detector_only_from_verified_package_with_exact_pin(self):

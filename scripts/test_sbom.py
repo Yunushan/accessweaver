@@ -36,6 +36,21 @@ class SBOMTests(unittest.TestCase):
                 else:changed["compositions"][0]["aggregate"]="complete"
                 with self.assertRaises(ValueError):validate(changed,b"binary",identity)
 
+    def test_file_components_validate_optional_notice_references_when_present(self):
+        document, identity = self.fixture()
+        file_component = {"bom-ref": "embedded", "type": "file", "name": "data.txt"}
+        document["components"].append(file_component)
+        document["dependencies"][0]["dependsOn"].append("embedded")
+        document["dependencies"].append({"ref": "embedded", "dependsOn": []})
+        self.assertTrue(validate(document, b"binary", identity))
+        for record in ({"path": "licenses/..", "sha256": "a" * 64},
+                       {"path": "licenses/notice.txt", "sha256": True},
+                       {"path": "licenses/notice.txt", "sha256": "a" * 64, "other": "unreviewed"}):
+            with self.subTest(record=record), self.assertRaisesRegex(ValueError, "Invalid license evidence"):
+                file_component["properties"] = [{"name": "accessweaver:license-evidence",
+                                                  "value": json.dumps([record])}]
+                validate(document, b"binary", identity)
+
     def test_installer_preserves_payload_and_marks_native_closure_incomplete(self):
         document,_=self.fixture()
         with tempfile.TemporaryDirectory() as folder:

@@ -1425,7 +1425,8 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             update["nativePublisherVerification"] = {
                 "developerTeamID": team, "installerCertificateSHA256": installer_pin,
                 "applicationCertificateSHA256": application_pin, "gatekeeperAccepted": True,
-                "packagedInstallationHelperVerified": True, "stapledTicketValidated": True,
+                "packagedInstallationHelperVerified": True, "packagedPayloadSBOMVerified": True,
+                "stapledTicketValidated": True,
             }
             report["nativePublisherChecksPerformed"] = True
         if policy["schemaVersion"] == 2:
