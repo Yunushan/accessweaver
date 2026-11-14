@@ -429,7 +429,7 @@ def windows_lifecycle_sources(commit):
     return sources
 
 
-def require_windows_lifecycle_evidence(entries, windows_build_info, commit):
+def require_windows_lifecycle_evidence(entries, windows_build_info, commit, *, require_restoration_journals=False):
     required = {"windows/amd64", "windows/arm64"}
     common_fields = {WINDOWS_PAYLOAD_PUBLISHER, WINDOWS_BUILD_INFO, WINDOWS_DETECTOR}
     upgrade_fields = {*WINDOWS_PREVIOUS_TRUST_FIELDS, *WINDOWS_DOWNGRADE_FIELDS,
@@ -457,6 +457,8 @@ def require_windows_lifecycle_evidence(entries, windows_build_info, commit):
     for entry in entries:
         require(all(entry.get(field) == pin for field, pin in expected_sources.items()),
                 f"Windows lifecycle evidence for {entry['target']} {entry['installMode']} differs from the approved source scripts")
+        require(not require_restoration_journals or WINDOWS_RESTORATION_JOURNAL in entry,
+                f"Windows lifecycle evidence for {entry['target']} {entry['installMode']} requires a restoration journal digest")
     return sources, publishers
 
 
@@ -518,7 +520,7 @@ def prepare(directory, output, commit, ref, *, windows_reboot_evidence=(), requi
                                               include_lifecycle_sources=require_windows_lifecycle)
         _, _, windows_build_info = validate_release_sboms(root, files, commit, version, entries)
         if require_windows_lifecycle:
-            require_windows_lifecycle_evidence(entries, windows_build_info, commit)
+            require_windows_lifecycle_evidence(entries, windows_build_info, commit, require_restoration_journals=True)
         manifest = encode_manifest(commit, ref, files, entries)
         with output.open("xb") as stream:
             stream.write(manifest)
@@ -1312,8 +1314,13 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             "nativePublisherChecksPerformed": False, "productionQualificationComplete": False,
         }
         if require_windows_lifecycle:
-            lifecycle_sources, lifecycle_publishers = require_windows_lifecycle_evidence(entries, windows_build_info, commit)
+            require_restoration = manifest["schemaVersion"] >= 12
+            lifecycle_sources, lifecycle_publishers = require_windows_lifecycle_evidence(
+                entries, windows_build_info, commit, require_restoration_journals=require_restoration,
+            )
             report["windowsLifecycleEvidenceVerified"] = True
+            if require_restoration:
+                report["windowsRestorationJournalEvidenceVerified"] = True
             if verify_lifecycle_publishers:
                 verify_windows_lifecycle_publishers(root, files, lifecycle_sources, lifecycle_publishers)
                 report["windowsLifecyclePublishersVerified"] = True

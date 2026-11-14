@@ -280,14 +280,14 @@ class SignedReleaseManifestTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             release.prepare(self.candidate, output, COMMIT, REF)
 
-    def windows_lifecycle_reports(self, pins):
+    def windows_lifecycle_reports(self, pins, *, schema=14):
         evidence = {}
         for arch in ("amd64", "arm64"):
             self.set_windows_build_info_pin(arch, "6" * 64)
             evidence[arch, "clean"] = self.write_reboot_report(
-                f"{arch}-clean.json", architecture=arch, schemaVersion=13, **pins)
+                f"{arch}-clean.json", architecture=arch, schemaVersion=schema, **pins)
             evidence[arch, "upgrade"] = self.write_reboot_report(
-                f"{arch}-upgrade.json", architecture=arch, schemaVersion=13, installMode="upgrade",
+                f"{arch}-upgrade.json", architecture=arch, schemaVersion=schema, installMode="upgrade",
                 previousVersion="1.2.2-rc.1", previousPayloadSHA256="d" * 64,
                 userProfilePreservedThroughUpgrade=True, downgradeRequested=True,
                 downgradeRefused=True, downgradeStatePreserved=True,
@@ -328,7 +328,9 @@ class SignedReleaseManifestTests(unittest.TestCase):
             ({**incomplete, "publisherSHA256": "0" * 64}, "disagrees on candidate publisher certificates"),
             ({**incomplete, "payloadPublisherSHA256": "0" * 64}, "disagrees on candidate publisher certificates"),
             ({key: value for key, value in {**incomplete, "schemaVersion": 12}.items()
-              if key != release.WINDOWS_SETUP_WRONG_BASELINE}, "Setup baseline refusal"),
+              if key not in (release.WINDOWS_SETUP_WRONG_BASELINE, release.WINDOWS_RESTORATION_JOURNAL)}, "Setup baseline refusal"),
+            ({key: value for key, value in {**incomplete, "schemaVersion": 13}.items()
+              if key != release.WINDOWS_RESTORATION_JOURNAL}, "requires a restoration journal digest"),
             *[({**incomplete, field: "0" * 64}, "differs from the approved source scripts") for field in pins],
         ):
             arm_upgrade.write_text(json.dumps(record), encoding="utf-8")
@@ -342,7 +344,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
         release.prepare(self.candidate, output, source, REF, windows_reboot_evidence=list(evidence.values()),
                         require_windows_lifecycle=True)
         manifest = json.loads(output.read_bytes())
-        self.assertEqual(manifest["schemaVersion"], 11)
+        self.assertEqual(manifest["schemaVersion"], 12)
         self.assertEqual(len(manifest["windowsDetection"]), 4)
         for entry in manifest["windowsDetection"]:
             self.assertEqual({field: entry[field] for field in pins}, pins)
@@ -624,13 +626,6 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 manifest.unlink()
                 signature.unlink()
             provided = list(evidence.values()) if complete else [evidence["amd64", "clean"]]
-            if bind_sources:
-                path, _ = provided[0]
-                previous = json.loads(path.read_bytes())
-                restoration_pin = hashlib.sha256(b"inert Windows restoration journal").hexdigest()
-                bound = {**previous, "schemaVersion": 14, release.WINDOWS_RESTORATION_JOURNAL: restoration_pin}
-                path.write_text(json.dumps(bound), encoding="utf-8")
-                provided[0] = (path, release.digest(path))
             release.prepare(self.candidate, prepared, source, REF, windows_reboot_evidence=provided,
                             require_windows_lifecycle=bind_sources)
             shutil.copyfile(prepared, manifest)
@@ -642,7 +637,9 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 self.assertIs(report["windowsLifecycleEvidenceVerified"], True)
                 self.assertIs(report["productionQualificationComplete"], False)
                 self.assertEqual(report["schemaVersion"], 12)
-                self.assertEqual(report["windowsDetection"][0][release.WINDOWS_RESTORATION_JOURNAL], restoration_pin)
+                self.assertIs(report["windowsRestorationJournalEvidenceVerified"], True)
+                journal_field = release.WINDOWS_RESTORATION_JOURNAL
+                restoration_pin = report["windowsDetection"][0][journal_field]
                 with patch.object(release.sys, "platform", "linux"):
                     with self.assertRaisesRegex(ValueError, "requires a Windows host"):
                         self.verify(cert, pin, source, verify_lifecycle_publishers=True)
@@ -713,6 +710,21 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 self.write_policy(self.policy)
                 files = release.inventory(self.candidate, self.subjects)
                 entries = json.loads(manifest.read_bytes())["windowsDetection"]
+                for legacy in (False, True):
+                    partial = [entry.copy() for entry in entries]
+                    for entry in partial if legacy else partial[:1]:
+                        del entry[journal_field]
+                    manifest.write_bytes(release.encode_manifest(source, REF, files, partial))
+                    openssl("cms", "-sign", "-binary", "-md", "sha256", "-in", manifest,
+                            "-signer", pem, "-inkey", key, "-outform", "DER", "-out", signature)
+                    if legacy:
+                        legacy_report = self.verify(cert, pin, source, require_windows_lifecycle=True)
+                        self.assertEqual(legacy_report["schemaVersion"], 11)
+                        self.assertIs(legacy_report["windowsLifecycleEvidenceVerified"], True)
+                        self.assertNotIn("windowsRestorationJournalEvidenceVerified", legacy_report)
+                    else:
+                        with self.assertRaisesRegex(ValueError, "requires a restoration journal digest"):
+                            self.verify(cert, pin, source, require_windows_lifecycle=True)
                 entries[0]["fixtureSHA256"] = "0" * 64
                 manifest.write_bytes(release.encode_manifest(source, REF, files, entries))
                 openssl("cms", "-sign", "-binary", "-md", "sha256", "-in", manifest,
