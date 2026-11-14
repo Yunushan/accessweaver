@@ -381,13 +381,13 @@ try {
         throw 'Interrupted DNS reboot verification requires a fresh checkpoint'
     }
     Save-DNSRebootRecord (Join-Path $private 'verification-started.json') @{schemaVersion=7}
-    $outcome=[ordered]@{schemaVersion=7;qualificationID=$saved.qualificationID;method=$saved.method;binarySHA256=$current.binarySHA256;
+    $outcome=[ordered]@{schemaVersion=8;qualificationID=$saved.qualificationID;method=$saved.method;binarySHA256=$current.binarySHA256;
         requiredOriginalMode=$saved.requiredOriginalMode;originalModeCoverage=$coverage;
         fixtureSHA256=$current.fixtureSHA256;oracleSHA256=$current.oracleSHA256;
         rebootVerified=$true;servicesVerified=$false;configuredStateVerified=$false;
         resolverVerified=$false;journalBindingVerified=$true;journalRecoveryAccepted=$false;
         originalStateRestored=$false;originalResolverVerified=$false;snapshotRetired=$false;
-        servicesRemoved=$false;passed=$false;stage='services';cleanupStage='not-started'}
+        servicesRemoved=$false;passed=$false;stage='services';cleanupStage='not-started';teardownStage='not-started'}
     try {
         Wait-DNSRebootObservation {Assert-RebootServices $saved.method}
         $outcome.servicesVerified=$true
@@ -396,7 +396,7 @@ try {
         $outcome.configuredStateVerified=$true
         $outcome.stage='resolver'
         Wait-DNSRebootObservation {Assert-DNSRebootActiveResolver $coverage $saved.method}
-        $outcome.stage='configured-state'
+        $outcome.stage='configured-readback'
         $outcome.configuredStateVerified=$false
         Assert-DNSRebootConfigured $saved.dns (Read-DNSAcceptanceState) $saved.method
         $outcome.configuredStateVerified=$true
@@ -426,16 +426,22 @@ try {
             # Keep the first fixed recovery failure even if teardown later restores DNS.
         }
         try {
+            $outcome.teardownStage='remove-all'
             [void](Invoke-TestWorkflow @{action='remove-all'})
-            $outcome.servicesRemoved=Test-DNSRebootServicesRemoved
+            $outcome.teardownStage='original-state'
             Assert-DNSAcceptanceRestored $saved.dns (Read-DNSAcceptanceState)
+            $outcome.teardownStage='original-resolver'
             Assert-RebootResolver
-            if($outcome.cleanupStage -ceq 'recovered' -and $outcome.servicesRemoved -and
-                -not (Test-Path -LiteralPath $snapshot -ErrorAction Stop)){$outcome.cleanupStage='complete'}
+            $outcome.teardownStage='snapshot-retirement'
+            if(Test-Path -LiteralPath $snapshot -ErrorAction Stop){throw 'Teardown retained the active snapshot'}
+            $outcome.teardownStage='service-inventory'
+            $outcome.servicesRemoved=Test-DNSRebootServicesRemoved
+            $outcome.teardownStage=if($outcome.servicesRemoved){'complete'}else{'services-remain'}
         } catch {
-            # A recovery result remains available even when later teardown fails.
+            # Preserve the fixed teardown stage alongside the journal recovery result.
         }
-        $outcome.passed=$outcome.stage -ceq 'complete' -and $outcome.cleanupStage -ceq 'complete'
+        $outcome.passed=$outcome.stage -ceq 'complete' -and $outcome.cleanupStage -ceq 'recovered' -and
+            $outcome.teardownStage -ceq 'complete'
         Save-DNSRebootRecord $report $outcome
     }
     if(-not $outcome.passed){throw 'DNS reboot acceptance failed; inspect the fixed guest result'}

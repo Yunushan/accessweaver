@@ -37,15 +37,17 @@ function Assert-DNSRebootPublicReport([byte[]]$Data,[string]$ApprovedSHA256,[str
         'journalRecoveryAccepted','originalStateRestored','originalResolverVerified','snapshotRetired','servicesRemoved','passed')
     $digests=@('binarySHA256','fixtureSHA256','oracleSHA256')
     $modes=@('dhcp-ipv4','static-ipv4','dhcp-ipv6','static-ipv6')
-    $keys=@('schemaVersion','qualificationID','method','requiredOriginalMode','originalModeCoverage','stage','cleanupStage')+$flags+$digests
+    $stages=@('services','configured-state','resolver','configured-readback','complete')
+    $cleanupStages=@('journal-recovery','original-state','original-resolver','snapshot-retirement','recovered')
+    $teardownStages=@('remove-all','original-state','original-resolver','snapshot-retirement','service-inventory','services-remain','complete')
+    $keys=@('schemaVersion','qualificationID','method','requiredOriginalMode','originalModeCoverage','stage','cleanupStage','teardownStage')+$flags+$digests
     if($record -isnot [pscustomobject] -or @($record.PSObject.Properties).Count -ne $keys.Count -or
         @($record.PSObject.Properties.Name | Where-Object {$_ -cnotin $keys}).Count -ne 0 -or
-        ($record.schemaVersion -isnot [int] -and $record.schemaVersion -isnot [long]) -or $record.schemaVersion -ne 7 -or
+        ($record.schemaVersion -isnot [int] -and $record.schemaVersion -isnot [long]) -or $record.schemaVersion -ne 8 -or
         $record.qualificationID -isnot [string] -or $record.qualificationID -cnotmatch '\A[a-f0-9]{32}\z' -or
         $record.method -isnot [string] -or $record.method -cnotin @('doh','dnscrypt') -or
-        $record.stage -isnot [string] -or $record.cleanupStage -isnot [string] -or
-        $record.stage -cnotin @('services','configured-state','resolver','complete') -or
-        $record.cleanupStage -cnotin @('journal-recovery','original-state','original-resolver','snapshot-retirement','recovered','complete')){
+        $record.stage -isnot [string] -or $record.cleanupStage -isnot [string] -or $record.teardownStage -isnot [string] -or
+        $record.stage -cnotin $stages -or $record.cleanupStage -cnotin $cleanupStages -or $record.teardownStage -cnotin $teardownStages){
         throw 'DNS reboot report schema refused'
     }
     $coverage=$record.originalModeCoverage
@@ -78,9 +80,16 @@ function Assert-DNSRebootPublicReport([byte[]]$Data,[string]$ApprovedSHA256,[str
     if($record.qualificationID -cne $ExpectedQualificationID){
         throw 'DNS reboot report does not match the scheduled qualification'
     }
+    $stage=[Array]::IndexOf($stages,$record.stage)
+    $cleanup=[Array]::IndexOf($cleanupStages,$record.cleanupStage)
+    $teardownComplete=$record.teardownStage -ceq 'complete'
     if(-not $record.rebootVerified -or -not $record.journalBindingVerified -or
-        $record.passed -ne ($record.stage -ceq 'complete' -and $record.cleanupStage -ceq 'complete') -or
-        ($record.passed -and @($flags | Where-Object {-not $record.$_}).Count -ne 0)){
+        $record.servicesVerified -ne ($stage -ge 1) -or $record.configuredStateVerified -ne ($record.stage -cin @('resolver','complete')) -or
+        $record.resolverVerified -ne ($stage -eq 4) -or
+        $record.journalRecoveryAccepted -ne ($cleanup -ge 1) -or $record.originalStateRestored -ne ($cleanup -ge 2) -or
+        $record.originalResolverVerified -ne ($cleanup -ge 3) -or $record.snapshotRetired -ne ($cleanup -eq 4) -or
+        $record.servicesRemoved -ne $teardownComplete -or
+        $record.passed -ne ($stage -eq 4 -and $cleanup -eq 4 -and $teardownComplete)){
         throw 'DNS reboot report outcome is inconsistent'
     }
     if($record.method -cne $ExpectedMethod -or $record.requiredOriginalMode -cne $ExpectedOriginalMode){
