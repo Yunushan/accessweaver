@@ -728,6 +728,10 @@ def write_windows_upgrade_receipt(destination, receipt):
     return hashlib.sha256(content).hexdigest()
 
 
+class WindowsSetupLaunchError(OSError):
+    """Windows did not return a Setup process handle."""
+
+
 def launch_windows_setup(directory, update, policy, *, size, directory_identity, attempt=None, wait_seconds=None):
     setup = directory / update["installer"]
     arguments = [str(setup), "/SP-", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
@@ -746,8 +750,12 @@ def launch_windows_setup(directory, update, policy, *, size, directory_identity,
                 )
                 require_current_revocation_policy(policy)
             # Popen's context manager waits on exit, which would defeat a wait limit.
-            process = subprocess.Popen(arguments, executable=str(setup), cwd=windows_system_directory(),
-                                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            working_directory = windows_system_directory()
+            try:
+                process = subprocess.Popen(arguments, executable=str(setup), cwd=working_directory,
+                                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except OSError as error:
+                raise WindowsSetupLaunchError("Windows Setup could not be launched") from error
             return process.wait(timeout=wait_seconds)
 
 
@@ -1150,10 +1158,12 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     code = launch_windows_setup(stage_directory, update, policy, attempt=attempt,
                                                 size=installer["size"], directory_identity=stage_directory_id,
                                                 wait_seconds=windows_setup_wait_seconds)
-                except subprocess.TimeoutExpired:
+                except (WindowsSetupLaunchError, subprocess.TimeoutExpired) as error:
                     update["setupExitCode"] = None
                     update["installedDetection"] = "unverified"
-                    update["installedDetectionReason"] = "setup-wait-timeout"
+                    update["installedDetectionReason"] = (
+                        "setup-launch-failed" if isinstance(error, WindowsSetupLaunchError) else "setup-wait-timeout"
+                    )
                     return report
                 update["setupExitCode"] = code
                 if code == 0:

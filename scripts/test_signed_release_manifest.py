@@ -1137,6 +1137,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
                               "windows_publisher": qualified_entry["publisherCertificateSHA256"],
                               "windows_payload_publisher": qualified_entry[release.WINDOWS_PAYLOAD_PUBLISHER],
                               "minimum_revocation_sequence": 4, "launch_staged_windows_setup": True}
+            native_launch = release.launch_windows_setup
             with patch.object(release, "require_native_windows_setup_host") as host, \
                     patch.object(release, "check_windows_publisher") as publisher, \
                     patch.object(release, "launch_windows_setup", return_value=3010) as launch, \
@@ -1180,6 +1181,32 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 for invalid_wait in (True, 0, -1, 4_294_967):
                     with self.subTest(invalid_wait=invalid_wait), self.assertRaisesRegex(ValueError, "wait limit"):
                         self.verify(approved, pin, policy_pin=launch_pin, **launch_options, windows_setup_wait_seconds=invalid_wait)
+
+                failed_start = staging / (attempt_id + ".started.json")
+                failed_result = staging / (attempt_id + ".result.json")
+
+                def fail_dispatch(*args, **kwargs):
+                    with patch.object(release.subprocess, "Popen", side_effect=PermissionError("private path")):
+                        return native_launch(*args, **kwargs)
+
+                launch.side_effect = fail_dispatch
+                try:
+                    failure = self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
+                                          windows_upgrade_attempt_id=attempt_id)
+                    update = failure["managedUpdate"]
+                    self.assertIsNone(update["setupExitCode"])
+                    self.assertEqual(update["installedDetection"], "unverified")
+                    self.assertEqual(update["installedDetectionReason"], "setup-launch-failed")
+                    self.assertEqual(update["startReceiptSHA256"], release.digest(failed_start))
+                    self.assertFalse(failed_result.exists())
+                    self.assertNotIn("private path", json.dumps(failure))
+                    detect.assert_not_called()
+                    with self.assertRaises(FileExistsError):
+                        self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
+                                    windows_upgrade_attempt_id=attempt_id)
+                finally:
+                    launch.side_effect = None
+                    failed_start.unlink(missing_ok=True)
 
                 launch.return_value = 0
                 result = self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
@@ -1741,7 +1768,7 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
             raise OSError("synthetic failure during dispatch")
 
         with patch.object(release.subprocess, "Popen", side_effect=failed_dispatch) as launch:
-            with self.assertRaisesRegex(OSError, "synthetic failure"):
+            with self.assertRaisesRegex(release.WindowsSetupLaunchError, "Windows Setup could not be launched"):
                 release.launch_windows_setup(directory, update, self.policy, **options)
             with self.assertRaises(FileExistsError):
                 release.launch_windows_setup(directory, update, self.policy, **options)
