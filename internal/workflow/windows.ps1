@@ -2873,6 +2873,7 @@ function Restore-DNS([string]$ExpectedSHA256) {
         }
         if(Test-DNSDohEntriesEqual $current $plan.old){continue}
         Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+        $script:externalEffectsPending=$true
         if($plan.old.Count -eq 1){
             $old=$plan.old[0]
             if($current.Count -eq 1){Set-DnsClientDohServerAddress -ServerAddress $plan.address -DohTemplate $old.DohTemplate -AllowFallbackToUdp $old.AllowFallbackToUdp -AutoUpgrade $old.AutoUpgrade -ErrorAction Stop}
