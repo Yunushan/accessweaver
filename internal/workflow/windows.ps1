@@ -2495,22 +2495,28 @@ function Configure-DNS([string]$method) {
         }
         $text=[Text.UTF8Encoding]::new($false,$true).GetString($configBytes)
         if($text.Length -gt 0 -and $text[0] -eq [char]0xfeff){$text=$text.Substring(1)}
-        if($text -notmatch '(?m)^listen_addresses\s*='){throw 'DNSCrypt configuration is missing its top-level listen_addresses setting'}
-        $text=[regex]::Replace($text,'(?m)^listen_addresses\s*=.*$',"listen_addresses = ['127.0.0.1:53', '[::1]:53']")
+        if($text -notmatch '(?m)^listen_addresses[ \t]*='){throw 'DNSCrypt configuration is missing its top-level listen_addresses setting'}
+        $text=[regex]::Replace($text,'(?m)^listen_addresses[ \t]*=[^\r\n]*',"listen_addresses = ['127.0.0.1:53', '[::1]:53']")
         if($text -notmatch '(?m)^server_names\s*='){$text="server_names = ['google', 'cloudflare', 'quad9-dnscrypt-ip4-nofilter-pri']`r`n"+$text}
         Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
         $updatedConfig=[Text.UTF8Encoding]::new($false).GetBytes($text)
         if($updatedConfig.Length -gt 1MB){throw 'DNSCrypt configuration exceeds its size limit'}
         $publishedConfigSHA256=Get-WorkflowBytesSHA256 $updatedConfig
-        Publish-WorkflowFile $config $updatedConfig -Recorded -BeforeHash $configBefore
+        $configChanged=$configBefore -cne $publishedConfigSHA256
+        if($configChanged){Publish-WorkflowFile $config $updatedConfig -Recorded -BeforeHash $configBefore}
         if($existingResolver){
-            if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before restart'}
+            if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before startup'}
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
             Assert-DNSCryptConfiguration $config $publishedConfigSHA256
-            Restart-Service -Name $serviceName -ErrorAction Stop
             $service=Get-Service -Name $serviceName -ErrorAction Stop
-            try {$service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))}
-            finally {if($service -is [IDisposable]){$service.Dispose()}}
+            try {
+                if($service.Status -eq 'Stopped'){
+                    Start-Service -InputObject $service -ErrorAction Stop
+                }elseif($configChanged){
+                    Restart-Service -InputObject $service -ErrorAction Stop
+                }
+                $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
+            }finally {if($service -is [IDisposable]){$service.Dispose()}}
         }else{
             Assert-DNSCryptConfiguration $config $publishedConfigSHA256
             $newResolver=Install-EngineService 'dnscrypt' $binary @('-config',$config) -DeferAutomaticStartup
