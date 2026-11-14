@@ -329,6 +329,17 @@ func beginDeploymentMode(parent *os.File, owner uint32, observe func(string) err
 		if e != nil {
 			return fail(e)
 		}
+		if history == 0 && s.state.Generation != 0 && s.state.Active == (deploymentSlot{}) && len(s.state.Pending) == 0 {
+			// An inactive authority may have just been exchanged with an
+			// archived removal. Make the parent binding durable under the
+			// writer and runtime leases before the first subsequent mutation.
+			if e = fullDeploymentSync(s.parent); e != nil {
+				return fail(e)
+			}
+			if e = s.checkRoot(); e != nil {
+				return fail(e)
+			}
+		}
 	}
 	return s, nil
 }

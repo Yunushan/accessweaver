@@ -198,6 +198,9 @@ func TestDarwinRemovalReceiptRecovery(t *testing.T) {
 			if record, e := f.intent.verifyCompletedRemoval(ctx, f.resolve); e == nil || record != nil {
 				t.Fatal("incomplete removal returned a handoff record", e)
 			}
+			if published, e := f.intent.finalizeRemovalUsing(ctx, f.resolve); e == nil || published {
+				t.Fatal("incomplete removal published a replacement authority", published, e)
+			}
 			id, _, e := receiptActionPair(f.intent.plan, actions[10])
 			if e != nil {
 				t.Fatal(e)
@@ -339,6 +342,138 @@ func TestDarwinRemovalReceiptRecovery(t *testing.T) {
 			if e != nil || len(entries) != 1 || entries[0].Name() != "unrelated-private.plist" {
 				t.Fatal("receipt retirement changed unrelated inventory", e)
 			}
+			exerciseOwnedRemovalHandoff(t, f, record, scenario == "after-forget")
 		})
 	}
+}
+
+func exerciseOwnedRemovalHandoff(t *testing.T, f *ownedRemovalTargetFixture, record []byte, interruptAfterExchange bool) {
+	t.Helper()
+	ctx := context.Background()
+	archive := filepath.Join(f.base, removalArchiveName(f.intent.fence))
+	root := filepath.Join(f.base, deploymentRoot)
+	previous, e := os.Stat(root)
+	if e != nil {
+		t.Fatal(e)
+	}
+	oldState := filepath.Join(root, "state")
+	oldJournal, e := os.ReadFile(filepath.Join(oldState, removalJournalName))
+	if e != nil {
+		t.Fatal(e)
+	}
+	oldPlan, e := os.ReadFile(filepath.Join(oldState, removalPlanName))
+	if e != nil {
+		t.Fatal(e)
+	}
+	phase := "removal-handoff-reserved"
+	if interruptAfterExchange {
+		phase = "removal-handoff-exchanged"
+	}
+	interrupted := errors.New("interrupted authority handoff")
+	f.store.observe = func(p string) error {
+		if p == phase {
+			// A new writer must be refused at the canonical path both
+			// before and after the swap while the handoff holds its leases.
+			parent, openErr := os.Open(f.base)
+			if openErr != nil {
+				t.Fatal(openErr)
+			}
+			if other, openErr := beginDeploymentMode(parent, 0, nil, false); openErr == nil {
+				other.Close()
+				t.Fatal("concurrent writer entered removal handoff")
+			}
+			current, openErr := os.Open(root)
+			if openErr != nil {
+				t.Fatal(openErr)
+			}
+			defer current.Close()
+			if reader, openErr := acquireRuntimeReader(current); openErr == nil {
+				reader.Close()
+				t.Fatal("concurrent runtime reader entered removal handoff")
+			}
+			return interrupted
+		}
+		return nil
+	}
+	published, e := f.intent.finalizeRemovalUsing(ctx, f.resolve)
+	if !errors.Is(e, interrupted) || published != interruptAfterExchange {
+		t.Fatal("unexpected handoff publication boundary", published, e)
+	}
+	identity := f.intent.fence.Target.Identity
+	if !published {
+		staged, e := os.Stat(archive)
+		if e != nil || os.SameFile(previous, staged) {
+			t.Fatal("clean staged authority was not reserved", e)
+		}
+		reopenOwnedRemovalFileIntent(t, f)
+		reservedRecord := filepath.Join(archive, "state", deploymentRecord)
+		if e = os.WriteFile(reservedRecord, []byte("changed reserved record"), 0644); e != nil {
+			t.Fatal(e)
+		}
+		if published, e = f.intent.finalizeRemovalUsing(ctx, f.resolve); e == nil || published {
+			t.Fatal("handoff accepted a changed reserved record", published, e)
+		}
+		if current, e := os.Stat(root); e != nil || !os.SameFile(current, previous) {
+			t.Fatal("refused handoff displaced the original authority", e)
+		}
+		if e = os.WriteFile(reservedRecord, record, 0644); e != nil {
+			t.Fatal(e)
+		}
+		if published, e = f.intent.finalizeRemovalUsing(ctx, f.resolve); e != nil || !published {
+			t.Fatal("handoff retry did not publish", published, e)
+		}
+		current, e := os.Stat(root)
+		if e != nil || !os.SameFile(current, staged) {
+			t.Fatal("handoff retry did not reuse the staged authority", e)
+		}
+	}
+	if e = f.intent.Close(); e != nil {
+		t.Fatal(e)
+	}
+	archived, e := os.Stat(archive)
+	if e != nil || !os.SameFile(previous, archived) {
+		t.Fatal("handoff did not archive the original authority", e)
+	}
+	assertRemovalArchiveFile := func(file string, expected []byte) {
+		t.Helper()
+		actual, e := os.ReadFile(filepath.Join(archive, "state", file))
+		if e != nil || !bytes.Equal(actual, expected) {
+			t.Fatal("archived removal evidence changed", file, e)
+		}
+	}
+	parent, e := os.Open(f.base)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if old, e := openRemovalIntentAt(parent, 0, identity, f.intent.fence.DesktopRecordSHA256); e == nil {
+		old.Close()
+		t.Fatal("archived removal intent still opens through the canonical path")
+	}
+	parent, e = os.Open(f.base)
+	if e != nil {
+		t.Fatal(e)
+	}
+	s, e := beginDeploymentMode(parent, 0, nil, false)
+	if e != nil {
+		t.Fatal("ordinary deployment writer did not reopen after handoff", e)
+	}
+	defer s.Close()
+	if !bytes.Equal(s.encoded, record) {
+		t.Fatal("ordinary deployment writer did not reopen the preserved record")
+	}
+	older := identity
+	older.Version = "0.1.0"
+	if _, e = s.prepare(older); e == nil {
+		t.Fatal("reopened authority admitted a downgrade")
+	}
+	if entries, e := os.ReadDir(filepath.Join(root, "versions")); e != nil || len(entries) != 0 {
+		t.Fatal("refused downgrade changed the clean versions directory", e)
+	}
+	slot, e := s.prepare(identity)
+	if e != nil || len(s.state.Pending) != 1 || s.state.Pending[0].Slot != slot {
+		t.Fatal("ordinary deployment writer could not prepare the same version", e)
+	}
+	assertRemovalArchiveFile(deploymentRecord, record)
+	assertRemovalArchiveFile(removalJournalName, oldJournal)
+	assertRemovalArchiveFile(removalPlanName, oldPlan)
 }
