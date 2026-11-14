@@ -4,7 +4,7 @@ $source=Join-Path $PSScriptRoot 'test-windows-installer-reboot.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Reboot fixture failed parsing'}
-foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootSetupLog','Get-RebootUpgradeArguments','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Read-RebootEvidence','Assert-RebootPath','Assert-RebootPublisher','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootProfileReadable','Assert-RebootInstalledState','Assert-RebootPackageRemoved','Assert-InstalledDetection','Assert-InstalledPublisher')){
+foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootSetupLog','Get-RebootUpgradeArguments','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Read-RebootEvidence','Assert-RebootPath','Open-ApprovedRebootScript','Assert-RebootPublisher','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootProfileReadable','Assert-RebootInstalledState','Assert-RebootPackageRemoved','Assert-InstalledDetection','Assert-InstalledPublisher')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -230,7 +230,7 @@ Assert-Refused {Get-RebootRegistrationFingerprint $null}
 
 # Only the owned, inert fixture tree can reach these path and digest boundaries.
 function Assert-RebootPath([string]$Path){
-    if($Path -cnotin @($tree,$log)){throw 'Unexpected fixture path'}
+    if($Path -cnotin @($tree,$log,$scriptInput)){throw 'Unexpected fixture path'}
 }
 function Get-RebootDigest([string]$Path,[switch]$AllowEmpty){
     if($Path -cnotin @($payload,$notice)){throw 'Unexpected fixture file digest'}
@@ -240,10 +240,27 @@ function Get-RebootDigest([string]$Path,[switch]$AllowEmpty){
 [void][IO.Directory]::CreateDirectory($root)
 $tree=Join-Path $root 'installed'
 $log=Join-Path $root 'downgrade.log'
+$scriptInput=Join-Path $root 'inert-script.ps1'
 $sub=Join-Path $tree 'notices'
 $payload=Join-Path $tree 'accessweaver.exe'
 $notice=Join-Path $sub 'NOTICE.txt'
 try {
+    [IO.File]::WriteAllText($scriptInput,'return 42')
+    $scriptPin=(Get-FileHash -LiteralPath $scriptInput -Algorithm SHA256).Hash
+    Assert-Refused {Open-ApprovedRebootScript $scriptInput ('0'*64)}
+    $held=Open-ApprovedRebootScript $scriptInput $scriptPin
+    try {
+        if([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT){
+            Assert-Refused {$writer=[IO.File]::OpenWrite($scriptInput);$writer.Dispose()}
+            Assert-Refused {[IO.File]::Move($scriptInput,$log)}
+        }
+        if((& $scriptInput) -ne 42 -or (Get-FileHash -LiteralPath $scriptInput -Algorithm SHA256).Hash -cne $scriptPin){
+            throw 'The approved script could not be reopened for execution'
+        }
+    } finally {$held.Dispose()}
+    [IO.File]::WriteAllText($scriptInput,'changed bytes')
+    Assert-Refused {Open-ApprovedRebootScript $scriptInput $scriptPin}
+    [IO.File]::Delete($scriptInput)
     Assert-RebootPackageRemoved $tree
     $policy='A newer AccessWeaver version is installed. Use a current or newer installer. This installer will not downgrade it.'
     [IO.File]::WriteAllText($log,"2026-11-13 12:34:56.789   $policy")
@@ -290,6 +307,7 @@ try {
     [IO.Directory]::Delete($sub)
     Assert-RebootPackageRemoved $tree
 } finally {
+    [IO.File]::Delete($scriptInput)
     [IO.File]::Delete($log)
     if([IO.File]::Exists($payload)){[IO.File]::Delete($payload)}
     if([IO.Directory]::Exists($sub)){[IO.File]::Delete($notice);[IO.Directory]::Delete($sub)}
