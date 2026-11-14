@@ -2307,9 +2307,24 @@ function Assert-ConfiguredDNSDohPolicy([object[]]$Providers,[string]$FailureMess
         if(-not (Test-DNSDohEntriesEqual $entry @($provider))){throw $FailureMessage}
     }
 }
+function Get-DNSCryptAdapterIdentities([object[]]$Adapters) {
+    $identities=[Collections.Generic.Dictionary[uint32,guid]]::new()
+    $seen=[Collections.Generic.HashSet[guid]]::new()
+    foreach($adapter in $Adapters){
+        $index=[uint32]0;$guid=[guid]::Empty
+        if(-not [uint32]::TryParse([string]$adapter.ifIndex,[ref]$index) -or $index -eq 0 -or
+           -not [guid]::TryParse([string]$adapter.InterfaceGuid,[ref]$guid) -or $guid -eq [guid]::Empty -or
+           $identities.ContainsKey($index) -or -not $seen.Add($guid)){
+            throw 'DNSCrypt dependency inspection found an invalid or ambiguous adapter identity'
+        }
+        $identities.Add($index,$guid)
+    }
+    return ,$identities
+}
 function Test-DNSCryptListenerNeeded([object[]]$Records) {
     try {
         $inventory=@(Get-NetAdapter -IncludeHidden -ErrorAction Stop)
+        $identities=Get-DNSCryptAdapterIdentities $inventory
         $clients=@(Read-DNSClientInventory)
         if(-not $inventory.Count -or -not $clients.Count){return $true}
         # Down and excluded interfaces can still depend on the listener.
@@ -2342,6 +2357,13 @@ function Test-DNSCryptListenerNeeded([object[]]$Records) {
                     if($original -contains '127.0.0.1' -or $original -contains '::1'){return $true}
                 }
             }
+        }
+        # A DNS client row can refer to a different adapter after index reuse.
+        # Verify the complete identity set after checking the stored overrides.
+        $observed=Get-DNSCryptAdapterIdentities @(Get-NetAdapter -IncludeHidden -ErrorAction Stop)
+        if($observed.Count -ne $identities.Count){return $true}
+        foreach($index in $identities.Keys){
+            if(-not $observed.ContainsKey($index) -or $observed[$index] -ne $identities[$index]){return $true}
         }
     } catch {
         return $true
