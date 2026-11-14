@@ -10,7 +10,7 @@ $finalizerSHA=(Get-FileHash -LiteralPath $finalizerSource -Algorithm SHA256).Has
 $finalizerTokens=$null;$finalizerErrors=$null
 $finalizerAst=[Management.Automation.Language.Parser]::ParseFile($finalizerSource,[ref]$finalizerTokens,[ref]$finalizerErrors)
 if($finalizerErrors.Count){throw 'Finalizer source did not parse'}
-$finalizerFunctions=@('Under','Assert-WorkflowUninstallACL','Get-WorkflowUninstallPath','Discover','Assert-NoPendingWorkflowInstallation','Open-WorkflowUninstallBinding','Invoke-WorkflowUninstall','Invoke-WorkflowDeferredUninstaller','Complete-WorkflowFinalization','Assert-WorkflowResultDepth','Assert-WorkflowResultToken','Get-WorkflowResultFailureCode','Throw-WorkflowResultFailure','ConvertTo-WorkflowResultBytes','New-WorkflowResultStream','Write-WorkflowResultStream','Move-WorkflowResultFile','Write-WorkflowResultBytes','New-WorkflowResultFailureReport','Publish-WorkflowResult')
+$finalizerFunctions=@('Under','Assert-WorkflowUninstallACL','Get-WorkflowUninstallPath','Discover','Assert-NoPendingWorkflowInstallation','Open-WorkflowUninstallBinding','Close-WorkflowUninstallBinding','Invoke-WorkflowUninstall','Invoke-WorkflowDeferredUninstaller','Complete-WorkflowFinalization','Assert-WorkflowResultDepth','Assert-WorkflowResultToken','Get-WorkflowResultFailureCode','Throw-WorkflowResultFailure','ConvertTo-WorkflowResultBytes','New-WorkflowResultStream','Write-WorkflowResultStream','Move-WorkflowResultFile','Write-WorkflowResultBytes','New-WorkflowResultFailureReport','Publish-WorkflowResult')
 foreach($name in $finalizerFunctions){
     $nodes=@($finalizerAst.EndBlock.Statements|Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
     if($nodes.Count -ne 1){throw 'Required finalizer source function unavailable'}
@@ -82,7 +82,7 @@ function Assert-Finalizer([bool]$Value,[string]$Message){if(-not $Value){throw $
     }
 
     $realOpenBinding=(Get-Command Open-WorkflowUninstallBinding).ScriptBlock
-    $state=@{launches=0;restores=0;stream=$null;binding=$null;failOpen=$false;failLaunch=$false;
+    $state=@{launches=0;restores=0;stream=$null;dataStream=$null;binding=$null;failOpen=$false;failLaunch=$false;
         busy=$false;held=$false;failRestore=$false;installerRecovery='clear';registrationReads=0;setupActive=$false;setupLate=$false}
     function Enter-WorkflowUninstallLifecycle {
         if($state.busy){throw 'Inert lifecycle contention'}
@@ -108,18 +108,20 @@ function Assert-Finalizer([bool]$Value,[string]$Message){if(-not $Value){throw $
         $result=$state.binding.Clone()
         $state.stream=[IO.MemoryStream]::new()
         $result.stream=$state.stream
+        $state.dataStream=[IO.MemoryStream]::new()
+        $result.dataStream=$state.dataStream
         return $result
     }
     function Start-Process {
         param($FilePath,$WorkingDirectory,$ArgumentList,$WindowStyle)
         Assert-Finalizer ($FilePath -ceq $uninstaller -and $WorkingDirectory -ceq $installed -and
             $WindowStyle -ceq 'Hidden' -and ($ArgumentList -join ',') -ceq '/VERYSILENT,/SUPPRESSMSGBOXES,/NORESTART' -and
-            $state.stream.CanRead) 'Deferred launch lost its fixed command or executable guard'
+            $state.stream.CanRead -and $state.dataStream.CanRead) 'Deferred launch lost its fixed command or uninstall file guards'
         $state.launches++
         if($state.failLaunch){throw 'Inert launch failure'}
     }
     function Remove-All {
-        Assert-Finalizer ($null -eq $state.stream -or -not $state.stream.CanRead) 'Initial executable guard was not closed before restoration'
+        Assert-Finalizer ($null -eq $state.stream -or (-not $state.stream.CanRead -and -not $state.dataStream.CanRead)) 'Initial uninstall file guards were not closed before restoration'
         Assert-Finalizer $state.held 'Uninstall restoration ran outside the lifecycle lock'
         if($state.failRestore){throw 'Inert cleanup failure'}
         $state.restores++
@@ -140,12 +142,12 @@ function Assert-Finalizer([bool]$Value,[string]$Message){if(-not $Value){throw $
         try {$null=Invoke-WorkflowUninstall}catch{$failed=$true}
         Assert-Finalizer ($failed -and $state.restores -eq 1) 'Failed initial registration inspection allowed restoration'
         $state.failOpen=$false
-        $state.binding=@{path=$uninstaller;sha256=('a'*64);registration=$approved}
+        $state.binding=@{path=$uninstaller;sha256=('a'*64);dataSHA256=('c'*64);registration=$approved}
         $null=Invoke-WorkflowUninstall
         $binding=$script:pendingUninstaller
-        Assert-Finalizer ($null -ne $binding -and -not $binding.ContainsKey('stream')) 'Deferred state retained a live file handle'
+        Assert-Finalizer ($null -ne $binding -and -not $binding.ContainsKey('stream') -and -not $binding.ContainsKey('dataStream')) 'Deferred state retained a live file handle'
         Invoke-WorkflowDeferredUninstaller $binding
-        Assert-Finalizer ($state.launches -eq 1 -and -not $state.stream.CanRead) 'Successful launch did not release the executable guard'
+        Assert-Finalizer ($state.launches -eq 1 -and -not $state.stream.CanRead -and -not $state.dataStream.CanRead) 'Successful launch did not release the executable guard'
         foreach($observed in @('pending','unavailable')){
             $state.installerRecovery=$observed
             $refusal=if($observed -ceq 'pending'){'An AccessWeaver installation is incomplete.*'}
@@ -166,18 +168,19 @@ function Assert-Finalizer([bool]$Value,[string]$Message){if(-not $Value){throw $
         $state.setupLate=$true
         $failed=$false
         try {Invoke-WorkflowDeferredUninstaller $binding}catch{$failed=$_.Exception.Message -clike 'AccessWeaver Setup is active*'}
-        Assert-Finalizer ($failed -and $state.launches -eq 1 -and -not $state.stream.CanRead) 'Setup started during inspection without preventing launch and closing the guard'
+        Assert-Finalizer ($failed -and $state.launches -eq 1 -and -not $state.stream.CanRead -and -not $state.dataStream.CanRead) 'Setup started during inspection without preventing launch and closing the guard'
         $state.setupLate=$false
-        foreach($change in @('digest','registration','launch-error')){
+        foreach($change in @('digest','data-digest','registration','launch-error')){
             $state.binding=$binding.Clone()
             switch($change){
                 'digest' {$state.binding.sha256=('b'*64)}
+                'data-digest' {$state.binding.dataSHA256=('d'*64)}
                 'registration' {$state.binding.registration=$approved.Clone();$state.binding.registration.DisplayVersion='1.2.4'}
                 'launch-error' {$state.failLaunch=$true}
             }
             $failed=$false
             try {Invoke-WorkflowDeferredUninstaller $binding}catch{$failed=$true}
-            Assert-Finalizer ($failed -and -not $state.stream.CanRead) 'Changed identity or failed launch lost its failure or leaked a file guard'
+            Assert-Finalizer ($failed -and -not $state.stream.CanRead -and -not $state.dataStream.CanRead) 'Changed identity or failed launch lost its failure or leaked a file guard'
         }
         Assert-Finalizer ($state.launches -eq 2) 'An identity mismatch reached the process launcher'
     } finally {$script:pendingUninstaller=$null}

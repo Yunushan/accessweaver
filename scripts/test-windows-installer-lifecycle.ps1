@@ -20,7 +20,7 @@ $workflow=Join-Path $project 'internal\workflow\windows.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($workflow,[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Product workflow parse failed'}
 foreach($name in @('No-Reparse','Quote-Arg','Native-Argument','New-ToolCapture','Receive-ToolCapture','Wait-ToolCapture','Stop-ToolTreeWithHelper','Stop-ToolTree','Run-Tool','Native','Get-DriverServiceControllers','Get-ServiceInspection','Under','Get-PEMachine',
-        'Read-WorkflowUninstallRegistration','Get-WorkflowUninstallPath','Assert-WorkflowUninstallACL','Assert-WorkflowUninstallProtection','Get-AccessWeaverInstallerRecoveryState','Assert-NoPendingWorkflowInstallation','Assert-NoAccessWeaverSetup','Open-WorkflowUninstallBinding')){
+        'Read-WorkflowUninstallRegistration','Get-WorkflowUninstallPath','Assert-WorkflowUninstallACL','Assert-WorkflowUninstallProtection','Get-AccessWeaverInstallerRecoveryState','Assert-NoPendingWorkflowInstallation','Assert-NoAccessWeaverSetup','Open-WorkflowUninstallBinding','Close-WorkflowUninstallBinding')){
     $nodes=@($ast.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
     if($nodes.Count -ne 1){throw 'Expected one fixed product process/inspection helper'}
     . ([scriptblock]::Create($nodes[0].Extent.Text))
@@ -546,6 +546,12 @@ try {
     try {
         $output=@(& $detector -Version $builds[0].version -Architecture $Architecture -PayloadSHA256 $builds[0].payloadSha256 -UninstallerSHA256 $uninstallerDigest -InstallDirectory $install 2>&1)
         Require ($LASTEXITCODE -eq 1 -and $output.Count -eq 0 -and $null -eq (Get-PendingInstallFixtureValue)) 'Managed detection accepted missing uninstall data on a completed installation'
+        $bindingRefused=$false
+        try {
+            $brokenBinding=Open-WorkflowUninstallBinding $Architecture
+            if($brokenBinding){Close-WorkflowUninstallBinding $brokenBinding}
+        } catch {$bindingRefused=$true}
+        Require $bindingRefused 'Controller uninstall inspection accepted a missing uninstall data file'
     } finally {[IO.File]::Move($dataBackup,$uninstallData)}
     $output=@(& $detector -Version $builds[0].version -Architecture $Architecture -PayloadSHA256 $builds[0].payloadSha256 -UninstallerSHA256 $uninstallerDigest -InstallDirectory $install 2>&1)
     Require ($LASTEXITCODE -eq 0 -and $output.Count -eq 1 -and $output[0] -ceq 'AccessWeaver detected') 'Managed detection did not recognize the installation after uninstall data was restored'
@@ -864,7 +870,7 @@ function AWFixtureTerminateProcess(Process: LongWord; ExitCode: LongWord): Integ
     $controllerRefused=$false
     try {
         $pendingBinding=Open-WorkflowUninstallBinding $Architecture
-        if($pendingBinding){$pendingBinding.stream.Dispose()}
+        if($pendingBinding){Close-WorkflowUninstallBinding $pendingBinding}
     } catch {
         $controllerRefused=$_.Exception.Message -ceq 'An AccessWeaver installation is incomplete. Retry the approved installer before uninstalling.'
     }
@@ -899,7 +905,7 @@ function AWFixtureTerminateProcess(Process: LongWord; ExitCode: LongWord): Integ
             $controllerRefused=$false
             try {
                 $deniedBinding=Open-WorkflowUninstallBinding $Architecture
-                if($deniedBinding){$deniedBinding.stream.Dispose()}
+                if($deniedBinding){Close-WorkflowUninstallBinding $deniedBinding}
             } catch {
                 $controllerRefused=$_.Exception.Message -ceq 'AccessWeaver Setup recovery state could not be read. Ask an administrator to verify it before uninstalling.'
             }
@@ -1406,8 +1412,8 @@ function AWFixtureTerminateProcess(Process: LongWord; ExitCode: LongWord): Integ
     $binding=Open-WorkflowUninstallBinding $Architecture
     Require ($null -ne $binding) 'Installed product registration could not be resolved for workflow uninstall'
     try {
-        Require ($binding.path -ieq $uninstaller -and $binding.sha256 -ieq $uninstallerHash) 'Workflow uninstall did not bind the actual registered uninstaller'
-    } finally {$binding.stream.Dispose()}
+        Require ($binding.path -ieq $uninstaller -and $binding.sha256 -ieq $uninstallerHash -and $binding.dataSHA256 -ieq (Digest $uninstallData)) 'Workflow uninstall did not bind the actual registered uninstaller'
+    } finally {Close-WorkflowUninstallBinding $binding}
     $request=Join-Path $install 'uninstall-system.json';No-Reparse $request
     # The child must refuse through the real workflow when its mutex is busy.
     # A different valid JSON action must not select the elevated operation.

@@ -4948,33 +4948,46 @@ function Open-WorkflowUninstallBinding([string]$Architecture=$inputData.nativeAr
         Assert-WorkflowUninstallProtection $parent
         if($parent -ieq $programFiles){break}
     }
+    $dataPath=[IO.Path]::ChangeExtension($path,'.dat')
     Assert-WorkflowUninstallProtection $payload
     Assert-WorkflowUninstallProtection $path
+    Assert-WorkflowUninstallProtection $dataPath
     $machine=switch($Architecture){'amd64' {0x8664} 'arm64' {0xaa64} default {throw 'Native Windows architecture is unavailable'}}
     if((Get-PEMachine $payload) -ne $machine -or (Get-PEMachine $path) -ne 0x014c){
         throw 'Registered AccessWeaver payload or uninstaller architecture could not be verified'
     }
     $stream=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    $dataStream=$null
     try {
-        if($stream.Length -le 0 -or $stream.Length -gt 512MB){throw 'Registered AccessWeaver uninstaller exceeds the inspection limit'}
-        $digest=(Get-FileHash -InputStream $stream -Algorithm SHA256).Hash
+        $dataStream=[IO.File]::Open($dataPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        if($stream.Length -le 0 -or $stream.Length -gt 512MB -or
+           $dataStream.Length -le 0 -or $dataStream.Length -gt 512MB){
+            throw 'Registered AccessWeaver uninstaller or uninstall data exceeds the inspection limit'
+        }
+        $digest=(Get-FileHash -InputStream $stream -Algorithm SHA256 -ErrorAction Stop).Hash
+        $dataDigest=(Get-FileHash -InputStream $dataStream -Algorithm SHA256 -ErrorAction Stop).Hash
         $confirmed=Read-WorkflowUninstallRegistration
         foreach($name in $registration.Keys){
             if($null -eq $confirmed -or $confirmed[$name] -cne $registration[$name]){
                 throw 'AccessWeaver uninstall registration changed during inspection'
             }
         }
-        return @{path=$path;sha256=$digest;registration=$registration;stream=$stream}
+        return @{path=$path;sha256=$digest;dataSHA256=$dataDigest;registration=$registration;stream=$stream;dataStream=$dataStream}
     } catch {
-        $stream.Dispose()
+        try {if($null -ne $dataStream){$dataStream.Dispose()}}
+        finally {$stream.Dispose()}
         throw
     }
+}
+function Close-WorkflowUninstallBinding($Binding) {
+    try {$Binding.dataStream.Dispose()}
+    finally {$Binding.stream.Dispose()}
 }
 function Invoke-WorkflowDeferredUninstaller($Binding) {
     $current=Open-WorkflowUninstallBinding
     if($null -eq $current){throw 'AccessWeaver uninstall registration disappeared before handoff'}
     try {
-        if($current.path -cne $Binding.path -or $current.sha256 -cne $Binding.sha256){
+        if($current.path -cne $Binding.path -or $current.sha256 -cne $Binding.sha256 -or $current.dataSHA256 -cne $Binding.dataSHA256){
             throw 'Registered AccessWeaver uninstaller changed before handoff'
         }
         foreach($name in $Binding.registration.Keys){
@@ -4985,17 +4998,18 @@ function Invoke-WorkflowDeferredUninstaller($Binding) {
         # The file inspection can overlap a new Setup or recovery marker.
         Assert-NoPendingWorkflowInstallation
         Assert-NoAccessWeaverSetup
-        # Keep the confirmed executable open through detached process creation.
+        # Keep the verified uninstaller and data open through detached process creation.
         Start-Process -FilePath $current.path -WorkingDirectory ([IO.Path]::GetDirectoryName($current.path)) -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -WindowStyle Hidden
-    } finally {$current.stream.Dispose()}
+    } finally {Close-WorkflowUninstallBinding $current}
 }
 function Invoke-WorkflowUninstall {
     $lifecycle=Enter-WorkflowUninstallLifecycle
     try {
         $binding=Open-WorkflowUninstallBinding
         if($null -ne $binding){
-            $binding.stream.Dispose()
+            Close-WorkflowUninstallBinding $binding
             $binding.Remove('stream')
+            $binding.Remove('dataStream')
         }
         Assert-NoPendingWorkflowInstallation
         Assert-NoAccessWeaverSetup
