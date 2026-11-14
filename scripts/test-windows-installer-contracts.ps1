@@ -109,7 +109,7 @@ $uninstallRegistration=[regex]::Match($installerSource,'(?ms)^function AWUninsta
 Assert ($uninstallRegistration -cmatch "AWOrdinal\(Version, '\{#ReleaseVersion\}'\) <> 0") 'Uninstall must match the exact release version in the machine registration'
 Assert ($uninstallRegistration.Contains("AWReadRegistration(`$0100, True, ExpandConstant('{uninstallexe}'),")) 'Native uninstall must verify that both machine registration commands bind its original executable'
 $completion=[regex]::Match($installerSource,'(?ms)^function AWVerifyCompletedInstall\(.*?^end;').Value
-$verifiedFile=[regex]::Match($installerSource,'(?ms)^function AWVerifyInstalledFile\(.*?^end;').Value
+$verifiedFile=[regex]::Match($installerSource,'(?ms)^function AWVerifyInstalledFileDigests\(.*?^end;').Value
 $retirement=[regex]::Match($installerSource,'(?ms)^procedure AWCompleteInstallation\(.*?^end;').Value
 $directoryLock=[regex]::Match($installerSource,'(?ms)^function AWLockInstallationDirectory\(.*?^end;').Value
 Assert ($copy -cmatch "(?s)ssInstall.*AWRegistrationPreflight\(Destination\).*RegWriteStringValue.*AWFlushLifecycleRecord.*AWPendingInstallMatches\(Destination\).*ssPostInstall.*ssDone.*AWCompleteInstallation") 'Setup must recheck registration and bind the pending record before copy'
@@ -142,6 +142,9 @@ Assert ($prepare.Contains("AWApprovedUpgradePreflight(ExpandConstant('{app}'), A
     $copy -cmatch '(?s)AWApprovedUpgradePreflight\(Destination, AWPendingApprovalPin\).*RaiseException\(Failure\).*RecordValue.*RegWriteStringValue') 'Managed upgrades must recheck the baseline before pending record publication'
 Assert ($approvedUpgrade -cmatch '(?s)ParamCount.*if Present then Exit.*AWCompare.*Ordering <= 0.*AWLockInstallationDirectory.*AWVerifyInstalledFile.*PayloadPin.*AWVerifyInstalledFile.*SBOMPin.*AWVerifyInstalledFile.*BuildPin.*AWOrdinal\(Version, Installed\)') 'Managed upgrade baseline must verify one strict prior version and all three installed pins'
 Assert ($approvedUpgrade -cmatch '(?s)\{#TargetArch\}\|\{#PayloadDigest\}\|\{#PayloadSBOMDigest\}\|\{#BuildInfoDigest\}.*GetSHA256OfString.*PendingPin = ApprovalPin.*AWOrdinal\(PendingVersion.*AWIsInstallationDirectory\(Destination, PendingDirectory\).*resumed from its pending installation record') 'Managed retry must match the committed approval, release contents and destination'
+$resumeFile=[regex]::Match($installerSource,'(?ms)^function AWVerifyUpgradeResumeFile\(.*?^end;').Value
+Assert ($resumeFile -cmatch '(?s)AWPathAttributes.*Code = 2.*Code = 3.*AWVerifyInstalledFileDigests\(Path, BeforeDigest, AfterDigest, -MaximumSize, True, Held\)') 'Managed retry must admit only a missing file or verified old or new bytes'
+Assert ($approvedUpgrade -cmatch '(?s)PendingPin = ApprovalPin.*AWVerifyUpgradeResumeFile.*PayloadPin.*AWVerifyUpgradeResumeFile.*SBOMPin.*AWVerifyUpgradeResumeFile.*BuildPin.*AWReadRegistration.*if Found32 then Exit.*AWOrdinal\(Version, Installed\).*AWOrdinal.*resumed from its pending installation record') 'Managed retry must check all present releases and the registered version before resuming'
 $uninstallStep=[regex]::Match($installerSource,'(?ms)^procedure CurUninstallStepChanged\(CurUninstallStep: TUninstallStep\);.*?^end;').Value
 Assert ($initialize.Contains('AWUninstallPreflight') -and -not $initialize.Contains('AWRunBoundedRestoration')) 'Uninstall initialization must validate without restoring machine state'
 Assert ($uninstallStep -cmatch '(?s)if CurUninstallStep <> usUninstall then Exit;.*Failure := AWUninstallPreflight;.*AWRunBoundedRestoration.*then Exit;.*\bAbort;\s*end;') 'Uninstall must restore only after confirmation and abort deletion on failure'

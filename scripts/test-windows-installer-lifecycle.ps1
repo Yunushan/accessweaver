@@ -715,7 +715,10 @@ end;
     $baselineVersion=$builds[0].version
     $baselinePayload=Digest (Join-Path $install 'accessweaver.exe')
     $baselineSBOM=Digest (Join-Path $install 'SBOM.cdx.json')
-    $baselineBuild=Digest (Join-Path $install 'BUILD-INFO.json')
+    $baselineBuildPath=Join-Path $install 'BUILD-INFO.json'
+    Require ((Get-Item -LiteralPath $baselineBuildPath).Length -le 64KB) 'Prior build metadata exceeds its retention bound'
+    $baselineBuildBytes=[IO.File]::ReadAllBytes($baselineBuildPath)
+    $baselineBuild=Digest $baselineBuildPath
     $baselineArgument="/AWUpgradeFrom=$baselineVersion,$baselinePayload,$baselineSBOM,$baselineBuild"
     $beforeBaselineRefusal=Installed-TreeFingerprint
     $beforeRegistrationRefusal=Registration-Fingerprint
@@ -801,7 +804,25 @@ function AWFixtureTerminateProcess(Process: LongWord; ExitCode: LongWord): Integ
             (Registration-Fingerprint) -ceq $registrationBeforeRetry -and (State-Snapshot) -ceq $beforeMachineRefusal) 'Refused managed retry changed installed state'
         Assert-UserState
     }
+    $stage='managed-upgrade-unknown-file-refusal'
+    [IO.File]::WriteAllText($baselineBuildPath,'unapproved recovery fixture bytes')
+    $changedBuild=Digest $baselineBuildPath
+    $changedTree=Installed-TreeFingerprint
+    $changedLog=Join-Path $capsule 'managed-upgrade-unknown-file.log'
+    $null=Native-Record $second ($arguments+@($baselineArgument,('/LOG='+$changedLog))) @(7)
+    No-Reparse $changedLog
+    $logSize=(Get-Item -LiteralPath $changedLog -ErrorAction Stop).Length
+    Require ($logSize -gt 0 -and $logSize -le 4MB -and
+        [IO.File]::ReadAllText($changedLog).Contains('The interrupted AccessWeaver upgrade contains files or registration outside the approved releases.')) 'Managed retry did not refuse unexpected bytes'
+    Require ((Digest $baselineBuildPath) -ceq $changedBuild -and (Installed-TreeFingerprint) -ceq $changedTree -and
+        (Get-PendingInstallFixtureValue) -ceq $managedPending -and (Registration-Fingerprint) -ceq $registrationBeforeRetry) 'Refused recovery altered unexpected bytes or retired its record'
+    Assert-UserState
     $stage='managed-upgrade-matching-retry'
+    # Exercise the old metadata, new executable and a missing SBOM in one retry.
+    [IO.File]::WriteAllBytes($baselineBuildPath,$baselineBuildBytes)
+    Require ((Digest $baselineBuildPath) -ceq $baselineBuild -and
+        (Digest (Join-Path $install 'accessweaver.exe')) -ceq $builds[1].payloadSha256) 'Mixed recovery fixture does not match its approved old and new files'
+    [IO.File]::Delete((Join-Path $install 'SBOM.cdx.json'))
     $approvedBaselineLog=Join-Path $capsule 'managed-upgrade-baseline-retry.log'
     $upgraded=Native-Record $second ($arguments+@($baselineArgument,('/LOG='+$approvedBaselineLog)))
     Assert-SetupCompletionReadback $approvedBaselineLog

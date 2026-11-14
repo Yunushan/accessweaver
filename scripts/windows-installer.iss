@@ -250,9 +250,9 @@ begin
   Result := True;
 end;
 
-function AWVerifyInstalledFile(const Path, Digest: String; Size: Int64;
+function AWVerifyInstalledFileDigests(const Path, Digest, AlternateDigest: String; Size: Int64;
   SingleLink: Boolean; var Held: LongWord): Boolean;
-var Info: AWFileInfo; Payload: THandleStream;
+var Info: AWFileInfo; Payload: THandleStream; Actual: String;
 begin
   Result := False;
   { GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING, OPEN_REPARSE_POINT. }
@@ -266,11 +266,31 @@ begin
     if Size >= 0 then begin
       if Payload.Size <> Size then Exit;
     end else if (Payload.Size <= 0) or (Payload.Size > -Size) then Exit;
-    Result := CompareText(GetSHA256OfStream(Payload), Digest) = 0;
+    Actual := GetSHA256OfStream(Payload);
+    Result := (CompareText(Actual, Digest) = 0) or
+      ((AlternateDigest <> '') and (CompareText(Actual, AlternateDigest) = 0));
   finally
     { THandleStream borrows the native handle. The caller closes it. }
     Payload.Free;
   end;
+end;
+
+function AWVerifyInstalledFile(const Path, Digest: String; Size: Int64;
+  SingleLink: Boolean; var Held: LongWord): Boolean;
+begin
+  Result := AWVerifyInstalledFileDigests(Path, Digest, '', Size, SingleLink, Held);
+end;
+
+function AWVerifyUpgradeResumeFile(const Path, BeforeDigest, AfterDigest: String;
+  MaximumSize: Int64; var Held: LongWord): Boolean;
+var Attributes, Code: LongWord;
+begin
+  Attributes := AWPathAttributes(Path);
+  if Attributes = $FFFFFFFF then begin
+    Code := DLLGetLastError;
+    Result := (Code = 2) or (Code = 3);
+  end else
+    Result := AWVerifyInstalledFileDigests(Path, BeforeDigest, AfterDigest, -MaximumSize, True, Held);
 end;
 
 function AWOpenUninstallSubject(const Path: String; var Held: LongWord): Boolean;
@@ -413,8 +433,30 @@ begin
     Result := 'Finish the incomplete AccessWeaver managed upgrade with its original approved installer and baseline argument.';
     if (PendingPin = ApprovalPin) and (AWOrdinal(PendingVersion, '{#ReleaseVersion}') = 0) and
         AWIsInstallationDirectory(Destination, PendingDirectory) then begin
-      Result := '';
-      Log('AccessWeaver approved upgrade resumed from its pending installation record.');
+      Result := 'The interrupted AccessWeaver upgrade contains files or registration outside the approved releases.';
+      Executable := $FFFFFFFF; BuildInfo := $FFFFFFFF; SBOM := $FFFFFFFF;
+      try
+        try
+          if not AWLockInstallationDirectory(Destination, Held) then Exit;
+          if not AWVerifyUpgradeResumeFile(Destination + '\accessweaver.exe', PayloadPin, '{#PayloadDigest}', 134217728, Executable) then Exit;
+          if not AWVerifyUpgradeResumeFile(Destination + '\SBOM.cdx.json', SBOMPin, '{#PayloadSBOMDigest}', 4194304, SBOM) then Exit;
+          if not AWVerifyUpgradeResumeFile(Destination + '\BUILD-INFO.json', BuildPin, '{#BuildInfoDigest}', 65536, BuildInfo) then Exit;
+          if AWReadRegistration($0100, True, '', Found64, Installed, Location) <> '' then Exit;
+          if AWReadRegistration($0200, False, '', Found32, OtherVersion, OtherLocation) <> '' then Exit;
+          if Found32 then Exit;
+          if Found64 and (not AWIsInstallationDirectory(Destination, Location) or
+             ((AWOrdinal(Version, Installed) <> 0) and (AWOrdinal('{#ReleaseVersion}', Installed) <> 0))) then Exit;
+          Result := '';
+          Log('AccessWeaver approved upgrade resumed from its pending installation record.');
+        except
+          { Retain the pending installation record if its files cannot be verified. }
+        end;
+      finally
+        if SBOM <> $FFFFFFFF then AWCloseNativeHandle(SBOM);
+        if BuildInfo <> $FFFFFFFF then AWCloseNativeHandle(BuildInfo);
+        if Executable <> $FFFFFFFF then AWCloseNativeHandle(Executable);
+        for I := GetArrayLength(Held) - 1 downto 0 do AWCloseNativeHandle(Held[I]);
+      end;
     end;
     Exit;
   end;
