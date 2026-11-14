@@ -247,6 +247,23 @@ class SetupMarkerReplacementTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 validate_setup_marker_replacement({**record, key: value})
 
+    def test_requires_native_subject_guard_observation_in_schema_33(self):
+        record = {
+            "exitCode": 1603, "elapsedMilliseconds": 123, "deadlineMilliseconds": 180000,
+            "replacementPreserved": True, "completionRefusalLogged": True,
+            "approvedPayloadVerified": True, "unrelatedStatePreserved": True,
+        }
+        with self.assertRaises(ValueError):
+            validate_setup_marker_replacement(record, check_subject_guards=True)
+        with self.assertRaises(ValueError):
+            validate_setup_marker_replacement({**record, "subjectAndDirectoryGuardsVerified": False},
+                                              check_subject_guards=True)
+        self.assertEqual(
+            validate_setup_marker_replacement({**record, "subjectAndDirectoryGuardsVerified": True},
+                                              check_subject_guards=True),
+            {"setupMarkerReplacementRefusalVerified": True, "setupCompletionSubjectAndDirectoryGuardsVerified": True},
+        )
+
 
 class PostRestorationRefusalTests(unittest.TestCase):
     def test_requires_completed_restoration_and_refused_deletion(self):

@@ -73,7 +73,6 @@ Name: "{group}\AccessWeaver"; Filename: "{app}\accessweaver.exe"; Parameters: "u
 const
   AWLifecycleRegistry = 'SOFTWARE\AccessWeaver\Installer';
   AWPendingInstall = 'PendingInstall';
-  AWOpenReadDenyWrite = $0020; { fmOpenRead or fmShareDenyWrite }
 
 var AWInstallFinished, AWPendingRetirementFailed: Boolean;
 
@@ -192,48 +191,6 @@ begin
   Result := '';
 end;
 
-function AWOpenVerifiedInstalledFile(const Path, Digest: String; Size: Int64): TFileStream;
-var Attributes: LongWord; Payload: TFileStream;
-begin
-  Result := nil;
-  Attributes := AWPathAttributes(Path);
-  if (Attributes = $FFFFFFFF) or ((Attributes and ($00000400 or $00000010)) <> 0) then Exit;
-  Payload := TFileStream.Create(Path, AWOpenReadDenyWrite);
-  try
-    if Payload.Size <> Size then Exit;
-    if CompareText(GetSHA256OfStream(Payload), Digest) <> 0 then Exit;
-    Result := Payload;
-  finally
-    if Result = nil then Payload.Free;
-  end;
-end;
-
-function AWInstalledFileMatches(const Directory, Name, Digest: String; Size: Int64): Boolean;
-var Payload: TFileStream;
-begin
-  Payload := AWOpenVerifiedInstalledFile(Directory + '\' + Name, Digest, Size);
-  Result := Payload <> nil;
-  if Result then Payload.Free;
-end;
-
-function AWVerifyCompletedInstall(const Destination: String): Boolean;
-var Found64, Found32: Boolean; Version, Location, Version32, Location32: String;
-begin
-  Result := False;
-  try
-    if AWInstallationPathPreflight(Destination, False) <> '' then Exit;
-    if AWReadRegistration($0100, True, Found64, Version, Location) <> '' then Exit;
-    if AWReadRegistration($0200, False, Found32, Version32, Location32) <> '' then Exit;
-    if not Found64 or Found32 or (Version <> '{#ReleaseVersion}') or
-      not AWIsInstallationDirectory(Destination, Location) then Exit;
-    if not AWInstalledFileMatches(Destination, 'accessweaver.exe', '{#PayloadDigest}', {#PayloadBytes}) then Exit;
-    if not AWInstalledFileMatches(Destination, 'BUILD-INFO.json', '{#BuildInfoDigest}', {#BuildInfoBytes}) then Exit;
-    Result := AWInstalledFileMatches(Destination, 'SBOM.cdx.json', '{#PayloadSBOMDigest}', {#PayloadSBOMBytes});
-  except
-    Result := False;
-  end;
-end;
-
 function AWOpenReplaceProbe(const Path: String; Access, Sharing, Security,
   Disposition, Flags, Template: LongWord): LongWord;
   external 'CreateFileW@kernel32.dll stdcall';
@@ -248,7 +205,7 @@ type
 function AWGetFileInfo(Handle: LongWord; var Info: AWFileInfo): Integer;
   external 'GetFileInformationByHandle@kernel32.dll stdcall';
 
-function AWLockRestorationDirectory(const Directory: String; var Held: AWDirectoryHandles): Boolean;
+function AWLockInstallationDirectory(const Directory: String; var Held: AWDirectoryHandles): Boolean;
 var Target: String; I, Count: Integer; Handle: LongWord; Info: AWFileInfo;
 begin
   Result := False;
@@ -257,8 +214,9 @@ begin
   for I := 4 to Length(Target) do begin
     if Target[I] = '\' then begin
       { Open each component in order, with OPEN_REPARSE_POINT and
-        BACKUP_SEMANTICS. Share reads and writes but deny directory rename. }
-      Handle := AWOpenReplaceProbe(Copy(Target, 1, I - 1), $00000080, 3, 0, 3, $02200000, 0);
+        BACKUP_SEMANTICS. Request FILE_LIST_DIRECTORY so sharing checks
+        apply, and withhold delete sharing to prevent rename. }
+      Handle := AWOpenReplaceProbe(Copy(Target, 1, I - 1), 1, 3, 0, 3, $02200000, 0);
       if Handle = $FFFFFFFF then Exit;
       Count := GetArrayLength(Held);
       SetArrayLength(Held, Count + 1);
@@ -268,6 +226,42 @@ begin
     end;
   end;
   Result := True;
+end;
+
+function AWVerifyInstalledFile(const Path, Digest: String; Size: Int64;
+  SingleLink: Boolean; var Held: LongWord): Boolean;
+var Info: AWFileInfo; Payload: THandleStream;
+begin
+  Result := False;
+  { GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING, OPEN_REPARSE_POINT. }
+  Held := AWOpenReplaceProbe(Path, $80000000, 1, 0, 3, $00200000, 0);
+  if Held = $FFFFFFFF then Exit;
+  if AWGetFileInfo(Held, Info) = 0 then Exit;
+  if (Info.Attributes and ($00000400 or $00000010)) <> 0 then Exit;
+  if SingleLink and (Info.Links <> 1) then Exit;
+  Payload := THandleStream.Create(Held);
+  try
+    if Payload.Size <> Size then Exit;
+    Result := CompareText(GetSHA256OfStream(Payload), Digest) = 0;
+  finally
+    { THandleStream borrows the native handle. The caller closes it. }
+    Payload.Free;
+  end;
+end;
+
+function AWVerifyCompletedInstall(const Destination: String; var Held: AWDirectoryHandles;
+  var Executable, BuildInfo, SBOM: LongWord): Boolean;
+var Found64, Found32: Boolean; Version, Location, Version32, Location32: String;
+begin
+  Result := False;
+  if not AWLockInstallationDirectory(Destination, Held) then Exit;
+  if not AWVerifyInstalledFile(Destination + '\accessweaver.exe', '{#PayloadDigest}', {#PayloadBytes}, True, Executable) then Exit;
+  if not AWVerifyInstalledFile(Destination + '\BUILD-INFO.json', '{#BuildInfoDigest}', {#BuildInfoBytes}, False, BuildInfo) then Exit;
+  if not AWVerifyInstalledFile(Destination + '\SBOM.cdx.json', '{#PayloadSBOMDigest}', {#PayloadSBOMBytes}, False, SBOM) then Exit;
+  if AWReadRegistration($0100, True, Found64, Version, Location) <> '' then Exit;
+  if AWReadRegistration($0200, False, Found32, Version32, Location32) <> '' then Exit;
+  Result := Found64 and not Found32 and (Version = '{#ReleaseVersion}') and
+    AWIsInstallationDirectory(Destination, Location);
 end;
 
 function AWCanReplaceInstalledFile(const Path: String): Boolean;
@@ -327,6 +321,37 @@ begin
     Result := 'Upgrade or reinstall AccessWeaver in its registered installation directory.';
 end;
 
+procedure AWCompleteInstallation(const Destination: String);
+var Held: AWDirectoryHandles; Executable, BuildInfo, SBOM: LongWord; I: Integer;
+    Verified: Boolean;
+begin
+  Executable := $FFFFFFFF; BuildInfo := $FFFFFFFF; SBOM := $FFFFFFFF;
+  try
+    try
+      Verified := AWVerifyCompletedInstall(Destination, Held, Executable, BuildInfo, SBOM);
+    except
+      Verified := False;
+    end;
+    AWPendingRetirementFailed := True;
+    if not Verified then
+      Log('AccessWeaver installed payload or registration verification failed. Pending installation record retained.')
+    else if not AWPendingInstallMatches(Destination) then
+      Log('AccessWeaver pending installation record changed or could not be verified. Setup did not clear it.')
+    else if not RegDeleteValue(HKLM64, AWLifecycleRegistry, AWPendingInstall) or not AWFlushLifecycleRecord then
+      Log('Cannot retire the AccessWeaver pending installation record.')
+    else begin
+      AWPendingRetirementFailed := False;
+      Log('AccessWeaver installed payload and registration verified. Pending installation record retired.');
+    end;
+  finally
+    if SBOM <> $FFFFFFFF then AWCloseNativeHandle(SBOM);
+    if BuildInfo <> $FFFFFFFF then AWCloseNativeHandle(BuildInfo);
+    if Executable <> $FFFFFFFF then AWCloseNativeHandle(Executable);
+    for I := GetArrayLength(Held) - 1 downto 0 do
+      AWCloseNativeHandle(Held[I]);
+  end;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var Failure, Destination: String;
 begin
@@ -348,20 +373,8 @@ begin
       RaiseException('Cannot verify the AccessWeaver pending installation record after writing it.');
   end else if CurStep = ssPostInstall then begin
     AWInstallFinished := True;
-  end else if (CurStep = ssDone) and AWInstallFinished then begin
-    Destination := ExpandConstant('{app}');
-    if not AWVerifyCompletedInstall(Destination) then begin
-      AWPendingRetirementFailed := True;
-      Log('AccessWeaver installed payload or registration verification failed. Pending installation record retained.');
-    end else if not AWPendingInstallMatches(Destination) then begin
-      AWPendingRetirementFailed := True;
-      Log('AccessWeaver pending installation record changed or could not be verified. Setup did not clear it.');
-    end else if not RegDeleteValue(HKLM64, AWLifecycleRegistry, AWPendingInstall) or not AWFlushLifecycleRecord then begin
-      AWPendingRetirementFailed := True;
-      Log('Cannot retire the AccessWeaver pending installation record.');
-    end else
-      Log('AccessWeaver installed payload and registration verified. Pending installation record retired.');
-  end;
+  end else if (CurStep = ssDone) and AWInstallFinished then
+    AWCompleteInstallation(ExpandConstant('{app}'));
 end;
 
 function GetCustomSetupExitCode: Integer;
@@ -451,8 +464,8 @@ end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var ResultCode, Controller: LongWord; Failure, Executable, Destination: String;
-    Payload: TFileStream; Held: AWDirectoryHandles; Info: AWFileInfo; I: Integer;
-    Restored, HandlesClosed: Boolean;
+    Held: AWDirectoryHandles; I: Integer;
+    Verified, Restored, HandlesClosed: Boolean;
 begin
   if CurUninstallStep <> usUninstall then Exit;
   { Inno reaches this step after confirmation and app-mutex checks, before
@@ -465,26 +478,18 @@ begin
   end;
   Destination := ExpandConstant('{app}');
   Executable := Destination + '\accessweaver.exe';
-  Payload := nil; Controller := $FFFFFFFF;
+  Controller := $FFFFFFFF;
   Restored := False; HandlesClosed := True;
   Failure := 'Cannot verify the installed AccessWeaver restoration controller. Repair the installation with its approved installer.';
   try
-    if AWLockRestorationDirectory(Destination, Held) then begin
-      { GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING, OPEN_REPARSE_POINT. }
-      Controller := AWOpenReplaceProbe(Executable, $80000000, 1, 0, 3, $00200000, 0);
-      if Controller <> $FFFFFFFF then begin
-        if AWGetFileInfo(Controller, Info) <> 0 then begin
-          if ((Info.Attributes and ($00000400 or $00000010)) = 0) and (Info.Links = 1) then begin
-            try
-              Payload := AWOpenVerifiedInstalledFile(Executable, '{#PayloadDigest}', {#PayloadBytes});
-            except
-              Payload := nil;
-            end;
-          end;
-        end;
-      end;
+    Verified := False;
+    try
+      if AWLockInstallationDirectory(Destination, Held) then
+        Verified := AWVerifyInstalledFile(Executable, '{#PayloadDigest}', {#PayloadBytes}, True, Controller);
+    except
+      Verified := False;
     end;
-    if Payload <> nil then begin
+    if Verified then begin
       Failure := AWUninstallPreflight;
       if Failure = '' then begin
         Log('AccessWeaver system restoration starts at the uninstall step.');
@@ -500,7 +505,6 @@ begin
       end;
     end;
   finally
-    if Payload <> nil then Payload.Free;
     if Controller <> $FFFFFFFF then
       if AWCloseNativeHandle(Controller) = 0 then HandlesClosed := False;
     for I := GetArrayLength(Held) - 1 downto 0 do
