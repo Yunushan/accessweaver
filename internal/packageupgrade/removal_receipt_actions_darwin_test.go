@@ -682,6 +682,16 @@ func verifyOwnedRemovalHandoff(t *testing.T, f *ownedRemovalTargetFixture, previ
 		old.Close()
 		t.Fatal("archived removal intent still opens through the canonical path")
 	}
+	for _, version := range []string{identity.Version, "0.1.0"} {
+		parent, e := os.Open(f.base)
+		if e != nil {
+			t.Fatal(e)
+		}
+		e = checkStandaloneDesktopDeploymentAt(parent, version)
+		if (e == nil) != (version == identity.Version) {
+			t.Fatal("standalone desktop package did not respect archived high-water version", e)
+		}
+	}
 	parent, e = os.Open(f.base)
 	if e != nil {
 		t.Fatal(e)

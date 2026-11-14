@@ -198,6 +198,55 @@ func desktopCoreActive() error {
 	return r.finishLease(lease, nil)
 }
 
+// Parent ownership transfers on entry. A clean first install may have no
+// authority yet. An existing authority must expose its exact installed state
+// under both leases, including the downgrade guard preserved by removal.
+func checkStandaloneDesktopDeploymentAt(parent *os.File, version string) (failure error) {
+	if _, e := darwintrust.Check(parent, true, 0); e != nil {
+		return errors.Join(e, parent.Close())
+	}
+	var st unix.Stat_t
+	e := unix.Fstatat(int(parent.Fd()), deploymentRoot, &st, unix.AT_SYMLINK_NOFOLLOW)
+	if errors.Is(e, unix.ENOENT) {
+		return parent.Close()
+	}
+	if e != nil {
+		return errors.Join(e, parent.Close())
+	}
+	s, e := openRemovalAuthorityAt(parent, 0)
+	if e != nil {
+		return e
+	}
+	defer func() { failure = errors.Join(failure, s.Close()) }()
+	if e = s.checkRoot(); e != nil {
+		return e
+	}
+	entries, e := deploymentEntries(s.root, 0, maxRetainedRecords+4)
+	if e != nil {
+		return e
+	}
+	if e = s.refuseReservedRemoval(entries); e != nil {
+		return e
+	}
+	raw, e := s.readRecord(s.current)
+	if e != nil {
+		return e
+	}
+	state, e := decodeDeployment(raw)
+	if e != nil {
+		return e
+	}
+	if state.HighWaterVersion != "" {
+		if _, e = decision(version, state.HighWaterVersion); e != nil {
+			return e
+		}
+	}
+	if e = sameDeploymentEntry(s.root, "state", s.current, 0); e != nil {
+		return e
+	}
+	return s.checkRoot()
+}
+
 // Apple Installer alone writes the public app/registration payloads. This
 // fixed-path helper only verifies them; it never creates, deletes, executes or
 // repairs any public application. A failed postinstall preserves actual state.
@@ -221,6 +270,15 @@ func desktopPackageOperation(phase string, coordinated bool) (DesktopPackageResu
 	}
 	if b.Arch != runtime.GOARCH {
 		return result, errors.New("desktop packaging helper is not native")
+	}
+	if !coordinated {
+		parent, e := darwintrust.OpenRootDirectory(deploymentParent)
+		if e != nil {
+			return result, e
+		}
+		if e = checkStandaloneDesktopDeploymentAt(parent, b.Version); e != nil {
+			return result, e
+		}
 	}
 	if e = legacyReceiptsAbsent(); e != nil {
 		return result, e
