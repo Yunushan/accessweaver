@@ -2251,8 +2251,12 @@ function Assert-ConfiguredDNSServers([object[]]$Adapters,[object[]]$Records,[str
             if(($stored -join ',') -cne ($expected -join ',')){throw 'Stored DNS servers do not match the configured static addresses'}
         }
     }
+    # The registry checks take time. Re-read the effective rows so a family
+    # appearing, disappearing or changing during those checks cannot pass
+    # using the earlier client inventory.
+    $finalClients=@(Read-DNSClientInventory)
     $last=@(Get-NetAdapter -ErrorAction Stop)
-    $activeAfter=@(Get-ActiveDNSAdapters $last $clients)
+    $activeAfter=@(Get-ActiveDNSAdapters $last $finalClients)
     if($activeAfter.Count -ne $activeBefore.Count){throw 'Active DNS adapter coverage changed during readback'}
     foreach($binding in $activeBefore){
         $guid=[string]$binding.InterfaceGuid
@@ -2260,6 +2264,15 @@ function Assert-ConfiguredDNSServers([object[]]$Adapters,[object[]]$Records,[str
         if($matches.Count -ne 1 -or @($last | Where-Object {$_.ifIndex -eq $binding.ifIndex}).Count -ne 1 -or
            @($last | Where-Object {[string]$_.InterfaceGuid -eq $guid}).Count -ne 1){
             throw 'Configured DNS adapter changed during readback'
+        }
+        foreach($family in @('IPv4','IPv6')){
+            $earlier=@(Get-DNSClientRows $clients $binding.ifIndex $family)
+            $latest=@(Get-DNSClientRows $finalClients $binding.ifIndex $family)
+            if($latest.Count -ne $earlier.Count){throw 'Configured DNS family coverage changed during readback'}
+            if($latest.Count -eq 0){continue}
+            $expected=@(Get-StaticDNSServers @($earlier[0].ServerAddresses) $family $binding.ifIndex)
+            $actual=@(Get-StaticDNSServers @($latest[0].ServerAddresses) $family $binding.ifIndex)
+            if(($actual -join ',') -cne ($expected -join ',')){throw 'Configured DNS servers changed during readback'}
         }
     }
 }
