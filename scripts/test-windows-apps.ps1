@@ -1,4 +1,6 @@
 # Run only in a clean disposable Windows guest, as its ordinary desktop user.
+# SplitCord setup and removal require a separate elevated CLI in that guest.
+# Use -SkipSplitCord for a Discord/PTB-only run.
 # Add -InteractiveCommunications with the approved controller digest to record
 # two-way text and voice checks with an authorized peer and disposable accounts.
 # Example: .\test-windows-apps.ps1 -DisposableVM -Executable APPROVED_CONTROLLER
@@ -235,8 +237,8 @@ function Start-FixtureApp([string]$Variant){
     Assert-FixtureLiveImage $image $true
 }
 
-if($InteractiveCommunications -and (-not $ExpectedSHA256 -or [Console]::IsInputRedirected)){
-    throw 'Interactive communications checks require the approved controller digest and an interactive desktop console'
+if(($InteractiveCommunications -or -not $SkipSplitCord) -and (-not $ExpectedSHA256 -or [Console]::IsInputRedirected)){
+    throw 'SplitCord maintenance and communications checks require the approved controller digest and an interactive desktop console'
 }
 if($env:OS -cne 'Windows_NT' -or ($env:USERNAME -ne 'WDAGUtilityAccount' -and
    (-not $DisposableVM -or (Get-CimInstance Win32_ComputerSystem).Model -notmatch 'Virtual|VMware'))){
@@ -309,8 +311,20 @@ try {
         $script:appEvidenceStage='workflow'
         $path=Join-Path $run ('request-'+[guid]::NewGuid().ToString('N')+'.json')
         try {
-            [IO.File]::WriteAllText($path,($Request|ConvertTo-Json -Compress),$encoding)
-            $response=Invoke-FixtureCLI @('system','apply',$path,'--confirm')
+            $requestJSON=$Request|ConvertTo-Json -Compress
+            if($Request.engine -ceq 'splitcord' -and $Request.action -cin @('app-install','app-remove')){
+                $script:appEvidenceStage='operator-machine-workflow'
+                # The elevated CLI must use an independently approved controller from protected storage.
+                # Do not ask it to execute from the desktop account's writeable test directory.
+                Write-Host ('In the separate administrator shell, review and apply this exact JSON with the approved controller: '+$requestJSON)
+                Write-Host ('Expected controller SHA-256: '+$digest)
+                $resultJSON=Read-Host 'Paste the single-line result after system apply exits successfully. Press Enter to record failure'
+                if(-not $resultJSON -or $resultJSON.Length -gt 1048576){throw 'SplitCord machine workflow result is unavailable'}
+                $response=@{exitCode=0;text=$resultJSON}
+            }else{
+                [IO.File]::WriteAllText($path,$requestJSON,$encoding)
+                $response=Invoke-FixtureCLI @('system','apply',$path,'--confirm')
+            }
             if($ExpectRepairRefusal){
                 if($response.exitCode -eq 0 -or $response.text -cnotmatch 'privilege-separated broker'){
                     throw 'Combined repair did not return the expected refusal'

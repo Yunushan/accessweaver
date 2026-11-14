@@ -1866,12 +1866,16 @@ $fixtureUninstaller=Join-Path $fixtureAppDirectory 'Uninstall.exe'
 $secondUninstaller=Join-Path $fixtureAppDirectory 'Uninstall-old.exe'
 [IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
 $previousFindApp=(Get-Command Find-App).ScriptBlock
-$previousDesktopGuard=(Get-Command Require-DesktopUser).ScriptBlock
+$previousAdminGuard=(Get-Command Require-Admin).ScriptBlock
+$previousSplitCordProtection=(Get-Command Assert-SplitCordMaintenancePaths).ScriptBlock
+$previousSplitCordCommand=(Get-Command Read-SplitCordMachineUninstallCommand).ScriptBlock
 $previousAppStopRequest=$r
 $previousAppStopJournal=(Get-Command Save-Journal).ScriptBlock
 try {
     function Find-App {param($variant);return $fixtureApp}
-    function Require-DesktopUser {}
+    function Require-Admin {}
+    function Assert-SplitCordMaintenancePaths {}
+    function Read-SplitCordMachineUninstallCommand {return ('"'+$fixtureUninstaller+'" /allusers')}
     function Get-Process {param($ErrorAction);return $appStopRecords}
     $fixtureSession=[Diagnostics.Process]::GetCurrentProcess().SessionId
     $script:appStopCalls=0;$script:appStopFailure=$true;$script:externalEffectsPending=$false
@@ -1951,16 +1955,26 @@ try {
     $r=$previousAppStopRequest
     Set-Item Function:Save-Journal $previousAppStopJournal
     Remove-Item Function:Get-Process
-    Set-Item Function:Find-App $previousFindApp;Set-Item Function:Require-DesktopUser $previousDesktopGuard
+    Set-Item Function:Find-App $previousFindApp
+    Set-Item Function:Require-Admin $previousAdminGuard
+    Set-Item Function:Assert-SplitCordMaintenancePaths $previousSplitCordProtection
+    Set-Item Function:Read-SplitCordMachineUninstallCommand $previousSplitCordCommand
     $script:externalEffectsPending=$false
 }
 # Verify vendor completion against the previous executable and a fresh process snapshot.
 $appRemovalSaved=@{}
-foreach($name in @('Require-DesktopUser','Find-App','Native','Event','Stop-AppProcesses','Wait-SplitCordService','Save-Journal')){
+foreach($name in @('Require-Admin','Assert-SplitCordMaintenancePaths','Read-SplitCordMachineUninstallCommand','Find-App','Native','Event','Stop-AppProcesses','Wait-SplitCordService','Save-Journal')){
     $appRemovalSaved[$name]=(Get-Command $name).ScriptBlock
 }
 try {
-    function Require-DesktopUser {}
+    function Require-Admin {}
+    function Assert-SplitCordMaintenancePaths {}
+    function Read-SplitCordMachineUninstallCommand {
+        if($script:appRemovalForeignCommand){return '"C:\Other\Uninstall.exe" /allusers'}
+        if((-not $script:appRemovalInvoked -and -not $script:appRemovalMoved) -or $script:appRemovalOrphanedCommand){
+            return ('"'+$fixtureUninstaller+'" /allusers')
+        }
+    }
     function Find-App {
         param($variant)
         if($script:appRemovalMoved){return $fixtureApp+'.replacement'}
@@ -1968,7 +1982,7 @@ try {
     }
     function Native {
         param($program,$arguments,$Timeout,[IO.FileStream[]]$StartGuard)
-        if($program -cne $fixtureUninstaller -or $StartGuard.Count -ne 2 -or
+        if($program -cne $fixtureUninstaller -or ($arguments -join ' ') -cne '/allusers /S' -or $StartGuard.Count -ne 2 -or
             $StartGuard[0].Name -ine $program -or $StartGuard[1].Name -ine $fixtureApp){
             throw 'Vendor launch did not receive both verified executable handles'
         }
@@ -2003,6 +2017,14 @@ try {
         if($script:appRemovalInvoked -and $script:appReappearance -ceq 'service'){$script:appServiceRemains=$true}
         return $script:appRemovalProcesses
     }
+    $script:appRemovalForeignCommand=$true
+    try {
+        $refused=$false
+        try {Get-AppUninstaller 'splitcord' $fixtureApp}catch{
+            $refused=$_.Exception.Message -ceq 'SplitCord machine uninstall registration does not match the protected uninstaller'
+        }
+        Assert $refused 'SplitCord refuses an unrelated machine uninstall registration'
+    } finally {$script:appRemovalForeignCommand=$false}
     $script:appReappearance=$null
     $script:appRemovalInvoked=$true
     $rejected=$false
@@ -2198,6 +2220,12 @@ try {
     }
     $orphan.HasExited=$true
     Assert ((Remove-App 'splitcord') -ceq $false -and -not $script:externalEffectsPending) 'SplitCord absent-client cleanup disregards an exited client and an unrelated shared helper'
+    $script:appRemovalOrphanedCommand=$true
+    try {
+        $refused=$false
+        try {Remove-App 'splitcord'}catch{$refused=$_.Exception.Message -ceq 'SplitCord machine uninstall registration remains'}
+        Assert $refused 'SplitCord absent-client cleanup refuses a surviving machine registration'
+    } finally {$script:appRemovalOrphanedCommand=$false}
     foreach($variant in @('discord','discord-ptb')){
         $base=Get-AppProcessBase $variant
         $updater=[pscustomobject]@{Path=(Join-Path $base 'Update.exe');HasExited=$false}
@@ -2635,7 +2663,8 @@ try {
     $r=[pscustomobject]@{action='app-install';engine='splitcord'}
     $root=Join-Path $testRoot 'splitcord-install-fixture'
     [void][IO.Directory]::CreateDirectory((Join-Path $root 'downloads'))
-    function Require-DesktopUser {}
+    function Require-Admin {}
+    function Assert-SplitCordSetupPreflight {param($App);if($App){throw 'Unexpected setup preimage'}}
     function Find-App {param($Variant); if($Variant -cne 'splitcord'){throw 'Unexpected setup variant'}}
     function Get-SplitCordInstaller {return @{url='unused';hash=''}}
     function Download {
@@ -2705,11 +2734,13 @@ try {
 }
 # Exercise both direct helper calls and the dispatcher before any real OS work.
 $desktopGuard=(Get-Command Require-DesktopUser).ScriptBlock
+$adminGuard=(Get-Command Require-Admin).ScriptBlock
 $machineInitializer=(Get-Command Initialize-Changes).ScriptBlock
 $applicationLock=(Get-Command Enter-ApplicationWorkflow).ScriptBlock
 try{
     function Enter-ApplicationWorkflow {$script:fixtureApplicationLocked=$true}
     function Require-DesktopUser {throw 'blocked desktop token fixture'}
+    function Require-Admin {throw 'blocked administrator token fixture'}
     foreach($helper in @('Install-App','Remove-App','Start-App')){
         $rejected=$false;try{& $helper 'discord'}catch{$rejected=$_.Exception.Message -eq 'blocked desktop token fixture'}
         Assert $rejected ($helper+' rejects an unsafe token before discovery or execution')
@@ -2725,6 +2756,24 @@ try{
         $rejected=$false;try{Initialize-Operation}catch{$rejected=$_.Exception.Message -eq 'blocked desktop token fixture'}
         Assert ($rejected -and -not (Test-Path (Join-Path $testRoot 'user-job'))) ($action+' checks the token before staging files')
     }
+    function Require-DesktopUser {}
+    foreach($action in @('app-install','app-remove')){
+        $r=[pscustomobject]@{action=$action;engine='splitcord';dns='unchanged'}
+        $helper=if($action -ceq 'app-install'){'Install-App'}else{'Remove-App'}
+        $rejected=$false;try{& $helper 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'blocked administrator token fixture'}
+        Assert $rejected ($helper+' checks SplitCord maintenance privilege before discovery')
+        $rejected=$false;try{Initialize-Operation}catch{$rejected=$_.Exception.Message -ceq 'blocked administrator token fixture'}
+        Assert ($rejected -and $script:machineInitializationCount -eq 0) ($action+' checks SplitCord maintenance privilege before initialization')
+    }
+    function Require-Admin {}
+    $r=[pscustomobject]@{action='app-install';engine='splitcord';dns='unchanged'}
+    Initialize-Operation
+    Assert ($script:machineInitializationCount -eq 1 -and -not $script:fixtureApplicationLocked) 'SplitCord setup initializes machine workflow storage only'
+    $script:machineInitializationCount=0
+    $r=[pscustomobject]@{action='app-start';engine='splitcord'}
+    function Require-DesktopUser {throw 'blocked desktop token fixture'}
+    $rejected=$false;try{Initialize-Operation}catch{$rejected=$_.Exception.Message -ceq 'blocked desktop token fixture'}
+    Assert ($rejected -and $script:machineInitializationCount -eq 0) 'SplitCord start requires an ordinary desktop session'
     function Require-DesktopUser {}
     $r=[pscustomobject]@{action='app-install';dns='doh'}
     $rejected=$false;try{Initialize-Operation}catch{$rejected=$_.Exception.Message -match 'DNS separately'}
@@ -2870,6 +2919,7 @@ try{
     }
 }finally{
     Set-Item Function:Require-DesktopUser $desktopGuard
+    Set-Item Function:Require-Admin $adminGuard
     Set-Item Function:Initialize-Changes $machineInitializer
     Set-Item Function:Enter-ApplicationWorkflow $applicationLock
     $root=$testRoot;$script:journalPath=$null

@@ -163,7 +163,7 @@ func NewWithGuard(root string, guard *managed.Guard) *Manager {
 }
 
 func (m *Manager) Preview(r Request) (Plan, error) {
-	p := Plan{RequiresAdministrator: requiresAdministrator(r.Action), Request: r, Steps: []string{}, Issues: []string{}, Warnings: []string{}, ExpiresAt: time.Now().Add(10 * time.Minute).UTC()}
+	p := Plan{RequiresAdministrator: requiresAdministrator(r.Action) || r.splitCordMaintenance(), Request: r, Steps: []string{}, Issues: []string{}, Warnings: []string{}, ExpiresAt: time.Now().Add(10 * time.Minute).UTC()}
 	found := false
 	for _, op := range Catalog() {
 		if op.ID == r.Action {
@@ -195,8 +195,10 @@ func (m *Manager) Preview(r Request) (Plan, error) {
 	if r.Action == "app-repair" {
 		p.Issues = append(p.Issues, "Combined Discord repair requires a privilege-separated broker and is unavailable. Run application install/remove as your normal desktop user and manage the proxy separately.")
 	}
-	if r.Action == "app-install" || r.Action == "app-remove" || r.Action == "app-reinstall" {
-		p.Warnings = append(p.Warnings, "Run this application operation as the signed-in desktop user without administrator rights. Application installers and uninstallers must never inherit an elevated token.")
+	if r.splitCordMaintenance() {
+		p.Warnings = append(p.Warnings, "SplitCord setup and removal affect all users and its Windows service. Apply the reviewed request from a separately elevated CLI. Start the installed client from the unelevated desktop.")
+	} else if r.Action == "app-install" || r.Action == "app-remove" || r.Action == "app-reinstall" {
+		p.Warnings = append(p.Warnings, "Run this application operation as the signed-in desktop user without administrator rights. Discord installers and uninstallers must never inherit an elevated token.")
 	}
 	if (r.Action == "config" || (r.Action == "install" && r.Engine == "wiresock")) && r.ConfigPath == "" && !r.AcceptCloudflareTerms {
 		p.Issues = append(p.Issues, "Generating a new WARP account requires accepting Cloudflare's terms; otherwise provide an existing configPath")
@@ -1085,6 +1087,10 @@ func executeWorkflow(ctx context.Context, dir string, r Request, commandFactory 
 
 // Keep the few non-administrative operations explicit. New machine operations
 // default to requiring an administrative process, independently of UI consent.
+func (r Request) splitCordMaintenance() bool {
+	return r.Engine == "splitcord" && (r.Action == "app-install" || r.Action == "app-remove")
+}
+
 func requiresAdministrator(action string) bool {
 	switch action {
 	case "discover", "updates", "choose-folder", "app-install", "app-start", "app-remove", "app-reinstall":

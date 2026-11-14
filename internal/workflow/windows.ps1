@@ -44,7 +44,11 @@ function No-Reparse([string]$path) {
 }
 function Require-Admin {
     $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
-    if (-not ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Use a separately elevated system apply CLI for machine changes. Keep the dashboard and user application operations unelevated.' }
+    try {
+        if(-not ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){
+            throw 'Use a separately elevated system apply CLI for machine changes. Keep the dashboard and user application operations unelevated.'
+        }
+    }finally {$identity.Dispose()}
 }
 function Require-DesktopUser {
     $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
@@ -78,6 +82,12 @@ function Initialize-Operation {
     # process execution. A combined repair cannot cross this boundary safely.
     if($r.action -eq 'app-repair'){throw 'Combined Discord repair is unavailable until a privilege-separated broker is implemented'}
     if($r.action -in @('app-install','app-remove','app-start','app-reinstall')){
+        if($r.engine -eq 'splitcord' -and $r.action -in @('app-install','app-remove')){
+            Require-Admin
+            if($r.dns -and $r.dns -ne 'unchanged'){throw 'Configure system DNS separately from application operations'}
+            Initialize-Changes
+            return
+        }
         Require-DesktopUser
         if($r.dns -and $r.dns -ne 'unchanged'){throw 'Configure system DNS separately from user application operations'}
         Enter-ApplicationWorkflow
@@ -3352,9 +3362,10 @@ function Install-Method([string]$ScannedEngineSHA256,[string[]]$ScannedLuaSHA256
     }
     return @{installed=$r.engine}
 }
+# electron-builder derives the NSIS key from the vendor app ID com.splitcord.turkey.
+function Get-SplitCordInstallKey {return '30120f3b-3e88-5c75-afec-3de1a3155a97'}
 function Find-SplitCordApp {
-    # electron-builder derives this NSIS key from the vendor app ID com.splitcord.turkey.
-    $installKey='30120f3b-3e88-5c75-afec-3de1a3155a97'
+    $installKey=Get-SplitCordInstallKey
     $registered=@(foreach($registry in @('HKLM:\SOFTWARE','HKLM:\SOFTWARE\WOW6432Node')){
         $key=Join-Path $registry $installKey
         if(-not (Test-Path -LiteralPath $key -ErrorAction Stop)){continue}
@@ -3499,7 +3510,7 @@ function Save-ApplicationEffectBoundary {
     }
 }
 function Install-App([string]$variant,[switch]$Reinstall) {
-    Require-DesktopUser
+    if($variant -eq 'splitcord'){Require-Admin}else{Require-DesktopUser}
     if($Reinstall -and ($variant -cne 'discord' -or $r.clean -or $r.downloadUrl -or $r.sha256 -or $r.configPath -or $r.bundlePath)){
         throw 'Discord reinstall uses the official signed installer and fixed desktop-user inputs'
     }
@@ -3550,11 +3561,14 @@ function Install-App([string]$variant,[switch]$Reinstall) {
             }
             if($stableBeforeDownload -and $existingApp){$ptbBeforeSetupDigest=Get-AppExecutableDigest $existingApp}
         }
-        $installerArgs=if($variant -eq 'splitcord'){@('/S')}else{@('-s')}
+        $installerArgs=if($variant -eq 'splitcord'){@('/allusers','/S')}else{@('-s')}
         if($Reinstall -and ((Find-App $variant) -or (Test-Path -LiteralPath $originalApp -ErrorAction Stop))){
             throw 'Stable Discord reappeared before replacement setup; review the current installation'
         }
-        if($variant -eq 'splitcord'){Wait-SplitCordService $existingApp 0 -AllowAbsentOrStopped}
+        if($variant -eq 'splitcord'){
+            Assert-SplitCordSetupPreflight $existingApp
+            Wait-SplitCordService $existingApp 0 -AllowAbsentOrStopped
+        }
         Save-ApplicationEffectBoundary
         if($Reinstall){
             Wait-AppProcessesExited $variant $originalApp 0
@@ -3574,7 +3588,9 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         }
         if($variant -eq 'splitcord'){
             if((Find-App $variant) -ine $existingApp){throw 'SplitCord installation changed before setup'}
+            Assert-SplitCordSetupPreflight $existingApp
             Wait-SplitCordService $existingApp 0 -AllowAbsentOrStopped
+            Wait-AppProcessesExited $variant $existingApp 0
         }
         No-Reparse $file
         [void](Native $file $installerArgs -Timeout 900 -StartGuard $lockedInstaller)
@@ -3582,6 +3598,7 @@ function Install-App([string]$variant,[switch]$Reinstall) {
     $installedApp=Wait-App $variant $true 180
     $installedDigest=Get-AppExecutableDigest $installedApp
     if($variant -eq 'splitcord'){
+        [void](Get-AppUninstaller $variant $installedApp)
         Wait-SplitCordService $installedApp
         if((Find-App $variant) -ine $installedApp -or (Get-AppExecutableDigest $installedApp) -ine $installedDigest){
             throw 'SplitCord changed during service verification'
@@ -3630,12 +3647,75 @@ function Get-AppUninstaller([string]$variant,[string]$app) {
         $candidates=@(Get-ChildItem -LiteralPath $directory -Filter 'Uninstall*.exe' -File -ErrorAction Stop)
         if($candidates.Count -ne 1){throw 'Expected exactly one SplitCord uninstaller'}
         $path=$candidates[0].FullName
-        $arguments=@('/S')
+        Assert-SplitCordMaintenancePaths $app $path
+        $command=Read-SplitCordMachineUninstallCommand
+        if($command -ine ('"'+$path+'" /allusers')){
+            throw 'SplitCord machine uninstall registration does not match the protected uninstaller'
+        }
+        $arguments=@('/allusers','/S')
         $timeout=600
     }
     No-Reparse $path
     if(-not (Test-Path -LiteralPath $path -PathType Leaf -ErrorAction Stop)){throw 'Application uninstaller not found'}
     return @{path=$path;arguments=$arguments;timeout=$timeout}
+}
+function Read-SplitCordMachineUninstallCommand {
+    $path='SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\'+(Get-SplitCordInstallKey)
+    $commands=@(foreach($view in @('Registry64','Registry32')){
+        $machine=[Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine',$view)
+        try {
+            $key=$machine.OpenSubKey($path,$false)
+            if($null -eq $key){continue}
+            try {
+                $writes=[int][Security.AccessControl.RegistryRights]'SetValue,CreateSubKey,CreateLink,Delete,ChangePermissions,TakeOwnership'
+                Assert-WorkflowUninstallACL ($key.GetAccessControl()) $writes
+                $command=$key.GetValue('UninstallString',$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+                if($command -isnot [string] -or [string]::IsNullOrWhiteSpace($command) -or $command.Length -gt 4096 -or
+                   $key.GetValueKind('UninstallString') -ne [Microsoft.Win32.RegistryValueKind]::String){
+                    throw 'SplitCord machine uninstall registration is invalid'
+                }
+                $command
+            } finally {$key.Dispose()}
+        } finally {$machine.Dispose()}
+    })
+    if($commands.Count -gt 1){throw 'Multiple SplitCord machine uninstall registrations matched'}
+    if($commands.Count -eq 1){return $commands[0]}
+}
+function Assert-SplitCordSetupPreflight([string]$App) {
+    # The per-machine NSIS installer also inspects the current user's old uninstall entry.
+    $path='SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\'+(Get-SplitCordInstallKey)
+    foreach($view in @('Registry64','Registry32')){
+        $user=[Microsoft.Win32.RegistryKey]::OpenBaseKey('CurrentUser',$view)
+        try {
+            $key=$user.OpenSubKey($path,$false)
+            if($null -ne $key){
+                $key.Dispose()
+                throw 'Remove the current-user SplitCord installation from Windows Apps settings before machine setup'
+            }
+        } finally {$user.Dispose()}
+    }
+    if($App){[void](Get-AppUninstaller 'splitcord' $App)}
+    elseif(Read-SplitCordMachineUninstallCommand){throw 'Existing SplitCord machine registration has no verified installation'}
+}
+function Assert-SplitCordMaintenancePaths([string]$App,[string]$Uninstaller) {
+    $directory=[IO.Path]::GetDirectoryName($App)
+    $protectedRoot=@(foreach($folder in @('ProgramFiles','ProgramFilesX86')){
+        $base=[Environment]::GetFolderPath($folder).TrimEnd('\')
+        if($base -and (Under $directory $base)){$base}
+    }) | Select-Object -First 1
+    if(-not $protectedRoot){
+        throw 'Use Windows Apps settings to maintain SplitCord installed outside Program Files'
+    }
+    try {
+        for($parent=$directory;;$parent=[IO.Path]::GetDirectoryName($parent)){
+            Assert-WorkflowUninstallProtection $parent
+            if($parent -ieq $protectedRoot){break}
+        }
+        Assert-WorkflowUninstallProtection $App
+        Assert-WorkflowUninstallProtection $Uninstaller
+    }catch{
+        throw 'SplitCord installation and uninstaller must be in protected machine storage'
+    }
 }
 function Get-AppExecutableDigest([string]$path) {
     No-Reparse $path
@@ -3646,12 +3726,15 @@ function Get-AppExecutableDigest([string]$path) {
     } finally {$file.Dispose()}
 }
 function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDigest) {
-    Require-DesktopUser
+    if($variant -eq 'splitcord'){Require-Admin}else{Require-DesktopUser}
     $app=Find-App $variant
     if($expectedApp -and $app -ine $expectedApp){throw 'Application installation changed before removal'}
     if(-not $app){
         Wait-AppProcessesExited $variant '' 0
-        if($variant -eq 'splitcord'){Wait-SplitCordService '' 0}
+        if($variant -eq 'splitcord'){
+            Wait-SplitCordService '' 0
+            if(Read-SplitCordMachineUninstallCommand){throw 'SplitCord machine uninstall registration remains'}
+        }
         if(Find-App $variant){throw 'Application installation reappeared during uninstall verification'}
         return $false
     }
@@ -3703,7 +3786,10 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
     if((Find-App $variant) -or (Test-Path -LiteralPath $app -ErrorAction Stop)){
         throw 'Application installation reappeared during uninstall verification'
     }
-    if($variant -eq 'splitcord'){Wait-SplitCordService '' 0}
+    if($variant -eq 'splitcord'){
+        Wait-SplitCordService '' 0
+        if(Read-SplitCordMachineUninstallCommand){throw 'SplitCord machine uninstall registration remains'}
+    }
     Event ('Application uninstalled: '+$variant)
     return $true
 }

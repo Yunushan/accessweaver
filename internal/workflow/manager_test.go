@@ -65,6 +65,31 @@ func TestApplicationPrivilegeReview(t *testing.T) {
 	}
 }
 
+func TestSplitCordMaintenanceRequiresAdministrator(t *testing.T) {
+	m := New(t.TempDir())
+	m.platform = "windows"
+	m.requireAdmin = func() error { return errors.New("elevated token required") }
+	for _, action := range []string{"app-install", "app-remove", "app-start"} {
+		maintenance := action != "app-start"
+		p, err := m.Preview(Request{Action: action, Engine: "splitcord"})
+		if err != nil || p.RequiresAdministrator != maintenance || p.Ready == maintenance {
+			t.Fatalf("unexpected SplitCord %s plan: %+v, %v", action, p, err)
+		}
+		if maintenance {
+			if _, err := m.Start(p.ID); err == nil {
+				t.Fatalf("unelevated SplitCord %s started", action)
+			}
+		}
+	}
+	m.requireAdmin = func() error { return nil }
+	for _, action := range []string{"app-install", "app-remove"} {
+		p, err := m.Preview(Request{Action: action, Engine: "splitcord"})
+		if err != nil || !p.RequiresAdministrator || !p.Ready {
+			t.Fatalf("unexpected elevated SplitCord %s plan: %+v, %v", action, p, err)
+		}
+	}
+}
+
 func TestDiscordReinstallRejectsReplacementInputs(t *testing.T) {
 	for _, request := range []Request{
 		{Action: "app-reinstall", Engine: "discord-ptb"},
