@@ -33,6 +33,14 @@ WINDOWS_DETECTION_FIELDS = (
     "target", "installMode", "previousVersion", "previousPayloadSHA256",
     "uninstallerSHA256", "publisherCertificateSHA256", "rebootEvidenceSHA256",
 )
+WINDOWS_DETECTION_FAILURE_REASONS = (
+    "approved-installation-not-detected",
+    "detector-inspection-failed",
+    "detector-result-invalid",
+    "detector-timeout",
+    "detector-unavailable",
+    "revocation-policy-expired",
+)
 WINDOWS_PAYLOAD_PUBLISHER = "payloadPublisherCertificateSHA256"
 WINDOWS_BUILD_INFO = "buildInfoSHA256"
 WINDOWS_DETECTOR = "detectorSHA256"
@@ -500,7 +508,7 @@ def load_windows_upgrade_result_receipt(directory, path, fingerprint, start_rece
                  or (code == 3010 and detection == "restart-required")
                  or (code not in (0, 3010) and detection == "setup-failed"))
             and ("installedDetectionReason" not in receipt
-                 or (code == 0 and detection == "unverified" and reason == "revocation-policy-expired")),
+                 or (code == 0 and detection == "unverified" and reason in WINDOWS_DETECTION_FAILURE_REASONS)),
             "Malformed Windows upgrade result receipt")
     return {field: receipt[field] for field in sorted(fields)}
 
@@ -863,23 +871,32 @@ def hold_qualified_windows_detector(qualification):
 
 
 def detect_windows_upgrade(qualification, publisher_pin):
-    shell = windows_system_directory() / "WindowsPowerShell" / "v1.0" / "powershell.exe"
-    with tempfile.TemporaryFile() as output:
-        try:
-            with hold_qualified_windows_detector(qualification) as script:
-                result = subprocess.run(
-                    [shell, "-NoProfile", "-NonInteractive", "-File", script, "-UseRegisteredDirectory",
-                     "-Version", qualification["version"], "-Architecture", qualification["target"].split("/")[1],
-                     "-PayloadSHA256", qualification["payloadSHA256"], "-PayloadSBOMSHA256", qualification["payloadSBOMSHA256"],
-                     "-BuildInfoSHA256", qualification[WINDOWS_BUILD_INFO], "-UninstallerSHA256", qualification["uninstallerSHA256"],
-                     "-PayloadPublisherSHA256", publisher_pin],
-                    stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.DEVNULL, timeout=90,
-                )
-        except (ValueError, OSError, subprocess.TimeoutExpired):
-            return "unverified"
-        output.seek(0)
-        content = output.read(4097)
-    return "detected" if result.returncode == 0 and content in (b"AccessWeaver detected\r\n", b"AccessWeaver detected\n") else "unverified"
+    try:
+        shell = windows_system_directory() / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+        with tempfile.TemporaryFile() as output, hold_qualified_windows_detector(qualification) as script:
+            result = subprocess.run(
+                [shell, "-NoProfile", "-NonInteractive", "-File", script, "-UseRegisteredDirectory",
+                 "-Version", qualification["version"], "-Architecture", qualification["target"].split("/")[1],
+                 "-PayloadSHA256", qualification["payloadSHA256"], "-PayloadSBOMSHA256", qualification["payloadSBOMSHA256"],
+                 "-BuildInfoSHA256", qualification[WINDOWS_BUILD_INFO], "-UninstallerSHA256", qualification["uninstallerSHA256"],
+                 "-PayloadPublisherSHA256", publisher_pin],
+                stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.DEVNULL, timeout=90,
+            )
+            output.seek(0)
+            content = output.read(4097)
+    except subprocess.TimeoutExpired:
+        return "unverified", "detector-timeout"
+    except (ValueError, OSError):
+        return "unverified", "detector-unavailable"
+
+    if result.returncode == 0:
+        if content in (b"AccessWeaver detected\r\n", b"AccessWeaver detected\n"):
+            return "detected", None
+        if not content:
+            return "unverified", "approved-installation-not-detected"
+    if result.returncode == 1 and not content:
+        return "unverified", "detector-inspection-failed"
+    return "unverified", "detector-result-invalid"
 
 
 def record_windows_installed_detection(update, publisher_pin, policy):
@@ -894,9 +911,11 @@ def record_windows_installed_detection(update, publisher_pin, policy):
 
     if not policy_is_current():
         return
-    detection = detect_windows_upgrade(update["windowsUpgradeDetection"], publisher_pin)
+    detection, reason = detect_windows_upgrade(update["windowsUpgradeDetection"], publisher_pin)
     if policy_is_current():
         update["installedDetection"] = detection
+        if reason is not None:
+            update["installedDetectionReason"] = reason
 
 
 def copy_approved_installer(source_path, staged, size):
