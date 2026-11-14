@@ -2728,21 +2728,18 @@ function Test-DNSDohEntriesEqual([object[]]$Actual,[object[]]$Expected) {
 function Assert-RestoredDNSState([object[]]$Plans,[object[]]$DohPlans,[bool]$DohAvailable) {
     $before=@(Get-NetAdapter -ErrorAction Stop)
     $clients=@(Read-DNSClientInventory)
-    $after=@(Get-NetAdapter -ErrorAction Stop)
-    foreach($plan in $Plans){
+    $bindings=foreach($plan in $Plans){
         $record=$plan.record
-        $previous=@($before | Where-Object {[string]$_.InterfaceGuid -eq $record.guid})
-        $matches=@($after | Where-Object {[string]$_.InterfaceGuid -eq $record.guid})
-        if($previous.Count -ne 1 -or $matches.Count -ne 1 -or $previous[0].ifIndex -le 0 -or
-           $previous[0].ifIndex -ne $matches[0].ifIndex -or
-           @($before | Where-Object {$_.ifIndex -eq $previous[0].ifIndex}).Count -ne 1 -or
-           @($after | Where-Object {$_.ifIndex -eq $matches[0].ifIndex}).Count -ne 1){
+        $matches=@($before | Where-Object {[string]$_.InterfaceGuid -eq $record.guid})
+        if($matches.Count -ne 1 -or $matches[0].ifIndex -le 0 -or
+           @($before | Where-Object {$_.ifIndex -eq $matches[0].ifIndex}).Count -ne 1){
             throw 'An original adapter changed during restoration verification; retain the recovery snapshot'
         }
+        $adapter=$matches[0]
         foreach($number in @('4','6')){
             if(-not $plan.bounds['bound'+$number]){continue}
             $family='IPv'+$number
-            $actual=Read-OriginalDNSFamily $matches[0] $family $clients
+            $actual=Read-OriginalDNSFamily $adapter $family $clients
             if($actual.dhcp -ne $record.('dhcp'+$number)){throw 'Restored DNS mode could not be verified; retain the recovery snapshot'}
             if(-not $actual.dhcp){
                 $expected=@(Get-StaticDNSServers @($record.('ipv'+$number)) $family $record.index)
@@ -2753,12 +2750,23 @@ function Assert-RestoredDNSState([object[]]$Plans,[object[]]$DohPlans,[bool]$Doh
                 }
             }
         }
+        $adapter
     }
     if($DohAvailable){
         $observed=@(Get-DnsClientDohServerAddress -ErrorAction Stop)
         foreach($plan in $DohPlans){
             $current=@($observed | Where-Object {$_.ServerAddress -eq $plan.address})
             if(-not (Test-DNSDohEntriesEqual $current $plan.old)){throw 'Restored DoH policy could not be verified; retain the recovery snapshot'}
+        }
+    }
+    # Fence the whole observation, including registry and DoH reads, before
+    # treating the saved GUIDs and their DNS client rows as one stable view.
+    $after=@(Get-NetAdapter -ErrorAction Stop)
+    foreach($binding in $bindings){
+        $matches=@($after | Where-Object {$_.ifIndex -eq $binding.ifIndex})
+        if($matches.Count -ne 1 -or [string]$matches[0].InterfaceGuid -ne [string]$binding.InterfaceGuid -or
+           @($after | Where-Object {[string]$_.InterfaceGuid -eq [string]$binding.InterfaceGuid}).Count -ne 1){
+            throw 'An original adapter changed during restoration verification; retain the recovery snapshot'
         }
     }
 }
