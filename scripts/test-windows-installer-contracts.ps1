@@ -101,12 +101,16 @@ $replaceProbe=[regex]::Match($installerSource,'(?ms)^function AWCanReplaceInstal
 Assert ($replaceProbe.Contains('AWOpenReplaceProbe(Path, $00010080, $00000007, 0, 3, $00200000, 0)') -and
     $replaceProbe -cmatch '(?s)AWGetFileInfo\(Handle, Info\).*Info.Attributes and \(\$00000400 or \$00000010 or \$00000001\).*Info.Links = 1.*finally.*AWCloseNativeHandle') 'Setup must refuse read-only, aliased or redirected files before replacement'
 $replacement=[regex]::Match($installerSource,'(?ms)^function AWPayloadReplacementPreflight\([^;\r\n]+\): String;\r?\nbegin.*?^end;').Value
-Assert ($replacement -cmatch '(?s)AWInstallationPathPreflight\(Destination \+ ''\\licenses'', True\).*if Result <> '''' then Exit') 'Setup must refuse a redirected packaged license directory before replacement'
+$packageDirectories=[regex]::Match($installerSource,'(?ms)^function AWPackageDirectoryPreflight\(.*?^end;').Value
+foreach($directory in @('licenses','docs','docs\assets','docs\qualification')){
+    Assert ($packageDirectories.Contains("AWInstallationPathPreflight(Destination + '\$directory', True)")) 'Setup must check each packaged subdirectory'
+}
+Assert ($replacement -cmatch '(?s)AWPackageDirectoryPreflight\(Destination\).*if Result <> '''' then Exit') 'Setup must refuse a redirected package subdirectory before replacement'
 foreach($name in @('accessweaver.exe','BUILD-INFO.json','SBOM.cdx.json')){
     Assert ($replacement.Contains("AWCanReplaceInstalledFile(Destination + '\$name')")) 'Setup must check each release subject before replacement'
 }
 Assert ($uninstallPreflight -cmatch "AWInstallationPathPreflight\(ExpandConstant\('\{app\}'\), False\)") 'Uninstall must require an existing ordinary directory before restoration'
-Assert ($uninstallPreflight -cmatch "AWInstallationPathPreflight\(ExpandConstant\('\{app\}'\) \+ '\\licenses', True\)") 'Uninstall must refuse a redirected packaged license directory before restoration and deletion'
+Assert ($uninstallPreflight -cmatch "AWPackageDirectoryPreflight\(ExpandConstant\('\{app\}'\)\)") 'Uninstall must refuse redirected package directories before restoration and deletion'
 $uninstallRegistration=[regex]::Match($installerSource,'(?ms)^function AWUninstallDirectoryPreflight\(.*?^end;').Value
 Assert ($uninstallRegistration -cmatch "AWOrdinal\(Version, '\{#ReleaseVersion\}'\) <> 0") 'Uninstall must match the exact release version in the machine registration'
 Assert ($uninstallRegistration.Contains("AWReadRegistration(`$0100, True, ExpandConstant('{uninstallexe}'),")) 'Native uninstall must verify that both machine registration commands bind its original executable'

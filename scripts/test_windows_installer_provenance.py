@@ -143,6 +143,14 @@ class InstallationPathRefusalTests(unittest.TestCase):
         licenses = {**leaf, "kind": "licenses-junction"}
         self.assertEqual(validate_installation_path_refusals([leaf, ancestor, licenses], check_license_directory=True),
                          {"installationPathRefusalsVerified": 3})
+        with_docs = [leaf, ancestor, licenses, *({**leaf, "kind": kind} for kind in
+                     ("docs-junction", "docs-assets-junction", "docs-qualification-junction"))]
+        self.assertEqual(validate_installation_path_refusals(with_docs, check_license_directory=True,
+                                                            check_documentation_directories=True),
+                         {"installationPathRefusalsVerified": 6})
+        with self.assertRaisesRegex(ValueError, "refusal"):
+            validate_installation_path_refusals(with_docs[:-1], check_license_directory=True,
+                                                check_documentation_directories=True)
         for invalid in ([leaf, ancestor], [leaf, ancestor, {**licenses, "targetPreserved": False}]):
             with self.subTest(observation=invalid), self.assertRaisesRegex(ValueError, "refusal"):
                 validate_installation_path_refusals(invalid, check_license_directory=True)

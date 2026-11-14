@@ -230,10 +230,12 @@ def validate_setup_marker_replacement(value, check_subject_guards=False):
     return verified
 
 
-def validate_installation_path_refusals(values, *, check_license_directory=False):
+def validate_installation_path_refusals(values, *, check_license_directory=False, check_documentation_directories=False):
     kinds = ("leaf-junction", "ancestor-junction")
     if check_license_directory:
         kinds += ("licenses-junction",)
+    if check_documentation_directories:
+        kinds += ("docs-junction", "docs-assets-junction", "docs-qualification-junction")
     flags = {"preflightRefusalLogged", "targetPreserved", "pendingMarkerAbsent",
              "registrationsAbsent", "machineStateUnchanged"}
     require(isinstance(values, list) and len(values) == len(kinds),
@@ -422,7 +424,7 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
     if report_schema is not None:
         require(type(report.get("schemaVersion")) is int and report["schemaVersion"] == report_schema,
                 "Native lifecycle report schema differs from the approved schema")
-    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in range(11, 46) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in range(11, 47) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -438,7 +440,8 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
     path_refusals = {}
     if report["schemaVersion"] >= 24:
         path_refusals = validate_installation_path_refusals(
-            report.get("installationPathRefusals"), check_license_directory=report["schemaVersion"] >= 42)
+            report.get("installationPathRefusals"), check_license_directory=report["schemaVersion"] >= 42,
+            check_documentation_directories=report["schemaVersion"] >= 46)
     setup_readback = {}
     if report["schemaVersion"] >= 25:
         require(report.get("setupCompletionReadbackVerified") is True,
@@ -609,7 +612,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("directory",type=Path)
     parser.add_argument("--source-commit",required=True);parser.add_argument("--source-ref",required=True);parser.add_argument("--architecture",required=True)
     parser.add_argument("--versions",nargs=2,default=DEFAULT_VERSIONS);parser.add_argument("--gh",default="gh");parser.add_argument("--check-rejections",action="store_true");parser.add_argument("--stage-build-root",type=Path);parser.add_argument("--run-id",required=True)
-    parser.add_argument("--report-schema", type=int, choices=range(11, 46),
+    parser.add_argument("--report-schema", type=int, choices=range(11, 47),
                         help="require the report schema approved for this invocation")
     parser.add_argument("--run-attempt", help="require the approved GitHub Actions attempt on every subject")
     args=parser.parse_args()

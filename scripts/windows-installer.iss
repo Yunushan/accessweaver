@@ -348,11 +348,19 @@ begin
   end;
 end;
 
+function AWPackageDirectoryPreflight(const Destination: String): String;
+begin
+  { Check the packaged directory tree before Setup copies files or the
+    uninstaller processes its deletion log. Missing directories are safe. }
+  Result := AWInstallationPathPreflight(Destination + '\licenses', True);
+  if Result = '' then Result := AWInstallationPathPreflight(Destination + '\docs', True);
+  if Result = '' then Result := AWInstallationPathPreflight(Destination + '\docs\assets', True);
+  if Result = '' then Result := AWInstallationPathPreflight(Destination + '\docs\qualification', True);
+end;
+
 function AWPayloadReplacementPreflight(const Destination: String): String;
 begin
-  { Setup also writes below the package root. Check that directory before
-    the recursive file copy can follow an existing junction. }
-  Result := AWInstallationPathPreflight(Destination + '\licenses', True);
+  Result := AWPackageDirectoryPreflight(Destination);
   if Result <> '' then Exit;
   if not AWCanReplaceInstalledFile(Destination + '\accessweaver.exe') then
     Result := 'The AccessWeaver executable cannot be replaced. Close it, release any file locks and check its file attributes before retrying setup.'
@@ -623,9 +631,7 @@ begin
     Result := 'An AccessWeaver installation is incomplete. Retry the approved installer before uninstalling.';
   if Result = '' then Result := AWUninstallDirectoryPreflight(ExpandConstant('{app}'));
   if Result = '' then Result := AWInstallationPathPreflight(ExpandConstant('{app}'), False);
-  { The uninstall log also names files under licenses. A missing directory has
-    no files to remove, but an existing directory must not redirect deletion. }
-  if Result = '' then Result := AWInstallationPathPreflight(ExpandConstant('{app}') + '\licenses', True);
+  if Result = '' then Result := AWPackageDirectoryPreflight(ExpandConstant('{app}'));
 end;
 
 function InitializeUninstall: Boolean;
