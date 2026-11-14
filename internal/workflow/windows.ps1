@@ -3462,6 +3462,10 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         if($confirmedApp -ine $installedApp -or (Get-AppExecutableDigest $confirmedApp) -ine $installedDigest){
             throw 'Discord PTB changed during stable client cleanup; review the current installation'
         }
+        Wait-AppProcessesExited 'discord' $stableBeforeDownload 0
+        if((Find-App 'discord') -or ($stableBeforeDownload -and (Test-Path -LiteralPath $stableBeforeDownload -ErrorAction Stop))){
+            throw 'Stable Discord reappeared during PTB cleanup; review the current installation'
+        }
     }
     if($Reinstall){
         $confirmedApp=Find-App $variant
@@ -3507,6 +3511,10 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
     if($expectedApp -and $app -ine $expectedApp){throw 'Application installation changed before removal'}
     if(-not $app){
         if($variant -eq 'splitcord'){Wait-SplitCordService '' 0}
+        else{
+            Wait-AppProcessesExited $variant '' 0
+            if(Find-App $variant){throw 'Application installation reappeared during uninstall verification'}
+        }
         return $false
     }
     $appDigest=Get-AppExecutableDigest $app

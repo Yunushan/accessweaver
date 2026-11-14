@@ -227,7 +227,8 @@ foreach($alreadyRunning in @($true,'false',$null)){
         @{name='workflow-invalid-result';before=$image;previous=$image;file=$true;result='true';launch=$true;success=$false},
         @{name='remains-discoverable';before=$image;previous=$image;file=$true;after=$image;launch=$true;success=$false},
         @{name='remains-on-disk';before=$image;previous=$image;file=$true;remaining=$image;launch=$true;success=$false},
-        @{name='clean-guest';before=$null;previous=$image;cleanup=$true;launch=$false;success=$true},
+        @{name='clean-guest';before=$null;previous=$image;cleanup=$true;result=$false;launch=$true;success=$true},
+        @{name='clean-guest-unverified';before=$null;previous=$image;cleanup=$true;result='false';launch=$true;success=$false},
         @{name='cleanup-newly-discovered';before=$replacement;previous=$image;cleanup=$true;launch=$true;success=$true},
         @{name='cleanup-must-check-previous';before=$replacement;previous=$image;cleanup=$true;remaining=$image;launch=$true;success=$false}
     )){

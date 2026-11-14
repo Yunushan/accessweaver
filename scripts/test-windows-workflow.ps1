@@ -2015,13 +2015,24 @@ try {
     $removed=Remove-App 'splitcord'
     Assert ($removed -ceq $true -and $script:appRemovalEvents.Count -eq 1 -and -not (Test-Path -LiteralPath $fixtureApp)) 'Application removal confirms both executable and process readback before success'
     Assert ((Remove-App 'splitcord') -ceq $false -and $script:appRemovalEvents.Count -eq 1) 'Application removal identifies an already absent client without a vendor launch'
+    foreach($variant in @('discord','discord-ptb')){
+        $base=Get-AppProcessBase $variant
+        $updater=[pscustomobject]@{Path=(Join-Path $base 'Update.exe');HasExited=$false}
+        $script:appRemovalProcesses=@($updater)
+        $script:externalEffectsPending=$false
+        $rejected=$false
+        try{Remove-App $variant}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+        Assert ($rejected -and -not $script:externalEffectsPending -and $script:appRemovalEvents.Count -eq 1) ('Application removal refuses absent '+$variant+' while an updater remains')
+        $updater.HasExited=$true
+        Assert ((Remove-App $variant) -ceq $false -and -not $script:externalEffectsPending) ('Application removal confirms '+$variant+' absence after updater exit')
+    }
 } finally {
     Remove-Item Function:Get-Process
     foreach($name in $appRemovalSaved.Keys){Set-Item ('Function:'+$name) $appRemovalSaved[$name]}
     $script:externalEffectsPending=$false
 }
 # Mock installer acquisition and user operations; never execute a vendor process.
-$appInstallSaved=@{};foreach($name in @('Require-DesktopUser','Find-App','Get-AppExecutableDigest','Remove-App','Download','Native','Wait-App','Event')){$appInstallSaved[$name]=(Get-Command $name).ScriptBlock}
+$appInstallSaved=@{};foreach($name in @('Require-DesktopUser','Find-App','Get-AppExecutableDigest','Remove-App','Download','Native','Wait-App','Wait-AppProcessesExited','Event')){$appInstallSaved[$name]=(Get-Command $name).ScriptBlock}
 $previousAppRequest=$r
 $previousAppInput=$inputData
 $previousAppRoot=$root
@@ -2060,6 +2071,10 @@ try {
         }
         if($variant -ceq 'discord' -and $script:appStableAppeared -and $script:appInstallTrace.Contains('verify-ptb')){return 'C:\fixture\new\Discord.exe'}
         if($variant -ceq 'discord-ptb' -and $script:appPreviouslyInstalled){return 'C:\fixture\DiscordPTB.exe'}
+        if($variant -ceq 'discord' -and $script:appInstallTrace.Contains('remove-stable')){
+            if($script:appStableReturnsDuringCleanup){return 'C:\fixture\new\Discord.exe'}
+            return
+        }
         if($variant -ceq 'discord' -and -not $script:appStableAbsent){return 'C:\fixture\Discord.exe'}
     }
     function Get-AppExecutableDigest([string]$path) {
@@ -2140,6 +2155,12 @@ try {
         }
         return 'C:\fixture\Discord.exe'
     }
+    function Wait-AppProcessesExited {
+        param($variant,$app)
+        if($variant -cne 'discord'){throw 'Expected stable Discord cleanup verification'}
+        $script:appInstallTrace.Add('verify-stable-processes')
+        if($script:appStableProcessReturns){throw 'fixture stable process remains'}
+    }
     function Event {param($text);$script:appInstallTrace.Add('event')}
     $r=[pscustomobject]@{action='app-install';engine='discord-ptb';clean=$true;sha256=''}
     $inputData=[pscustomobject]@{nativeArchitecture='amd64'}
@@ -2159,7 +2180,7 @@ try {
     $script:journalPath=$journal
     $script:appInstallTrace.Clear()
     $installed=Install-App 'discord-ptb'
-    Assert (($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable,verify-ptb,event') 'PTB clean verifies the installed replacement before removal and rechecks it after cleanup'
+    Assert (($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable,verify-ptb,verify-stable-processes,find-discord,event') 'PTB clean verifies the installed replacement before removal and rechecks it after cleanup'
     $script:appPreviouslyInstalled=$true
     $script:appInstallTrace.Clear()
     $rejected=$false
@@ -2180,6 +2201,19 @@ try {
             ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable,verify-ptb') ('PTB clean refuses success when the replacement changes '+$change+' during cleanup')
     }
     $script:appPTBChangeDuringCleanup=$null
+    foreach($case in @(
+        @{flag='appStableReturnsDuringCleanup';message='Stable Discord reappeared during PTB cleanup; review the current installation'},
+        @{flag='appStableProcessReturns';message='fixture stable process remains'}
+    )){
+        $script:appInstallTrace.Clear()
+        $script:externalEffectsPending=$false
+        Set-Variable -Scope Script -Name $case.flag -Value $true
+        $rejected=$false
+        try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq $case.message}
+        Set-Variable -Scope Script -Name $case.flag -Value $false
+        Assert ($rejected -and $script:externalEffectsPending -and $script:appInstallTrace.Contains('remove-stable') -and
+            -not $script:appInstallTrace.Contains('event')) ('PTB clean refuses incomplete stable cleanup for '+$case.flag)
+    }
     $writer=[IO.File]::OpenWrite($script:appInstallerDestination)
     $writer.Dispose()
     Assert ($script:appInstallerLockedAtLaunch) 'PTB clean retains a read-only installer handle through installer launch'

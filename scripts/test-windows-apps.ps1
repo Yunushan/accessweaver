@@ -183,7 +183,7 @@ function Remove-FixtureApp([string]$Variant,[switch]$Cleanup){
             throw 'Recorded application installation could not be verified before removal'
         }
     }
-    if($current -or ($Cleanup -and $Variant -ceq 'splitcord')){
+    if($current -or $Cleanup){
         $data=Invoke-AppWorkflow @{action='app-remove';engine=$Variant}
         if($data.application -cne $Variant -or $data.removed -isnot [bool] -or (-not $Cleanup -and -not $data.removed)){
             throw 'Application workflow did not verify the requested removal'
