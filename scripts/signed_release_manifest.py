@@ -984,6 +984,21 @@ def hold_qualified_windows_detector(qualification):
         yield script
 
 
+@contextmanager
+def hold_qualified_windows_publisher(qualification):
+    if qualification is None or "publisherVerifierSHA256" not in qualification:
+        yield None
+        return
+    script_directory = Path(__file__).absolute().parent
+    with hold_windows_staging_directory(script_directory), ExitStack() as held:
+        for field in ("commonSHA256", "publisherVerifierSHA256"):
+            path = script_directory / Path(WINDOWS_LIFECYCLE_SOURCES[field]).name
+            held.enter_context(hold_windows_setup(path))
+            info = release_file(path, 1 << 20)
+            verify_staged_update(path, info.st_size, qualification[field])
+        yield path
+
+
 def detect_windows_upgrade(qualification, publisher_pin):
     try:
         shell = windows_system_directory() / "WindowsPowerShell" / "v1.0" / "powershell.exe"
@@ -1348,13 +1363,17 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                 and qualification.get(WINDOWS_PAYLOAD_PUBLISHER, windows_publisher) == payload_publisher
             ), "Windows publisher certificate differs from the upgrade qualification")
             payload = next(item for item in files if item["target"] == target and item["role"] == "payload")
-            for name, approved_digest, publisher_pin in (
-                (update["installer"], update["installerSHA256"], windows_publisher),
-                (payload["file"], payload["sha256"], payload_publisher),
-            ):
-                artifact = root / name
-                check_windows_publisher(artifact, approved_digest, publisher_pin)
-                require(digest(artifact) == approved_digest, "Windows artifact changed during publisher verification")
+            with hold_qualified_windows_publisher(qualification) as script:
+                for name, approved_digest, publisher_pin in (
+                    (update["installer"], update["installerSHA256"], windows_publisher),
+                    (payload["file"], payload["sha256"], payload_publisher),
+                ):
+                    artifact = root / name
+                    if script is None:
+                        check_windows_publisher(artifact, approved_digest, publisher_pin)
+                    else:
+                        check_windows_publisher(artifact, approved_digest, publisher_pin, script=script)
+                    require(digest(artifact) == approved_digest, "Windows artifact changed during publisher verification")
             update["nativePublisherVerification"] = {
                 "publisherCertificateSHA256": windows_publisher, "installerEmbeddedSignatureVerified": True,
                 "payloadEmbeddedSignatureVerified": True, "timestampsVerified": True,

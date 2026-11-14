@@ -640,6 +640,46 @@ class SignedReleaseManifestTests(unittest.TestCase):
                     (f"accessweaver-{VERSION}-windows-{arch}{suffix}", signer * 64)
                     for arch in ("amd64", "arm64") for suffix, signer in (("-setup.exe", "b"), (".exe", "7"))
                 })
+                if os.name == "nt":
+                    scripts = self.root / "approved-scripts"
+                    scripts.mkdir()
+                    approved_sources = release.windows_lifecycle_sources(source)
+                    for field, path in release.WINDOWS_LIFECYCLE_SOURCES.items():
+                        (scripts / Path(path).name).write_bytes(approved_sources[field])
+                    staging = self.root / "managed-windows"
+                    staging.mkdir()
+                    staged_options = {
+                        "target": "windows/arm64", "current_version": "1.2.2-rc.1",
+                        "current_payload_sha256": "d" * 64, "current_payload_sbom_sha256": "1" * 64,
+                        "current_payload_publisher_sha256": "2" * 64, "current_build_info_sha256": "5" * 64,
+                        "windows_publisher": "b" * 64, "windows_payload_publisher": "7" * 64,
+                        "stage_directory": staging,
+                    }
+
+                    def native_managed(artifact, artifact_pin, publisher_pin, *, script):
+                        self.assertEqual(script.parent, scripts)
+                        native(artifact, artifact_pin, publisher_pin, script=script)
+                        for filename in ("windows-installer-common.ps1", "verify-windows-installer-publisher.ps1"):
+                            with self.assertRaises(OSError), (scripts / filename).open("r+b"):
+                                self.fail("Approved publisher script could be written during verification")
+
+                    with patch.object(release, "__file__", str(scripts / "signed_release_manifest.py")), \
+                            patch.object(release, "check_windows_publisher", side_effect=native_managed) as managed:
+                        for field in ("publisherVerifierSHA256", "commonSHA256"):
+                            script_path = scripts / Path(release.WINDOWS_LIFECYCLE_SOURCES[field]).name
+                            original = script_path.read_bytes()
+                            script_path.write_bytes(original + b" changed")
+                            try:
+                                with self.subTest(field=field), self.assertRaises(ValueError):
+                                    self.verify(cert, pin, source, **staged_options)
+                                managed.assert_not_called()
+                                self.assertEqual(list(staging.iterdir()), [])
+                            finally:
+                                script_path.write_bytes(original)
+                        update = self.verify(cert, pin, source, **staged_options)["managedUpdate"]
+                        self.assertTrue(update["installerStaged"])
+                        self.assertEqual(managed.call_count, 2)
+                        self.assertEqual(release.digest(staging / update["installer"]), update["installerSHA256"])
                 for revoked_pin in (evidence["arm64", "upgrade"][1], pins["fixtureSHA256"], "7" * 64):
                     revoked = self.write_policy({**self.policy, "subjectSHA256": [revoked_pin]})
                     with self.assertRaisesRegex(ValueError, "revoked"):
