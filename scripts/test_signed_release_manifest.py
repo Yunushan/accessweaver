@@ -1425,6 +1425,47 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
                 release.launch_windows_setup(directory, update, self.policy, **launch_options)
             launch.assert_not_called()
 
+    @unittest.skipUnless(os.name == "nt", "requires native Windows process creation")
+    def test_windows_staging_launches_inert_fixture_with_fixed_arguments(self):
+        directory = self.root / "staged setup fixture"
+        directory.mkdir()
+        setup = directory / "accessweaver-setup.exe"
+        baseline = "/AWUpgradeFrom=1.2.2-rc.1," + ",".join(["a" * 64, "b" * 64, "c" * 64])
+        source = directory / "Fixture.cs"
+        source.write_text(
+            'public static class Fixture {\n'
+            '    public static int Main(string[] args) {\n'
+            '        string[] expected = {"/SP-", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",\n'
+            '                             "/RESTARTEXITCODE=3010", "/NOICONS", "' + baseline + '"};\n'
+            '        if (args.Length != expected.Length) return 64;\n'
+            '        for (int i = 0; i < expected.Length; i++)\n'
+            '            if (args[i] != expected[i]) return 65;\n'
+            '        return 3010;\n'
+            '    }\n'
+            '}\n',
+            encoding="utf-8",
+        )
+        shell = release.windows_system_directory() / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+        compile_fixture = (
+            "$ErrorActionPreference='Stop'; "
+            "Add-Type -LiteralPath $env:AW_TEST_SETUP_SOURCE -OutputAssembly $env:AW_TEST_SETUP_EXE "
+            "-OutputType ConsoleApplication"
+        )
+        subprocess.run(
+            [shell, "-NoProfile", "-NonInteractive", "-Command", compile_fixture],
+            check=True, timeout=30, capture_output=True,
+            env={**os.environ, "AW_TEST_SETUP_SOURCE": str(source), "AW_TEST_SETUP_EXE": str(setup)},
+        )
+
+        update = {"installer": setup.name, "installerSHA256": release.digest(setup),
+                  "windowsSetupBaselineArgument": baseline}
+        options = {"size": setup.stat().st_size, "directory_identity": release.staging_directory_identity(directory)}
+        self.assertEqual(release.launch_windows_setup(directory, update, self.policy, **options), 3010)
+        wrong_baseline = {**update, "windowsSetupBaselineArgument": baseline.replace("rc.1", "rc.2")}
+        self.assertEqual(release.launch_windows_setup(directory, wrong_baseline, self.policy, **options), 65)
+        self.assertEqual(release.digest(setup), update["installerSHA256"])
+        setup.rename(directory / "retired.exe")
+
     @unittest.skipUnless(os.name == "nt", "requires a Windows junction")
     def test_windows_staging_refuses_a_redirected_parent(self):
         update = release.managed_update(release.inventory(self.candidate, self.subjects),
