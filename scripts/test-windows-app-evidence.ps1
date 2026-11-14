@@ -4,7 +4,7 @@ $fixture=Join-Path $PSScriptRoot 'test-windows-apps.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($fixture,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Interactive Windows app fixture failed parsing'}
-foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Assert-FixtureCommunicationImage','Test-FixtureCommunication','Check-FixtureCommunications','Test-FixtureAppChecks','Start-FixtureApp','Remove-FixtureApp','Assert-FixtureSplitCordServiceState')){
+foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Assert-FixtureCommunicationImage','Test-FixtureCommunication','Check-FixtureCommunications','Test-FixtureAppChecks','Start-FixtureApp','Remove-FixtureApp','Assert-FixtureSplitCordServiceState','New-SplitCordHandoff','Read-SplitCordHandoff')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -499,4 +499,47 @@ foreach($bad in @(
 )){
     if(Test-FixtureAppChecks $bad.checks $expected){throw 'Incomplete or invalid application evidence was credited'}
 }
+$id='a'*32
+$pin='b'*64
+$action='app-install'
+$job=@{action=$action;state='succeeded';result=@{ok=$true;finalizationFailures=@();data=@{application='splitcord';installed=$true;path='private fixture path'}}}
+$receipt=New-SplitCordHandoff ($job | ConvertTo-Json -Depth 5 -Compress) $id $action $pin
+$decoded=Read-SplitCordHandoff $receipt $id $action $pin
+if($receipt.Length -ge 512 -or $receipt.Contains('private fixture path') -or $decoded.application -cne 'splitcord' -or $decoded.installed -ne $true){
+    throw 'SplitCord receipt did not retain only the approved handoff result'
+}
+foreach($case in @(
+    @{id=('c'*32);action=$action;pin=$pin;receipt=$receipt},
+    @{id=$id;action='app-remove';pin=$pin;receipt=$receipt},
+    @{id=$id;action=$action;pin=('c'*64);receipt=$receipt},
+    @{id=$id;action=$action;pin=$pin;receipt=($receipt.Replace('"changed":true','"changed":"true"'))},
+    @{id=$id;action=$action;pin=$pin;receipt=('['+$receipt+']')},
+    @{id=$id;action=$action;pin=$pin;receipt=''}
+)){
+    $refused=$false
+    try {Read-SplitCordHandoff $case.receipt $case.id $case.action $case.pin | Out-Null} catch {$refused=$true}
+    if(-not $refused){throw 'Unrelated or malformed SplitCord receipt was accepted'}
+}
+foreach($case in @(
+    @{action=$action;state='failed';ok=$true;data=$job.result.data},
+    @{action='app-remove';state='succeeded';ok=$true;data=$job.result.data},
+    @{action=$action;state='succeeded';ok='true';data=$job.result.data},
+    @{action=$action;state='succeeded';ok=$true;data=@{application='discord';installed=$true}},
+    @{action=$action;state='succeeded';ok=$true;data=@{application='splitcord';installed=$false}}
+)){
+    $candidate=@{action=$case.action;state=$case.state;result=@{ok=$case.ok;finalizationFailures=@();data=$case.data}} | ConvertTo-Json -Depth 5
+    $refused=$false
+    try {New-SplitCordHandoff $candidate $id $action $pin | Out-Null} catch {$refused=$true}
+    if(-not $refused){throw 'Invalid product result produced a SplitCord receipt'}
+}
+$job.result.finalizationFailures=@('synthetic')
+$refused=$false
+try {New-SplitCordHandoff ($job | ConvertTo-Json -Depth 5) $id $action $pin | Out-Null} catch {$refused=$true}
+if(-not $refused){throw 'Workflow finalization failure produced a SplitCord receipt'}
+$job.result.finalizationFailures=@()
+$job.action='app-remove'
+$job.result.data=@{application='splitcord';removed=$false}
+$receipt=New-SplitCordHandoff ($job | ConvertTo-Json -Depth 5) $id 'app-remove' $pin
+$decoded=Read-SplitCordHandoff $receipt $id 'app-remove' $pin
+if($decoded.removed -ne $false){throw 'Idempotent SplitCord cleanup lost the absent result'}
 Write-Output 'Interactive Windows application evidence contracts passed.'

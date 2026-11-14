@@ -14,6 +14,8 @@ param(
     [switch]$DisposableVM,
     [switch]$InteractiveCommunications,
     [string]$ResultsDirectory='',
+    [ValidateSet('app-install','app-remove')][string]$SplitCordAction,
+    [ValidatePattern('\A[a-f0-9]{32}\z')][string]$HandoffID,
     [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$ExpectedSHA256=''
 )
 $ErrorActionPreference='Stop'
@@ -248,7 +250,43 @@ function Start-FixtureApp([string]$Variant){
     }
 }
 
-if(($InteractiveCommunications -or -not $SkipSplitCord) -and (-not $ExpectedSHA256 -or [Console]::IsInputRedirected)){
+function New-SplitCordHandoff([string]$JSON,[string]$ID,[string]$Action,[string]$Digest){
+    if(-not $JSON -or $JSON.Length -gt 1MB){throw 'SplitCord machine workflow output exceeds the inspection limit'}
+    $job=ConvertFrom-Json -InputObject $JSON -ErrorAction Stop
+    $field=if($Action -ceq 'app-install'){'installed'}else{'removed'}
+    if($job -isnot [pscustomobject] -or $job.action -cne $Action -or $job.state -cne 'succeeded' -or
+        $job.result.ok -isnot [bool] -or -not $job.result.ok -or @($job.result.finalizationFailures).Count -ne 0 -or
+        $job.result.data.application -cne 'splitcord' -or $job.result.data.$field -isnot [bool] -or
+        ($field -ceq 'installed' -and -not $job.result.data.$field)){
+        throw 'SplitCord machine workflow did not verify the requested operation'
+    }
+    @{id=$ID;action=$Action;controllerSHA256=$Digest;changed=$job.result.data.$field} | ConvertTo-Json -Compress
+}
+
+function Read-SplitCordHandoff([string]$Receipt,[string]$ID,[string]$Action,[string]$Digest){
+    if(-not $Receipt -or $Receipt.Length -gt 512 -or $Receipt -cnotmatch '\A\{'){
+        throw 'SplitCord machine receipt is unavailable'
+    }
+    $record=ConvertFrom-Json -InputObject $Receipt -ErrorAction Stop
+    $keys=@('id','action','controllerSHA256','changed')
+    if($record -isnot [pscustomobject] -or @($record.PSObject.Properties).Count -ne $keys.Count -or
+        @($record.PSObject.Properties.Name | Where-Object {$_ -cnotin $keys}).Count -ne 0 -or
+        $record.id -isnot [string] -or $record.id -cne $ID -or
+        $record.action -isnot [string] -or $record.action -cne $Action -or
+        $record.controllerSHA256 -isnot [string] -or $record.controllerSHA256 -cne $Digest -or
+        $record.changed -isnot [bool] -or ($Action -ceq 'app-install' -and -not $record.changed)){
+        throw 'SplitCord machine receipt does not match the current request'
+    }
+    if($Action -ceq 'app-install'){return @{application='splitcord';installed=$record.changed}}
+    return @{application='splitcord';removed=$record.changed}
+}
+
+if([bool]$SplitCordAction -ne [bool]$HandoffID -or ($SplitCordAction -and
+    (-not $ExpectedSHA256 -or -not $PSBoundParameters.ContainsKey('Executable') -or -not $DisposableVM -or
+        $InteractiveCommunications -or $SkipSplitCord -or $ResultsDirectory))){
+    throw 'SplitCord handoff requires a fixed action, request ID, explicit approved controller path and digest, and disposable guest'
+}
+if(-not $SplitCordAction -and ($InteractiveCommunications -or -not $SkipSplitCord) -and (-not $ExpectedSHA256 -or [Console]::IsInputRedirected)){
     throw 'SplitCord maintenance and communications checks require the approved controller digest and an interactive desktop console'
 }
 if($env:OS -cne 'Windows_NT' -or ($env:USERNAME -ne 'WDAGUtilityAccount' -and
@@ -259,8 +297,9 @@ $current=[Diagnostics.Process]::GetCurrentProcess()
 try {$session=$current.SessionId} finally {$current.Dispose()}
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
 try {
-    if($identity.IsSystem -or ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) -or $session -eq 0){
-        throw 'Run this fixture in an unelevated PowerShell window in the disposable desktop account'
+    $elevated=([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if($identity.IsSystem -or $session -eq 0 -or $elevated -ne [bool]$SplitCordAction){
+        throw 'Use an unelevated desktop shell for the fixture and a separate administrator shell for the SplitCord handoff'
     }
 } finally {$identity.Dispose()}
 
@@ -273,8 +312,22 @@ if($controller.PSIsContainer -or ($controller.Attributes -band [IO.FileAttribute
 $guard=[IO.File]::Open($Executable,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
 $previousHome=$env:ACCESSWEAVER_HOME
 try {
-    $digest=(Get-FileHash -InputStream $guard -Algorithm SHA256).Hash.ToLowerInvariant()
-    if($ExpectedSHA256 -and $digest -ine $ExpectedSHA256){throw 'Controller differs from the approved candidate'}
+    if($guard.Length -le 0 -or $guard.Length -gt 128MB){throw 'Expected a bounded ordinary controller executable'}
+    $controllerDigest=(Get-FileHash -InputStream $guard -Algorithm SHA256).Hash.ToLowerInvariant()
+    if($ExpectedSHA256 -and $controllerDigest -ine $ExpectedSHA256){throw 'Controller differs from the approved candidate'}
+    if($SplitCordAction){
+        $SplitCordAction=$SplitCordAction.ToLowerInvariant()
+        $request=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) ('AccessWeaver-SplitCord-'+$HandoffID+'.json')
+        $data=[Text.Encoding]::UTF8.GetBytes((@{action=$SplitCordAction;engine='splitcord'} | ConvertTo-Json -Compress))
+        $requestStream=[IO.File]::Open($request,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
+        try {
+            try {$requestStream.Write($data,0,$data.Length)} finally {$requestStream.Dispose()}
+            $output=@(& $Executable system apply $request --confirm)
+            if($LASTEXITCODE -ne 0){throw 'SplitCord machine workflow failed'}
+            New-SplitCordHandoff ($output -join "`n") $HandoffID $SplitCordAction $controllerDigest
+        } finally {[IO.File]::Delete($request)}
+        return
+    }
     $runID=[guid]::NewGuid().ToString('N')
     $results=if($ResultsDirectory){[IO.Path]::GetFullPath($ResultsDirectory)}else{Join-Path $env:LOCALAPPDATA 'AccessWeaver-App-Test-Results'}
     $run=Join-Path $results $runID
@@ -299,7 +352,7 @@ try {
     $checks=[Collections.Generic.List[object]]::new()
     $script:appEvidenceStage='baseline'
     $report=[ordered]@{
-        schemaVersion=9;runID=$runID;controllerSHA256=$digest;approvedDigestMatched=[bool]$ExpectedSHA256;
+        schemaVersion=10;runID=$runID;controllerSHA256=$controllerDigest;approvedDigestMatched=[bool]$ExpectedSHA256;
         fixtureSHA256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant();
         architecture=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant();
         checks=$null;baselineClear=$false;splitCordIncluded=(-not $SkipSplitCord);
@@ -325,13 +378,11 @@ try {
             $requestJSON=$Request|ConvertTo-Json -Compress
             if($Request.engine -ceq 'splitcord' -and $Request.action -cin @('app-install','app-remove')){
                 $script:appEvidenceStage='operator-machine-workflow'
-                # The elevated CLI must use an independently approved controller from protected storage.
-                # Do not ask it to execute from the desktop account's writeable test directory.
-                Write-Host ('In the separate administrator shell, review and apply this exact JSON with the approved controller: '+$requestJSON)
-                Write-Host ('Expected controller SHA-256: '+$digest)
-                $resultJSON=Read-Host 'Paste the single-line result after system apply exits successfully. Press Enter to record failure'
-                if(-not $resultJSON -or $resultJSON.Length -gt 1048576){throw 'SplitCord machine workflow result is unavailable'}
-                $response=@{exitCode=0;text=$resultJSON}
+                $id=[guid]::NewGuid().ToString('N')
+                Write-Host 'In the separate administrator shell, run the reviewed fixture and approved controller from protected storage.'
+                Write-Host ("Use -DisposableVM -SplitCordAction "+$Request.action+" -HandoffID "+$id+" -ExpectedSHA256 "+$controllerDigest)
+                $receipt=Read-Host 'Paste the single-line SplitCord receipt. Press Enter to record failure'
+                return (Read-SplitCordHandoff $receipt $id $Request.action $controllerDigest)
             }else{
                 [IO.File]::WriteAllText($path,$requestJSON,$encoding)
                 $response=Invoke-FixtureCLI @('system','apply',$path,'--confirm')
