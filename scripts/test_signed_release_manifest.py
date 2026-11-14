@@ -996,6 +996,10 @@ class SignedReleaseManifestTests(unittest.TestCase):
         (staging / selected["managedUpdate"]["installer"]).unlink()
         with self.assertRaisesRegex(ValueError, "lacks signed Setup baseline enforcement evidence"):
             self.verify(approved, pin, stage_directory=staging, require_windows_setup_baseline=True, **inventory_options)
+        original_setup_pin = release.digest(self.candidate / qualified_report["installer"])
+        with self.assertRaisesRegex(ValueError, "lacks signed Setup baseline enforcement evidence"):
+            self.verify(approved, pin, stage_directory=staging, resume_windows_upgrade_setup_sha256=original_setup_pin,
+                        **inventory_options)
         self.assertEqual(list(staging.iterdir()), [])
         for missing_pins in ({}, qualified, trusted, {"current_version": "1.2.2-rc.1", "target": "darwin/arm64"}):
             with self.subTest(baseline_inputs=sorted(missing_pins)), self.assertRaisesRegex(
@@ -1021,7 +1025,34 @@ class SignedReleaseManifestTests(unittest.TestCase):
             qualified_entry["previousVersion"], qualified_entry["previousPayloadSHA256"],
             qualified_entry["previousPayloadSBOMSHA256"], qualified_entry["previousBuildInfoSHA256"],
         )))
-        (staging / selected["managedUpdate"]["installer"]).unlink()
+        staged_path = staging / selected["managedUpdate"]["installer"]
+        before = staged_path.stat()
+        retry_cli = command[:command.index("--current-version")] + [
+            "--windows-upgrade-inventory", str(inventory_path), inventory_options["windows_upgrade_inventory"][1],
+            "--stage-directory", str(staging), "--resume-windows-upgrade-setup-sha256", original_setup_pin.upper(),
+        ]
+        completed = subprocess.run(retry_cli, check=True, capture_output=True, text=True, timeout=30)
+        self.assertEqual(json.loads(completed.stdout)["managedUpdate"], selected["managedUpdate"])
+        self.assertEqual(staged_path.stat().st_ino, before.st_ino)
+        self.assertEqual(staged_path.stat().st_mtime_ns, before.st_mtime_ns)
+
+        with patch.object(release, "stage_managed_update") as stage:
+            for retry_pin, options, error in (
+                ("", inventory_options, "Expected the original approved Windows Setup"),
+                ("0" * 64, inventory_options, "differs from the original approved upgrade package"),
+                (original_setup_pin, trusted, "complete installed trust pins"),
+            ):
+                with self.subTest(error=error), self.assertRaisesRegex(ValueError, error):
+                    self.verify(approved, pin, stage_directory=staging,
+                                resume_windows_upgrade_setup_sha256=retry_pin, **options)
+            revoked = self.write_policy({**self.policy, "subjectSHA256": [original_setup_pin]})
+            with self.assertRaisesRegex(ValueError, "is revoked"):
+                self.verify(approved, pin, policy_pin=revoked, stage_directory=staging,
+                            resume_windows_upgrade_setup_sha256=original_setup_pin, **inventory_options)
+            stage.assert_not_called()
+        self.write_policy(self.policy)
+        self.assertEqual(release.digest(staged_path), original_setup_pin)
+        staged_path.unlink()
         verified = self.verify(approved, pin, current_build_info_sha256="5" * 64,
                                require_windows_setup_baseline=True, **trusted)
         self.assertEqual(verified["managedUpdate"]["windowsSetupBaselineArgument"],
