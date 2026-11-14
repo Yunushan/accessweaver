@@ -4,7 +4,7 @@ $source=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Windows workflow source failed parsing'}
-foreach($name in @('No-Reparse','Install-Drover','Assert-RecordedServiceBinding','Recover-Operation','Rollback','Assert-DroverApplication','Set-DroverFile','Get-DroverFileHash','Get-DroverRestorePlan','Restore-Drover')){
+foreach($name in @('No-Reparse','Install-Drover','Assert-RecordedServiceBinding','Recover-Operation','Rollback','Assert-DroverApplication','Set-DroverFile','Get-DroverFileHash','Get-DroverRestorePlan','Read-DroverManifest','Assert-DroverManifestUnchanged','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Restore-Drover')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -15,6 +15,7 @@ function Assert-TrustedItem([string]$path){No-Reparse $path}
 function Stop-AppProcesses([string]$variant){
     if($variant -cne 'discord'){throw 'Wrong client selected'}
     $script:stops++
+    if($script:changeOnStop){[IO.File]::AppendAllText($manifest,' ')}
     if($script:verifyPrepared){
         if(-not [IO.File]::Exists($manifest) -or $script:undo.Count -ne 1 -or
            $script:undo[0].kind -cne 'drover' -or
@@ -94,6 +95,23 @@ try {
     Assert-Refused
     Require ($script:stops -eq 0 -and (Get-DroverFileHash $first) -ceq $installed) 'Modified backup caused side effects'
     [IO.File]::WriteAllText($backup,'original DLL')
+
+    foreach($broken in @([byte[]]@(0xff),[byte[]]::new(1MB+1))){
+        [IO.File]::WriteAllBytes($manifest,$broken)
+        Assert-Refused
+        Require ($script:stops -eq 0 -and (Get-DroverFileHash $first) -ceq $installed) 'Invalid ownership bytes reached restoration'
+    }
+
+    Write-Manifest $records
+    $priorHash=Get-DroverFileHash $manifest
+    $script:changeOnStop=$true
+    Assert-Refused
+    Require ($script:stops -eq 1 -and (Get-DroverFileHash $manifest) -cne $priorHash -and
+        (Get-DroverFileHash $first) -ceq $installed -and
+        (Get-DroverFileHash $second) -ceq $installedINI -and $script:events -eq 0) 'Ownership edit during process stop reached file mutation'
+    $script:changeOnStop=$false
+    $script:stops=0
+    Write-Manifest $records
 
     $script:denySecond=$true
     Assert-Refused
@@ -207,4 +225,4 @@ try {
         if([IO.Directory]::Exists($directory)){[IO.Directory]::Delete($directory)}
     }
 }
-Write-Output 'Eighteen bounded Drover install and restoration scenarios passed.'
+Write-Output 'Bounded Drover install and restoration scenarios passed.'

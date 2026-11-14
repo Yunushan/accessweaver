@@ -1967,24 +1967,38 @@ function Get-DroverRestorePlan($records) {
         [pscustomobject]@{path=$path;backup=$item.backup;current=$current;original=$original;installedHash=$item.installedHash;applicationSHA256=$applicationSHA256;directoryExists=$directoryExists}
     }
 }
+function Read-DroverManifest([string]$Path) {
+    Assert-TrustedItem $Path
+    try {
+        $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        try {$bytes=Read-WorkflowRecoveryJournalBytes $stream 1MB}
+        finally {$stream.Dispose()}
+        if($null -eq $bytes -or $bytes.Length -eq 0){throw 'Empty ownership record'}
+        return ,$bytes
+    }catch {throw 'Invalid Drover ownership record'}
+}
+function Assert-DroverManifestUnchanged([string]$Path,[string]$ExpectedSHA256) {
+    $bytes=Read-DroverManifest $Path
+    if((Get-WorkflowBytesSHA256 $bytes) -cne $ExpectedSHA256){throw 'Drover ownership record changed during restoration'}
+}
 function Restore-Drover([string]$ExpectedManifestSHA256) {
     $manifest=Join-Path $root 'profiles\drover-owned.json'
     No-Reparse $manifest
     if(-not (Test-Path -LiteralPath $manifest -ErrorAction Stop)){return}
-    Assert-TrustedItem $manifest
-    $entry=Get-Item -LiteralPath $manifest -Force -ErrorAction Stop
-    if($entry.PSIsContainer -or $entry.Length -le 0 -or $entry.Length -gt 1MB){throw 'Invalid Drover ownership record'}
-    $manifestHash=Get-DroverFileHash $manifest
+    $bytes=Read-DroverManifest $manifest
+    $manifestHash=Get-WorkflowBytesSHA256 $bytes
     if($ExpectedManifestSHA256 -and $manifestHash -ine $ExpectedManifestSHA256){throw 'Drover recovery journal differs from the current ownership record'}
-    $manifestJSON=Get-Content -LiteralPath $manifest -Raw -ErrorAction Stop
-    # Windows PowerShell emits the whole decoded array as one pipeline object.
-    # Evaluate the JSON command before normalizing its records to an array.
-    $records=@((ConvertFrom-Json -InputObject $manifestJSON -ErrorAction Stop))
-    if((Get-DroverFileHash $manifest) -cne $manifestHash){throw 'Drover ownership record changed during inspection'}
+    try {
+        $manifestJSON=[Text.UTF8Encoding]::new($false,$true).GetString($bytes)
+        if($manifestJSON.Length -gt 0 -and $manifestJSON[0] -eq [char]0xfeff){$manifestJSON=$manifestJSON.Substring(1)}
+        # Evaluate the JSON command before normalizing records in Windows PowerShell.
+        $records=@((ConvertFrom-Json -InputObject $manifestJSON -ErrorAction Stop))
+    }catch {throw 'Invalid Drover ownership record'}
     if($records.Count -eq 0 -or $records.Count -gt 512){throw 'Invalid Drover ownership record'}
     # Refuse known conflicts before stopping Discord or changing any file.
     $plan=@(Get-DroverRestorePlan $records)
     if(@($plan | Where-Object {$_.directoryExists -and $_.current -ine $_.original}).Count){
+        Assert-DroverManifestUnchanged $manifest $manifestHash
         Stop-AppProcesses 'discord'
         $plan=@(Get-DroverRestorePlan $records)
     }
@@ -1993,6 +2007,7 @@ function Restore-Drover([string]$ExpectedManifestSHA256) {
         Assert-DroverApplication (Split-Path -Parent $item.path) $item.applicationSHA256
         if((Get-DroverFileHash $item.path) -ine $item.current){throw 'Drover file changed during restoration'}
         if($item.current -ine $item.original){
+            Assert-DroverManifestUnchanged $manifest $manifestHash
             $script:externalEffectsPending=$true
             if($item.backup){
                 if((Get-DroverFileHash $item.backup) -ine $item.original){throw 'Original Drover backup changed during restoration'}
@@ -2007,7 +2022,7 @@ function Restore-Drover([string]$ExpectedManifestSHA256) {
     }
     # Completed restorations may be retried after a partial failure, using
     # the original backup hash to recognize files that are already restored.
-    if((Get-DroverFileHash $manifest) -cne $manifestHash){throw 'Drover ownership record changed during restoration'}
+    Assert-DroverManifestUnchanged $manifest $manifestHash
     $script:externalEffectsPending=$true
     Remove-Item -LiteralPath $manifest -ErrorAction Stop
     if(Test-Path -LiteralPath $manifest -ErrorAction Stop){throw 'Drover ownership record could not be retired'}
