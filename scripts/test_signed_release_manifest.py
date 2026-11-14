@@ -267,28 +267,43 @@ class SignedReleaseManifestTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             release.prepare(self.candidate, output, COMMIT, REF)
 
-    def windows_lifecycle_reports(self):
+    def windows_lifecycle_reports(self, pins):
         evidence = {}
         for arch in ("amd64", "arm64"):
             self.set_windows_build_info_pin(arch, "6" * 64)
             evidence[arch, "clean"] = self.write_reboot_report(
-                f"{arch}-clean.json", architecture=arch, schemaVersion=13)
+                f"{arch}-clean.json", architecture=arch, schemaVersion=13, **pins)
             evidence[arch, "upgrade"] = self.write_reboot_report(
                 f"{arch}-upgrade.json", architecture=arch, schemaVersion=13, installMode="upgrade",
                 previousVersion="1.2.2-rc.1", previousPayloadSHA256="d" * 64,
                 userProfilePreservedThroughUpgrade=True, downgradeRequested=True,
                 downgradeRefused=True, downgradeStatePreserved=True,
-                previousSetupSHA256="8" * 64, previousPublisherSHA256="9" * 64,
+                previousSetupSHA256="8" * 64, previousPublisherSHA256="9" * 64, **pins,
             )
         return evidence
 
+    def lifecycle_source_fixture(self):
+        top = Path(__file__).resolve().parents[1]
+        source = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=top, text=True, timeout=15).strip()
+        pins = release.windows_lifecycle_source_digests(source)
+        self.assertEqual(pins.keys(), release.WINDOWS_LIFECYCLE_SOURCES.keys())
+        for sidecar in self.candidate.glob("*.cdx.json"):
+            document = json.loads(sidecar.read_bytes())
+            for component in [document["metadata"]["component"], *document["components"]]:
+                for prop in component.get("properties", []):
+                    if prop["name"] == "accessweaver:source-commit":
+                        prop["value"] = source
+            sidecar.write_text(json.dumps(document), encoding="utf-8")
+        return source, pins
+
     def test_prepare_can_require_windows_lifecycle_coverage(self):
         output = self.root / release.MANIFEST
-        evidence = self.windows_lifecycle_reports()
+        source, pins = self.lifecycle_source_fixture()
+        evidence = self.windows_lifecycle_reports(pins)
         for missing in evidence:
             provided = [item for path, item in evidence.items() if path != missing]
             with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, "Missing Windows lifecycle evidence"):
-                release.prepare(self.candidate, output, COMMIT, REF, windows_reboot_evidence=provided,
+                release.prepare(self.candidate, output, source, REF, windows_reboot_evidence=provided,
                                 require_windows_lifecycle=True)
         arm_upgrade, _ = evidence["arm64", "upgrade"]
         incomplete = json.loads(arm_upgrade.read_bytes())
@@ -298,18 +313,23 @@ class SignedReleaseManifestTests(unittest.TestCase):
             (without_downgrade, "downgrade refusal"),
             ({key: value for key, value in {**incomplete, "schemaVersion": 12}.items()
               if key != release.WINDOWS_SETUP_WRONG_BASELINE}, "Setup baseline refusal"),
+            *[({**incomplete, field: "0" * 64}, "differs from the approved source scripts") for field in pins],
         ):
             arm_upgrade.write_text(json.dumps(record), encoding="utf-8")
             provided = {**evidence, ("arm64", "upgrade"): (arm_upgrade, release.digest(arm_upgrade))}
             with self.subTest(record=message), self.assertRaisesRegex(ValueError, message):
-                release.prepare(self.candidate, output, COMMIT, REF, windows_reboot_evidence=list(provided.values()),
+                release.prepare(self.candidate, output, source, REF, windows_reboot_evidence=list(provided.values()),
                                 require_windows_lifecycle=True)
             self.assertFalse(output.exists())
         arm_upgrade.write_text(json.dumps(incomplete), encoding="utf-8")
         evidence["arm64", "upgrade"] = (arm_upgrade, release.digest(arm_upgrade))
-        release.prepare(self.candidate, output, COMMIT, REF, windows_reboot_evidence=list(evidence.values()),
+        release.prepare(self.candidate, output, source, REF, windows_reboot_evidence=list(evidence.values()),
                         require_windows_lifecycle=True)
-        self.assertEqual(len(json.loads(output.read_bytes())["windowsDetection"]), 4)
+        manifest = json.loads(output.read_bytes())
+        self.assertEqual(manifest["schemaVersion"], 11)
+        self.assertEqual(len(manifest["windowsDetection"]), 4)
+        for entry in manifest["windowsDetection"]:
+            self.assertEqual({field: entry[field] for field in pins}, pins)
 
     def test_prepare_rejects_mismatched_or_malformed_sboms(self):
         output = self.root / release.MANIFEST
@@ -549,33 +569,46 @@ class SignedReleaseManifestTests(unittest.TestCase):
         openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-sha256",
                 "-subj", "/CN=Disposable Windows lifecycle fixture", "-keyout", key, "-out", pem)
         openssl("x509", "-in", pem, "-outform", "DER", "-out", cert)
-        evidence = self.windows_lifecycle_reports()
+        source, pins = self.lifecycle_source_fixture()
+        evidence = self.windows_lifecycle_reports(pins)
         prepared = self.root / release.MANIFEST
         manifest = self.candidate / release.MANIFEST
         signature = self.candidate / release.SIGNATURE
-        for complete in (False, True):
+        for complete, bind_sources in ((False, False), (True, False), (True, True)):
             if prepared.exists():
                 prepared.unlink()
             if manifest.exists():
                 manifest.unlink()
                 signature.unlink()
             provided = list(evidence.values()) if complete else [evidence["amd64", "clean"]]
-            release.prepare(self.candidate, prepared, COMMIT, REF, windows_reboot_evidence=provided)
+            release.prepare(self.candidate, prepared, source, REF, windows_reboot_evidence=provided,
+                            require_windows_lifecycle=bind_sources)
             shutil.copyfile(prepared, manifest)
             openssl("cms", "-sign", "-binary", "-md", "sha256", "-in", manifest,
                     "-signer", pem, "-inkey", key, "-outform", "DER", "-out", signature)
             pin = release.digest(cert)
-            if complete:
-                report = self.verify(cert, pin, require_windows_lifecycle=True)
+            if bind_sources:
+                report = self.verify(cert, pin, source, require_windows_lifecycle=True)
                 self.assertIs(report["windowsLifecycleEvidenceVerified"], True)
                 self.assertIs(report["productionQualificationComplete"], False)
-                revoked = self.write_policy({**self.policy, "subjectSHA256": [evidence["arm64", "upgrade"][1]]})
-                with self.assertRaisesRegex(ValueError, "revoked"):
-                    self.verify(cert, pin, policy_pin=revoked, require_windows_lifecycle=True)
+                for revoked_pin in (evidence["arm64", "upgrade"][1], pins["fixtureSHA256"]):
+                    revoked = self.write_policy({**self.policy, "subjectSHA256": [revoked_pin]})
+                    with self.assertRaisesRegex(ValueError, "revoked"):
+                        self.verify(cert, pin, source, policy_pin=revoked, require_windows_lifecycle=True)
+                self.write_policy(self.policy)
+                files = release.inventory(self.candidate, self.subjects)
+                entries = json.loads(manifest.read_bytes())["windowsDetection"]
+                entries[0]["fixtureSHA256"] = "0" * 64
+                manifest.write_bytes(release.encode_manifest(source, REF, files, entries))
+                openssl("cms", "-sign", "-binary", "-md", "sha256", "-in", manifest,
+                        "-signer", pem, "-inkey", key, "-outform", "DER", "-out", signature)
+                with self.assertRaisesRegex(ValueError, "differs from the approved source scripts"):
+                    self.verify(cert, pin, source, require_windows_lifecycle=True)
             else:
-                with self.assertRaisesRegex(ValueError, "Missing Windows lifecycle evidence"):
-                    self.verify(cert, pin, require_windows_lifecycle=True)
-                self.assertNotIn("windowsLifecycleEvidenceVerified", self.verify(cert, pin))
+                message = "differs from the approved source scripts" if complete else "Missing Windows lifecycle evidence"
+                with self.assertRaisesRegex(ValueError, message):
+                    self.verify(cert, pin, source, require_windows_lifecycle=True)
+                self.assertNotIn("windowsLifecycleEvidenceVerified", self.verify(cert, pin, source))
 
     def test_real_cms_approval_and_refusals(self):
         self.assertIsNotNone(OPENSSL, "OpenSSL is required for CMS signing fixtures")

@@ -44,6 +44,13 @@ WINDOWS_DETECTION_FAILURE_REASONS = (
 WINDOWS_PAYLOAD_PUBLISHER = "payloadPublisherCertificateSHA256"
 WINDOWS_BUILD_INFO = "buildInfoSHA256"
 WINDOWS_DETECTOR = "detectorSHA256"
+WINDOWS_LIFECYCLE_SOURCES = {
+    WINDOWS_DETECTOR: "scripts/detect-windows-installer.ps1",
+    "fixtureSHA256": "scripts/test-windows-installer-reboot.ps1",
+    "commonSHA256": "scripts/windows-installer-common.ps1",
+    "publisherVerifierSHA256": "scripts/verify-windows-installer-publisher.ps1",
+}
+WINDOWS_LIFECYCLE_SOURCE_FIELDS = tuple(field for field in WINDOWS_LIFECYCLE_SOURCES if field != WINDOWS_DETECTOR)
 WINDOWS_PREVIOUS_BUILD_INFO = "previousBuildInfoSHA256"
 WINDOWS_SETUP_BASELINE = "setupUpgradeBaselineVerified"
 WINDOWS_SETUP_BASELINE_PREFIX = "/AWUpgradeFrom="
@@ -200,6 +207,9 @@ def validate_detection(entries, subjects, version):
         downgrade_fields = set(WINDOWS_DOWNGRADE_FIELDS).intersection(entry)
         build_info_fields = {WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO}.intersection(entry)
         detector_fields = {WINDOWS_DETECTOR}.intersection(entry)
+        source_fields = set(WINDOWS_LIFECYCLE_SOURCE_FIELDS).intersection(entry)
+        require(not source_fields or (source_fields == set(WINDOWS_LIFECYCLE_SOURCE_FIELDS) and detector_fields),
+                "Malformed Windows lifecycle source bindings")
         require(not detector_fields or WINDOWS_BUILD_INFO in build_info_fields,
                 "Windows detector evidence requires installed build metadata")
         if WINDOWS_PREVIOUS_BUILD_INFO in build_info_fields:
@@ -212,14 +222,14 @@ def validate_detection(entries, subjects, version):
         require(not baseline_fields or WINDOWS_PREVIOUS_BUILD_INFO in build_info_fields,
                 "Windows Setup baseline evidence requires the approved prior build pins")
         require(entry.keys() == set(WINDOWS_DETECTION_FIELDS) | trust_fields | publisher_fields
-                | downgrade_fields | build_info_fields | baseline_fields | detector_fields
+                | downgrade_fields | build_info_fields | baseline_fields | detector_fields | source_fields
                 and (not trust_fields or trust_fields == set(WINDOWS_PREVIOUS_TRUST_FIELDS)
                      and entry["installMode"] == "upgrade"), "Malformed Windows detection entry")
         if downgrade_fields:
             require(downgrade_fields == set(WINDOWS_DOWNGRADE_FIELDS) and entry["installMode"] == "upgrade"
                     and all(re.fullmatch(SHA256, entry[field]) for field in downgrade_fields),
                     "Malformed Windows downgrade evidence digests")
-        for field in trust_fields | publisher_fields | build_info_fields | detector_fields:
+        for field in trust_fields | publisher_fields | build_info_fields | detector_fields | source_fields:
             require(re.fullmatch(SHA256, entry[field]), "Malformed Windows payload trust digest")
         target = entry["target"]
         require((target, "installer") in targets and entry["installMode"] in ("clean", "upgrade"),
@@ -280,7 +290,7 @@ def validate_bound_reboot_report(report, mode):
             "Windows reboot evidence has inconsistent profile preservation")
 
 
-def load_detection_evidence(directory, evidence, subjects, version):
+def load_detection_evidence(directory, evidence, subjects, version, *, include_lifecycle_sources=False):
     require(len(evidence) <= MAX_REBOOT_EVIDENCE, "Too many Windows reboot reports")
     targets = windows_subjects(subjects)
     payload_sboms = windows_payload_sboms(subjects)
@@ -342,6 +352,8 @@ def load_detection_evidence(directory, evidence, subjects, version):
         if report["schemaVersion"] >= 11:
             validate_bound_reboot_report(report, mode)
             entry[WINDOWS_DETECTOR] = report[WINDOWS_DETECTOR]
+            if include_lifecycle_sources:
+                entry.update({field: report[field] for field in WINDOWS_LIFECYCLE_SOURCE_FIELDS})
             prior_build_info = report.get(WINDOWS_PREVIOUS_BUILD_INFO)
             if mode == "upgrade":
                 entry[WINDOWS_PREVIOUS_BUILD_INFO] = prior_build_info
@@ -361,7 +373,36 @@ def load_detection_evidence(directory, evidence, subjects, version):
     return entries
 
 
-def require_windows_lifecycle_evidence(entries, windows_build_info):
+def windows_lifecycle_source_digests(commit):
+    root = Path(__file__).resolve().parents[1]
+    git = ["git", "--no-replace-objects"]
+    # Keep object selection rooted in the verifier's checkout.
+    environment = {key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")}
+    options = {"cwd": root, "env": environment, "timeout": 15,
+               "stdin": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+    try:
+        kind = subprocess.check_output([*git, "cat-file", "-t", commit], **options).strip()
+        require(kind == b"commit", "Windows lifecycle qualification requires the approved Git commit")
+        pins = {}
+        for field, path in WINDOWS_LIFECYCLE_SOURCES.items():
+            entry = subprocess.check_output([*git, "ls-tree", commit, "--", path], **options).split(b"\t", 1)
+            require(len(entry) == 2 and entry[1].rstrip(b"\r\n") == path.encode("ascii"),
+                    "Windows lifecycle source is missing from the approved Git commit")
+            mode, kind, object_id = entry[0].split()
+            require(mode in (b"100644", b"100755") and kind == b"blob",
+                    "Windows lifecycle source must be a committed ordinary file")
+            subject = object_id.decode("ascii")
+            size = int(subprocess.check_output([*git, "cat-file", "-s", subject], **options))
+            require(0 < size <= 1 << 20, "Windows lifecycle source exceeds its size limit")
+            content = subprocess.check_output([*git, "cat-file", "blob", subject], **options)
+            require(len(content) == size, "Windows lifecycle source size differs from its Git object")
+            pins[field] = hashlib.sha256(content).hexdigest()
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ValueError("Windows lifecycle qualification requires the approved Git commit and its script objects") from error
+    return pins
+
+
+def require_windows_lifecycle_evidence(entries, windows_build_info, commit):
     required = {"windows/amd64", "windows/arm64"}
     common_fields = {WINDOWS_PAYLOAD_PUBLISHER, WINDOWS_BUILD_INFO, WINDOWS_DETECTOR}
     upgrade_fields = {*WINDOWS_PREVIOUS_TRUST_FIELDS, *WINDOWS_DOWNGRADE_FIELDS,
@@ -380,6 +421,10 @@ def require_windows_lifecycle_evidence(entries, windows_build_info):
     missing = sorted((target, mode) for target in required for mode in ("clean", "upgrade")
                      if (target, mode) not in coverage)
     require(not missing, "Missing Windows lifecycle evidence: " + ", ".join(f"{target} {mode}" for target, mode in missing))
+    expected_sources = windows_lifecycle_source_digests(commit)
+    for entry in entries:
+        require(all(entry.get(field) == pin for field, pin in expected_sources.items()),
+                f"Windows lifecycle evidence for {entry['target']} {entry['installMode']} differs from the approved source scripts")
 
 
 def encode_manifest(commit, ref, subjects, windows_detection=()):
@@ -401,6 +446,8 @@ def encode_manifest(commit, ref, subjects, windows_detection=()):
         schema = 9
     if any(WINDOWS_DETECTOR in entry for entry in windows_detection):
         schema = 10
+    if any(WINDOWS_LIFECYCLE_SOURCE_FIELDS[0] in entry for entry in windows_detection):
+        schema = 11
     manifest = {
         "schemaVersion": schema,
         "scope": "accessweaver-signed-desktop-release",
@@ -414,7 +461,7 @@ def encode_manifest(commit, ref, subjects, windows_detection=()):
             {field: entry[field] for field in WINDOWS_DETECTION_FIELDS + WINDOWS_PREVIOUS_TRUST_FIELDS
              + (WINDOWS_PAYLOAD_PUBLISHER,) + WINDOWS_DOWNGRADE_FIELDS
              + (WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO, WINDOWS_SETUP_BASELINE,
-                WINDOWS_SETUP_WRONG_BASELINE, WINDOWS_DETECTOR) if field in entry}
+                WINDOWS_SETUP_WRONG_BASELINE, WINDOWS_DETECTOR) + WINDOWS_LIFECYCLE_SOURCE_FIELDS if field in entry}
             for entry in sorted(windows_detection, key=detection_key)
         ]
     return (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
@@ -431,10 +478,11 @@ def prepare(directory, output, commit, ref, *, windows_reboot_evidence=(), requi
         version = ref.removeprefix("refs/tags/v")
         entries = []
         if windows_reboot_evidence:
-            entries = load_detection_evidence(directory, windows_reboot_evidence, files, version)
+            entries = load_detection_evidence(directory, windows_reboot_evidence, files, version,
+                                              include_lifecycle_sources=require_windows_lifecycle)
         _, _, windows_build_info = validate_release_sboms(root, files, commit, version, entries)
         if require_windows_lifecycle:
-            require_windows_lifecycle_evidence(entries, windows_build_info)
+            require_windows_lifecycle_evidence(entries, windows_build_info, commit)
         manifest = encode_manifest(commit, ref, files, entries)
         with output.open("xb") as stream:
             stream.write(manifest)
@@ -1167,7 +1215,8 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     entry[field] for field in ("uninstallerSHA256", "rebootEvidenceSHA256",
                                                "previousPayloadSHA256", "publisherCertificateSHA256")
                     + WINDOWS_PREVIOUS_TRUST_FIELDS + (WINDOWS_PAYLOAD_PUBLISHER,)
-                    + WINDOWS_DOWNGRADE_FIELDS + (WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO, WINDOWS_DETECTOR) if field in entry
+                    + WINDOWS_DOWNGRADE_FIELDS + (WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO, WINDOWS_DETECTOR)
+                    + WINDOWS_LIFECYCLE_SOURCE_FIELDS if field in entry
                 ) for entry in entries),
                 "Release subject or Windows detection evidence is revoked")
         sboms_verified, macos_detectors, windows_build_info = validate_release_sboms(root, files, commit, version, entries)
@@ -1186,7 +1235,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             "nativePublisherChecksPerformed": False, "productionQualificationComplete": False,
         }
         if require_windows_lifecycle:
-            require_windows_lifecycle_evidence(entries, windows_build_info)
+            require_windows_lifecycle_evidence(entries, windows_build_info, commit)
             report["windowsLifecycleEvidenceVerified"] = True
         if target is not None:
             report["managedUpdate"] = managed_update(files, target, current_version, version)
