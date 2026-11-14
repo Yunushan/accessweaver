@@ -14,6 +14,7 @@ param(
     [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousPayloadPublisherCertificateSHA256='',
     [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousSetupSHA256='',
     [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousPublisherCertificateSHA256='',
+    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PayloadPublisherCertificateSHA256='',
     [Parameter(Mandatory)][ValidatePattern('\A[a-fA-F0-9]{64}\z')][string]$PayloadSBOMSHA256
 )
 $ErrorActionPreference='Stop'
@@ -69,7 +70,7 @@ function Assert-RebootUpgradeOrder($Comparison,[string]$PreviousVersion,[string]
     }
 }
 function Assert-RebootIdentity($Record,$Expected){
-    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 8 -or
+    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 9 -or
        $Record.runID -cne $Expected.runID -or $Record.architecture -cne $Expected.architecture -or
        $Record.installMode -cne $Expected.installMode -or $Record.previousVersion -cne $Expected.previousVersion -or
        $Record.previousPayloadSHA256 -cne $Expected.previousPayloadSHA256 -or
@@ -84,6 +85,7 @@ function Assert-RebootIdentity($Record,$Expected){
        $Record.version -cne $Expected.version -or $Record.setupSHA256 -cne $Expected.setupSHA256 -or
        $Record.payloadSHA256 -cne $Expected.payloadSHA256 -or $Record.publisherSHA256 -cne $Expected.publisherSHA256 -or
        $Record.payloadSBOMSHA256 -cne $Expected.payloadSBOMSHA256 -or
+       $Record.payloadPublisherSHA256 -cne $Expected.payloadPublisherSHA256 -or
        $Record.guestID -cne $Expected.guestID -or $Record.userSID -cne $Expected.userSID -or
        $Record.detectorSHA256 -cne $Expected.detectorSHA256 -or $Record.fixtureSHA256 -cne $Expected.fixtureSHA256 -or
        $Record.commonSHA256 -cne $Expected.commonSHA256 -or $Record.publisherVerifierSHA256 -cne $Expected.publisherVerifierSHA256 -or
@@ -288,7 +290,7 @@ function Assert-InstalledDetection([bool]$Detected,[string]$CandidateVersion=$Ve
         if($output.Count -ne 1 -or $output[0] -cne 'AccessWeaver detected'){throw 'Approved installed payload was not detected'}
     } elseif($output.Count -ne 0){throw 'Unexpected approved installation already exists'}
 }
-function Assert-InstalledPublisher([string]$ArtifactSHA256=$PayloadSHA256,[string]$PublisherSHA256=$PublisherCertificateSHA256) {
+function Assert-InstalledPublisher([string]$ArtifactSHA256=$PayloadSHA256,[string]$PublisherSHA256=$PayloadPublisherCertificateSHA256) {
     $null=@(& $publisher -Artifact $controller -ArtifactSHA256 $ArtifactSHA256 -PublisherCertificateSHA256 $PublisherSHA256)
     if($LASTEXITCODE -ne 0){throw 'Installed payload publisher verification failed'}
 }
@@ -355,7 +357,8 @@ $registrationKey='SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{B13D4677-
 $capsule=Join-Path $programFiles ('AccessWeaver reboot fixture '+$RunID)
 $baseline=Join-Path $capsule 'prepared.json'
 $report=Join-Path $capsule 'result.json'
-$expected=[ordered]@{schemaVersion=8;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
+if(-not $PayloadPublisherCertificateSHA256){$PayloadPublisherCertificateSHA256=$PublisherCertificateSHA256}
+$expected=[ordered]@{schemaVersion=9;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
     previousVersion=$PreviousVersion;previousPayloadSHA256=$PreviousPayloadSHA256.ToLowerInvariant();
     previousPayloadSBOMSHA256=$PreviousPayloadSBOMSHA256.ToLowerInvariant();
     previousPayloadPublisherSHA256=$PreviousPayloadPublisherCertificateSHA256.ToLowerInvariant();previousPayloadTrustVerified=$false;
@@ -363,7 +366,8 @@ $expected=[ordered]@{schemaVersion=8;runID=$RunID;architecture=$Architecture;ver
     userProfilePreservedThroughUpgrade=$false;
     setupSHA256=$SetupSHA256.ToLowerInvariant();payloadSHA256=$PayloadSHA256.ToLowerInvariant();
     payloadSBOMSHA256=$PayloadSBOMSHA256.ToLowerInvariant();guestID=$guestUUID.ToString('D');
-    publisherSHA256=$PublisherCertificateSHA256.ToLowerInvariant();userSID=$userSID;
+    publisherSHA256=$PublisherCertificateSHA256.ToLowerInvariant();
+    payloadPublisherSHA256=$PayloadPublisherCertificateSHA256.ToLowerInvariant();userSID=$userSID;
     detectorSHA256=(Get-RebootDigest $detector);fixtureSHA256=(Get-RebootDigest $PSCommandPath);
     commonSHA256=(Get-RebootDigest $common);publisherVerifierSHA256=(Get-RebootDigest $publisher)}
 $boot=Get-GuestBoot
@@ -432,7 +436,7 @@ if($Phase -ceq 'Prepare'){
         }
         Write-NewRebootEvidence $baseline $expected
     } catch {
-        Write-NewRebootEvidence $report @{schemaVersion=8;runID=$RunID;stage=$stage;passed=$false}
+        Write-NewRebootEvidence $report @{schemaVersion=9;runID=$RunID;stage=$stage;passed=$false}
         throw 'Windows installer reboot preparation failed. Retain the disposable guest for review.'
     }
     Write-Output 'Prepared the approved installation. Reboot the disposable guest before verification.'
@@ -444,8 +448,8 @@ if((Get-Item -LiteralPath $baseline).Length -gt 8192 -or (Test-Path -LiteralPath
 $saved=Get-Content -LiteralPath $baseline -Raw|ConvertFrom-Json
 Assert-RebootIdentity $saved $expected
 Assert-LaterGuestBoot $saved.boot $boot
-Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=8;runID=$RunID}
-$result=[ordered]@{schemaVersion=8;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
+Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=9;runID=$RunID}
+$result=[ordered]@{schemaVersion=9;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
     previousVersion=$expected.previousVersion;previousPayloadSHA256=$expected.previousPayloadSHA256;
     previousPayloadSBOMSHA256=$expected.previousPayloadSBOMSHA256;previousPayloadPublisherSHA256=$expected.previousPayloadPublisherSHA256;
     previousPayloadTrustVerified=$saved.previousPayloadTrustVerified;
@@ -453,6 +457,7 @@ $result=[ordered]@{schemaVersion=8;runID=$RunID;architecture=$Architecture;versi
     downgradeRequested=$testDowngrade;downgradeRefused=$false;downgradeStatePreserved=$false;
     userProfilePreservedThroughUpgrade=$saved.userProfilePreservedThroughUpgrade;
     setupSHA256=$expected.setupSHA256;payloadSHA256=$expected.payloadSHA256;publisherSHA256=$expected.publisherSHA256;
+    payloadPublisherSHA256=$expected.payloadPublisherSHA256;
     payloadSBOMSHA256=$expected.payloadSBOMSHA256;installedPayloadSBOMVerified=$false;installedPayloadPublisherVerified=$false;
     detectorSHA256=$expected.detectorSHA256;fixtureSHA256=$expected.fixtureSHA256;
     commonSHA256=$expected.commonSHA256;publisherVerifierSHA256=$expected.publisherVerifierSHA256;

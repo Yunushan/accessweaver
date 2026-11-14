@@ -118,6 +118,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 previousPayloadSBOMSHA256="1" * 64 if upgrade else "",
                 previousPayloadPublisherSHA256="2" * 64 if upgrade else "",
             )
+        if overrides.get("schemaVersion", 5) >= 9:
+            report["payloadPublisherSHA256"] = "7" * 64
         evidence = self.root / filename
         evidence.write_text(json.dumps({**report, **overrides}), encoding="utf-8")
         return evidence, release.digest(evidence)
@@ -253,6 +255,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
             (self.write_reboot_report("bad-baseline.json", previousVersion="1.2.2"),),
             (self.write_reboot_report("bad-digest.json", uninstallerSHA256="c" * 63),),
             (self.write_reboot_report("wrong-sbom.json", schemaVersion=6, payloadSBOMSHA256="d" * 64),),
+            (self.write_reboot_report("missing-payload-publisher.json", schemaVersion=9, payloadPublisherSHA256=None),),
+            (self.write_reboot_report("invalid-payload-publisher.json", schemaVersion=9, payloadPublisherSHA256="bad"),),
             (self.write_reboot_report("sbom-unverified.json", schemaVersion=6, installedPayloadSBOMVerified=1),),
             (self.write_reboot_report("publisher-unverified.json", schemaVersion=6, installedPayloadPublisherVerified=False),),
             (self.write_reboot_report("profile-read-failed.json", schemaVersion=7,
@@ -647,7 +651,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
         manifest.unlink()
         signature.unlink()
         clean = self.write_reboot_report("clean.json")
-        upgrade = self.write_reboot_report("upgrade.json", schemaVersion=8, installMode="upgrade",
+        upgrade = self.write_reboot_report("upgrade.json", schemaVersion=9, installMode="upgrade",
                                            previousVersion="1.2.2-rc.1", previousPayloadSHA256="d" * 64,
                                            userProfilePreservedThroughUpgrade=True, uninstallerSHA256="e" * 64)
         arm = self.write_reboot_report("arm.json", architecture="arm64", schemaVersion=7, uninstallerSHA256="f" * 64)
@@ -655,7 +659,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
         shutil.copyfile(prepared, manifest)
         sign_manifest()
         report = self.verify(approved, pin)
-        self.assertEqual(report["schemaVersion"], 3)
+        self.assertEqual(report["schemaVersion"], 4)
         self.assertEqual(report["subjectsVerified"], 12)
         clean_entry, upgrade_entry, arm_entry = report["windowsDetection"]
         self.assertEqual(clean_entry, {
@@ -671,6 +675,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
             **clean_entry, "installMode": "upgrade", "previousVersion": "1.2.2-rc.1",
             "previousPayloadSHA256": "d" * 64, "uninstallerSHA256": "e" * 64, "rebootEvidenceSHA256": upgrade[1],
             "previousPayloadSBOMSHA256": "1" * 64, "previousPayloadPublisherSHA256": "2" * 64,
+            "payloadPublisherCertificateSHA256": "7" * 64,
         })
         self.assertEqual(arm_entry["target"], "windows/arm64")
         self.assertEqual(arm_entry["payloadSBOMSHA256"],
@@ -684,6 +689,19 @@ class SignedReleaseManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "differs from the upgrade qualification"):
                 self.verify(approved, pin, windows_publisher="0" * 64, stage_directory=staging, **qualified)
             native.assert_not_called()
+            with self.assertRaisesRegex(ValueError, "differs from the upgrade qualification"):
+                self.verify(approved, pin, windows_publisher="b" * 64, stage_directory=staging, **qualified)
+            native.assert_not_called()
+            self.assertEqual(list(staging.iterdir()), [])
+            distinct_publishers = self.verify(
+                approved, pin, windows_publisher="b" * 64, windows_payload_publisher="7" * 64,
+                stage_directory=staging, **qualified,
+            )["managedUpdate"]
+            self.assertTrue(distinct_publishers["installerStaged"])
+            self.assertEqual(distinct_publishers["nativePublisherVerification"]["payloadPublisherCertificateSHA256"],
+                             "7" * 64)
+            self.assertEqual([call.args[2] for call in native.call_args_list], ["b" * 64, "7" * 64])
+            (staging / distinct_publishers["installer"]).unlink()
         self.assertEqual(list(staging.iterdir()), [])
         for override, error in (
             ({"current_payload_sha256": "a" * 64}, "No approved reboot evidence"),
@@ -784,7 +802,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
                             windows_upgrade_inventory=(inventory_path, release.digest(inventory_path)))
             self.assertEqual(list(staging.iterdir()), [])
         for revoked in (clean[1], "b" * 64, "d" * 64, "e" * 64,
-                        upgrade_entry["previousPayloadSBOMSHA256"], upgrade_entry["previousPayloadPublisherSHA256"]):
+                        upgrade_entry["previousPayloadSBOMSHA256"], upgrade_entry["previousPayloadPublisherSHA256"],
+                        upgrade_entry["payloadPublisherCertificateSHA256"]):
             current_pin = self.write_policy({**self.policy, "subjectSHA256": [revoked]})
             with self.subTest(revoked=revoked), self.assertRaisesRegex(ValueError, "revoked"):
                 self.verify(approved, pin, policy_pin=current_pin, stage_directory=staging, **qualified)
@@ -794,7 +813,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
         original = manifest.read_bytes()
         data = json.loads(original)
         legacy_entries = [
-            {field: value for field, value in entry.items() if field not in release.WINDOWS_PREVIOUS_TRUST_FIELDS}
+            {field: value for field, value in entry.items() if field not in (*release.WINDOWS_PREVIOUS_TRUST_FIELDS, release.WINDOWS_PAYLOAD_PUBLISHER)}
             for entry in data["windowsDetection"]
         ]
         manifest.write_bytes(release.encode_manifest(COMMIT, REF, release.inventory(self.candidate, self.subjects), legacy_entries))
@@ -806,7 +825,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
         self.assertEqual(list(staging.iterdir()), [])
         self.assertEqual(legacy_report["managedUpdate"]["windowsUpgradeDetection"],
                          {field: value for field, value in upgrade_entry.items()
-                          if field not in release.WINDOWS_PREVIOUS_TRUST_FIELDS})
+                          if field not in (*release.WINDOWS_PREVIOUS_TRUST_FIELDS, release.WINDOWS_PAYLOAD_PUBLISHER)})
 
         for bad_entries in (
             [legacy_entries[0], {**legacy_entries[1], "previousPayloadPublisherSHA256": "2" * 64}],

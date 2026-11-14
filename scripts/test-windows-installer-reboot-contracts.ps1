@@ -22,10 +22,10 @@ Assert-Refused {Assert-LaterGuestBoot '639303000000000001' '639303000000000000'}
 Assert-Refused {Assert-LaterGuestBoot 'missing' '639303000000000000'}
 $pin='a'*64
 $expected=@{
-    schemaVersion=8;runID=('b'*32);architecture='amd64';version='1.0.0';
+    schemaVersion=9;runID=('b'*32);architecture='amd64';version='1.0.0';
     installMode='clean';previousVersion='';previousPayloadSHA256='';previousSetupSHA256='';previousPublisherSHA256='';userProfilePreservedThroughUpgrade=$false;
     previousPayloadSBOMSHA256='';previousPayloadPublisherSHA256='';previousPayloadTrustVerified=$false;
-    setupSHA256=$pin;payloadSHA256=$pin;payloadSBOMSHA256=('f'*64);publisherSHA256=$pin;userSID='synthetic-user';guestID='10000000-2000-3000-4000-000000000005';
+    setupSHA256=$pin;payloadSHA256=$pin;payloadSBOMSHA256=('f'*64);publisherSHA256=$pin;payloadPublisherSHA256=('e'*64);userSID='synthetic-user';guestID='10000000-2000-3000-4000-000000000005';
     detectorSHA256=$pin;fixtureSHA256=$pin;commonSHA256=$pin;publisherVerifierSHA256=$pin
 }
 $saved=$expected.Clone()
@@ -40,7 +40,7 @@ foreach($key in $saved.Keys){
     $changed[$key]='changed'
     Assert-Refused {Assert-RebootIdentity $changed $expected}
 }
-$oldSchema=$saved.Clone();$oldSchema.schemaVersion=7
+$oldSchema=$saved.Clone();$oldSchema.schemaVersion=8
 Assert-Refused {Assert-RebootIdentity $oldSchema $expected}
 
 & {
@@ -49,7 +49,7 @@ Assert-Refused {Assert-RebootIdentity $oldSchema $expected}
     if($hadExitCode){$savedExitCode=$previousExitCode.Value}
     try {
         $Version='2.0.0';$PayloadSHA256='a'*64;$PayloadSBOMSHA256='b'*64
-        $PublisherCertificateSHA256='c'*64;$Architecture='amd64';$controller='inert.exe'
+        $PublisherCertificateSHA256='c'*64;$PayloadPublisherCertificateSHA256='d'*64;$Architecture='amd64';$controller='inert.exe'
         $trace=[Collections.Generic.List[object]]::new()
         $behavior=@{publisherCode=0;detectorCode=0;detected=$true}
         $detector={
@@ -67,7 +67,7 @@ Assert-Refused {Assert-RebootIdentity $oldSchema $expected}
         Assert-InstalledPublisher
         if($trace[0].version -cne $Version -or $trace[0].arch -cne $Architecture -or
            $trace[0].payload -cne $PayloadSHA256 -or $trace[0].sbom -cne $PayloadSBOMSHA256 -or $trace[0].uninstaller -cne ('d'*64) -or
-           $trace[1].artifact -cne $controller -or $trace[1].sha256 -cne $PayloadSHA256 -or $trace[1].publisher -cne $PublisherCertificateSHA256){
+           $trace[1].artifact -cne $controller -or $trace[1].sha256 -cne $PayloadSHA256 -or $trace[1].publisher -cne $PayloadPublisherCertificateSHA256){
             throw 'Installed candidate pins did not reach verification'
         }
         Assert-InstalledDetection $true '1.0.0' ('e'*64) -CandidateSBOMSHA256 ('f'*64)
