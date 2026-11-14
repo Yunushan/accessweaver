@@ -173,14 +173,23 @@ def publish_verified(directory, tag, commit, expected):
         raise ValueError("Remote release tag does not resolve to the verified commit")
     release = view(tag)
     if release is None:
-        require_success(gh(
-            "create", tag, "--verify-tag", "--draft", "--prerelease",
-            "--title", f"AccessWeaver {tag} (unsigned alpha)",
-            "--notes", "Unsigned alpha core builds. See README and docs/TESTING.md for scope.",
-        ))
+        try:
+            require_success(gh(
+                "create", tag, "--verify-tag", "--draft", "--prerelease",
+                "--title", f"AccessWeaver {tag} (unsigned alpha)",
+                "--notes", "Unsigned alpha core builds. See README and docs/TESTING.md for scope.",
+            ))
+        except (ValueError, OSError, subprocess.SubprocessError) as error:
+            # A concurrent publisher or a lost response can leave a valid
+            # draft. Inspect the tag once and never repeat the create request.
+            create_error = error
+        else:
+            create_error = None
         release = view(tag)
         if release is None or release.get("isDraft") is not True:
-            raise ValueError("Created release draft could not be verified")
+            raise ValueError("Created release draft could not be verified") from create_error
+        if git_tag_commit(tag) != commit:
+            raise ValueError("Remote release tag changed during draft creation")
     missing_assets(release, tag, expected, allow_existing_bundle=True)
     expected = reuse_existing_bundle(directory, release, commit, tag, expected)
     missing = missing_assets(release, tag, expected)

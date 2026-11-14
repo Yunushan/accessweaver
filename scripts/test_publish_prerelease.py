@@ -35,12 +35,13 @@ class PrereleasePublicationTests(unittest.TestCase):
             "assets": [dict(item) for item in list(self.assets.values())[:count]],
         }
 
-    def run_publisher(self, releases, tags=None, verify_snapshot=None, upload_error=None, promotion_error=None):
+    def run_publisher(self, releases, tags=None, verify_snapshot=None, upload_error=None, promotion_error=None,
+                      create_error=None):
         with (
             patch.object(publisher, "verify", side_effect=verify_snapshot) as verify,
-            patch.object(publisher, "git_tag_commit", side_effect=tags or [self.commit] * 3),
+            patch.object(publisher, "git_tag_commit", side_effect=tags or [self.commit] * 4),
             patch.object(publisher, "view", side_effect=releases),
-            patch.object(publisher, "gh", return_value=subprocess.CompletedProcess([], 0, "", "")) as gh,
+            patch.object(publisher, "gh", side_effect=create_error) as gh,
             patch.object(publisher, "upload_asset", side_effect=upload_error) as upload,
             patch.object(publisher, "promote_draft", side_effect=promotion_error) as promote,
         ):
@@ -67,6 +68,49 @@ class PrereleasePublicationTests(unittest.TestCase):
             [(456, self.snapshot / name, asset["digest"]) for name, asset in self.assets.items()],
         )
         self.promote.assert_called_once_with(456)
+
+    def test_uncertain_draft_creation_resumes_same_tag_without_repeating_create(self):
+        for error in (subprocess.TimeoutExpired(["gh", "release", "create"], 240),
+                      ValueError("Concurrent creation")):
+            with self.subTest(error=type(error).__name__):
+                self.run_publisher(
+                    [None, self.release(True, 12), self.release(True), self.release(False)],
+                    create_error=error,
+                )
+                self.calls.assert_called_once()
+                self.assertEqual(self.calls.call_args.args[0], "create")
+                self.upload.assert_called_once_with(
+                    456, self.snapshot / "fixture-12.zip", self.assets["fixture-12.zip"]["digest"],
+                )
+                self.promote.assert_called_once_with(456)
+
+    def test_uncertain_draft_creation_refuses_missing_published_or_unverified_state(self):
+        wrong_tag = self.release(True)
+        wrong_tag["tagName"] = "v1.0.0-alpha"
+        wrong_asset = self.release(True, 12)
+        wrong_asset["assets"][-1]["digest"] = "sha256:" + "0" * 64
+        for observed, tags in (
+            (None, [self.commit]),
+            (self.release(False), [self.commit]),
+            (wrong_tag, [self.commit] * 2),
+            (wrong_asset, [self.commit] * 2),
+            (self.release(True, 12), [self.commit, "b" * 40]),
+        ):
+            with self.subTest(observed=observed), self.assertRaises(ValueError):
+                self.run_publisher(
+                    [None, observed], tags=tags,
+                    create_error=subprocess.TimeoutExpired(["gh", "release", "create"], 240),
+                )
+            self.calls.assert_called_once()
+            self.upload.assert_not_called()
+            self.promote.assert_not_called()
+
+    def test_successful_creation_rechecks_remote_tag_before_upload(self):
+        with self.assertRaisesRegex(ValueError, "tag changed during draft creation"):
+            self.run_publisher([None, self.release(True, 0)], tags=[self.commit, "b" * 40])
+        self.calls.assert_called_once()
+        self.upload.assert_not_called()
+        self.promote.assert_not_called()
 
     def test_retry_uploads_only_missing_draft_assets(self):
         self.run_publisher([self.release(True, 12), self.release(True), self.release(False)])
