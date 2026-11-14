@@ -356,7 +356,7 @@ $nodes=@($ast.FindAll({param($node)
 if($nodes.Count -ne 1){throw 'DNS reboot recovery cleanup was not found'}
 foreach($command in $nodes[0].Finally.FindAll({param($node)$node -is [Management.Automation.Language.CommandAst]},$true)){
     if($command.GetCommandName() -cnotin @('Invoke-TestWorkflow','Assert-DNSAcceptanceRestored','Read-DNSAcceptanceState',
-            'Assert-RebootResolver','Test-Path','Test-DNSRebootServicesRemoved','Save-DNSRebootRecord','Get-DNSRebootDigest')){
+            'Assert-RebootResolver','Test-Path','Test-DNSRebootServicesRemoved','Save-DNSRebootRecord','Get-DNSRebootDigest','Join-Path')){
         throw 'DNS reboot cleanup source has an unexpected command boundary'
     }
 }
@@ -398,20 +398,30 @@ function Test-DNSRebootServicesRemoved {
 }
 $save=(Get-Command Save-DNSRebootRecord).ScriptBlock
 function Save-DNSRebootRecord {param($Path,$Record);if($Path -cne $report){throw 'Unexpected report path'};$script:published=$Record}
-$report='synthetic report';$snapshot='synthetic snapshot';$journalPath='synthetic journal'
+$report='synthetic report';$snapshot=Join-Path ([IO.Path]::GetTempPath()) 'synthetic snapshot';$journalPath='synthetic journal'
+$current.snapshotSHA256='D'*64
+$receiptPath=Join-Path ([IO.Path]::GetDirectoryName($snapshot)) ('dns-restored-'+('d'*64)+'.receipt')
+$receiptDigest='96CA1E8D176B8F0FB41DC5A66BDD553BA480489369ABC337A7C5B397D3C8279D'
 $digestCommand=(Get-Command Get-DNSRebootDigest).ScriptBlock
 function Get-DNSRebootDigest {
     param($Path,$Maximum)
+    if($Path -ceq $receiptPath -and $Maximum -eq 64){
+        switch($script:failure){
+            'receipt-missing' {throw 'Synthetic missing receipt'}
+            'receipt-mismatch' {return 'F'*64}
+            default {return $receiptDigest}
+        }
+    }
     if($Path -cne $journalPath -or $Maximum -ne 8MB){throw 'Unexpected journal read'}
     if($script:failure -ceq 'journal-changed'){return 'F'*64}
     return $current.journalSHA256
 }
-foreach($failure in @('none','journal-changed','recover','state','resolver','state-after-probe','snapshot','remove',
+foreach($failure in @('none','journal-changed','recover','state','resolver','state-after-probe','snapshot','receipt-missing','receipt-mismatch','remove',
         'teardown-state','teardown-resolver','teardown-state-after-probe','teardown-snapshot','inventory','service','recover-and-remove')){
     $script:failure=$failure;$script:trace=[Collections.Generic.List[string]]::new()
     $script:stateReads=@{recover=0;'remove-all'=0}
     $script:snapshotPresent=$true;$script:published=$null
-    $outcome=@{stage='complete';cleanupStage='not-started';teardownStage='not-started';journalRecoveryAccepted=$false;originalStateRestored=$false;originalResolverVerified=$false;snapshotRetired=$false;servicesRemoved=$false}
+    $outcome=@{stage='complete';cleanupStage='not-started';teardownStage='not-started';journalRecoveryAccepted=$false;originalStateRestored=$false;originalResolverVerified=$false;snapshotRetired=$false;restorationReceiptVerified=$false;servicesRemoved=$false}
     & $cleanup
     $stage=switch($failure){
         'journal-changed' {'journal-recovery'}
@@ -420,6 +430,7 @@ foreach($failure in @('none','journal-changed','recover','state','resolver','sta
         'resolver' {'original-resolver'}
         'state-after-probe' {'original-resolver'}
         'snapshot' {'snapshot-retirement'}
+        {$_ -cin @('receipt-missing','receipt-mismatch')} {'restoration-receipt'}
         'recover-and-remove' {'journal-recovery'}
         default {'recovered'}
     }
@@ -436,7 +447,8 @@ foreach($failure in @('none','journal-changed','recover','state','resolver','sta
     }
     $expectedTrace=if($failure -ceq 'journal-changed'){'remove-all'}else{'recover,remove-all'}
     if($script:published.cleanupStage -cne $stage -or $script:published.teardownStage -cne $teardown -or
-        $script:published.originalResolverVerified -ne ($stage -cin @('snapshot-retirement','recovered')) -or
+        $script:published.originalResolverVerified -ne ($stage -cin @('snapshot-retirement','restoration-receipt','recovered')) -or
+        $script:published.restorationReceiptVerified -ne ($stage -ceq 'recovered') -or
         $script:published.servicesRemoved -ne ($teardown -ceq 'complete') -or $script:published.passed -ne ($failure -ceq 'none') -or
         ($script:trace -join ',') -cne $expectedTrace){
         throw 'DNS reboot cleanup failed to distinguish journal recovery from teardown'
@@ -480,12 +492,12 @@ $root=[IO.Path]::Combine([IO.Path]::GetTempPath(),('aw-dns-reboot-publication-'+
 [void][IO.Directory]::CreateDirectory($root)
 $shared=Join-Path $root 'share'
 $report=Join-Path $root 'reboot-results.json'
-$record=@{schemaVersion=8;qualificationID=('a'*32);method='doh';binarySHA256=('A'*64);fixtureSHA256=('B'*64);oracleSHA256=('C'*64)
+$record=@{schemaVersion=9;qualificationID=('a'*32);method='doh';binarySHA256=('A'*64);fixtureSHA256=('B'*64);oracleSHA256=('C'*64)
     requiredOriginalMode='static-ipv6';originalModeCoverage=@{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0;'static-ipv6'=1}
     rebootVerified=$true;servicesVerified=$true;configuredStateVerified=$true;resolverVerified=$true
     journalBindingVerified=$true;journalRecoveryAccepted=$true;originalStateRestored=$true;originalResolverVerified=$true
-    snapshotRetired=$true;servicesRemoved=$true;passed=$true;stage='complete';cleanupStage='recovered';teardownStage='complete'}
-$legacy=$record.Clone();$legacy.schemaVersion=7;$legacy.Remove('teardownStage')
+    snapshotRetired=$true;restorationReceiptVerified=$true;servicesRemoved=$true;passed=$true;stage='complete';cleanupStage='recovered';teardownStage='complete'}
+$legacy=$record.Clone();$legacy.schemaVersion=8;$legacy.Remove('restorationReceiptVerified')
 $pin=$record.binarySHA256.ToLowerInvariant()
 $qualificationID=$record.qualificationID
 $method=$record.method
@@ -510,6 +522,8 @@ foreach($invalid in @(
 foreach($invalid in @(
     @{stage='services';servicesVerified=$false},
     @{cleanupStage='original-resolver'},
+    @{restorationReceiptVerified=$false},
+    @{cleanupStage='restoration-receipt';restorationReceiptVerified=$true},
     @{teardownStage='services-remain'},
     @{teardownStage='unknown';servicesRemoved=$false}
 )){
@@ -520,9 +534,15 @@ foreach($invalid in @(
     Refuse {Assert-DNSRebootPublicReport $data $pin $qualificationID $method $originalMode $fixturePin $oraclePin}
 }
 $candidate=$record.Clone()
+$candidate.cleanupStage='restoration-receipt';$candidate.restorationReceiptVerified=$false;$candidate.passed=$false
+$data=[Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $candidate -Depth 8))
+if((Assert-DNSRebootPublicReport $data $pin $qualificationID $method $originalMode $fixturePin $oraclePin) -ne $false){
+    throw 'A missing restoration receipt was credited as a pass'
+}
+$candidate=$record.Clone()
 $candidate.stage='configured-readback';$candidate.configuredStateVerified=$false;$candidate.resolverVerified=$false
 $candidate.cleanupStage='original-state';$candidate.originalStateRestored=$false;$candidate.originalResolverVerified=$false
-$candidate.snapshotRetired=$false;$candidate.teardownStage='complete';$candidate.passed=$false
+$candidate.snapshotRetired=$false;$candidate.restorationReceiptVerified=$false;$candidate.teardownStage='complete';$candidate.passed=$false
 $data=[Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $candidate -Depth 8))
 if((Assert-DNSRebootPublicReport $data $pin $qualificationID $method $originalMode $fixturePin $oraclePin) -ne $false){
     throw 'Successful bulk teardown was credited as successful journal recovery'

@@ -382,12 +382,12 @@ try {
         throw 'Interrupted DNS reboot verification requires a fresh checkpoint'
     }
     Save-DNSRebootRecord (Join-Path $private 'verification-started.json') @{schemaVersion=7}
-    $outcome=[ordered]@{schemaVersion=8;qualificationID=$saved.qualificationID;method=$saved.method;binarySHA256=$current.binarySHA256;
+    $outcome=[ordered]@{schemaVersion=9;qualificationID=$saved.qualificationID;method=$saved.method;binarySHA256=$current.binarySHA256;
         requiredOriginalMode=$saved.requiredOriginalMode;originalModeCoverage=$coverage;
         fixtureSHA256=$current.fixtureSHA256;oracleSHA256=$current.oracleSHA256;
         rebootVerified=$true;servicesVerified=$false;configuredStateVerified=$false;
         resolverVerified=$false;journalBindingVerified=$true;journalRecoveryAccepted=$false;
-        originalStateRestored=$false;originalResolverVerified=$false;snapshotRetired=$false;
+        originalStateRestored=$false;originalResolverVerified=$false;snapshotRetired=$false;restorationReceiptVerified=$false;
         servicesRemoved=$false;passed=$false;stage='services';cleanupStage='not-started';teardownStage='not-started'}
     try {
         Wait-DNSRebootObservation {Assert-RebootServices $saved.method}
@@ -424,6 +424,16 @@ try {
             $outcome.cleanupStage='snapshot-retirement'
             $outcome.snapshotRetired=-not (Test-Path -LiteralPath $snapshot -ErrorAction Stop)
             if(-not $outcome.snapshotRetired){throw 'Journal recovery retained the active snapshot'}
+            $outcome.cleanupStage='restoration-receipt'
+            $receipt=Join-Path ([IO.Path]::GetDirectoryName($snapshot)) ('dns-restored-'+$current.snapshotSHA256.ToLowerInvariant()+'.receipt')
+            $expectedReceipt=[Text.Encoding]::ASCII.GetBytes($current.snapshotSHA256.ToUpperInvariant())
+            $sha256=[Security.Cryptography.SHA256]::Create()
+            try {$expectedReceiptSHA256=[BitConverter]::ToString($sha256.ComputeHash($expectedReceipt)).Replace('-','')}
+            finally {$sha256.Dispose()}
+            if((Get-DNSRebootDigest $receipt 64) -cne $expectedReceiptSHA256){
+                throw 'DNS restoration receipt does not bind the retired snapshot'
+            }
+            $outcome.restorationReceiptVerified=$true
             $outcome.cleanupStage='recovered'
         } catch {
             # Keep the first fixed recovery failure even if teardown later restores DNS.
