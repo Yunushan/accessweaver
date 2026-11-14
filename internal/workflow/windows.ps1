@@ -2405,6 +2405,20 @@ function Test-DNSCryptLoopbackAddress([Net.IPAddress]$Address) {
     if($Address.IsIPv4MappedToIPv6){$Address=$Address.MapToIPv4()}
     return [Net.IPAddress]::IsLoopback($Address)
 }
+function Get-DNSCryptIndependentFamilies([object[]]$Clients) {
+    if(-not $Clients.Count){return}
+    $families=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach($client in $Clients){
+        $family=Get-DNSClientFamily $client.AddressFamily
+        [void]$families.Add(([string]$client.InterfaceIndex)+'/'+$family)
+        foreach($server in $client.ServerAddresses){
+            $address=$null
+            if(-not [Net.IPAddress]::TryParse([string]$server,[ref]$address) -or
+                (Test-DNSCryptLoopbackAddress $address)){return}
+        }
+    }
+    return ,$families
+}
 function Test-DNSCryptListenerNeeded([object[]]$Records) {
     try {
         $inventory=@(Get-NetAdapter -IncludeHidden -ErrorAction Stop)
@@ -2412,19 +2426,11 @@ function Test-DNSCryptListenerNeeded([object[]]$Records) {
         # Changes to DNS settings alone do not alter the adapter identity set.
         for($pass=0;$pass -lt 2;$pass++){
             $clients=@(Read-DNSClientInventory)
-            if(-not $inventory.Count -or -not $clients.Count){return $true}
+            if(-not $inventory.Count){return $true}
             # Down and excluded interfaces can still depend on the listener.
             # Their reported DNS addresses can lag behind the stored override.
-            $observedFamilies=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-            foreach($client in $clients){
-                $family=Get-DNSClientFamily $client.AddressFamily
-                [void]$observedFamilies.Add(([string]$client.InterfaceIndex)+'/'+$family)
-                foreach($server in $client.ServerAddresses){
-                    $address=$null
-                    if(-not [Net.IPAddress]::TryParse([string]$server,[ref]$address) -or
-                       (Test-DNSCryptLoopbackAddress $address)){return $true}
-                }
-            }
+            $observedFamilies=Get-DNSCryptIndependentFamilies $clients
+            if($null -eq $observedFamilies){return $true}
             foreach($adapter in $inventory){
                 foreach($family in @('IPv4','IPv6')){
                     $exposed=$observedFamilies.Contains(([string]$adapter.ifIndex)+'/'+$family)
@@ -2450,6 +2456,12 @@ function Test-DNSCryptListenerNeeded([object[]]$Records) {
                         }
                     }
                 }
+            }
+            if($pass -eq 1){
+                # A client can acquire loopback DNS or expose another family
+                # while the registry is being read, with no adapter change.
+                $latest=Get-DNSCryptIndependentFamilies @(Read-DNSClientInventory)
+                if($null -eq $latest -or -not $observedFamilies.SetEquals($latest)){return $true}
             }
             # A DNS client row can refer to a different adapter after index reuse.
             # Verify the complete identity set after checking the stored overrides.
