@@ -16,6 +16,7 @@ import tempfile
 
 from macos_installer import parse_release_version, version_parts
 from sbom import prop_map, validate_digest
+from verify_macos_installer_publisher import check_package_publisher, verify_packaged_application
 from verify_release import require
 from verify_release_provenance import REPOSITORY, regular_file, validate_identity
 from verify_release_rebuild import digest, snapshot
@@ -471,7 +472,7 @@ def stage_managed_update(root, directory, update, policy):
 def verify(directory, certificate, certificate_sha256, commit, ref, openssl="openssl",
            *, revocation_list, revocation_list_sha256, current_version=None, target=None, stage_directory=None,
            current_payload_sha256=None, current_payload_sbom_sha256=None, current_payload_publisher_sha256=None,
-           minimum_revocation_sequence=None, windows_upgrade_inventory=None):
+           minimum_revocation_sequence=None, windows_upgrade_inventory=None, macos_publisher=None):
     if windows_upgrade_inventory is not None:
         require(all(value is None for value in (
             current_version, target, current_payload_sha256, current_payload_sbom_sha256,
@@ -497,6 +498,14 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             isinstance(pin, str) and re.fullmatch(r"[a-fA-F0-9]{64}", pin) for pin in pins
         ), "Installed Windows trust matching requires the payload, SBOM and publisher SHA-256 digests")
         installed_trust = dict(zip(WINDOWS_PREVIOUS_TRUST_FIELDS, (pin.lower() for pin in pins)))
+    if macos_publisher is not None:
+        require(sys.platform == "darwin" and target in ("darwin/amd64", "darwin/arm64") and current_version is not None,
+                "Native publisher verification requires macOS and a macOS managed update target")
+        team, installer_pin, application_pin = macos_publisher
+        require(re.fullmatch(r"[A-Z0-9]{10}", team) and all(
+            re.fullmatch(r"[a-fA-F0-9]{64}", pin) for pin in (installer_pin, application_pin)
+        ), "Expected the approved macOS team and both publisher certificate digests")
+        installer_pin, application_pin = installer_pin.lower(), application_pin.lower()
     if stage_directory is not None:
         require(target is not None, "Managed update staging requires an installed version and target")
         info = stage_directory.lstat()
@@ -568,8 +577,24 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             update["windowsUpgradeDetection"] = select_windows_upgrade(
                 report.get("windowsDetection", ()), update, current_payload_sha256, installed_trust
             )
+        if macos_publisher is not None:
+            update = report["managedUpdate"]
+            require(update["updateAvailable"], "Candidate is not an eligible managed upgrade")
+            require(not revoked_subjects.intersection((installer_pin, application_pin)),
+                    "macOS publisher certificate is revoked")
+            package = root / update["installer"]
+            architecture = target.split("/")[1]
+            check_package_publisher(package, team, installer_pin)
+            verify_packaged_application(package, team, architecture, application_pin)
+            require(digest(package) == update["installerSHA256"], "macOS package changed during publisher verification")
+            update["nativePublisherVerification"] = {
+                "developerTeamID": team, "installerCertificateSHA256": installer_pin,
+                "applicationCertificateSHA256": application_pin, "gatekeeperAccepted": True,
+                "stapledTicketValidated": True,
+            }
+            report["nativePublisherChecksPerformed"] = True
         if policy["schemaVersion"] == 2:
-            # Candidate authentication and copying the input snapshot can take time.
+            # Candidate authentication and native publisher verification can take time.
             require_current_revocation_policy(policy)
             report["revocationPolicySequence"] = policy["sequence"]
             report["revocationPolicyExpiresAt"] = policy["expiresAt"]
@@ -607,6 +632,8 @@ def main():
                              help="match the installed Windows payload signer certificate to signed reboot evidence")
     verify_args.add_argument("--windows-upgrade-inventory", nargs=2, metavar=("PATH", "SHA256"),
                              help="match an independently pinned Windows detector inventory to signed reboot evidence")
+    verify_args.add_argument("--macos-publisher", nargs=3, metavar=("TEAM_ID", "INSTALLER_SHA256", "APPLICATION_SHA256"),
+                             help="require native macOS package and app publisher checks before staging")
     verify_args.add_argument("--stage-directory", type=Path,
                              help="existing trusted directory for the authenticated eligible installer")
     for command in (prepare_args, verify_args):
@@ -632,7 +659,7 @@ def main():
                                     current_payload_sbom_sha256=args.current_payload_sbom_sha256,
                                     current_payload_publisher_sha256=args.current_payload_publisher_sha256,
                                     minimum_revocation_sequence=args.minimum_revocation_sequence,
-                                    windows_upgrade_inventory=inventory)))
+                                    windows_upgrade_inventory=inventory, macos_publisher=args.macos_publisher)))
     except (ValueError, OSError, subprocess.SubprocessError):
         print("Signed release inventory, approval or revocation verification failed.", file=sys.stderr)
         return 1

@@ -331,6 +331,67 @@ class SignedReleaseManifestTests(unittest.TestCase):
             self.verify(approved, pin, **update, current_payload_sha256="d" * 64)
         self.assertEqual(list(staging.iterdir()), [])
 
+        macos_staging = self.root / "macos-staging"
+        macos_staging.mkdir()
+        team, installer_pin, application_pin = "A12345BCDE", "3" * 64, "4" * 64
+        macos_target = "darwin/arm64"
+        macos_options = {
+            "current_version": "1.2.2-alpha", "target": macos_target, "stage_directory": macos_staging,
+            "macos_publisher": (team, installer_pin.upper(), application_pin.upper()),
+        }
+        pkg_name = f"accessweaver-{VERSION}-darwin-arm64-deployment-experimental.pkg"
+        with patch.object(release.sys, "platform", "win32"), self.assertRaisesRegex(ValueError, "requires macOS"):
+            self.verify(approved, pin, **macos_options)
+        with patch.object(release.sys, "platform", "darwin"):
+            for overrides in ({"target": "windows/arm64"}, {"macos_publisher": (team, installer_pin, "wrong")}):
+                with self.assertRaises(ValueError):
+                    self.verify(approved, pin, **{**macos_options, **overrides})
+
+            with patch.object(release, "check_package_publisher") as package_check, \
+                    patch.object(release, "verify_packaged_application") as app_check:
+                for revoked in (installer_pin, application_pin):
+                    revoked_pin = self.write_policy({**self.policy, "subjectSHA256": [revoked]})
+                    with self.assertRaisesRegex(ValueError, "publisher certificate is revoked"):
+                        self.verify(approved, pin, policy_pin=revoked_pin, **macos_options)
+                    package_check.assert_not_called()
+                    app_check.assert_not_called()
+                    self.assertEqual(list(macos_staging.iterdir()), [])
+                self.write_policy(self.policy)
+
+                package_check.side_effect = subprocess.CalledProcessError(1, "spctl")
+                with self.assertRaises(subprocess.CalledProcessError):
+                    self.verify(approved, pin, **macos_options)
+                app_check.assert_not_called()
+                self.assertEqual(list(macos_staging.iterdir()), [])
+                package_check.side_effect = None
+
+                app_check.side_effect = subprocess.CalledProcessError(1, "codesign")
+                with self.assertRaises(subprocess.CalledProcessError):
+                    self.verify(approved, pin, **macos_options)
+                self.assertEqual(list(macos_staging.iterdir()), [])
+                app_check.side_effect = lambda package, *_: package.write_bytes(b"changed")
+                with self.assertRaisesRegex(ValueError, "changed during publisher verification"):
+                    self.verify(approved, pin, **macos_options)
+                self.assertEqual(list(macos_staging.iterdir()), [])
+                app_check.side_effect = None
+
+                native_report = self.verify(approved, pin, **macos_options)
+                native_update = native_report["managedUpdate"]
+                self.assertTrue(native_report["nativePublisherChecksPerformed"])
+                self.assertTrue(native_update["installerStaged"])
+                self.assertEqual(native_update["nativePublisherVerification"], {
+                    "developerTeamID": team, "installerCertificateSHA256": installer_pin,
+                    "applicationCertificateSHA256": application_pin, "gatekeeperAccepted": True,
+                    "stapledTicketValidated": True,
+                })
+                checked_path = package_check.call_args.args[0]
+                self.assertEqual(checked_path.name, pkg_name)
+                self.assertNotEqual(checked_path.parent, self.candidate)
+                self.assertNotEqual(checked_path.parent, macos_staging)
+                self.assertEqual(package_check.call_args.args, (checked_path, team, installer_pin))
+                self.assertEqual(app_check.call_args.args, (checked_path, team, "arm64", application_pin))
+                self.assertEqual((macos_staging / pkg_name).read_bytes(), (self.candidate / pkg_name).read_bytes())
+
         real_stage = release.stage_managed_update
         def replace_input_after_verification(snapshot, directory, decision, policy):
             input_file.write_bytes(b"replacement after verification")
