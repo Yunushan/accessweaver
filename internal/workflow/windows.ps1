@@ -353,7 +353,11 @@ function Publish-WorkflowFile([string]$path,[byte[]]$bytes,[switch]$Recorded,[st
         } finally {$stream.Dispose()}
         $digest=Get-WorkflowBytesSHA256 $bytes
         if($Recorded){
-            Publish-RecordedWorkflowFile $staged $path $digest
+            if($PSBoundParameters.ContainsKey('BeforeHash')){
+                Publish-RecordedWorkflowFile $staged $path $digest -ExpectedBeforeHash $BeforeHash
+            }else{
+                Publish-RecordedWorkflowFile $staged $path $digest
+            }
         }else{
             if(-not $PSBoundParameters.ContainsKey('BeforeHash')){$BeforeHash=Get-WorkflowFileHash $path}
             Publish-StagedWorkflowFile $staged $path $digest $BeforeHash
@@ -1121,9 +1125,19 @@ function Publish-StagedWorkflowFile([string]$staged,[string]$target,[string]$exp
         throw 'Workflow file publication could not be verified'
     }
 }
-function Publish-RecordedWorkflowFile([string]$staged,[string]$target,[string]$hash) {
+function Publish-RecordedWorkflowFile([string]$staged,[string]$target,[string]$hash,[string]$ExpectedBeforeHash) {
+    $guarded=$PSBoundParameters.ContainsKey('ExpectedBeforeHash')
+    if($guarded){
+        $observed=Get-WorkflowFileHash $target
+        if(-not $observed){$observed=''}
+        if($observed -ine $ExpectedBeforeHash){throw 'Workflow files changed before replacement'}
+    }
     $record=Backup-File $target
     $beforeHash=if($record.expectedHash){$record.expectedHash}else{$record.originalHash}
+    if(-not $beforeHash){$beforeHash=''}
+    if($guarded -and $beforeHash -ine $ExpectedBeforeHash){
+        throw 'Workflow files changed before replacement'
+    }
     # Either journaled digest can be present after an interruption.
     $record.pendingHash=$hash
     Save-Journal
@@ -2438,11 +2452,24 @@ function Configure-DNS([string]$method) {
             throw 'Existing DNSCrypt service disappeared before reconfiguration'
         }
         $binary=Ensure-Asset 'dnscrypt';$config=Join-Path (Split-Path -Parent $binary) 'dnscrypt-proxy.toml'
-        if(-not (Test-Path -LiteralPath $config)){$example=Join-Path (Split-Path -Parent $binary) 'example-dnscrypt-proxy.toml';if(Test-Path -LiteralPath $example){Copy-Checked $example $config}else{throw 'Official DNSCrypt resolver configuration is missing'}}
-        $text=Get-Content -LiteralPath $config -Raw;if($text -notmatch '(?m)^listen_addresses\s*='){throw 'DNSCrypt configuration is missing its top-level listen_addresses setting'};$text=[regex]::Replace($text,'(?m)^listen_addresses\s*=.*$',"listen_addresses = ['127.0.0.1:53', '[::1]:53']")
+        $configBytes=Read-DNSRecoveryFileBytes $config 1MB
+        $configBefore=''
+        if($null -eq $configBytes){
+            $example=Join-Path (Split-Path -Parent $binary) 'example-dnscrypt-proxy.toml'
+            $configBytes=Read-DNSRecoveryFileBytes $example 1MB
+            if($null -eq $configBytes){throw 'Official DNSCrypt resolver configuration is missing'}
+        }else{
+            $configBefore=Get-WorkflowBytesSHA256 $configBytes
+        }
+        $text=[Text.UTF8Encoding]::new($false,$true).GetString($configBytes)
+        if($text.Length -gt 0 -and $text[0] -eq [char]0xfeff){$text=$text.Substring(1)}
+        if($text -notmatch '(?m)^listen_addresses\s*='){throw 'DNSCrypt configuration is missing its top-level listen_addresses setting'}
+        $text=[regex]::Replace($text,'(?m)^listen_addresses\s*=.*$',"listen_addresses = ['127.0.0.1:53', '[::1]:53']")
         if($text -notmatch '(?m)^server_names\s*='){$text="server_names = ['google', 'cloudflare', 'quad9-dnscrypt-ip4-nofilter-pri']`r`n"+$text}
         Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
-        Write-Atomic $config $text
+        $updatedConfig=[Text.UTF8Encoding]::new($false).GetBytes($text)
+        if($updatedConfig.Length -gt 1MB){throw 'DNSCrypt configuration exceeds its size limit'}
+        Publish-WorkflowFile $config $updatedConfig -Recorded -BeforeHash $configBefore
         if($existingResolver){
             if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before restart'}
             Set-Service -Name $serviceName -StartupType Automatic -ErrorAction Stop

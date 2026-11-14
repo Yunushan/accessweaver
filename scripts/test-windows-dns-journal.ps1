@@ -4,7 +4,7 @@ $path=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.ps
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'DNS journal source failed parsing'}
-foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-DNSRecoveryFileBytes','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Get-WorkflowFileHash','Copy-WorkflowFileToNewPath','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Restore-RecordedWorkflowFile','Rollback','Remove-All','Get-ManagedFirewallRule','Remove-ManagedFirewallRule','Firewall','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Remove-RecordedService')){
+foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-DNSRecoveryFileBytes','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Get-WorkflowFileHash','Copy-WorkflowFileToNewPath','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Publish-RecordedWorkflowFile','Backup-File','Restore-RecordedWorkflowFile','Rollback','Remove-All','Get-ManagedFirewallRule','Remove-ManagedFirewallRule','Firewall','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Remove-RecordedService')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -284,6 +284,36 @@ try {
         }
         Require ($refused -and $attempts.Count -eq 1 -and [IO.File]::ReadAllText($snapshot) -ceq 'independent edit') 'Fresh snapshot publication replaced an occupied destination'
         [IO.File]::WriteAllBytes($snapshot,$secondBytes)
+    }
+    & {
+        $config=Join-Path $root 'dnscrypt-proxy.toml'
+        $backups=Join-Path $root 'backups'
+        [void][IO.Directory]::CreateDirectory($backups)
+        $originalUndo=$script:undo
+        $script:undo=[Collections.Generic.List[object]]::new()
+        try {
+            Publish-WorkflowFile $config $firstBytes -Recorded -BeforeHash ''
+            $originalHash=Get-WorkflowBytesSHA256 $firstBytes
+            Require ((Get-WorkflowFileHash $config) -ceq $originalHash -and $script:undo.Count -eq 1) 'New configuration publication was not recorded'
+            $record=$script:undo[0]
+            Publish-WorkflowFile $config $secondBytes -Recorded -BeforeHash $originalHash
+            Require ((Get-WorkflowFileHash $config) -ceq $next -and $record.expectedHash -ceq $next -and
+                -not $record.ContainsKey('pendingHash')) 'Configuration replacement was not recorded'
+            [IO.File]::WriteAllText($config,'independent edit')
+            $refused=$false
+            try{Publish-WorkflowFile $config $firstBytes -Recorded -BeforeHash $next}catch{
+                $refused=$_.Exception.Message -ceq 'Workflow files changed before replacement'
+            }
+            Require ($refused -and [IO.File]::ReadAllText($config) -ceq 'independent edit' -and
+                $record.expectedHash -ceq $next -and -not $record.ContainsKey('pendingHash')) 'Recorded publication overwrote an independent configuration'
+        } finally {
+            [IO.File]::Delete($config)
+            foreach($entry in $script:undo){
+                if($entry.backup){[IO.File]::Delete($entry.backup)}
+            }
+            [IO.Directory]::Delete($backups)
+            $script:undo=$originalUndo
+        }
     }
     & {
         $receiptPath=Get-DNSRecoveryReceiptPath $next
