@@ -16,6 +16,7 @@ function Read-WorkflowRecoveryJournal {return @{undo=$script:saved}}
 $saveJournal=(Get-Command Save-Journal).ScriptBlock
 function Save-Journal {$script:journalWrites++}
 function Event {}
+function Test-DNSCryptListenerNeeded {return [bool]$script:resolverInUse}
 function Wait-RecordedServiceStopped([string]$Name) {
     if($Name -cne 'AccessWeaver-dnscrypt'){throw 'Unexpected service stop wait'}
     $script:order.Add('wait-stopped')
@@ -460,6 +461,12 @@ try {
         Require ($rollback.Count -eq 1 -and ($script:order -join ',') -ceq $case.trace -and
             (Get-FileHash -LiteralPath $serviceConfig).Hash -ceq $configHash) 'Unverified service rollback removed a dependent file'
     }
+    $script:resolverInUse=$true;$script:serviceFault='';$script:serviceState='running';$script:order.Clear()
+    $rollback=@(Rollback)
+    Require ($rollback.Count -eq 1 -and $rollback[0] -match '^DNSCrypt service retained' -and
+        $script:serviceState -ceq 'running' -and ($script:order -join ',') -ceq 'query,query' -and
+        (Get-FileHash -LiteralPath $serviceConfig).Hash -ceq $configHash) 'Rollback stopped a resolver that was still needed'
+    $script:resolverInUse=$false
     $script:serviceFault='pending';$script:serviceState='stopped';$script:order.Clear()
     $rollback=@(Rollback)
     Require ($rollback.Count -eq 1 -and $rollback[0] -match '^Managed service removal is pending' -and
@@ -508,6 +515,12 @@ try {
     Require ($refused -and @($script:order | Where-Object {$_ -cne 'query'}).Count -eq 0) 'Changed host reached service mutation'
     [IO.File]::WriteAllBytes($hostPath,$hostBytes)
     $entry=Assert-ManagedServiceOwnership 'AccessWeaver-dnscrypt'
+    $script:resolverInUse=$true;$script:order.Clear()
+    $refused=$false
+    try {Remove-RecordedService 'AccessWeaver-dnscrypt' -Entry $entry}catch{$refused=$_.Exception.Message -match '^DNSCrypt service retained'}
+    Require ($refused -and $script:serviceState -ceq 'running' -and
+        ($script:order -join ',') -ceq 'query') 'Explicit removal stopped a resolver that was still needed'
+    $script:resolverInUse=$false
     Remove-RecordedService 'AccessWeaver-dnscrypt' -Entry $entry
     Require ($script:serviceState -ceq 'absent') 'Verified explicit removal did not retire the service'
 } finally {

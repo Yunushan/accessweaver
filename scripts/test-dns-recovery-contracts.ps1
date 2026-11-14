@@ -89,7 +89,7 @@ function Mutation-Count {return @($script:calls | Where-Object {$_.kind -in @('d
 # closed source fixture. Command discovery is mocked too; no module fallback.
 function Get-Command {[CmdletBinding()]param([string[]]$Name);foreach($item in $Name){if(-not $script:present.ContainsKey($item)){throw 'Unexpected DNS command discovery'};if($script:present[$item]){[pscustomobject]@{Name=$item;CommandType='Function'}}}}
 function Get-NetAdapter {
-    [CmdletBinding()]param()
+    [CmdletBinding()]param([switch]$IncludeHidden)
     if($script:replaceSnapshotOnAdapterRead){
         $script:replaceSnapshotOnAdapterRead=$false
         [IO.File]::AppendAllText($snapshot,' ')
@@ -121,9 +121,9 @@ function Get-ItemProperty {
         if($script:storedDNSFault -ceq 'wrong-address' -and $family -ceq 'IPv4'){return [pscustomobject]@{NameServer='198.51.100.99'}}
         return [pscustomobject]@{NameServer=$(if($state.dhcp){''}else{$state.values -join ', '})}
     }
+    if($script:storedDNS.ContainsKey($stateKey)){return [pscustomobject]@{NameServer=$script:storedDNS[$stateKey]}}
     $value=if($family -eq 'IPv4'){$script:mode4}else{$script:mode6}
     if($value -is [string] -and $value -ceq 'absent'){return [pscustomobject]@{}}
-    if($script:storedDNS.ContainsKey($stateKey)){return [pscustomobject]@{NameServer=$script:storedDNS[$stateKey]}}
     if($value -is [string] -and $matching.Count -eq 1 -and $script:dnsValues.ContainsKey($key) -and $script:dnsValues[$key].Count -gt 0){$value=$script:dnsValues[$key] -join ', '}
     if($script:captureDrift -and $family -ceq 'IPv4'){
         if($script:captureDrift -ceq 'mode'){$script:mode4='absent'}
@@ -704,10 +704,18 @@ try {
     }
     New-DNSCase;$script:resolverServicePresent=$true
     $script:adapters+=@([pscustomobject]@{Status='Up';InterfaceDescription='WireGuard fixture';InterfaceGuid='{00000000-0000-0000-0000-000000000002}';ifIndex=88})
-    $script:dnsValues['88/IPv6']=@('0:0:0:0:0:0:0:1')
+    $inactive=$script:adapters[1]
+    $inactive.Status='Down'
+    $script:dnsValues['88/IPv6']=@('2001:db8::53')
+    $script:storedDNS[([string]$inactive.InterfaceGuid)+'/IPv6']='0:0:0:0:0:0:0:1'
     Configure-DNS 'doh'
     Assert-DNS ($script:dnsConfigured -and $script:serviceStops -eq 0 -and
         $script:serviceStartupChanges -eq 0) 'doh-keeps-listener-for-excluded-adapter'
+    $script:storedDNS.Clear()
+    $script:dnsValues['88/IPv6']=@('0:0:0:0:0:0:0:1')
+    Assert-DNS (Test-DNSCryptListenerNeeded) 'doh-keeps-listener-for-excluded-adapter'
+    $script:dnsValues['88/IPv6']=@('2001:db8::53')
+    Assert-DNS (-not (Test-DNSCryptListenerNeeded)) 'doh-stops-listener-after-last-adapter-switch'
     New-DNSCase;$script:resolverServicePresent=$true
     $script:mode4='127.0.0.1';$script:dnsValues['77/IPv4']=@('127.0.0.1')
     Configure-DNS 'doh'

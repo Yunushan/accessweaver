@@ -2309,18 +2309,26 @@ function Assert-ConfiguredDNSDohPolicy([object[]]$Providers,[string]$FailureMess
 }
 function Test-DNSCryptListenerNeeded([object[]]$Records) {
     try {
-        $inventory=@(Get-NetAdapter -ErrorAction Stop)
+        $inventory=@(Get-NetAdapter -IncludeHidden -ErrorAction Stop)
         $clients=@(Read-DNSClientInventory)
-        # Include down and excluded interfaces. Also check stored overrides for
-        # previously managed families whose effective rows can lag or disappear.
-        # Keep the service if restoring a saved static setting would need it.
+        if(-not $inventory.Count -or -not $clients.Count){return $true}
+        # Down and excluded interfaces can still depend on the listener.
+        # Their reported DNS addresses can lag behind the stored override.
         foreach($client in $clients){
             foreach($server in $client.ServerAddresses){
                 $address=$null
                 if(-not [Net.IPAddress]::TryParse([string]$server,[ref]$address) -or
-                   $address.Equals([Net.IPAddress]::Loopback) -or $address.Equals([Net.IPAddress]::IPv6Loopback)){return $true}
+                   [Net.IPAddress]::IsLoopback($address)){return $true}
+            }
+            $matches=@($inventory | Where-Object {$_.ifIndex -eq $client.InterfaceIndex})
+            if($matches.Count -gt 1){return $true}
+            if($matches.Count -eq 1){
+                $family=Get-DNSClientFamily $client.AddressFamily
+                $stored=@(Read-DNSStaticOverride $matches[0] $family)
+                if($stored -contains '127.0.0.1' -or $stored -contains '::1'){return $true}
             }
         }
+        # A saved original can depend on the listener even after a switch to DoH.
         foreach($record in $Records){
             $matches=@($inventory | Where-Object {[string]$_.InterfaceGuid -eq $record.guid})
             if($matches.Count -ne 1){return $true}
@@ -2333,8 +2341,6 @@ function Test-DNSCryptListenerNeeded([object[]]$Records) {
                     $original=@(Get-StaticDNSServers @($record.('ipv'+$number)) $family $record.index)
                     if($original -contains '127.0.0.1' -or $original -contains '::1'){return $true}
                 }
-                $stored=@(Read-DNSStaticOverride $adapter $family)
-                if($stored -contains '127.0.0.1' -or $stored -contains '::1'){return $true}
             }
         }
     } catch {
@@ -2945,6 +2951,9 @@ function Remove-RecordedService([string]$Name,$Entry) {
     $state=Assert-RecordedServiceBinding $Entry
     if($state -eq 1060){return}
     if($state -eq 0){
+        if($Name -ieq 'AccessWeaver-dnscrypt' -and (Test-DNSCryptListenerNeeded)){
+            throw 'DNSCrypt service retained because adapter loopback DNS is configured or could not be ruled out'
+        }
         $stopped=Invoke-ManagedServiceControl 'stop' $Name @(0,1060,1062,1072)
         if($stopped -eq 0){Wait-RecordedServiceStopped $Name}
         if($stopped -in @(0,1062)){[void](Invoke-ManagedServiceControl 'delete' $Name @(0,1060,1072))}
