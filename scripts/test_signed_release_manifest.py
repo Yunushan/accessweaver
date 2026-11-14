@@ -1,4 +1,6 @@
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
+import io
 import json
 import os
 import shutil
@@ -1108,6 +1110,37 @@ class SignedReleaseManifestTests(unittest.TestCase):
         self.assertEqual(verified["managedUpdate"]["windowsSetupBaselineArgument"],
                          selected["managedUpdate"]["windowsSetupBaselineArgument"])
         self.assertEqual(list(staging.iterdir()), [])
+        if os.name == "nt":
+            now = datetime.now(timezone.utc).replace(microsecond=0)
+            launch_policy = {**self.policy, "schemaVersion": 2, "sequence": 4,
+                             "issuedAt": (now - timedelta(minutes=1)).isoformat().replace("+00:00", "Z"),
+                             "expiresAt": (now + timedelta(minutes=10)).isoformat().replace("+00:00", "Z")}
+            launch_pin = self.write_policy(launch_policy)
+            launch_options = {**inventory_options, "stage_directory": staging,
+                              "windows_publisher": qualified_entry["publisherCertificateSHA256"],
+                              "windows_payload_publisher": qualified_entry[release.WINDOWS_PAYLOAD_PUBLISHER],
+                              "minimum_revocation_sequence": 4, "launch_staged_windows_setup": True}
+            with patch.object(release, "require_native_windows_setup_host") as host, \
+                    patch.object(release, "check_windows_publisher") as publisher, \
+                    patch.object(release, "launch_windows_setup", return_value=3010) as launch:
+                with self.assertRaisesRegex(ValueError, "revocation sequence"):
+                    self.verify(approved, pin, policy_pin=launch_pin,
+                                **{**launch_options, "minimum_revocation_sequence": None})
+                with self.assertRaisesRegex(ValueError, "requires the saved baseline argument"):
+                    self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
+                                resume_windows_upgrade_setup_sha256=original_setup_pin)
+                launch.assert_not_called()
+                self.assertEqual(list(staging.iterdir()), [])
+
+                result = self.verify(approved, pin, policy_pin=launch_pin, **launch_options)["managedUpdate"]
+                self.assertEqual(result["setupExitCode"], 3010)
+                self.assertEqual(result["windowsSetupBaselineArgument"], original_baseline)
+                self.assertEqual(publisher.call_count, 2)
+                host.assert_called_once_with(result["target"])
+                launch.assert_called_once()
+                self.assertEqual(release.digest(staged_path), original_setup_pin)
+            staged_path.unlink()
+            self.write_policy(self.policy)
         strict_args = [*retry_cli, "--require-windows-setup-wrong-baseline-refusal"]
         refused = subprocess.run(strict_args, capture_output=True, text=True, timeout=30)
         self.assertNotEqual(refused.returncode, 0)
@@ -1337,6 +1370,60 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
         moved = parent.with_name("released-staging-parent")
         parent.rename(moved)
         self.assertTrue((moved / "staging" / source.name).is_file())
+
+    def test_launch_cli_returns_setup_exit_code(self):
+        argv = ["signed_release_manifest.py", "verify", str(self.candidate),
+                "--source-commit", COMMIT, "--source-ref", REF, "--approval-certificate", "approval.cer",
+                "--approval-certificate-sha256", "b" * 64, "--revocation-list", "revocation.json",
+                "--revocation-list-sha256", self.policy_pin, "--launch-staged-windows-setup"]
+        for code in (0, 7, 3010, 1603):
+            report = {"managedUpdate": {"setupExitCode": code}}
+            with self.subTest(code=code), patch.object(sys, "argv", argv), \
+                    patch.object(release, "verify", return_value=report) as verify, redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(release.main(), code)
+                self.assertEqual(json.loads(output.getvalue()), report)
+                self.assertIs(verify.call_args.kwargs["launch_staged_windows_setup"], True)
+
+    @unittest.skipUnless(os.name == "nt", "requires native Windows file sharing")
+    def test_windows_staging_holds_approved_setup_and_parents_through_launch(self):
+        directory = self.root / "staged"
+        directory.mkdir()
+        setup = directory / "accessweaver-setup.exe"
+        contents = b"inert Setup fixture"
+        setup.write_bytes(contents)
+        identity = release.staging_directory_identity(directory)
+        baseline = "/AWUpgradeFrom=1.2.2-rc.1," + ",".join([("a" * 64)] * 3)
+        update = {"installer": setup.name, "installerSHA256": release.digest(setup),
+                  "windowsSetupBaselineArgument": baseline}
+
+        def assert_held():
+            with self.assertRaises(PermissionError):
+                setup.write_bytes(b"unapproved")
+            with self.assertRaises(PermissionError):
+                setup.rename(directory / "replaced.exe")
+            with self.assertRaises(PermissionError):
+                directory.rename(self.root / "renamed")
+
+        with patch.object(release.subprocess, "Popen") as launch:
+            process = launch.return_value.__enter__.return_value
+            def wait():
+                assert_held()
+                return 3010
+            process.wait.side_effect = wait
+            launch_options = {"size": len(contents), "directory_identity": identity}
+            self.assertEqual(release.launch_windows_setup(directory, update, self.policy, **launch_options), 3010)
+            self.assertEqual(launch.call_args.args[0][-1], baseline)
+            self.assertIn("/NORESTART", launch.call_args.args[0])
+            self.assertEqual(launch.call_args.kwargs["executable"], str(setup))
+
+            launch.reset_mock()
+            with patch.object(release, "require_current_revocation_policy", side_effect=ValueError("expired")):
+                with self.assertRaisesRegex(ValueError, "expired"):
+                    release.launch_windows_setup(directory, update, self.policy, **launch_options)
+            setup.write_bytes(b"x" * len(contents))
+            with self.assertRaisesRegex(ValueError, "differs from the approved digest"):
+                release.launch_windows_setup(directory, update, self.policy, **launch_options)
+            launch.assert_not_called()
 
     @unittest.skipUnless(os.name == "nt", "requires a Windows junction")
     def test_windows_staging_refuses_a_redirected_parent(self):

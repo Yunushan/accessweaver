@@ -549,11 +549,15 @@ def select_windows_upgrade(detection, update, installed_digest, installed_trust)
     return entry
 
 
-def check_windows_publisher(artifact, approved_digest, publisher_pin):
+def windows_system_directory():
     system_directory = ctypes.create_unicode_buffer(32768)
     length = ctypes.windll.kernel32.GetSystemDirectoryW(system_directory, len(system_directory))
     require(0 < length < len(system_directory), "Windows system directory could not be resolved")
-    shell = Path(system_directory.value) / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    return Path(system_directory.value)
+
+
+def check_windows_publisher(artifact, approved_digest, publisher_pin):
+    shell = windows_system_directory() / "WindowsPowerShell" / "v1.0" / "powershell.exe"
     script = Path(__file__).resolve().with_name("verify-windows-installer-publisher.ps1")
     with tempfile.TemporaryFile() as output:
         subprocess.run(
@@ -652,6 +656,55 @@ def hold_windows_staging_directory(directory):
         yield
 
 
+@contextmanager
+def hold_windows_setup(path):
+    """Keep Setup readable and deny writes, renames and deletion through launch."""
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    open_file = kernel.CreateFileW
+    open_file.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+                          wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    open_file.restype = wintypes.HANDLE
+    close_handle = kernel.CloseHandle
+    close_handle.argtypes = [wintypes.HANDLE]
+    close_handle.restype = wintypes.BOOL
+    # GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT.
+    handle = open_file(str(path), 0x80000000, 1, None, 3, 0x00200000, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        yield
+    finally:
+        close_handle(handle)
+
+
+def require_native_windows_setup_host(target):
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    native_architecture = kernel.IsWow64Process2
+    native_architecture.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.USHORT), ctypes.POINTER(wintypes.USHORT)]
+    native_architecture.restype = wintypes.BOOL
+    process, native = wintypes.USHORT(), wintypes.USHORT()
+    require(native_architecture(kernel.GetCurrentProcess(), ctypes.byref(process), ctypes.byref(native))
+            and process.value == 0 and target == {0x8664: "windows/amd64", 0xAA64: "windows/arm64"}.get(native.value),
+            "Windows Setup launch requires the matching native architecture")
+    require(ctypes.windll.shell32.IsUserAnAdmin(), "Windows Setup launch requires an already elevated agent")
+
+
+def launch_windows_setup(directory, update, policy, *, size, directory_identity):
+    setup = directory / update["installer"]
+    arguments = [str(setup), "/SP-", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
+                 "/RESTARTEXITCODE=3010", "/NOICONS", update["windowsSetupBaselineArgument"]]
+    with hold_windows_staging_directory(directory):
+        require(staging_directory_identity(directory) == directory_identity,
+                "Managed update staging directory changed before launch")
+        with hold_windows_setup(setup):
+            verify_staged_update(setup, size, update["installerSHA256"])
+            require_current_revocation_policy(policy)
+            with subprocess.Popen(arguments, executable=str(setup), cwd=windows_system_directory(),
+                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as process:
+                return process.wait()
+
+
 def copy_approved_installer(source_path, staged, size):
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     before = source_path.lstat()
@@ -726,7 +779,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
            current_build_info_sha256=None, minimum_revocation_sequence=None, windows_upgrade_inventory=None, macos_publisher=None,
            windows_publisher=None, windows_payload_publisher=None, require_windows_setup_baseline=False,
            resume_windows_upgrade_setup_sha256=None, require_windows_setup_wrong_baseline_refusal=False,
-           resume_windows_upgrade_baseline_argument=None):
+           resume_windows_upgrade_baseline_argument=None, launch_staged_windows_setup=False):
     if windows_upgrade_inventory is not None:
         require(all(value is None for value in (
             current_version, target, current_payload_sha256, current_payload_sbom_sha256,
@@ -769,6 +822,15 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
         require(isinstance(resume_windows_upgrade_baseline_argument, str)
                 and resume_windows_upgrade_baseline_argument.startswith(WINDOWS_SETUP_BASELINE_PREFIX),
                 "Expected the original Windows Setup baseline argument for retry")
+    if launch_staged_windows_setup:
+        require(os.name == "nt" and stage_directory is not None and windows_publisher is not None
+                and type(minimum_revocation_sequence) is int and minimum_revocation_sequence > 0,
+                "Windows Setup launch requires native Windows, staging, publisher pins and a revocation sequence")
+        require_windows_setup_baseline = True
+        if resume_windows_upgrade_setup_sha256 is not None:
+            require(resume_windows_upgrade_baseline_argument is not None,
+                    "Windows Setup retry launch requires the saved baseline argument")
+        require_native_windows_setup_host(target)
     if require_windows_setup_baseline or require_windows_setup_wrong_baseline_refusal:
         require(target in ("windows/amd64", "windows/arm64") and current_version is not None
                 and WINDOWS_PREVIOUS_BUILD_INFO in installed_trust,
@@ -946,6 +1008,9 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             stage_managed_update(root, stage_directory, update, policy,
                                  size=installer["size"], directory_identity=stage_directory_id)
             update["installerStaged"] = True
+            if launch_staged_windows_setup:
+                update["setupExitCode"] = launch_windows_setup(stage_directory, update, policy,
+                                                             size=installer["size"], directory_identity=stage_directory_id)
         return report
 
 
@@ -993,6 +1058,8 @@ def main():
                              help="require native macOS package and app publisher checks before staging")
     verify_args.add_argument("--stage-directory", type=Path,
                              help="existing trusted directory for the authenticated eligible installer")
+    verify_args.add_argument("--launch-staged-windows-setup", action="store_true",
+                             help="explicitly launch the qualified Windows upgrade after verification and staging")
     for command in (prepare_args, verify_args):
         command.add_argument("directory", type=Path)
         command.add_argument("--source-commit", required=True)
@@ -1006,7 +1073,7 @@ def main():
             inventory = args.windows_upgrade_inventory
             if inventory is not None:
                 inventory = (Path(inventory[0]), inventory[1])
-            print(json.dumps(verify(args.directory, args.approval_certificate, args.approval_certificate_sha256,
+            report = verify(args.directory, args.approval_certificate, args.approval_certificate_sha256,
                                     args.source_commit, args.source_ref, args.openssl,
                                     revocation_list=args.revocation_list,
                                     revocation_list_sha256=args.revocation_list_sha256,
@@ -1023,7 +1090,11 @@ def main():
                                     require_windows_setup_baseline=args.require_windows_setup_baseline,
                                     resume_windows_upgrade_setup_sha256=args.resume_windows_upgrade_setup_sha256,
                                     require_windows_setup_wrong_baseline_refusal=args.require_windows_setup_wrong_baseline_refusal,
-                                    resume_windows_upgrade_baseline_argument=args.resume_windows_upgrade_baseline_argument)))
+                                    resume_windows_upgrade_baseline_argument=args.resume_windows_upgrade_baseline_argument,
+                                    launch_staged_windows_setup=args.launch_staged_windows_setup)
+            print(json.dumps(report))
+            if args.launch_staged_windows_setup:
+                return report["managedUpdate"]["setupExitCode"]
     except (ValueError, OSError, subprocess.SubprocessError):
         print("Signed release inventory, approval or revocation verification failed.", file=sys.stderr)
         return 1
