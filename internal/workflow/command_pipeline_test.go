@@ -265,6 +265,39 @@ func TestWorkflowCommandPipelineLogFailureStopsLiveWorker(t *testing.T) {
 	}
 }
 
+func TestWorkflowCommandPipelineDrainClosesBlockedInput(t *testing.T) {
+	readEnd, writeEnd, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer readEnd.Close()
+	input := &ownedWorkflowOutput{file: writeEnd, done: make(chan struct{})}
+	writing := make(chan struct{})
+	go func() {
+		defer close(input.done)
+		close(writing)
+		input.copyErr = errors.Join(copyWorkflowOutput(writeEnd, strings.NewReader(strings.Repeat("x", 2<<20))), input.close())
+	}()
+	workflowShutdownAwait(t, writing, "input copier did not start")
+	completed := make(chan error, 1)
+	go func() { completed <- drainWorkflowPipes([]*ownedWorkflowOutput{input}, 25*time.Millisecond) }()
+	select {
+	case err := <-completed:
+		if !errors.Is(err, exec.ErrWaitDelay) || !errors.Is(err, os.ErrClosed) {
+			t.Fatalf("drain lost the timeout or actual pipe close: %v", err)
+		}
+		select {
+		case <-input.done:
+		default:
+			t.Fatal("input drain returned without joining the copier")
+		}
+	case <-time.After(5 * time.Second):
+		// Release the fixture's unread pipe before returning a failure.
+		_ = readEnd.Close()
+		t.Fatal("unconsumed input held the drain open past its deadline")
+	}
+}
+
 type workflowPipelineBlockedWriter struct {
 	entered chan struct{}
 	release chan struct{}

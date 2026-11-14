@@ -101,35 +101,10 @@ func runWorkflowCommandWithOutput(cmd *exec.Cmd, owner commandOwner, writer io.W
 		}
 	}
 	observation.Waited = cmd.ProcessState != nil
-	timer := time.NewTimer(2 * time.Second)
-	defer timer.Stop()
-	timedOut := false
-	for _, output := range outputs {
-		select {
-		case <-output.done:
-		case <-timer.C:
-			timedOut = true
-			for _, pending := range outputs {
-				_ = pending.close()
-			}
-			<-output.done
-		}
-		if timedOut {
-			for _, pending := range outputs {
-				<-pending.done
-			}
-			break
-		}
-	}
-	<-inputOwner.done
-	var outputErr error
-	outputErr = errors.Join(outputErr, inputOwner.copyErr, inputOwner.closeErr)
-	for _, output := range outputs {
-		outputErr = errors.Join(outputErr, output.copyErr, output.closeErr)
-	}
-	if timedOut {
-		outputErr = errors.Join(outputErr, exec.ErrWaitDelay)
-	}
+	// A descendant can inherit any pipe, including the worker's stdin.
+	// Apply one post-exit deadline to all three and still join each copier.
+	pipes := append(outputs, inputOwner)
+	outputErr := drainWorkflowPipes(pipes, 2*time.Second)
 	outputErr = errors.Join(outputErr, writerCloseErr)
 	var ownerErr error
 	if owner != nil {
@@ -142,6 +117,29 @@ func runWorkflowCommandWithOutput(cmd *exec.Cmd, owner commandOwner, writer io.W
 	}
 	return observation, outputClosed, errors.Join(waitErr, workflowFailure(ErrWorkflowCleanup, errors.Join(bindErr, cancelErr, ownerErr)), workflowFailure(ErrWorkflowPersistence, outputErr))
 }
+func drainWorkflowPipes(pipes []*ownedWorkflowOutput, timeout time.Duration) error {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	deadline := timer.C
+	var failure error
+	for _, pipe := range pipes {
+		select {
+		case <-pipe.done:
+		case <-deadline:
+			deadline = nil
+			failure = exec.ErrWaitDelay
+			for _, pending := range pipes {
+				_ = pending.close()
+			}
+			<-pipe.done
+		}
+	}
+	for _, pipe := range pipes {
+		failure = errors.Join(failure, pipe.copyErr, pipe.closeErr)
+	}
+	return failure
+}
+
 func copyWorkflowOutput(writer io.Writer, reader io.Reader) error {
 	_, err := io.Copy(writer, reader)
 	return err
