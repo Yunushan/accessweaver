@@ -741,6 +741,74 @@ class SignedReleaseManifestTests(unittest.TestCase):
                     native.assert_not_called()
                 self.assertNotIn("windowsLifecycleEvidenceVerified", self.verify(cert, pin, source))
 
+    def test_revoked_approval_cannot_stage_even_after_resigning(self):
+        self.assertIsNotNone(OPENSSL, "OpenSSL is required for CMS signing fixtures")
+
+        def openssl(*arguments):
+            subprocess.run([OPENSSL, *map(str, arguments)], check=True, timeout=30,
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        key, pem, der = (self.root / name for name in ("approval.key", "approval.pem", "approval.cer"))
+        openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-sha256",
+                "-subj", "/CN=Disposable release control", "-keyout", key, "-out", pem)
+        openssl("x509", "-in", pem, "-outform", "DER", "-out", der)
+        signer_pin = release.digest(der)
+        initial = self.root / release.MANIFEST
+        reviewed = self.root / "reviewed"
+        reviewed.mkdir()
+        replacement = reviewed / release.MANIFEST
+        evidence = self.write_reboot_report("replacement-reboot.json")
+        release.prepare(self.candidate, initial, COMMIT, REF)
+        release.prepare(self.candidate, replacement, COMMIT, REF, windows_reboot_evidence=[evidence])
+        manifest = self.candidate / release.MANIFEST
+        signature = self.candidate / release.SIGNATURE
+
+        def sign(approval, *options):
+            shutil.copyfile(approval, manifest)
+            openssl("cms", "-sign", "-binary", "-md", "sha256", "-in", manifest, "-signer", pem,
+                    "-inkey", key, "-outform", "DER", "-out", signature, *options)
+
+        staging = self.root / "staging"
+        staging.mkdir()
+        update = {"current_version": "1.2.2-alpha", "target": "windows/amd64", "stage_directory": staging}
+        sign(initial)
+        original_signature = release.digest(signature)
+        accepted = self.verify(der, signer_pin, **update)
+        installer = staging / accepted["managedUpdate"]["installer"]
+        installer_digest = release.digest(installer)
+        rejected_manifest = release.digest(initial)
+        now = datetime.now(timezone.utc)
+        timestamp = "%Y-%m-%dT%H:%M:%SZ"
+        revoked = self.write_policy({
+            **self.policy, "schemaVersion": 2, "sequence": 2, "subjectSHA256": [rejected_manifest],
+            "issuedAt": (now - timedelta(minutes=1)).strftime(timestamp),
+            "expiresAt": (now + timedelta(minutes=5)).strftime(timestamp),
+        })
+        approved_policy = {"policy_pin": revoked, "minimum_revocation_sequence": 2}
+        with self.assertRaisesRegex(ValueError, "Signed release approval manifest is revoked"):
+            self.verify(der, signer_pin, **approved_policy, **update)
+        sign(initial, "-noattr")
+        self.assertNotEqual(release.digest(signature), original_signature)
+        with self.assertRaisesRegex(ValueError, "Signed release approval manifest is revoked"):
+            self.verify(der, signer_pin, **approved_policy, **update)
+        self.assertEqual(list(staging.iterdir()), [installer])
+        self.assertEqual(release.digest(installer), installer_digest)
+
+        installer.unlink()
+        with self.assertRaisesRegex(ValueError, "Signed release approval manifest is revoked"):
+            self.verify(der, signer_pin, **approved_policy, **update)
+        self.assertEqual(list(staging.iterdir()), [])
+
+        sign(replacement)
+        recovered = self.verify(der, signer_pin, **approved_policy, **update)
+        self.assertEqual(accepted["signedReleaseManifestSHA256"], rejected_manifest)
+        self.assertEqual(recovered["signedReleaseManifestSHA256"], release.digest(replacement))
+        self.assertNotEqual(recovered["signedReleaseManifestSHA256"], rejected_manifest)
+        self.assertEqual(recovered["revocationPolicySequence"], 2)
+        self.assertTrue(recovered["managedUpdate"]["installerStaged"])
+        self.assertEqual(recovered["managedUpdate"]["installerSHA256"], installer_digest)
+        self.assertEqual(release.digest(installer), installer_digest)
+
     def test_real_cms_approval_and_refusals(self):
         self.assertIsNotNone(OPENSSL, "OpenSSL is required for CMS signing fixtures")
 

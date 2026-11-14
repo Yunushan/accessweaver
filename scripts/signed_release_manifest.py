@@ -1286,7 +1286,9 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             entries = sorted(entries, key=detection_key)
         expected = encode_manifest(commit, ref, files, entries)
         require(manifest_bytes == expected, "Signed release manifest or subject bytes differ")
+        manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
         revoked_subjects = set(policy["subjectSHA256"])
+        require(manifest_sha256 not in revoked_subjects, "Signed release approval manifest is revoked")
         require(all(subject["sha256"] not in revoked_subjects for subject in files)
                 and all(not revoked_subjects.intersection(
                     entry[field] for field in ("uninstallerSHA256", "rebootEvidenceSHA256",
@@ -1310,6 +1312,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             "sbomArtifactBindingsVerified": sboms_verified, "macosDetection": macos_detectors,
             "sourceCommit": commit, "sourceRef": ref, "subjectsVerified": len(subjects),
             "organizationApprovalSignatureVerified": True, "approvalCertificateSHA256": certificate_sha256,
+            "signedReleaseManifestSHA256": manifest_sha256,
             "revocationListSHA256": revocation_list_sha256.lower(), "revocationCheckPassed": True,
             "nativePublisherChecksPerformed": False, "productionQualificationComplete": False,
         }
@@ -1436,7 +1439,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             if start_receipt is not None:
                 bindings = {
                     "sourceCommit": commit, "sourceRef": ref, "target": update["target"],
-                    "manifestSHA256": hashlib.sha256(manifest_bytes).hexdigest(),
+                    "manifestSHA256": manifest_sha256,
                     "approvalCertificateSHA256": certificate_sha256,
                     "rebootEvidenceSHA256": update["windowsUpgradeDetection"]["rebootEvidenceSHA256"],
                 }
@@ -1505,7 +1508,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                         "schemaVersion": 2, "attemptID": windows_upgrade_attempt_id,
                         "boot": read_windows_boot(windows_upgrade_attempt_id),
                         "sourceCommit": commit, "sourceRef": ref, "target": update["target"],
-                        "manifestSHA256": hashlib.sha256(manifest_bytes).hexdigest(),
+                        "manifestSHA256": manifest_sha256,
                         "approvalCertificateSHA256": certificate_sha256,
                         "installerSHA256": update["installerSHA256"],
                         "windowsSetupBaselineArgument": update["windowsSetupBaselineArgument"],
