@@ -20,6 +20,7 @@ REF = "refs/tags/v1.2.3-rc.1"
 OPENSSL = shutil.which("openssl")
 VERSION = REF.removeprefix("refs/tags/v")
 DETECTOR_DIGESTS = {"darwin/amd64": "1" * 64, "darwin/arm64": "2" * 64}
+DEPLOYMENT_MANIFEST_DIGESTS = {"darwin/amd64": "7" * 64, "darwin/arm64": "8" * 64}
 
 
 class SignedReleaseManifestTests(unittest.TestCase):
@@ -55,6 +56,9 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 components = [{**root, "bom-ref": "helper:application", "hashes": hashes}]
                 components.extend({"bom-ref": "script-file:" + phase, "type": "file",
                                    "name": phase, "hashes": hashes} for phase in ("preinstall", "postinstall"))
+                components.append({"bom-ref": "detached-file:" + release.DETACHED_MANIFEST, "type": "file",
+                                   "name": release.DETACHED_MANIFEST,
+                                   "hashes": [{"alg": "SHA-256", "content": DEPLOYMENT_MANIFEST_DIGESTS[target]}]})
             else:
                 components = [payloads[target]]
             self.write_sbom(name, root, components)
@@ -345,6 +349,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
             ("helper:application", "hashes", [{"alg": "SHA-1", "content": "1" * 64}], "detector digest"),
             ("script-file:preinstall", "hashes", [{"alg": "SHA-256", "content": "0" * 64}], "script differs"),
             ("script-file:postinstall", "name", "preinstall", "script differs"),
+            ("detached-file:INSTALL-MANIFEST.json", "name", "OTHER.json", "deployment manifest digest"),
+            ("detached-file:INSTALL-MANIFEST.json", "hashes", [{"alg": "SHA-1", "content": "1" * 64}], "deployment manifest digest"),
         ):
             document = json.loads(original)
             entry = next(entry for entry in document["components"] if entry["bom-ref"] == reference)
@@ -658,7 +664,10 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 self.assertEqual(deployment_check.call_args.args, (checked_path, team, "arm64", application_pin))
                 helper_pin, = [entry["detectorSHA256"] for entry in native_report["macosDetection"]
                                if entry["target"] == macos_target]
-                self.assertEqual(deployment_check.call_args.kwargs, {"version": VERSION, "helper_sha256": helper_pin})
+                self.assertEqual(deployment_check.call_args.kwargs, {
+                    "version": VERSION, "helper_sha256": helper_pin,
+                    "manifest_sha256": DEPLOYMENT_MANIFEST_DIGESTS[macos_target],
+                })
                 self.assertEqual((macos_staging / pkg_name).read_bytes(), (self.candidate / pkg_name).read_bytes())
 
         real_stage = release.stage_managed_update
@@ -766,6 +775,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
         self.assertEqual(report["sbomArtifactBindingsVerified"], 6)
         self.assertEqual(report["macosDetection"], [
             {"target": target, "version": VERSION, "detectorSHA256": pin,
+             "manifestSHA256": DEPLOYMENT_MANIFEST_DIGESTS[target],
              "packageSHA256": release.digest(self.candidate /
                  f"accessweaver-{VERSION}-darwin-{target.split('/')[1]}-deployment-experimental.pkg")}
             for target, pin in DETECTOR_DIGESTS.items()
@@ -773,6 +783,10 @@ class SignedReleaseManifestTests(unittest.TestCase):
         for target, detector in DETECTOR_DIGESTS.items():
             current_pin = self.write_policy({**self.policy, "subjectSHA256": [detector]})
             with self.subTest(target=target), self.assertRaisesRegex(ValueError, "macOS detector is revoked"):
+                self.verify(approved, pin, policy_pin=current_pin)
+        for target, manifest_pin in DEPLOYMENT_MANIFEST_DIGESTS.items():
+            current_pin = self.write_policy({**self.policy, "subjectSHA256": [manifest_pin]})
+            with self.subTest(target=target), self.assertRaisesRegex(ValueError, "macOS deployment manifest is revoked"):
                 self.verify(approved, pin, policy_pin=current_pin)
         self.write_policy(self.policy)
         self.assertTrue(report["organizationApprovalSignatureVerified"])

@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 
+from macos_deployment import DETACHED_MANIFEST
 from macos_installer import parse_release_version, version_parts
 from sbom import WINDOWS_BUILD_INFO_PROPERTY, prop_map, validate_digest
 from verify_macos_installer_publisher import check_package_publisher, verify_packaged_deployment
@@ -85,7 +86,7 @@ def inventory(root, subjects):
     ]
 
 
-def macos_detector_digest(document, identity):
+def macos_deployment_digests(document, identity):
     components = {entry["bom-ref"]: entry for entry in document["components"]}
     helper = components["helper:application"]
     require(helper.get("type") == "application" and helper.get("version") == identity["version"],
@@ -105,7 +106,15 @@ def macos_detector_digest(document, identity):
         entry = components["script-file:" + phase]
         require(entry.get("type") == "file" and entry.get("name") == phase and entry.get("hashes") == hashes,
                 "macOS package script differs from its detector")
-    return pin
+    manifest = components.get("detached-file:" + DETACHED_MANIFEST, {})
+    hashes = manifest.get("hashes")
+    require(manifest.get("type") == "file" and manifest.get("name") == DETACHED_MANIFEST
+            and isinstance(hashes, list) and len(hashes) == 1 and isinstance(hashes[0], dict),
+            "Invalid macOS deployment manifest digest")
+    manifest_pin = hashes[0].get("content")
+    require(isinstance(manifest_pin, str) and re.fullmatch(SHA256, manifest_pin)
+            and hashes == [{"alg": "SHA-256", "content": manifest_pin}], "Invalid macOS deployment manifest digest")
+    return pin, manifest_pin
 
 
 def validate_release_sboms(root, files, commit, version, entries):
@@ -126,9 +135,10 @@ def validate_release_sboms(root, files, commit, version, entries):
             validate_digest(document, subject["sha256"], identity)
             documents[subject["target"], subject["role"]] = document
             if platform == "darwin":
+                detector_pin, manifest_pin = macos_deployment_digests(document, identity)
                 macos_detectors.append({
                     "target": subject["target"], "version": version, "packageSHA256": subject["sha256"],
-                    "detectorSHA256": macos_detector_digest(document, identity),
+                    "detectorSHA256": detector_pin, "manifestSHA256": manifest_pin,
                 })
         for target in ("windows/amd64", "windows/arm64"):
             payload = documents[target, "payload"]["metadata"]["component"]
@@ -978,6 +988,8 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                 "Windows installer SBOM build metadata is revoked")
         require(all(entry["detectorSHA256"] not in revoked_subjects for entry in macos_detectors),
                 "macOS detector is revoked")
+        require(all(entry["manifestSHA256"] not in revoked_subjects for entry in macos_detectors),
+                "macOS deployment manifest is revoked")
         report = {
             "schemaVersion": 1, "scope": "accessweaver-signed-desktop-release",
             "sbomArtifactBindingsVerified": sboms_verified, "macosDetection": macos_detectors,
@@ -1062,10 +1074,12 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             architecture = target.split("/")[1]
             detectors = [entry for entry in macos_detectors if entry["target"] == target
                          and entry["packageSHA256"] == update["installerSHA256"]]
-            require(len(detectors) == 1, "Managed macOS upgrade requires one approved installation helper digest")
+            require(len(detectors) == 1, "Managed macOS upgrade requires approved deployment digests")
+            approved_package = detectors[0]
             check_package_publisher(package, team, installer_pin)
             verify_packaged_deployment(package, team, architecture, application_pin,
-                                       version=detectors[0]["version"], helper_sha256=detectors[0]["detectorSHA256"])
+                                       version=approved_package["version"], helper_sha256=approved_package["detectorSHA256"],
+                                       manifest_sha256=approved_package["manifestSHA256"])
             require(digest(package) == update["installerSHA256"], "macOS package changed during publisher verification")
             update["nativePublisherVerification"] = {
                 "developerTeamID": team, "installerCertificateSHA256": installer_pin,

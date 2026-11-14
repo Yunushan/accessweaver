@@ -139,14 +139,16 @@ def check_helper_publisher(helper, team, application_pin):
         check_application_certificate(helper, application_pin)
 
 
-def verify_packaged_deployment(package, team, architecture, application_pin, *, version, helper_sha256):
+def verify_packaged_deployment(package, team, architecture, application_pin, *, version, helper_sha256, manifest_sha256):
     expanded = verify_packaged_application(package, team, architecture, application_pin)
     try:
         metadata = xml(read_expanded_file(expanded / "PackageInfo", 256 << 10))
     except ParseError as error:
         raise ValueError("Invalid deployment package metadata") from error
     manifest = read_expanded_file(expanded / "Payload" / DETACHED_MANIFEST, 2 << 20)
-    validate_deployment_metadata(metadata, version, install_location(hashlib.sha256(manifest).hexdigest()))
+    require(hashlib.sha256(manifest).hexdigest() == manifest_sha256,
+            "Packaged install manifest differs from the approved SBOM digest")
+    validate_deployment_metadata(metadata, version, install_location(manifest_sha256))
 
     data = read_packaged_helper(expanded, architecture)
     require(hashlib.sha256(data).hexdigest() == helper_sha256,

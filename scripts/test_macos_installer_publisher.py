@@ -129,6 +129,7 @@ class PublisherTests(unittest.TestCase):
             ("redirected-phase", "phase entry points differ"),
             ("wrong-version", "package metadata differs"),
             ("wrong-location", "package metadata differs"),
+            ("wrong-manifest-digest", "install manifest differs from the approved SBOM digest"),
             ("relocated", "package metadata differs"),
             ("wrong-authorization", "package metadata differs"),
             ("wrong-bundle", "strict bundle identity differs"),
@@ -203,14 +204,14 @@ class PublisherTests(unittest.TestCase):
                     return ""
 
                 helper_pin = "0" * 64 if scenario == "wrong-helper-digest" else hashlib.sha256(helper).hexdigest()
+                manifest_pin = "0" * 64 if scenario == "wrong-manifest-digest" else hashlib.sha256(manifest).hexdigest()
+                options = {"version": version, "helper_sha256": helper_pin, "manifest_sha256": manifest_pin}
                 with patch.object(publisher, "tool", side_effect=tool):
                     if error is None:
-                        publisher.verify_packaged_deployment(package, TEAM, "arm64", application_pin,
-                                                             version=version, helper_sha256=helper_pin)
+                        publisher.verify_packaged_deployment(package, TEAM, "arm64", application_pin, **options)
                     else:
                         with self.assertRaisesRegex(ValueError, error):
-                            publisher.verify_packaged_deployment(package, TEAM, "arm64", application_pin,
-                                                                 version=version, helper_sha256=helper_pin)
+                            publisher.verify_packaged_deployment(package, TEAM, "arm64", application_pin, **options)
                 expected = [app]
                 if scenario in ("approved", "different-certificate", "helper-changed"):
                     expected.append(scripts / "postinstall")
