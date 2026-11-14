@@ -360,11 +360,20 @@ public static class AccessWeaverNativeDoHIdentity {
     }
     # Read-only shape metadata uses no adapter names/GUIDs, addresses or values.
     try{$adapterShapes=@(Get-NativeDoHAdapterShapes);$probeOutcome='complete'}catch{$probeOutcome='failed'}
-    function Get-NativeDNSAnswerCount([switch]$Restored) {
-        if($WireTransport -and -not $Restored){if($null -eq $script:wire -or -not $queryProbeReady){throw 'Wire query helper unavailable'};$answer=Invoke-NativeFreshDNSQuery $script:wire 'example.com';return $answer.answerCount}
+    function Get-NativeDNSAnswerCount([switch]$Restored,[ValidateSet('A','AAAA')][string]$RecordType='A') {
+        if($WireTransport -and -not $Restored){
+            if($RecordType -cne 'A' -or $null -eq $script:wire -or -not $queryProbeReady){throw 'Wire query helper unavailable'}
+            $answer=Invoke-NativeFreshDNSQuery $script:wire 'example.com'
+            return $answer.answerCount
+        }
+        $family=if($RecordType -ceq 'AAAA'){[Net.Sockets.AddressFamily]::InterNetworkV6}else{[Net.Sockets.AddressFamily]::InterNetwork}
         Clear-DnsClientCache -ErrorAction Stop
-        $answers=@(Resolve-DnsName 'example.com' -Type A -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
-        $count=@($answers | Where-Object {$_.IPAddress -and ([Net.IPAddress]$_.IPAddress).AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetwork}).Count
+        $answers=@(Resolve-DnsName 'example.com' -Type $RecordType -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
+        $count=@($answers | Where-Object {
+            $address=$null
+            $_.IPAddress -and [Net.IPAddress]::TryParse([string]$_.IPAddress,[ref]$address) -and
+                $address.AddressFamily -eq $family -and -not $address.IsIPv4MappedToIPv6
+        }).Count
         if($count -lt 1 -or $count -gt 64){throw 'Ordinary native DNS answer bounds failed'}
         return $count
     }
@@ -548,6 +557,7 @@ public static class AccessWeaverNativeDoHIdentity {
         }
         if($null -ne $script:wire){$script:configuredReadbackControl=Test-NativeConfiguredDNSReadback $script:wire;if($script:configuredReadbackControl.outcome -cne 'passed'){throw 'Configured DNS readback control refused'}}
         $script:answers=Get-NativeDNSAnswerCount
+        if($ScenarioKind -ceq 'static-ipv6'){[void](Get-NativeDNSAnswerCount -RecordType AAAA)}
         if($null -ne $script:wire){try{Measure-DoHNetEventWire $script:wire}catch{if($script:wire.failurePhase -ceq 'none'){$script:wire.failurePhase=$script:wire.phase};throw}}
     } -InduceFailure {
         # The fresh-state guard and successful real product configuration establish
@@ -566,7 +576,10 @@ public static class AccessWeaverNativeDoHIdentity {
         try{[void](Resolve-DnsName 'example.com' -Type A -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)}catch{$failed=$true}
         $script:failedResolverObserved=$failed
         if(-not $failed){throw 'Ordinary resolver unexpectedly succeeded after managed resolver loss'}
-    } -ResolveRestored {$script:restoredAnswers=Get-NativeDNSAnswerCount -Restored}
+    } -ResolveRestored {
+        $script:restoredAnswers=Get-NativeDNSAnswerCount -Restored
+        if($ScenarioKind -ceq 'static-ipv6'){[void](Get-NativeDNSAnswerCount -Restored -RecordType AAAA)}
+    }
     return ($script:scenario.outcome -ceq 'passed')
     }
     if($ScenarioKind -ceq 'missing-snapshot'){
@@ -631,7 +644,11 @@ public static class AccessWeaverNativeDoHIdentity {
             try {Read-DNSAcceptanceState ([ref]$script:captureStage) ([ref]$script:captureProgress)}catch{Save-NativeStaticFailure $_.Exception;throw}
         } -Resolve {
             $script:staticPhase='resolver'
-            try {[void](Get-NativeDNSAnswerCount);return $true}catch{Save-NativeStaticFailure $_.Exception;throw}
+            try {
+                [void](Get-NativeDNSAnswerCount)
+                [void](Get-NativeDNSAnswerCount -RecordType AAAA)
+                return $true
+            }catch{Save-NativeStaticFailure $_.Exception;throw}
         } -Stage {
             param($before)
             try {Set-NativeStaticIPv6Fixture $before}catch{Save-NativeStaticFailure $_.Exception;throw}

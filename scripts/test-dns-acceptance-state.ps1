@@ -817,6 +817,35 @@ try {
     $machineRoot=[IO.Path]::GetTempPath();$script:staticSnapshotPath=Join-Path $machineRoot 'profiles\dns-original.json'
     function Get-Content {[CmdletBinding()]param($LiteralPath,[switch]$Raw);if($LiteralPath -cne $script:staticSnapshotPath -or -not $Raw){throw 'Unexpected source snapshot read'};return $script:staticSnapshotText}
     function Get-CimInstance {throw 'CIM access forbidden in source resolver callback'}
+    & {
+        $nodes=@($driver.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst] -and
+            $n.Name -ceq 'Get-NativeDNSAnswerCount'},$true))
+        if($nodes.Count -ne 1){throw 'Native DNS answer counter is ambiguous'}
+        foreach($command in $nodes[0].FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){
+            if($command.GetCommandName() -cnotin @('Invoke-NativeFreshDNSQuery','Clear-DnsClientCache','Resolve-DnsName','Where-Object')){
+                throw 'Native DNS answer counter boundary refused'
+            }
+        }
+        $WireTransport=$false
+        $probe=@{trace=[Collections.Generic.List[string]]::new();expected='A';answers=@()}
+        function Clear-DnsClientCache {[CmdletBinding()]param();$probe.trace.Add('flush')}
+        function Resolve-DnsName {
+            [CmdletBinding()]param($Name,$Type,[switch]$DnsOnly,[switch]$NoHostsFile,[switch]$QuickTimeout)
+            if($Name -cne 'example.com' -or $Type -cne $probe.expected -or -not ($DnsOnly -and $NoHostsFile -and $QuickTimeout)){
+                throw 'Unexpected native resolver request'
+            }
+            $probe.trace.Add($Type)
+            foreach($answer in $probe.answers){[pscustomobject]@{IPAddress=$answer}}
+        }
+        . ([scriptblock]::Create($nodes[0].Extent.Text))
+        $probe.answers=@('192.0.2.32','2001:db8::32','::ffff:192.0.2.32','invalid')
+        Assert-A ((Get-NativeDNSAnswerCount) -eq 1) 'native-query-a-family'
+        $probe.expected='AAAA'
+        Assert-A ((Get-NativeDNSAnswerCount -RecordType AAAA) -eq 1) 'native-query-aaaa-family'
+        $probe.answers=@('192.0.2.32','::ffff:192.0.2.32')
+        Reject-A {Get-NativeDNSAnswerCount -Restored -RecordType AAAA}
+        Assert-A (($probe.trace -join ',') -ceq 'flush,A,flush,AAAA,flush,AAAA') 'native-query-fresh-for-each-family'
+    }
     function Get-NativeDNSAnswerCount {$script:sourceResolverCalls++;return 1}
     foreach($badSnapshot in @($false,$true)){
         New-ACase;$script:sourceResolverCalls=0;$script:staticSnapshotNormalized=$false;$script:staticPlan=@{guid=$script:g1;servers=@('fe80::53','::1')}
