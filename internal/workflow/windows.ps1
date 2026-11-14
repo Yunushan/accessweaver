@@ -3332,13 +3332,48 @@ function Assert-ByeDPIArguments([string[]]$arguments) {
         if($blocked){throw 'Managed ByeDPI installation reserves listener/process options; use full strategy option names without option terminators or argument files'}
     }
 }
+function Get-ManagedByeDPILoopbackOwner([string]$Binary) {
+    $service=Read-ManagedServiceRegistration 'AccessWeaver-byedpi'
+    if($service.State -cne 'Running' -or $service.ProcessId -le 0){
+        throw 'Managed ByeDPI service is not running'
+    }
+    $listeners=@(Get-NetTCPConnection -State Listen -ErrorAction Stop | Where-Object {
+        $_.LocalPort -eq 1080 -and $_.LocalAddress -cin @('127.0.0.1','0.0.0.0','::')
+    })
+    if($listeners.Count -ne 1 -or $listeners[0].LocalAddress -cne '127.0.0.1' -or $listeners[0].OwningProcess -le 0){
+        throw 'Expected one ByeDPI listener bound to IPv4 loopback'
+    }
+    $listenerID=[uint32]$listeners[0].OwningProcess
+    $process=@(Get-CimInstance -ClassName Win32_Process -Filter ("ProcessId="+$listenerID) -ErrorAction Stop)
+    if($process.Count -ne 1 -or $process[0].ProcessId -ne $listenerID -or
+        $process[0].ParentProcessId -ne $service.ProcessId -or $process[0].ExecutablePath -ine $Binary -or
+        $process[0].CreationDate -isnot [datetime]){
+        throw 'ByeDPI listener does not belong to the managed service'
+    }
+    return '{0}:{1}:{2}' -f $service.ProcessId,$listenerID,$process[0].CreationDate.Ticks
+}
+function Assert-ManagedByeDPILoopbackProxy([string]$Binary) {
+    $owner=Get-ManagedByeDPILoopbackOwner $Binary
+    $client=[Net.Sockets.TcpClient]::new([Net.Sockets.AddressFamily]::InterNetwork)
+    try {
+        $connection=$client.ConnectAsync([Net.IPAddress]::Loopback,1080)
+        if(-not $connection.Wait(5000)){throw 'Managed ByeDPI loopback connection timed out'}
+        $stream=$client.GetStream()
+        $stream.ReadTimeout=5000;$stream.WriteTimeout=5000
+        $stream.Write([byte[]]@(5,1,0),0,3)
+        if($stream.ReadByte() -ne 5 -or $stream.ReadByte() -ne 0){
+            throw 'Managed ByeDPI loopback SOCKS5 negotiation failed'
+        }
+    } finally {$client.Dispose()}
+    if((Get-ManagedByeDPILoopbackOwner $Binary) -cne $owner){throw 'Managed ByeDPI listener changed during verification'}
+}
 function Install-Method([string]$ScannedEngineSHA256,[string[]]$ScannedLuaSHA256) {
     if($r.engine -eq 'byedpi'){Assert-ByeDPIArguments @($r.args)}
     if(($r.engine -eq 'wiresock' -and $r.mode -eq 'standard') -or ($r.engine -eq 'byedpi' -and $r.mode -eq 'dll')){if(-not @(Discord-Directories).Count){throw 'Install stable Discord before selecting the Discord DLL setup mode'}}
     if($r.engine -ne 'dnscrypt' -and $r.dns -and $r.dns -ne 'unchanged' -and -not $script:dnsConfigured){Configure-DNS $r.dns}
     switch($r.engine) {
-        'wiresock' {$config=Make-Config;$status=Connect-WireSock $config;if($r.mode -eq 'standard'){$byedpi=Ensure-Asset 'byedpi';Install-EngineService 'byedpi' $byedpi @('--ip','127.0.0.1','--port','1080','--split','2');Firewall 'byedpi' $byedpi;Install-Drover};if($r.refresh){$r | Add-Member -NotePropertyName enabled -NotePropertyValue $true -Force;Refresh-Task};return @{configPath=$config;status=$status}}
-        'byedpi' {$binary=Ensure-Asset 'byedpi';$arguments=@('--ip','127.0.0.1','--port','1080');if($r.args){$arguments+=@($r.args)}else{$arguments+=@('--split','2')};if($r.mode -eq 'once'){Event 'One-shot ByeDPI running; cancel this workflow to stop it';[void](Native $binary $arguments -Timeout 86400)}else{Install-EngineService 'byedpi' $binary $arguments;Firewall 'byedpi' $binary;if($r.mode -eq 'dll'){Install-Drover}elseif($r.mode -ne 'service'){Setup-ProxiFyre '127.0.0.1:1080'}}}
+        'wiresock' {$config=Make-Config;$status=Connect-WireSock $config;if($r.mode -eq 'standard'){$byedpi=Ensure-Asset 'byedpi';Install-EngineService 'byedpi' $byedpi @('--ip','127.0.0.1','--port','1080','--split','2');Firewall 'byedpi' $byedpi;Assert-ManagedByeDPILoopbackProxy $byedpi;Install-Drover};if($r.refresh){$r | Add-Member -NotePropertyName enabled -NotePropertyValue $true -Force;Refresh-Task};return @{configPath=$config;status=$status}}
+        'byedpi' {$binary=Ensure-Asset 'byedpi';$arguments=@('--ip','127.0.0.1','--port','1080');if($r.args){$arguments+=@($r.args)}else{$arguments+=@('--split','2')};if($r.mode -eq 'once'){Event 'One-shot ByeDPI running; cancel this workflow to stop it';[void](Native $binary $arguments -Timeout 86400)}else{Install-EngineService 'byedpi' $binary $arguments;Firewall 'byedpi' $binary;if($r.mode -eq 'dll'){Assert-ManagedByeDPILoopbackProxy $binary;Install-Drover}elseif($r.mode -ne 'service'){Setup-ProxiFyre '127.0.0.1:1080'}}}
         {$_ -in @('zapret','zapret2','goodbyedpi')} {
             foreach($name in @('zapret','zapret2','goodbyedpi')){if($name -ne $r.engine -and (Get-Service ('AccessWeaver-'+$name) -ErrorAction SilentlyContinue).Status -eq 'Running'){throw 'Stop other packet engines before installing this method'}}
             if($ScannedEngineSHA256 -and (Get-Service -Name ('AccessWeaver-'+$r.engine) -ErrorAction SilentlyContinue)){

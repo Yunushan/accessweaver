@@ -3497,6 +3497,77 @@ try {
     }
 }
 
+
+# Only an unambiguous loopback listener owned by the managed service child qualifies.
+& {
+    function Read-ManagedServiceRegistration([string]$Name){
+        if($Name -cne 'AccessWeaver-byedpi'){throw 'Unexpected service query'}
+        return $service
+    }
+    function Get-NetTCPConnection {
+        [CmdletBinding()]param($State)
+        if($State -cne 'Listen'){throw 'Unexpected socket query'}
+        return $listeners
+    }
+    function Get-CimInstance {
+        [CmdletBinding()]param($ClassName,$Filter)
+        if($ClassName -cne 'Win32_Process' -or $Filter -cne 'ProcessId=42'){throw 'Unexpected listener process query'}
+        return $child
+    }
+    $binary='C:\fixture\ciadpi.exe'
+    $service=@{State='Running';ProcessId=40}
+    $listener=@{LocalAddress='127.0.0.1';LocalPort=1080;OwningProcess=42}
+    $listeners=@($listener,@{LocalAddress='0.0.0.0';LocalPort=45;OwningProcess=15})
+    $creation=[datetime]::UtcNow
+    $child=@{ProcessId=42;ParentProcessId=40;ExecutablePath=$binary;CreationDate=$creation}
+    $owner=Get-ManagedByeDPILoopbackOwner $binary
+    Assert ($owner -ceq ('40:42:'+$creation.Ticks)) 'Discord proxy readiness identifies the managed listener child'
+    foreach($case in @(
+        @{row=$service;key='State';value='Stopped'},
+        @{row=$listener;key='LocalAddress';value='0.0.0.0'},
+        @{row=$listener;key='OwningProcess';value=0},
+        @{row=$child;key='ParentProcessId';value=41},
+        @{row=$child;key='ExecutablePath';value='C:\other\ciadpi.exe'},
+        @{row=$child;key='CreationDate';value=$null}
+    )){
+        $previous=$case.row[$case.key]
+        $case.row[$case.key]=$case.value
+        $refused=$false
+        try {Get-ManagedByeDPILoopbackOwner $binary | Out-Null}catch{$refused=$true}
+        finally {$case.row[$case.key]=$previous}
+        Assert $refused ('Discord proxy readiness refuses mismatched '+$case.key)
+    }
+    $listeners+=@(@{LocalAddress='::';LocalPort=1080;OwningProcess=42})
+    $refused=$false
+    try {Get-ManagedByeDPILoopbackOwner $binary | Out-Null}catch{$refused=$true}
+    Assert $refused 'Discord proxy readiness refuses an ambiguous loopback listener'
+}
+# The real install dispatch must leave DLL publication untouched when the probe fails.
+& {
+    $r=@{engine='byedpi';mode='dll'}
+    $trace=[Collections.Generic.List[string]]::new()
+    function Discord-Directories {return 'C:\fixture\app-1'}
+    function Ensure-Asset {return 'C:\fixture\ciadpi.exe'}
+    function Install-EngineService {$trace.Add('service')}
+    function Firewall {$trace.Add('firewall')}
+    function Assert-ManagedByeDPILoopbackProxy([string]$Binary){
+        if($Binary -cne 'C:\fixture\ciadpi.exe'){throw 'Unexpected proxy binary'}
+        $trace.Add('probe')
+        if($failProbe){throw 'Fixture SOCKS negotiation failed'}
+    }
+    function Install-Drover {$trace.Add('drover')}
+    foreach($failProbe in @($true,$false)){
+        $trace.Clear()
+        $refused=$false
+        try {Install-Method | Out-Null}catch{
+            if($_.Exception.Message -cne 'Fixture SOCKS negotiation failed'){throw}
+            $refused=$true
+        }
+        $expected=if($failProbe){'service,firewall,probe'}else{'service,firewall,probe,drover'}
+        Assert ($refused -eq $failProbe -and ($trace -join ',') -ceq $expected) $(if($failProbe){'Discord DLL setup refuses a failed managed proxy probe'}else{'Discord DLL setup publishes only after a successful managed proxy probe'})
+    }
+}
+
 $previousAppData=$env:APPDATA
 try{
     $env:APPDATA=Join-Path $testRoot 'fake-appdata';$cache=Join-Path $env:APPDATA 'discord';[void](New-Item -ItemType Directory -Force -Path $cache)
