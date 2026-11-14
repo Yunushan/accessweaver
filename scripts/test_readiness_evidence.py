@@ -1,8 +1,15 @@
+from contextlib import redirect_stderr, redirect_stdout
 import hashlib
+import io
+import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
+from unittest.mock import patch
+
+import check_readiness_evidence as readiness
 from check_readiness_evidence import summarize
 
 
@@ -89,6 +96,34 @@ class ReadinessRegisterTests(unittest.TestCase):
         del self.register["candidateCommit"]
         with self.assertRaisesRegex(ValueError, "differs from the assessed candidate"):
             self.summary()
+
+    def test_production_check_requires_an_independently_supplied_candidate(self):
+        with patch.object(sys, "argv", ["check_readiness_evidence.py", "--require-complete"]), \
+                redirect_stderr(io.StringIO()) as messages, self.assertRaises(SystemExit) as failure:
+            readiness.main()
+        self.assertEqual(failure.exception.code, 2)
+        self.assertIn("--require-complete requires --candidate-commit", messages.getvalue())
+
+    def test_production_check_reports_exact_candidate_and_refuses_partial_readiness(self):
+        docs = self.root / "docs"
+        docs.mkdir()
+        register = docs / "readiness-gates.json"
+        argv = ["check_readiness_evidence.py", "--candidate-commit", self.commit, "--require-complete", "--json"]
+        for complete in (False, True):
+            if complete:
+                self.register["assessmentState"] = "complete"
+                for gate in self.gates:
+                    gate.update(status="passed", qualification=self.qualification)
+            register.write_text(json.dumps(self.register), encoding="utf-8")
+            with self.subTest(complete=complete), patch.object(sys, "argv", argv), \
+                    patch.object(readiness, "__file__", str(self.root / "scripts" / "check_readiness_evidence.py")), \
+                    patch.object(readiness.subprocess, "check_output", return_value=self.evidence + "\0"), \
+                    redirect_stdout(io.StringIO()) as output, redirect_stderr(io.StringIO()) as messages:
+                self.assertEqual(readiness.main(), 0 if complete else 1)
+                report = json.loads(output.getvalue())
+                self.assertEqual(report["candidateCommit"], self.commit)
+                self.assertEqual(report["score"], 100 if complete else 25)
+                self.assertEqual(bool(messages.getvalue()), not complete)
 
     def test_invalid_status_cannot_be_counted(self):
         for status in ("pass", "Passed", "", False, None):

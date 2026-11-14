@@ -32,6 +32,9 @@ on:
       - scripts/macos_installer.py
       - scripts/sbom.py
       - scripts/test_signed_release_manifest.py
+      - scripts/check_readiness_evidence.py
+      - scripts/test_readiness_evidence.py
+      - docs/readiness-gates.json
       - scripts/verify-windows-installer-publisher.ps1
       - scripts/detect-windows-installer.ps1
       - scripts/build-windows-installer.ps1

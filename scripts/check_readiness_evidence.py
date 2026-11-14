@@ -108,7 +108,11 @@ def main():
     )
     parser.add_argument("--json", action="store_true", help="print the score and gate counts as JSON")
     parser.add_argument("--candidate-commit", help="require the assessment to match this full commit")
+    parser.add_argument("--require-complete", action="store_true",
+                        help="return a failure status unless every gate passed for --candidate-commit")
     args = parser.parse_args()
+    if args.require_complete and args.candidate_commit is None:
+        parser.error("--require-complete requires --candidate-commit")
     root = Path(__file__).resolve().parents[1]
     register = json.loads((root / "docs/readiness-gates.json").read_text(encoding="utf-8"))
     tracked = set(subprocess.check_output(
@@ -117,20 +121,24 @@ def main():
     summary = summarize(register, root, tracked, candidate_commit=args.candidate_commit)
     if args.json:
         print(json.dumps(summary))
-        return
-    counts = summary["counts"]
-    print(f"Verified tracked evidence references for {sum(counts.values())} readiness gates.")
-    if summary["candidateCommit"] is not None:
-        print(f"Assessed candidate {summary['candidateCommit']}.")
-    print(f"Recorded readiness score {summary['score']}/{summary['total']} "
-          f"({counts['passed']} passed, {counts['partial']} partial, {counts['failed']} failed).")
-    for gate_id in summary["failedGates"]:
-        print(f"Failed gate {gate_id}")
+    else:
+        counts = summary["counts"]
+        print(f"Verified tracked evidence references for {sum(counts.values())} readiness gates.")
+        if summary["candidateCommit"] is not None:
+            print(f"Assessed candidate {summary['candidateCommit']}.")
+        print(f"Recorded readiness score {summary['score']}/{summary['total']} "
+              f"({counts['passed']} passed, {counts['partial']} partial, {counts['failed']} failed).")
+        for gate_id in summary["failedGates"]:
+            print(f"Failed gate {gate_id}")
+    if args.require_complete and summary["assessmentState"] != "complete":
+        print("Production readiness requires all gates to pass for the requested candidate.", file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
     try:
-        main()
+        sys.exit(main())
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(f"Readiness evidence check failed. {error}", file=sys.stderr)
         sys.exit(1)
