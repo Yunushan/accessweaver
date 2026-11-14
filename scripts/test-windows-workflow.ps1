@@ -1791,9 +1791,11 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
     function Read-ManagedServiceRegistration {
         param($Name)
         if($Name -cne 'SplitCordDpiService'){throw 'Unexpected SplitCord registration query'}
+        if($removeImageDuringRead){[IO.File]::Delete($binary)}
         return [pscustomobject]@{PathName=$serviceCommand;State=$serviceStatus}
     }
     $queryFails=$false
+    $removeImageDuringRead=$false
     $serviceState=0;$serviceCommand='"'+$binary+'"';$serviceStatus='Running'
     Wait-SplitCordService $app 0
     Wait-SplitCordService $app 0 -AllowAbsentOrStopped
@@ -1835,6 +1837,14 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
     if($script:externalEffectsPending){throw 'Read-only service checks changed the external effects flag'}
     Assert $refused 'SplitCord service lifecycle requires the expected running registration and verified removal'
     $queryFails=$false;$serviceState=0;$serviceCommand='"'+$binary+'"'
+    $serviceStatus='Running'
+    $removeImageDuringRead=$true
+    $refused=$false
+    try{Wait-SplitCordService $app 0}catch{
+        $refused=$_.Exception.Message -ceq 'SplitCord service executable is missing'
+    }
+    Assert $refused 'SplitCord install refuses a running registration after the service image disappears'
+    $removeImageDuringRead=$false
     [IO.File]::Delete($binary)
     $serviceStatus='Stopped'
     Wait-SplitCordService $app 0 -AllowAbsentOrStopped -AllowMissingStoppedImage

@@ -3485,15 +3485,15 @@ function Wait-SplitCordService([string]$App,[int]$Seconds=20,[switch]$AllowAbsen
             if($service.PathName -ine $binary -and $service.PathName -ine ('"'+$binary+'"')){
                 throw 'SplitCord service registration differs from the installed application'
             }
-            if($AllowAbsentOrStopped){
-                No-Reparse $binary
-                if(-not (Test-Path -LiteralPath $binary -PathType Leaf -ErrorAction Stop) -and
-                   (-not $AllowMissingStoppedImage -or $service.State -cne 'Stopped' -or
-                    (Test-Path -LiteralPath $binary -ErrorAction Stop))){
-                    throw 'SplitCord service executable is missing'
-                }
-                if($service.State -cin @('Running','Stopped')){return}
-            }elseif($service.State -ceq 'Running'){return}
+            No-Reparse $binary
+            if(-not (Test-Path -LiteralPath $binary -PathType Leaf -ErrorAction Stop) -and
+               (-not $AllowAbsentOrStopped -or -not $AllowMissingStoppedImage -or
+                $service.State -cne 'Stopped' -or (Test-Path -LiteralPath $binary -ErrorAction Stop))){
+                throw 'SplitCord service executable is missing'
+            }
+            if($service.State -ceq 'Running' -or ($AllowAbsentOrStopped -and $service.State -ceq 'Stopped')){
+                return
+            }
         }
         if($deadline.Elapsed.TotalSeconds -ge $Seconds){break}
         Start-Sleep -Milliseconds 250
