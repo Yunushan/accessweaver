@@ -2332,6 +2332,12 @@ function Test-DNSRecoveryUsesAdapterOwnership([object]$Record) {
     }
     return $true
 }
+function Assert-DNSCryptConfiguration([string]$Path,[string]$ExpectedSHA256) {
+    $bytes=Read-DNSRecoveryFileBytes $Path 1MB
+    if($null -eq $bytes -or (Get-WorkflowBytesSHA256 $bytes) -cne $ExpectedSHA256){
+        throw 'DNSCrypt configuration changed after publication; retain the recovery snapshot'
+    }
+}
 function Configure-DNS([string]$method) {
     if($method -notin @('doh','dnscrypt')){throw 'Choose doh or dnscrypt'}
     if($method -eq 'doh'){foreach($command in @('Get-DnsClientDohServerAddress','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress')){if(-not (Get-Command $command -ErrorAction SilentlyContinue)){throw 'This Windows version does not expose native DoH management; choose DNSCrypt instead'}}}
@@ -2471,15 +2477,18 @@ function Configure-DNS([string]$method) {
         Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
         $updatedConfig=[Text.UTF8Encoding]::new($false).GetBytes($text)
         if($updatedConfig.Length -gt 1MB){throw 'DNSCrypt configuration exceeds its size limit'}
+        $publishedConfigSHA256=Get-WorkflowBytesSHA256 $updatedConfig
         Publish-WorkflowFile $config $updatedConfig -Recorded -BeforeHash $configBefore
         if($existingResolver){
             if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before restart'}
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+            Assert-DNSCryptConfiguration $config $publishedConfigSHA256
             Restart-Service -Name $serviceName -ErrorAction Stop
             $service=Get-Service -Name $serviceName -ErrorAction Stop
             try {$service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))}
             finally {if($service -is [IDisposable]){$service.Dispose()}}
         }else{
+            Assert-DNSCryptConfiguration $config $publishedConfigSHA256
             $newResolver=Install-EngineService 'dnscrypt' $binary @('-config',$config) -DeferAutomaticStartup
         }
         $servers=@('127.0.0.1','::1')
@@ -2494,6 +2503,7 @@ function Configure-DNS([string]$method) {
             }
         })
         Wait-DNSCryptListeners $listeners
+        Assert-DNSCryptConfiguration $config $publishedConfigSHA256
         if($newResolver){
             # Persist startup before any adapter depends on the new service.
             if((Assert-RecordedServiceBinding $newResolver) -ne 0){throw 'New DNSCrypt service disappeared before enabling automatic startup'}
@@ -2542,6 +2552,7 @@ function Configure-DNS([string]$method) {
                 }
             }
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+            if($method -ceq 'dnscrypt'){Assert-DNSCryptConfiguration $config $publishedConfigSHA256}
             Assert-DNSMutationAdapter $record.guid $dns.InterfaceIndex -RequireUp
             $script:externalEffectsPending=$true
             $dns | Set-DnsClientServerAddress -ServerAddresses $familyServers -ErrorAction Stop
@@ -2589,6 +2600,7 @@ function Configure-DNS([string]$method) {
         Assert-DNSCryptServiceState $existingResolver -ManualStopped
     }
     if($method -ceq 'dnscrypt' -and $existingResolver){
+        Assert-DNSCryptConfiguration $config $publishedConfigSHA256
         if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before enabling automatic startup'}
         Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
         Set-Service -Name $serviceName -StartupType Automatic -ErrorAction Stop
@@ -2597,6 +2609,7 @@ function Configure-DNS([string]$method) {
         Assert-DNSCryptServiceState $newResolver
     }
     Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+    if($method -ceq 'dnscrypt'){Assert-DNSCryptConfiguration $config $publishedConfigSHA256}
     Event ('Encrypted DNS configured: '+$method)
     $script:dnsConfigured=$true
 }
