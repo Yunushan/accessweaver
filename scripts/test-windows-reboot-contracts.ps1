@@ -124,6 +124,15 @@ if($combined -isnot [AggregateException] -or $combined.InnerExceptions.Count -ne
 $bootstrap=Join-Path $PSScriptRoot 'vmware-test-bootstrap.ps1'
 $bootstrapAst=[Management.Automation.Language.Parser]::ParseFile($bootstrap,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'VMware bootstrap failed parsing'}
+$stageCommands=@($bootstrapAst.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.CommandAst] -and
+        $node.GetCommandName() -cin @('Get-ScheduledTask','Copy-TestInputs')
+},$true))
+if($stageCommands.Count -ne 2 -or $stageCommands[0].GetCommandName() -cne 'Get-ScheduledTask' -or
+    $stageCommands[1].GetCommandName() -cne 'Copy-TestInputs'){
+    throw 'Pending reboot verification must be checked before overwriting staged inputs'
+}
 $rebootBlock=@($bootstrapAst.FindAll({
     param($node)
     $node -is [Management.Automation.Language.SwitchStatementAst] -and
@@ -139,7 +148,7 @@ $stages=@($body.FindAll({
          $node.Extent.Text -match 'test-windows-reboot\.ps1.*-Phase Prepare'))
 },$true))
 if($stages.Count -ne 3 -or $stages[0].GetCommandName() -cne 'Register-ScheduledTask' -or
-    $stages[1].Extent.Text -notmatch '-Phase Prepare.+-ExecutableSHA256 \$digest' -or $stages[2].GetCommandName() -cne 'Unregister-ScheduledTask'){
+    $stages[1].Extent.Text -cnotmatch '-Phase Prepare.+-ExecutableSHA256 \$digest.+-QualificationID \$qualificationID' -or $stages[2].GetCommandName() -cne 'Unregister-ScheduledTask'){
     throw 'VMware DNS preparation must follow task registration and retire the task on failure'
 }
 $journalId='workflow-'+('a'*32)+'.json'
@@ -149,7 +158,7 @@ $saved=@{schemaVersion=7;qualificationID=('a'*32);method='doh';guestID='syntheti
 $current=$saved.Clone()
 $current.boot='639303000000000001'
 Assert-DNSRebootAdmission $saved $current
-foreach($field in @('guestID','binarySHA256','fixtureSHA256','oracleSHA256','snapshotSHA256','journalId','journalSHA256')){
+foreach($field in @('qualificationID','guestID','binarySHA256','fixtureSHA256','oracleSHA256','snapshotSHA256','journalId','journalSHA256')){
     $changed=$current.Clone()
     $changed[$field]='different'
     Refuse {Assert-DNSRebootAdmission $saved $changed}
@@ -416,7 +425,8 @@ $record=@{schemaVersion=7;qualificationID=('a'*32);method='doh';binarySHA256=('A
     snapshotRetired=$true;servicesRemoved=$true;passed=$true;stage='complete';cleanupStage='complete'}
 $legacy=$record.Clone();$legacy.schemaVersion=6
 $pin=$record.binarySHA256.ToLowerInvariant()
-Refuse {Assert-DNSRebootPublicReport ([Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $legacy -Depth 8))) $pin}
+$qualificationID=$record.qualificationID
+Refuse {Assert-DNSRebootPublicReport ([Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $legacy -Depth 8))) $pin $qualificationID}
 foreach($invalid in @(
     @{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0},
     @{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0;'static-ipv6'=0},
@@ -426,12 +436,12 @@ foreach($invalid in @(
 )){
     $candidate=$record.Clone();$candidate.originalModeCoverage=$invalid
     $data=[Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $candidate -Depth 8))
-    Refuse {Assert-DNSRebootPublicReport $data $pin}
+    Refuse {Assert-DNSRebootPublicReport $data $pin $qualificationID}
 }
 $startupCommand=$startup.EndBlock.Extent.Text
-if($startupCommand -cnotmatch '-Phase Verify -Executable \$binary -ExecutableSHA256 \$ExecutableSHA256' -or
-   $body.Extent.Text -cnotmatch '-ExecutableSHA256 ''\+\$digest'){
-    throw 'Scheduled reboot verification does not inherit the approved controller digest'
+if($startupCommand -cnotmatch '-Phase Verify -Executable \$binary -ExecutableSHA256 \$ExecutableSHA256 -QualificationID \$QualificationID' -or
+   $body.Extent.Text -cnotmatch '-ExecutableSHA256 ''\+\$digest\+'' -QualificationID ''\+\$qualificationID'){
+    throw 'Scheduled reboot verification does not inherit the approved controller digest and qualification ID'
 }
 $script:verifications=0;$script:retirements=0
 $verify={
@@ -440,18 +450,19 @@ $verify={
 }
 $retire={$script:retirements++}
 try {
-    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire $pin}
+    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire $pin $qualificationID}
     if($script:verifications -ne 1 -or $script:retirements -ne 0 -or -not [IO.File]::Exists($report)){
         throw 'Unavailable share discarded the result or retired the task'
     }
     [void][IO.Directory]::CreateDirectory($shared)
-    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire ('0'*64)}
+    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire ('0'*64) $qualificationID}
+    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire $pin ('b'*32)}
     if([IO.File]::Exists($destination) -or $script:verifications -ne 1 -or $script:retirements -ne 0){
-        throw 'Report from a different candidate was published or retired its task'
+        throw 'Report from a different candidate or qualification was published or retired its task'
     }
-    Refuse {Complete-DNSRebootStartup $report $destination $verify {throw 'Synthetic task retirement failure'} $pin}
+    Refuse {Complete-DNSRebootStartup $report $destination $verify {throw 'Synthetic task retirement failure'} $pin $qualificationID}
     if(-not [IO.File]::Exists($destination)){throw 'Task retirement failure lost the published result'}
-    if(-not (Complete-DNSRebootStartup $report $destination $verify $retire $pin) -or $script:verifications -ne 1 -or
+    if(-not (Complete-DNSRebootStartup $report $destination $verify $retire $pin $qualificationID) -or $script:verifications -ne 1 -or
         $script:retirements -ne 1 -or [IO.Directory]::GetFileSystemEntries($shared).Length -ne 1){
         throw 'Publication retry repeated verification or left a staging file'
     }
@@ -459,7 +470,7 @@ try {
     $different=$record.Clone();$different.qualificationID=('b'*32)
     Save-DNSRebootRecord $destination $different
     $before=[IO.File]::ReadAllText($destination)
-    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire $pin}
+    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire $pin $qualificationID}
     if([IO.File]::ReadAllText($destination) -cne $before -or $script:retirements -ne 1){
         throw 'Publication replaced different evidence or retired its task'
     }
@@ -467,7 +478,7 @@ try {
     [IO.File]::Delete($report)
     $record.servicesVerified=$false
     Save-DNSRebootRecord $report $record
-    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire $pin}
+    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire $pin $qualificationID}
     if([IO.File]::Exists($destination) -or $script:retirements -ne 1){
         throw 'Inconsistent passing report was published'
     }
@@ -476,13 +487,13 @@ try {
     $passed=Complete-DNSRebootStartup $report $destination {
         Save-DNSRebootRecord $report $record
         throw 'Synthetic acceptance failure with evidence'
-    } $retire $pin
+    } $retire $pin $qualificationID
     if($passed -or -not [IO.File]::Exists($destination) -or $script:retirements -ne 2){
         throw 'Completed failed report was lost or reported as passed'
     }
     [IO.File]::Delete($destination)
     [IO.File]::Delete($report)
-    Refuse {Complete-DNSRebootStartup $report $destination {throw 'Synthetic interruption before publication'} $retire $pin}
+    Refuse {Complete-DNSRebootStartup $report $destination {throw 'Synthetic interruption before publication'} $retire $pin $qualificationID}
     if([IO.File]::Exists($destination) -or $script:retirements -ne 2){
         throw 'Interrupted verification fabricated evidence or retired the task'
     }

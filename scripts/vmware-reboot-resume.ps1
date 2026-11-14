@@ -2,7 +2,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$ExecutableName,
-    [Parameter(Mandatory)][ValidatePattern('\A[A-Fa-f0-9]{64}\z')][string]$ExecutableSHA256
+    [Parameter(Mandatory)][ValidatePattern('\A[A-Fa-f0-9]{64}\z')][string]$ExecutableSHA256,
+    [Parameter(Mandatory)][ValidateScript({$_ -cmatch '\A[0-9a-f]{32}\z'})][string]$QualificationID
 )
 $ErrorActionPreference='Stop'
 
@@ -25,7 +26,7 @@ function Read-DNSRebootReport([string]$Path) {
         return ,$data
     } finally {$stream.Dispose()}
 }
-function Assert-DNSRebootPublicReport([byte[]]$Data,[string]$ApprovedSHA256) {
+function Assert-DNSRebootPublicReport([byte[]]$Data,[string]$ApprovedSHA256,[string]$ExpectedQualificationID) {
     $record=[Text.UTF8Encoding]::new($false,$true).GetString($Data) | ConvertFrom-Json -ErrorAction Stop
     $flags=@('rebootVerified','servicesVerified','configuredStateVerified','resolverVerified','journalBindingVerified',
         'journalRecoveryAccepted','originalStateRestored','originalResolverVerified','snapshotRetired','servicesRemoved','passed')
@@ -66,6 +67,9 @@ function Assert-DNSRebootPublicReport([byte[]]$Data,[string]$ApprovedSHA256) {
     if($record.binarySHA256 -ine $ApprovedSHA256){
         throw 'DNS reboot report does not match the approved controller'
     }
+    if($record.qualificationID -cne $ExpectedQualificationID){
+        throw 'DNS reboot report does not match the scheduled qualification'
+    }
     if(-not $record.rebootVerified -or -not $record.journalBindingVerified -or
         $record.passed -ne ($record.stage -ceq 'complete' -and $record.cleanupStage -ceq 'complete') -or
         ($record.passed -and @($flags | Where-Object {-not $record.$_}).Count -ne 0)){
@@ -88,7 +92,7 @@ function Publish-DNSRebootPublicReport([string]$Destination,[byte[]]$Data) {
         [IO.File]::Move($staged,$Destination)
     } finally {[IO.File]::Delete($staged)}
 }
-function Complete-DNSRebootStartup([string]$Report,[string]$Destination,[scriptblock]$Verify,[scriptblock]$Retire,[string]$ApprovedSHA256) {
+function Complete-DNSRebootStartup([string]$Report,[string]$Destination,[scriptblock]$Verify,[scriptblock]$Retire,[string]$ApprovedSHA256,[string]$ExpectedQualificationID) {
     if(-not [IO.File]::Exists($Report)){
         try{[void](& $Verify)}catch{
             # A failed acceptance can still have a complete fixed report.
@@ -96,7 +100,7 @@ function Complete-DNSRebootStartup([string]$Report,[string]$Destination,[scriptb
         }
     }
     $data=Read-DNSRebootReport $Report
-    $passed=Assert-DNSRebootPublicReport $data $ApprovedSHA256
+    $passed=Assert-DNSRebootPublicReport $data $ApprovedSHA256 $ExpectedQualificationID
     Publish-DNSRebootPublicReport $Destination $data
     [void](& $Retire)
     return $passed
@@ -114,8 +118,8 @@ $report=Join-Path $private 'reboot-results.json'
 $destination='\\vmware-host\Shared Folders\AccessWeaver-Results\reboot-results.json'
 $binary=Join-Path 'C:\AccessWeaver-Test' $ExecutableName
 $passed=Complete-DNSRebootStartup $report $destination {
-    & C:\AccessWeaver-Test\test-windows-reboot.ps1 -Phase Verify -Executable $binary -ExecutableSHA256 $ExecutableSHA256
+    & C:\AccessWeaver-Test\test-windows-reboot.ps1 -Phase Verify -Executable $binary -ExecutableSHA256 $ExecutableSHA256 -QualificationID $QualificationID
 } {
     Unregister-ScheduledTask -TaskName 'AccessWeaver-Parity-Reboot-Verify' -Confirm:$false -ErrorAction Stop
-} $ExecutableSHA256
+} $ExecutableSHA256 $QualificationID
 if(-not $passed){throw 'DNS reboot acceptance failed; fixed evidence published'}

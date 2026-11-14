@@ -4,6 +4,7 @@ $ErrorActionPreference='Stop'
 $share='\\vmware-host\Shared Folders\AccessWeaver-Test'
 $outputShare='\\vmware-host\Shared Folders\AccessWeaver-Results'
 $local='C:\AccessWeaver-Test';$results='C:\AccessWeaver-Results'
+$taskName='AccessWeaver-Parity-Reboot-Verify'
 $tools=Join-Path $env:ProgramFiles 'VMware\VMware Tools\vmtoolsd.exe'
 if(-not (Test-Path $tools)){throw 'VMware Tools must be installed inside the disposable test VM'}
 $marker=& $tools --cmd 'info-get guestinfo.accessweaverParity'
@@ -57,6 +58,10 @@ try{
             if($request.stage -eq 'exit'){break}
             if($request.stage -notin @('system','apps','wiresock','reboot-prepare')){throw 'Unknown test stage'}
             $executable=if($request.executable){[string]$request.executable}else{'accessweaver.exe'}
+            $tasks=Get-ScheduledTask -ErrorAction Stop
+            if($tasks | Where-Object {$_.TaskPath -eq '\' -and $_.TaskName -eq $taskName}){
+                throw 'A pending DNS reboot verification still owns the staged test inputs'
+            }
             Copy-TestInputs $executable -DnsReboot:($request.stage -ceq 'reboot-prepare')
             $binary=Join-Path $local $executable
             switch($request.stage){
@@ -68,20 +73,17 @@ try{
                     if($digest -isnot [string] -or $digest -cnotmatch '\A[A-Fa-f0-9]{64}\z'){
                         throw 'Expected an independently approved reboot controller SHA-256'
                     }
-                    $taskName='AccessWeaver-Parity-Reboot-Verify'
-                    if(Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue){
-                        throw 'A DNS reboot verification task is already registered'
-                    }
                     $method=if($request.dns){[string]$request.dns}else{'auto'}
                     if($method -cnotin @('auto','doh','dnscrypt')){throw 'Unknown DNS reboot method'}
                     $originalMode=if($null -eq $request.dnsOriginalMode){'any'}else{[string]$request.dnsOriginalMode}
-                    $arguments='-NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\AccessWeaver-Test\vmware-reboot-resume.ps1 -ExecutableName '+$executable+' -ExecutableSHA256 '+$digest
+                    $qualificationID=[guid]::NewGuid().ToString('N')
+                    $arguments='-NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\AccessWeaver-Test\vmware-reboot-resume.ps1 -ExecutableName '+$executable+' -ExecutableSHA256 '+$digest+' -QualificationID '+$qualificationID
                     $action=New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Argument $arguments
                     $trigger=New-ScheduledTaskTrigger -AtStartup;$trigger.Delay='PT30S'
                     $settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -RestartCount 3 -RestartInterval ([TimeSpan]::FromMinutes(1))
                     [void](Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -User 'SYSTEM' -RunLevel Highest -ErrorAction Stop)
                     try {
-                        & (Join-Path $local 'test-windows-reboot.ps1') -Phase Prepare -Executable $binary -ExecutableSHA256 $digest -DNS $method -RequiredOriginalMode $originalMode
+                        & (Join-Path $local 'test-windows-reboot.ps1') -Phase Prepare -Executable $binary -ExecutableSHA256 $digest -DNS $method -RequiredOriginalMode $originalMode -QualificationID $qualificationID
                     } catch {
                         $preparationFailure=$_
                         try {
@@ -92,6 +94,7 @@ try{
                         }
                         throw $preparationFailure
                     }
+                    $status.qualificationID=$qualificationID
                 }
             }
             $status.state='completed'

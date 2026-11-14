@@ -3,6 +3,7 @@
 param(
     [Parameter(Mandatory)][ValidateSet('Prepare','Verify')][string]$Phase,
     [Parameter(Mandatory)][ValidatePattern('\A[A-Fa-f0-9]{64}\z')][string]$ExecutableSHA256,
+    [Parameter(Mandatory)][ValidateScript({$_ -cmatch '\A[0-9a-f]{32}\z'})][string]$QualificationID,
     [string]$Executable='C:\AccessWeaver-Test\accessweaver.exe',
     [ValidateSet('auto','doh','dnscrypt')][string]$DNS='auto',
     [ValidateSet('any','dhcp-ipv4','static-ipv4','dhcp-ipv6','static-ipv6')][string]$RequiredOriginalMode='any'
@@ -13,6 +14,7 @@ $ProgressPreference='SilentlyContinue'
 function Assert-DNSRebootAdmission($Saved,$Current) {
     if($Saved.schemaVersion -ne 7 -or $Saved.method -cnotin @('doh','dnscrypt') -or
        $Saved.qualificationID -isnot [string] -or $Saved.qualificationID -cnotmatch '\A[a-f0-9]{32}\z' -or
+       $Saved.qualificationID -cne $Current.qualificationID -or
        $Saved.guestID -cne $Current.guestID -or $Saved.binarySHA256 -cne $Current.binarySHA256 -or
        $Saved.oracleSHA256 -cne $Current.oracleSHA256 -or $Saved.fixtureSHA256 -cne $Current.fixtureSHA256 -or
        $Saved.snapshotSHA256 -cnotmatch '\A[A-F0-9]{64}\z' -or $Saved.snapshotSHA256 -cne $Current.snapshotSHA256 -or
@@ -142,7 +144,7 @@ if(@($guest).Count -ne 1 -or -not [guid]::TryParseExact([string]$guest.UUID,'D',
 $os=Get-CimInstance Win32_OperatingSystem
 if(@($os).Count -ne 1 -or $os.LastBootUpTime -isnot [DateTime]){throw 'Cannot identify guest boot'}
 $current=@{
-    schemaVersion=7;guestID=$guestID.ToString('D');
+    schemaVersion=7;guestID=$guestID.ToString('D');qualificationID=$QualificationID;
     binarySHA256=$ExecutableSHA256.ToUpperInvariant();oracleSHA256=(Get-DNSRebootDigest $oracle 1MB);
     fixtureSHA256=(Get-DNSRebootDigest $PSCommandPath 1MB);
     boot=$os.LastBootUpTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
@@ -317,7 +319,6 @@ try {
             Assert-DNSRebootConfigured $before (Read-DNSAcceptanceState) $DNS
             Assert-RebootResolver
             Assert-DNSRebootConfigured $before (Read-DNSAcceptanceState) $DNS
-            $current.qualificationID=[guid]::NewGuid().ToString('N')
             $current.method=$DNS
             $current.requiredOriginalMode=$RequiredOriginalMode
             $current.dns=$before
