@@ -295,6 +295,21 @@ def decode_json(content):
         raise ValueError("Malformed JSON input") from error
 
 
+def load_windows_upgrade_inventory(directory, path, fingerprint):
+    content = independently_pinned_file(directory, path, fingerprint, maximum=4096)
+    record = decode_json(content)
+    fields = {"schemaVersion", "target", "version", "payloadSHA256", "payloadSBOMSHA256",
+              "payloadPublisherSHA256"}
+    require(isinstance(record, dict) and record.keys() == fields
+            and type(record["schemaVersion"]) is int and record["schemaVersion"] == 1
+            and record["target"] in ("windows/amd64", "windows/arm64")
+            and isinstance(record["version"], str), "Malformed Windows upgrade inventory")
+    for field in ("payloadSHA256", "payloadSBOMSHA256", "payloadPublisherSHA256"):
+        require(isinstance(record[field], str) and re.fullmatch(SHA256, record[field]),
+                "Malformed Windows upgrade inventory digest")
+    return record
+
+
 def revocation_time(value):
     require(isinstance(value, str) and re.fullmatch(
         r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", value
@@ -456,7 +471,18 @@ def stage_managed_update(root, directory, update, policy):
 def verify(directory, certificate, certificate_sha256, commit, ref, openssl="openssl",
            *, revocation_list, revocation_list_sha256, current_version=None, target=None, stage_directory=None,
            current_payload_sha256=None, current_payload_sbom_sha256=None, current_payload_publisher_sha256=None,
-           minimum_revocation_sequence=None):
+           minimum_revocation_sequence=None, windows_upgrade_inventory=None):
+    if windows_upgrade_inventory is not None:
+        require(all(value is None for value in (
+            current_version, target, current_payload_sha256, current_payload_sbom_sha256,
+            current_payload_publisher_sha256,
+        )), "Windows upgrade inventory cannot be combined with explicit installed identity inputs")
+        path, fingerprint = windows_upgrade_inventory
+        record = load_windows_upgrade_inventory(directory, path, fingerprint)
+        current_version, target = record["version"], record["target"]
+        current_payload_sha256 = record["payloadSHA256"]
+        current_payload_sbom_sha256 = record["payloadSBOMSHA256"]
+        current_payload_publisher_sha256 = record["payloadPublisherSHA256"]
     require((current_version is None) == (target is None),
             "Managed update evaluation requires an installed version and target")
     if current_payload_sha256 is not None:
@@ -579,6 +605,8 @@ def main():
                              help="match the installed Windows payload SBOM to signed reboot evidence")
     verify_args.add_argument("--current-payload-publisher-sha256",
                              help="match the installed Windows payload signer certificate to signed reboot evidence")
+    verify_args.add_argument("--windows-upgrade-inventory", nargs=2, metavar=("PATH", "SHA256"),
+                             help="match an independently pinned Windows detector inventory to signed reboot evidence")
     verify_args.add_argument("--stage-directory", type=Path,
                              help="existing trusted directory for the authenticated eligible installer")
     for command in (prepare_args, verify_args):
@@ -591,6 +619,9 @@ def main():
             prepare(args.directory, args.output, args.source_commit, args.source_ref,
                     windows_reboot_evidence=[(Path(path), pin) for path, pin in args.windows_reboot_evidence])
         else:
+            inventory = args.windows_upgrade_inventory
+            if inventory is not None:
+                inventory = (Path(inventory[0]), inventory[1])
             print(json.dumps(verify(args.directory, args.approval_certificate, args.approval_certificate_sha256,
                                     args.source_commit, args.source_ref, args.openssl,
                                     revocation_list=args.revocation_list,
@@ -600,7 +631,8 @@ def main():
                                     current_payload_sha256=args.current_payload_sha256,
                                     current_payload_sbom_sha256=args.current_payload_sbom_sha256,
                                     current_payload_publisher_sha256=args.current_payload_publisher_sha256,
-                                    minimum_revocation_sequence=args.minimum_revocation_sequence)))
+                                    minimum_revocation_sequence=args.minimum_revocation_sequence,
+                                    windows_upgrade_inventory=inventory)))
     except (ValueError, OSError, subprocess.SubprocessError):
         print("Signed release inventory, approval or revocation verification failed.", file=sys.stderr)
         return 1

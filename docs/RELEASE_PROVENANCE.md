@@ -149,7 +149,7 @@ Run the read-only Windows detector on the endpoint under the intended management
 .\scripts\detect-windows-installer.ps1 -UpgradeInventory -Version PRIOR_VERSION -Architecture arm64 -PayloadSHA256 PRIOR_PAYLOAD_DIGEST -PayloadSBOMSHA256 PRIOR_SBOM_DIGEST -PayloadPublisherSHA256 PRIOR_CERTIFICATE_FINGERPRINT
 ```
 
-An exit code of 0 and a JSON line confirm that the installed registration, file digests and timestamped embedded Authenticode signature matched those inputs. Feed the result's `target`, `version`, `payloadSHA256`, `payloadSBOMSHA256` and `payloadPublisherSHA256` to the verifier's matching options. Empty output gives no upgrade inventory. Exit 1 indicates that inspection could not be completed. The detector does not run the installed application. Keep `-UpgradeInventory` out of Intune detection assignments that expect `AccessWeaver detected`.
+An exit code of 0 and a JSON line confirm that the installed registration, file digests and timestamped embedded Authenticode signature matched those inputs. Save the successful JSON line as UTF-8 without a byte-order mark in the trusted endpoint inventory channel. Pass `--windows-upgrade-inventory INSTALLED_INVENTORY_JSON APPROVED_INVENTORY_SHA256` to the release verifier, using the inventory digest from that channel. Keep the file outside the release directory. The verifier matches all five values with signed reboot evidence. Use either the inventory file or the individual installed identity options for a run. Empty output gives no upgrade inventory. Exit 1 indicates that inspection could not be completed. The detector does not run the installed application. Keep `-UpgradeInventory` out of Intune detection assignments that expect `AccessWeaver detected`.
 
 ## Packaged FreeBSD guest acceptance
 

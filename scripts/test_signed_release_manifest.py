@@ -587,6 +587,59 @@ class SignedReleaseManifestTests(unittest.TestCase):
         completed = subprocess.run(command, check=True, capture_output=True, text=True, timeout=30)
         self.assertEqual(json.loads(completed.stdout)["managedUpdate"], qualified_report)
         (staging / qualified_report["installer"]).unlink()
+        inventory_path = self.root / "installed-inventory.json"
+        inventory_record = {
+            "schemaVersion": 1, "target": qualified["target"], "version": qualified["current_version"],
+            "payloadSHA256": qualified["current_payload_sha256"].lower(),
+            "payloadSBOMSHA256": trusted["current_payload_sbom_sha256"],
+            "payloadPublisherSHA256": trusted["current_payload_publisher_sha256"],
+        }
+        inventory_path.write_text(json.dumps(inventory_record), encoding="utf-8")
+        inventory_pin = release.digest(inventory_path)
+        inventory_args = (inventory_path, inventory_pin)
+        cli = command[:command.index("--current-version")] + [
+            "--windows-upgrade-inventory", str(inventory_path), inventory_pin, "--stage-directory", str(staging),
+        ]
+        completed = subprocess.run(cli, check=True, capture_output=True, text=True, timeout=30)
+        self.assertEqual(json.loads(completed.stdout)["managedUpdate"], qualified_report)
+        (staging / qualified_report["installer"]).unlink()
+        for mixed_args in (
+            {"target": qualified["target"]}, {"current_version": qualified["current_version"]},
+            {"current_payload_sha256": qualified["current_payload_sha256"]},
+            {"current_payload_sbom_sha256": trusted["current_payload_sbom_sha256"]},
+            {"current_payload_publisher_sha256": trusted["current_payload_publisher_sha256"]},
+        ):
+            with self.subTest(mixed_args=mixed_args), self.assertRaisesRegex(ValueError, "cannot be combined"):
+                self.verify(approved, pin, windows_upgrade_inventory=inventory_args, **mixed_args)
+        for override, error in (
+            ({"schemaVersion": True}, "Malformed Windows upgrade inventory"),
+            ({"target": "darwin/amd64"}, "Malformed Windows upgrade inventory"),
+            ({"target": "windows/arm64"}, "matches the installed Windows payload"),
+            ({"payloadSBOMSHA256": "0" * 64}, "matches the installed Windows SBOM and publisher"),
+            ({"payloadPublisherSHA256": "0" * 64}, "matches the installed Windows SBOM and publisher"),
+            ({"payloadPublisherSHA256": "not-a-digest"}, "Malformed Windows upgrade inventory digest"),
+            ({"payloadPublisherSHA256": None}, "Malformed Windows upgrade inventory digest"),
+            ({"endpointName": "inert-private-name"}, "Malformed Windows upgrade inventory"),
+        ):
+            inventory_path.write_text(json.dumps({**inventory_record, **override}), encoding="utf-8")
+            with self.subTest(inventory_override=override), self.assertRaisesRegex(ValueError, error):
+                self.verify(approved, pin, stage_directory=staging,
+                            windows_upgrade_inventory=(inventory_path, release.digest(inventory_path)))
+            self.assertEqual(list(staging.iterdir()), [])
+        with self.assertRaisesRegex(ValueError, "fingerprint"):
+            self.verify(approved, pin, stage_directory=staging, windows_upgrade_inventory=inventory_args)
+        self.assertEqual(list(staging.iterdir()), [])
+        for invalid in (
+            b"",
+            b" " * 4097,
+            b'{"schemaVersion":1,"schemaVersion":1}',
+            b"\xff",
+        ):
+            inventory_path.write_bytes(invalid)
+            with self.subTest(inventory_bytes=len(invalid)), self.assertRaises(ValueError):
+                self.verify(approved, pin, stage_directory=staging,
+                            windows_upgrade_inventory=(inventory_path, release.digest(inventory_path)))
+            self.assertEqual(list(staging.iterdir()), [])
         for revoked in (clean[1], "b" * 64, "d" * 64, "e" * 64,
                         upgrade_entry["previousPayloadSBOMSHA256"], upgrade_entry["previousPayloadPublisherSHA256"]):
             current_pin = self.write_policy({**self.policy, "subjectSHA256": [revoked]})
