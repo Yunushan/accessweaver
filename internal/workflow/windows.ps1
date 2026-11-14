@@ -159,7 +159,7 @@ function Stop-ToolTree([Diagnostics.Process]$process) {
     $helper=[Diagnostics.Process]::new();$helper.StartInfo=$start
     try {Stop-ToolTreeWithHelper $process $helper} finally {$helper.Dispose()}
 }
-function Run-Tool([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[switch]$Secret,[int]$Timeout=600,[string]$WorkingDirectory,[hashtable]$ChildEnvironment) {
+function Run-Tool([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[switch]$Secret,[int]$Timeout=600,[string]$WorkingDirectory,[hashtable]$ChildEnvironment,[IO.FileStream]$StartGuard) {
     if($Timeout -lt 1 -or $Timeout -gt 86400){throw 'Tool timeout must be between 1 and 86400 seconds'}
     $start=[Diagnostics.ProcessStartInfo]::new();$start.FileName=$program;$start.Arguments=(@($arguments | ForEach-Object {Native-Argument $_}) -join ' ')
     $start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true;$start.RedirectStandardInput=$true
@@ -183,7 +183,15 @@ function Run-Tool([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[
         Trace-TaskQueryStage 'start'
         # A consumed vendor tool exit cannot certify every external side effect.
         if($r.action -notin @('discover','updates','choose-folder')){$script:externalEffectsPending=$true}
-        [void]$p.Start();$started=$true;$p.StandardInput.Close()
+        try {
+            if(-not $p.Start()){throw 'Tool process did not start'}
+            $started=$true
+        } finally {
+            # Uninstallers may delete their own files. Protect the verified
+            # executable through process creation, then release it.
+            if($null -ne $StartGuard){$StartGuard.Dispose()}
+        }
+        $p.StandardInput.Close()
         Trace-TaskQueryStage 'started'
         $stdout=New-ToolCapture $p.StandardOutput;$stderr=New-ToolCapture $p.StandardError
         Trace-TaskQueryStage 'capture-ready'
@@ -220,9 +228,9 @@ function Run-Tool([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[
         } finally {$p.Dispose();Trace-TaskQueryStage 'disposed'}
     }
 }
-function Native([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[switch]$Secret,[int]$Timeout=600,[string]$WorkingDirectory,[hashtable]$ChildEnvironment) {
+function Native([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[switch]$Secret,[int]$Timeout=600,[string]$WorkingDirectory,[hashtable]$ChildEnvironment,[IO.FileStream]$StartGuard) {
     # Keep native output separate from the returned record, even for multi-line tools.
-    $all=@(Run-Tool $program $arguments $codes -Secret:$Secret -Timeout $Timeout -WorkingDirectory $WorkingDirectory -ChildEnvironment $ChildEnvironment)
+    $all=@(Run-Tool $program $arguments $codes -Secret:$Secret -Timeout $Timeout -WorkingDirectory $WorkingDirectory -ChildEnvironment $ChildEnvironment -StartGuard $StartGuard)
     return $all[-1]
 }
 function Private-DirectorySecurity {
@@ -3063,16 +3071,21 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
         throw 'Application installation changed before uninstall launch'
     }
     $confirmed=Get-AppUninstaller $variant $app
-    if($confirmed.path -ine $uninstaller.path -or (Get-AppExecutableDigest $confirmed.path) -cne $digest){
-        throw 'Application uninstaller changed before launch'
-    }
-    $base=Get-AppProcessBase $variant
-    $names=@(Get-AppProcessNames $base $app)
-    if(-not (Test-AppProcessesExited $base $app $names)){
-        throw 'Application process exit could not be verified before uninstall; close the client and retry'
-    }
-    Save-ApplicationEffectBoundary
-    [void](Native $confirmed.path $confirmed.arguments -Timeout $confirmed.timeout)
+    if($confirmed.path -ine $uninstaller.path){throw 'Application uninstaller changed before launch'}
+    $guard=[IO.File]::Open($confirmed.path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if($guard.Length -le 0 -or $guard.Length -gt 512MB -or
+            (Get-FileHash -InputStream $guard -Algorithm SHA256 -ErrorAction Stop).Hash -cne $digest){
+            throw 'Application uninstaller changed before launch'
+        }
+        $base=Get-AppProcessBase $variant
+        $names=@(Get-AppProcessNames $base $app)
+        if(-not (Test-AppProcessesExited $base $app $names)){
+            throw 'Application process exit could not be verified before uninstall; close the client and retry'
+        }
+        Save-ApplicationEffectBoundary
+        [void](Native $confirmed.path $confirmed.arguments -Timeout $confirmed.timeout -StartGuard $guard)
+    } finally {$guard.Dispose()}
     Wait-App $variant $false 60 $app
     Wait-AppProcessesExited $variant $app
     if((Find-App $variant) -or (Test-Path -LiteralPath $app -ErrorAction Stop)){

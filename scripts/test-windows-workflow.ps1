@@ -1523,7 +1523,14 @@ try {
         if(-not $script:appRemovalInvoked){return $fixtureApp}
     }
     function Native {
-        param($program,$arguments,$Timeout)
+        param($program,$arguments,$Timeout,[IO.FileStream]$StartGuard)
+        if($program -cne $fixtureUninstaller -or $null -eq $StartGuard -or -not $StartGuard.CanRead){
+            throw 'Vendor launch did not receive the verified uninstaller handle'
+        }
+        $denied=$false
+        try {$writer=[IO.File]::OpenWrite($program);$writer.Dispose()}catch [IO.IOException] {$denied=$true}
+        if(-not $denied){throw 'The verified uninstaller was writable before launch'}
+        $StartGuard.Dispose()
         $script:appRemovalInvoked=$true
         if($script:appRemovalDelete){[IO.File]::Delete($fixtureApp)}
         if($script:appRemovalFail){throw 'synthetic vendor failure'}
@@ -1585,6 +1592,9 @@ try {
     $rejected=$false
     try {Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'synthetic vendor failure'}
     Assert ($rejected -and $script:appRemovalInvoked -and $script:externalEffectsPending -and $script:appRemovalEvents.Count -eq 0) 'Application removal records vendor side effects even without a process stop'
+    $writer=[IO.File]::OpenWrite($fixtureUninstaller)
+    $writer.Dispose()
+    Assert $true 'Application removal releases the uninstaller guard after vendor failure'
     function Stop-AppProcesses {
         param($variant,$app)
         switch ($script:appRemovalChange) {
@@ -2110,6 +2120,20 @@ $native=Native $node @('-e','process.stdout.write(JSON.stringify(process.argv.sl
 $nativeArgs=$native.stdout|ConvertFrom-Json
 Assert ($nativeArgs.Count -eq 8 -and $nativeArgs[0] -eq 'with spaces' -and $nativeArgs[1] -eq '' -and $nativeArgs[2] -eq 'trailing\' -and $nativeArgs[3] -eq 'quote"inside' -and $nativeArgs[4] -ceq 'help' -and $nativeArgs[5] -ceq '--flag=value' -and $nativeArgs[6] -ceq 'literal&|<>^%!,;' -and $nativeArgs[7] -ceq 'hyphen-name') 'Native processes receive literal Windows arguments without shell evaluation'
 Assert $native.outputComplete 'Ordinary native output reaches EOF'
+$guardPath=Join-Path $testRoot 'native-start-guard'
+[IO.File]::WriteAllText($guardPath,'inert launch fixture')
+$startGuard=[IO.File]::Open($guardPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+try {
+    $guardFixture='const fs=require("node:fs"); const path=process.argv[1]; let n=0; function attempt(){try{fs.appendFileSync(path," child");process.stdout.write("released")}catch(error){if(++n>=40)throw error;setTimeout(attempt,25)}} attempt()'
+    $native=Native $node @('-e',$guardFixture,$guardPath) -Timeout 5 -StartGuard $startGuard
+    Assert (-not $startGuard.CanRead -and $native.stdout -ceq 'released' -and $native.outputComplete) 'Native launch releases the verified file before waiting for the child'
+} finally {$startGuard.Dispose()}
+$startGuard=[IO.File]::Open($guardPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+try {
+    $refused=$false
+    try {Native (Join-Path $testRoot 'missing-tool.exe') -Timeout 5 -StartGuard $startGuard | Out-Null}catch{$refused=$true}
+    Assert ($refused -and -not $startGuard.CanRead) 'A failed native launch releases the verified file'
+} finally {$startGuard.Dispose();[IO.File]::Delete($guardPath)}
 $clock=[Diagnostics.Stopwatch]::StartNew()
 [void](Native $node @('-e','require("child_process").spawn(process.execPath,["-e","setTimeout(()=>{},12000)"],{stdio:"inherit"});process.exit(0)'))
 Assert ($clock.Elapsed.TotalSeconds -lt 10) 'Exited installer does not wait for a GUI child holding inherited output pipes'
