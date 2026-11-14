@@ -482,6 +482,8 @@ jobs:
   hosted-rebuild:
     name: Compare a fresh hosted rebuild
     needs: package
+    outputs:
+      reference_checksums_sha256: ${{ steps.compare.outputs.reference_checksums_sha256 }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -515,6 +517,7 @@ jobs:
           artifact-ids: ${{ needs.package.outputs.artifact_id || '0' }}
           path: build/rebuild-reference/${{ needs.package.outputs.label }}
       - name: Authenticate reference and compare all unsigned subjects
+        id: compare
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -524,6 +527,9 @@ jobs:
           reference="build/rebuild-reference/${PACKAGE_DIRECTORY#dist/}"
           python3 scripts/verify_release_rebuild.py "$reference" "$PACKAGE_DIRECTORY" \
             --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" --report build/rebuild-evidence/comparison.json
+          digest="$(python3 -c 'import json; print(json.load(open("build/rebuild-evidence/comparison.json"))["referenceChecksumsSha256"])')"
+          [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
+          echo "reference_checksums_sha256=$digest" >> "$GITHUB_OUTPUT"
       - name: Retain the comparison report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -778,6 +784,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PACKAGE_DIRECTORY: ${{ needs.package.outputs.directory }}
+          REBUILD_CHECKSUMS_SHA256: ${{ needs.hosted-rebuild.outputs.reference_checksums_sha256 }}
         run: |
           verified_directory="release-assets/${PACKAGE_DIRECTORY#dist/}"
-          python3 scripts/publish_prerelease.py "$verified_directory" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF"
+          python3 scripts/publish_prerelease.py "$verified_directory" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" \
+            --rebuild-checksums-sha256 "$REBUILD_CHECKSUMS_SHA256"

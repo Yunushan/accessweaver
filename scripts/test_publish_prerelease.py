@@ -57,6 +57,24 @@ class PrereleasePublicationTests(unittest.TestCase):
                 self.assertNotEqual(self.snapshot, self.directory)
                 self.assertFalse(self.snapshot.exists())
 
+    def test_publication_requires_the_rebuild_reference_when_supplied(self):
+        checksums = self.directory / "SHA256SUMS.txt"
+        (self.directory / "fixture-00.zip").rename(checksums)
+        expected = hashlib.sha256(checksums.read_bytes()).hexdigest()
+        for match in (False, True):
+            approved = expected if match else "0" * 64
+            with self.subTest(match=match), patch.object(publisher, "verify") as verify, patch.object(
+                publisher, "publish_verified",
+            ) as publish_verified:
+                if match:
+                    publisher.publish(self.directory, self.commit, self.ref, rebuild_checksums_sha256=approved)
+                    publish_verified.assert_called_once()
+                else:
+                    with self.assertRaisesRegex(ValueError, "differs from the authenticated rebuild"):
+                        publisher.publish(self.directory, self.commit, self.ref, rebuild_checksums_sha256=approved)
+                    publish_verified.assert_not_called()
+                verify.assert_called_once()
+
     def test_new_draft_uploads_and_verifies_before_publication(self):
         self.run_publisher([None, self.release(True, 0), self.release(True), self.release(False)])
         args = [entry.args for entry in self.calls.call_args_list]

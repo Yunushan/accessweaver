@@ -38,6 +38,7 @@ class RebuildTests(unittest.TestCase):
                 report = rebuild.compare(reference, candidate, COMMIT, REF, 'trusted-gh')
             self.assertTrue(report['allUnsignedSubjectsByteIdentical'])
             self.assertEqual(len(report['subjects']), 12)
+            self.assertEqual(report['referenceChecksumsSha256'], rebuild.digest(reference / 'SHA256SUMS.txt'))
             self.assertFalse(report['rebuildProcessIndependenceVerified'])
             self.assertFalse(report['productionQualificationComplete'])
             self.assertNotIn('PRIVATE', json.dumps(report))

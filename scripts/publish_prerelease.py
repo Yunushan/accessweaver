@@ -154,7 +154,7 @@ def reuse_existing_bundle(directory, release, commit, tag, expected):
     return {**expected, BUNDLE_NAME: bundle["digest"]}
 
 
-def publish(directory, commit, ref):
+def publish(directory, commit, ref, *, rebuild_checksums_sha256=None):
     validate_identity(commit, ref)
     prefix = "refs/tags/v"
     if not ref.startswith(prefix) or "/" in ref[len(prefix):] or ref == prefix:
@@ -165,6 +165,9 @@ def publish(directory, commit, ref):
         names = snapshot(directory, frozen, 13)
         verify(frozen, commit, ref)
         expected = {name: "sha256:" + digest(frozen / name) for name in names}
+        if (rebuild_checksums_sha256 is not None
+                and expected.get("SHA256SUMS.txt") != "sha256:" + rebuild_checksums_sha256):
+            raise ValueError("Published candidate differs from the authenticated rebuild reference")
         publish_verified(frozen, tag, commit, expected)
 
 
@@ -245,9 +248,12 @@ def main():
     parser.add_argument("directory", type=Path)
     parser.add_argument("--source-commit", required=True)
     parser.add_argument("--source-ref", required=True)
+    parser.add_argument("--rebuild-checksums-sha256", required=True,
+                        help="SHA-256 of the authenticated checksum file from the successful rebuild comparison")
     args = parser.parse_args()
     try:
-        publish(args.directory.absolute(), args.source_commit, args.source_ref)
+        publish(args.directory.absolute(), args.source_commit, args.source_ref,
+                rebuild_checksums_sha256=args.rebuild_checksums_sha256)
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError):
         print("Prerelease verification or publication failed; inspect the draft and keep existing assets intact.",
               file=sys.stderr)

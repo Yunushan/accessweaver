@@ -49,6 +49,8 @@ def compare(reference, rebuilt, commit, ref, gh='gh'):
         return dict(schemaVersion=1, repository=REPOSITORY, workflow=WORKFLOW, sourceCommit=commit, sourceRef=ref,
                     referenceSubjectsAuthenticated=12, unsignedSubjectsCompared=12, coreArchivesCompared=10,
                     allUnsignedSubjectsByteIdentical=all(item['identical'] for item in subjects), subjects=subjects,
+                    referenceChecksumsSha256=next(item['referenceSha256'] for item in subjects
+                                                   if item['file'] == 'SHA256SUMS.txt'),
                     signingBundleCompared=False, rebuildProcessIndependenceVerified=False,
                     publisherSignatureVerified=False, productionQualificationComplete=False)
 
