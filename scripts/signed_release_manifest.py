@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Prepare or authenticate the final publisher-signed Windows and macOS release subjects."""
 import argparse
+import ctypes
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -411,6 +412,32 @@ def select_windows_upgrade(detection, update, installed_digest, installed_trust)
     return entry
 
 
+def check_windows_publisher(artifact, approved_digest, publisher_pin):
+    system_directory = ctypes.create_unicode_buffer(32768)
+    length = ctypes.windll.kernel32.GetSystemDirectoryW(system_directory, len(system_directory))
+    require(0 < length < len(system_directory), "Windows system directory could not be resolved")
+    shell = Path(system_directory.value) / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    script = Path(__file__).resolve().with_name("verify-windows-installer-publisher.ps1")
+    with tempfile.TemporaryFile() as output:
+        subprocess.run(
+            [shell, "-NoProfile", "-NonInteractive", "-File", script, "-Artifact", artifact,
+             "-ArtifactSHA256", approved_digest, "-PublisherCertificateSHA256", publisher_pin],
+            stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.DEVNULL, check=True, timeout=90,
+        )
+        output.seek(0)
+        content = output.read(4097)
+    require(0 < len(content) <= 4096, "Windows publisher report exceeds inspection bounds")
+    record = decode_json(content)
+    expected = {
+        "schemaVersion": 1, "scope": "windows-publisher-signature", "artifactSHA256": approved_digest,
+        "publisherCertificateSHA256": publisher_pin, "embeddedSignatureVerified": True,
+        "timestampPresent": True,
+    }
+    require(record == expected and type(record["schemaVersion"]) is int
+            and record["embeddedSignatureVerified"] is True and record["timestampPresent"] is True,
+            "Windows publisher report differs from the approved artifact or signer")
+
+
 def verify_staged_update(path, size, approved_digest):
     def identity(info):
         return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_nlink
@@ -472,7 +499,8 @@ def stage_managed_update(root, directory, update, policy):
 def verify(directory, certificate, certificate_sha256, commit, ref, openssl="openssl",
            *, revocation_list, revocation_list_sha256, current_version=None, target=None, stage_directory=None,
            current_payload_sha256=None, current_payload_sbom_sha256=None, current_payload_publisher_sha256=None,
-           minimum_revocation_sequence=None, windows_upgrade_inventory=None, macos_publisher=None):
+           minimum_revocation_sequence=None, windows_upgrade_inventory=None, macos_publisher=None,
+           windows_publisher=None):
     if windows_upgrade_inventory is not None:
         require(all(value is None for value in (
             current_version, target, current_payload_sha256, current_payload_sbom_sha256,
@@ -498,6 +526,11 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             isinstance(pin, str) and re.fullmatch(r"[a-fA-F0-9]{64}", pin) for pin in pins
         ), "Installed Windows trust matching requires the payload, SBOM and publisher SHA-256 digests")
         installed_trust = dict(zip(WINDOWS_PREVIOUS_TRUST_FIELDS, (pin.lower() for pin in pins)))
+    if windows_publisher is not None:
+        require(sys.platform == "win32" and target in ("windows/amd64", "windows/arm64")
+                and current_version is not None, "Native publisher verification requires Windows and a Windows managed update target")
+        require(re.fullmatch(r"[a-fA-F0-9]{64}", windows_publisher), "Expected the approved Windows publisher certificate digest")
+        windows_publisher = windows_publisher.lower()
     if macos_publisher is not None:
         require(sys.platform == "darwin" and target in ("darwin/amd64", "darwin/arm64") and current_version is not None,
                 "Native publisher verification requires macOS and a macOS managed update target")
@@ -577,6 +610,24 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             update["windowsUpgradeDetection"] = select_windows_upgrade(
                 report.get("windowsDetection", ()), update, current_payload_sha256, installed_trust
             )
+        if windows_publisher is not None:
+            update = report["managedUpdate"]
+            require(update["updateAvailable"], "Candidate is not an eligible managed upgrade")
+            require(windows_publisher not in revoked_subjects, "Windows publisher certificate is revoked")
+            qualification = update.get("windowsUpgradeDetection")
+            require(qualification is None or qualification["publisherCertificateSHA256"] == windows_publisher,
+                    "Windows publisher certificate differs from the upgrade qualification")
+            payload = next(item for item in files if item["target"] == target and item["role"] == "payload")
+            for name, approved_digest in ((update["installer"], update["installerSHA256"]),
+                                          (payload["file"], payload["sha256"])):
+                artifact = root / name
+                check_windows_publisher(artifact, approved_digest, windows_publisher)
+                require(digest(artifact) == approved_digest, "Windows artifact changed during publisher verification")
+            update["nativePublisherVerification"] = {
+                "publisherCertificateSHA256": windows_publisher, "installerEmbeddedSignatureVerified": True,
+                "payloadEmbeddedSignatureVerified": True, "timestampsVerified": True,
+            }
+            report["nativePublisherChecksPerformed"] = True
         if macos_publisher is not None:
             update = report["managedUpdate"]
             require(update["updateAvailable"], "Candidate is not an eligible managed upgrade")
@@ -632,6 +683,8 @@ def main():
                              help="match the installed Windows payload signer certificate to signed reboot evidence")
     verify_args.add_argument("--windows-upgrade-inventory", nargs=2, metavar=("PATH", "SHA256"),
                              help="match an independently pinned Windows detector inventory to signed reboot evidence")
+    verify_args.add_argument("--windows-publisher-sha256",
+                             help="require native Authenticode and timestamp checks on the Windows setup and payload")
     verify_args.add_argument("--macos-publisher", nargs=3, metavar=("TEAM_ID", "INSTALLER_SHA256", "APPLICATION_SHA256"),
                              help="require native macOS package and app publisher checks before staging")
     verify_args.add_argument("--stage-directory", type=Path,
@@ -659,7 +712,8 @@ def main():
                                     current_payload_sbom_sha256=args.current_payload_sbom_sha256,
                                     current_payload_publisher_sha256=args.current_payload_publisher_sha256,
                                     minimum_revocation_sequence=args.minimum_revocation_sequence,
-                                    windows_upgrade_inventory=inventory, macos_publisher=args.macos_publisher)))
+                                    windows_upgrade_inventory=inventory, macos_publisher=args.macos_publisher,
+                                    windows_publisher=args.windows_publisher_sha256)))
     except (ValueError, OSError, subprocess.SubprocessError):
         print("Signed release inventory, approval or revocation verification failed.", file=sys.stderr)
         return 1

@@ -122,6 +122,48 @@ class SignedReleaseManifestTests(unittest.TestCase):
         evidence.write_text(json.dumps({**report, **overrides}), encoding="utf-8")
         return evidence, release.digest(evidence)
 
+    def test_windows_publisher_requires_exact_bounded_native_report(self):
+        artifact = self.root / "inert.exe"
+        artifact_pin, publisher_pin = "a" * 64, "b" * 64
+        expected = {
+            "schemaVersion": 1, "scope": "windows-publisher-signature",
+            "artifactSHA256": artifact_pin, "publisherCertificateSHA256": publisher_pin,
+            "embeddedSignatureVerified": True, "timestampPresent": True,
+        }
+
+        def system_directory(buffer, maximum):
+            directory = str(self.root / "System32")
+            self.assertGreater(maximum, len(directory))
+            buffer.value = directory
+            return len(directory)
+
+        def run(arguments, **kwargs):
+            shell = self.root / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+            script = Path(release.__file__).resolve().with_name("verify-windows-installer-publisher.ps1")
+            self.assertEqual(arguments, [shell, "-NoProfile", "-NonInteractive", "-File", script,
+                                         "-Artifact", artifact, "-ArtifactSHA256", artifact_pin,
+                                         "-PublisherCertificateSHA256", publisher_pin])
+            self.assertTrue(kwargs["check"])
+            self.assertEqual(kwargs["timeout"], 90)
+            kwargs["stdout"].write(content)
+
+        with patch.object(release.ctypes, "windll", create=True) as windows, patch.object(release.subprocess, "run", side_effect=run):
+            windows.kernel32.GetSystemDirectoryW.side_effect = system_directory
+            content = json.dumps(expected).encode()
+            release.check_windows_publisher(artifact, artifact_pin, publisher_pin)
+            for report in ({**expected, "artifactSHA256": "0" * 64},
+                           {**expected, "publisherCertificateSHA256": "0" * 64},
+                           {**expected, "embeddedSignatureVerified": 1},
+                           {**expected, "schemaVersion": True},
+                           {**expected, "timestampPresent": False},
+                           {**expected, "extra": "fixture"}):
+                content = json.dumps(report).encode()
+                with self.assertRaisesRegex(ValueError, "report differs"):
+                    release.check_windows_publisher(artifact, artifact_pin, publisher_pin)
+            for content in (b"", b" " * 4097, b'{"schemaVersion":1,"schemaVersion":1}'):
+                with self.assertRaises(ValueError):
+                    release.check_windows_publisher(artifact, artifact_pin, publisher_pin)
+
     def test_prepare_closes_target_and_subject_inventory(self):
         output = self.root / release.MANIFEST
         self.assertEqual(len(self.subjects), 12)
@@ -330,6 +372,41 @@ class SignedReleaseManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "No approved reboot evidence"):
             self.verify(approved, pin, **update, current_payload_sha256="d" * 64)
         self.assertEqual(list(staging.iterdir()), [])
+
+        windows_staging = self.root / "windows-staging"
+        windows_staging.mkdir()
+        publisher_pin = "e" * 64
+        with patch.object(release.sys, "platform", "win32"), patch.object(release, "check_windows_publisher") as native:
+            options = {**update, "stage_directory": windows_staging, "windows_publisher": publisher_pin.upper()}
+            revoked_pin = self.write_policy({**self.policy, "subjectSHA256": [publisher_pin]})
+            with self.assertRaisesRegex(ValueError, "Windows publisher certificate is revoked"):
+                self.verify(approved, pin, policy_pin=revoked_pin, **options)
+            native.assert_not_called()
+            self.write_policy(self.policy)
+            native.side_effect = [None, subprocess.CalledProcessError(1, "powershell")]
+            with self.assertRaises(subprocess.CalledProcessError):
+                self.verify(approved, pin, **options)
+            self.assertEqual(list(windows_staging.iterdir()), [])
+            native.side_effect = lambda artifact, *_: artifact.write_bytes(b"changed")
+            with self.assertRaisesRegex(ValueError, "changed during publisher verification"):
+                self.verify(approved, pin, **options)
+            self.assertEqual(list(windows_staging.iterdir()), [])
+            native.reset_mock(side_effect=True)
+            native_report = self.verify(approved, pin, **options)
+            self.assertTrue(native_report["nativePublisherChecksPerformed"])
+            self.assertTrue(native_report["managedUpdate"]["installerStaged"])
+            self.assertEqual(native_report["managedUpdate"]["nativePublisherVerification"], {
+                "publisherCertificateSHA256": publisher_pin, "installerEmbeddedSignatureVerified": True,
+                "payloadEmbeddedSignatureVerified": True, "timestampsVerified": True,
+            })
+            calls = [call.args for call in native.call_args_list]
+            payload_name = f"accessweaver-{VERSION}-windows-arm64.exe"
+            self.assertEqual([args[0].name for args in calls], [installer, payload_name])
+            self.assertTrue(all(args[0].parent not in (self.candidate, windows_staging) for args in calls))
+            self.assertEqual([args[1:] for args in calls],
+                             [(release.digest(self.candidate / name), publisher_pin)
+                              for name in (installer, payload_name)])
+            self.assertEqual((windows_staging / installer).read_bytes(), original_installer)
 
         macos_staging = self.root / "macos-staging"
         macos_staging.mkdir()
@@ -603,6 +680,11 @@ class SignedReleaseManifestTests(unittest.TestCase):
                      "current_payload_sha256": "D" * 64}
         update_report = self.verify(approved, pin, **qualified)["managedUpdate"]
         self.assertEqual(update_report["windowsUpgradeDetection"], upgrade_entry)
+        with patch.object(release.sys, "platform", "win32"), patch.object(release, "check_windows_publisher") as native:
+            with self.assertRaisesRegex(ValueError, "differs from the upgrade qualification"):
+                self.verify(approved, pin, windows_publisher="0" * 64, stage_directory=staging, **qualified)
+            native.assert_not_called()
+        self.assertEqual(list(staging.iterdir()), [])
         for override, error in (
             ({"current_payload_sha256": "a" * 64}, "No approved reboot evidence"),
             ({"current_version": "1.2.2-rc.1+other"}, "No approved reboot evidence"),
