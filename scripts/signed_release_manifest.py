@@ -36,6 +36,7 @@ WINDOWS_PAYLOAD_PUBLISHER = "payloadPublisherCertificateSHA256"
 WINDOWS_BUILD_INFO = "buildInfoSHA256"
 WINDOWS_PREVIOUS_BUILD_INFO = "previousBuildInfoSHA256"
 WINDOWS_SETUP_BASELINE = "setupUpgradeBaselineVerified"
+WINDOWS_SETUP_BASELINE_PREFIX = "/AWUpgradeFrom="
 WINDOWS_SETUP_WRONG_BASELINE = "setupWrongBaselineRefusedWithStatePreserved"
 WINDOWS_PREVIOUS_TRUST_FIELDS = ("previousPayloadSBOMSHA256", "previousPayloadPublisherSHA256")
 WINDOWS_DOWNGRADE_FIELDS = ("previousSetupSHA256", "previousPublisherSHA256")
@@ -723,7 +724,8 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
            current_payload_sha256=None, current_payload_sbom_sha256=None, current_payload_publisher_sha256=None,
            current_build_info_sha256=None, minimum_revocation_sequence=None, windows_upgrade_inventory=None, macos_publisher=None,
            windows_publisher=None, windows_payload_publisher=None, require_windows_setup_baseline=False,
-           resume_windows_upgrade_setup_sha256=None, require_windows_setup_wrong_baseline_refusal=False):
+           resume_windows_upgrade_setup_sha256=None, require_windows_setup_wrong_baseline_refusal=False,
+           resume_windows_upgrade_baseline_argument=None):
     if windows_upgrade_inventory is not None:
         require(all(value is None for value in (
             current_version, target, current_payload_sha256, current_payload_sbom_sha256,
@@ -760,6 +762,12 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                 and re.fullmatch(r"[a-fA-F0-9]{64}", resume_windows_upgrade_setup_sha256),
                 "Expected the original approved Windows Setup SHA-256 for retry")
         require_windows_setup_baseline = True
+    if resume_windows_upgrade_baseline_argument is not None:
+        require(resume_windows_upgrade_setup_sha256 is not None,
+                "Retry baseline matching requires the original approved Windows Setup SHA-256")
+        require(isinstance(resume_windows_upgrade_baseline_argument, str)
+                and resume_windows_upgrade_baseline_argument.startswith(WINDOWS_SETUP_BASELINE_PREFIX),
+                "Expected the original Windows Setup baseline argument for retry")
     if require_windows_setup_baseline or require_windows_setup_wrong_baseline_refusal:
         require(target in ("windows/amd64", "windows/arm64") and current_version is not None
                 and WINDOWS_PREVIOUS_BUILD_INFO in installed_trust,
@@ -875,7 +883,11 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             if baseline_verified:
                 values = (baseline["previousVersion"], baseline["previousPayloadSHA256"],
                           baseline["previousPayloadSBOMSHA256"], baseline[WINDOWS_PREVIOUS_BUILD_INFO])
-                update["windowsSetupBaselineArgument"] = "/AWUpgradeFrom=" + ",".join(values)
+                argument = WINDOWS_SETUP_BASELINE_PREFIX + ",".join(values)
+                require(resume_windows_upgrade_baseline_argument is None
+                        or argument == resume_windows_upgrade_baseline_argument,
+                        "Windows Setup baseline argument differs from the original approved upgrade")
+                update["windowsSetupBaselineArgument"] = argument
         if windows_publisher is not None:
             update = report["managedUpdate"]
             require(update["updateAvailable"], "Candidate is not an eligible managed upgrade")
@@ -966,6 +978,8 @@ def main():
                              help="require evidence that Windows Setup refused an incorrect baseline and preserved installed state")
     verify_args.add_argument("--resume-windows-upgrade-setup-sha256",
                              help="reverify an interrupted upgrade using its original approval and exact Setup digest")
+    verify_args.add_argument("--resume-windows-upgrade-baseline-argument",
+                             help="compare the exact baseline argument saved with the original Windows Setup approval")
     verify_args.add_argument("--windows-publisher-sha256",
                              help="require native Authenticode and timestamp checks on the Windows setup and payload")
     verify_args.add_argument("--windows-payload-publisher-sha256",
@@ -1003,7 +1017,8 @@ def main():
                                     windows_payload_publisher=args.windows_payload_publisher_sha256,
                                     require_windows_setup_baseline=args.require_windows_setup_baseline,
                                     resume_windows_upgrade_setup_sha256=args.resume_windows_upgrade_setup_sha256,
-                                    require_windows_setup_wrong_baseline_refusal=args.require_windows_setup_wrong_baseline_refusal)))
+                                    require_windows_setup_wrong_baseline_refusal=args.require_windows_setup_wrong_baseline_refusal,
+                                    resume_windows_upgrade_baseline_argument=args.resume_windows_upgrade_baseline_argument)))
     except (ValueError, OSError, subprocess.SubprocessError):
         print("Signed release inventory, approval or revocation verification failed.", file=sys.stderr)
         return 1

@@ -1059,16 +1059,29 @@ class SignedReleaseManifestTests(unittest.TestCase):
         )))
         staged_path = staging / selected["managedUpdate"]["installer"]
         before = staged_path.stat()
+        original_baseline = selected["managedUpdate"]["windowsSetupBaselineArgument"]
         retry_cli = command[:command.index("--current-version")] + [
             "--windows-upgrade-inventory", str(inventory_path), inventory_options["windows_upgrade_inventory"][1],
             "--stage-directory", str(staging), "--resume-windows-upgrade-setup-sha256", original_setup_pin.upper(),
+            "--resume-windows-upgrade-baseline-argument", original_baseline,
         ]
         completed = subprocess.run(retry_cli, check=True, capture_output=True, text=True, timeout=30)
         self.assertEqual(json.loads(completed.stdout)["managedUpdate"], selected["managedUpdate"])
         self.assertEqual(staged_path.stat().st_ino, before.st_ino)
         self.assertEqual(staged_path.stat().st_mtime_ns, before.st_mtime_ns)
 
+        wrong_baseline = original_baseline.rsplit(",", 1)[0] + "," + ("0" * 64)
         with patch.object(release, "stage_managed_update") as stage:
+            for retry_setup, retry_baseline, error in (
+                (None, original_baseline, "requires the original approved Windows Setup"),
+                (original_setup_pin, "", "Expected the original Windows Setup baseline argument"),
+                (original_setup_pin, wrong_baseline, "differs from the original approved upgrade"),
+                (original_setup_pin, original_baseline.upper(), "Expected the original Windows Setup baseline argument"),
+            ):
+                with self.subTest(retry_baseline_error=error), self.assertRaisesRegex(ValueError, error):
+                    self.verify(approved, pin, stage_directory=staging, **inventory_options,
+                                resume_windows_upgrade_setup_sha256=retry_setup,
+                                resume_windows_upgrade_baseline_argument=retry_baseline)
             for retry_pin, options, error in (
                 ("", inventory_options, "Expected the original approved Windows Setup"),
                 ("0" * 64, inventory_options, "differs from the original approved upgrade package"),
@@ -1085,6 +1098,11 @@ class SignedReleaseManifestTests(unittest.TestCase):
         self.write_policy(self.policy)
         self.assertEqual(release.digest(staged_path), original_setup_pin)
         staged_path.unlink()
+        bad_retry_cli = [*retry_cli[:-1], wrong_baseline]
+        rejected = subprocess.run(bad_retry_cli, capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertEqual(rejected.stdout, "")
+        self.assertEqual(list(staging.iterdir()), [])
         verified = self.verify(approved, pin, current_build_info_sha256="5" * 64,
                                require_windows_setup_baseline=True, **trusted)
         self.assertEqual(verified["managedUpdate"]["windowsSetupBaselineArgument"],
