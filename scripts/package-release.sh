@@ -3,6 +3,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Resolve dependencies from this checkout and ignore per-user Go settings.
+export GOENV=off GOWORK=off GOFLAGS=
+
 release_label="${1:-preview}"
 if [[ ! "$release_label" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
   echo "Release label may contain letters, digits, dots, underscores and hyphens." >&2

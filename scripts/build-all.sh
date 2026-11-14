@@ -3,6 +3,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Resolve dependencies from this checkout and ignore per-user Go settings.
+export GOENV=off GOWORK=off GOFLAGS=
+
 command -v go >/dev/null 2>&1 || { echo "Go is required. Install it from https://go.dev/dl/" >&2; exit 1; }
 command -v python3 >/dev/null 2>&1 || { echo "Python 3 is required for build metadata." >&2; exit 1; }
 output_dir="${OUTPUT_DIR:-dist}"
@@ -40,7 +43,7 @@ if [[ -n "${BUILD_VERSION:-}" ]]; then
   link_flags+=" -X github.com/Yunushan/accessweaver/internal/buildinfo.Version=$BUILD_VERSION"
 fi
 GOOS="$(go env GOHOSTOS)" GOARCH="$(go env GOHOSTARCH)" CGO_ENABLED=0 \
-  go run -buildvcs=false -ldflags="$link_flags" ./cmd/accessweaver version --json > "$output_dir/BUILD-INFO.json"
+  go run -mod=readonly -buildvcs=false -ldflags="$link_flags" ./cmd/accessweaver version --json > "$output_dir/BUILD-INFO.json"
 
 for target in "${targets[@]}"; do
   target_os="${target%/*}"
@@ -49,7 +52,7 @@ for target in "${targets[@]}"; do
   if [[ "$target_os" == windows ]]; then extension=".exe"; fi
   echo "Building $target"
   GOOS="$target_os" GOARCH="$target_arch" CGO_ENABLED=0 \
-    go build -trimpath -buildvcs=false -ldflags="$link_flags" \
+    go build -mod=readonly -trimpath -buildvcs=false -ldflags="$link_flags" \
     -o "$output_dir/accessweaver-$target_os-$target_arch$extension" ./cmd/accessweaver
 done
 
