@@ -111,7 +111,7 @@ function Native-Record([string]$binary,[string[]]$arguments,[int[]]$codes=@(0),[
     $script:lastNativeAttempt=$attempt
     $clock=[Diagnostics.Stopwatch]::StartNew()
     try {
-        $r=Invoke-Isolated $binary $arguments ((0..255)+@(3010,1641)) $Timeout
+        $r=Invoke-Isolated $binary $arguments ((0..255)+@(3010,1641)+$codes) $Timeout
         $attempt.invocationReturned=$true
         if($null -eq $r -or $r -isnot [Collections.IDictionary] -or $r.exitCode -isnot [int] -or $r.outputComplete -isnot [bool]){
             $attempt.failureCategory='invalid-native-result'

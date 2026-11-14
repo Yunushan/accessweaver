@@ -117,7 +117,8 @@ $script:syntheticNativeMode='success';$script:syntheticNativeCalls=0
 function Invoke-Isolated([string]$binary,[string[]]$arguments,[int[]]$codes,[int]$Timeout){
     $script:syntheticNativeCalls++
     Assert-State ($Timeout -eq 180 -and $codes -contains 255 -and $codes -contains 3010 -and $codes -contains 1641) 'Wrapper changed timeout or diagnostic exit-code admission'
-    Assert-State ($script:lastNativeAttempt.toolClass -ceq 'uninstaller' -and -not $script:lastNativeAttempt.invocationReturned -and $script:lastNativeAttempt.failureCategory -ceq 'in-progress' -and $null -eq $script:lastNativeAttempt.exitCode) 'Current native attempt was not reset before invocation'
+    $expectedToolClass=if($script:syntheticNativeMode -ceq 'custom-exit'){'setup'}else{'uninstaller'}
+    Assert-State ($script:lastNativeAttempt.toolClass -ceq $expectedToolClass -and -not $script:lastNativeAttempt.invocationReturned -and $script:lastNativeAttempt.failureCategory -ceq 'in-progress' -and $null -eq $script:lastNativeAttempt.exitCode) 'Current native attempt was not reset before invocation'
     switch($script:syntheticNativeMode){
         'timeout' {throw ('Timed out: '+[IO.Path]::GetFileName($binary))}
         'tool-exit' {throw ('Tool failed: '+[IO.Path]::GetFileName($binary)+' (exit -1)')}
@@ -126,6 +127,10 @@ function Invoke-Isolated([string]$binary,[string[]]$arguments,[int[]]$codes,[int
         'invalid' {return @{exitCode='PRIVATE_INVALID_VALUE';outputComplete=$true}}
         'missing' {return $null}
         'exit' {return @{exitCode=7;outputComplete=$true;stdout='PRIVATE_TOOL_OUTPUT'}}
+        'custom-exit' {
+            if($codes -notcontains 1603){throw ('Tool failed: '+[IO.Path]::GetFileName($binary)+' (exit 1603)')}
+            return @{exitCode=1603;outputComplete=$true}
+        }
         'incomplete' {return @{exitCode=0;outputComplete=$false;stderr='PRIVATE_TOOL_OUTPUT'}}
         default {return @{exitCode=0;outputComplete=$true;stdout='PRIVATE_TOOL_OUTPUT'}}
     }
@@ -155,7 +160,16 @@ foreach($case in @(
     foreach($private in @('PRIVATE_','unins000.exe','C:\private-input')){Assert-State (-not $public.Contains($private)) 'Private native material escaped the diagnostic envelope'}
     if(-not $case.returned){Assert-State ([object]::ReferenceEquals($prior,$script:lastNative)) 'A thrown invocation pretended to return a new native result'}
 }
-Assert-State ($script:syntheticNativeCalls -eq 9) 'Synthetic wrapper coverage differs'
+$script:syntheticNativeMode='custom-exit'
+$syntheticSetup=Join-Path ([IO.Path]::GetTempPath()) 'PRIVATE_DIRECTORY\accessweaver-0.1.0-alpha-windows-arm64-setup.exe'
+$custom=Native-Record $syntheticSetup @('PRIVATE_ARGUMENT_TOKEN') @(1603)
+$attempt=$script:lastNativeAttempt
+Assert-State ($custom.result.exitCode -eq 1603 -and $attempt.invocationReturned -and $attempt.operationAccepted -and $attempt.exitCode -eq 1603 -and $attempt.outputComplete -and $attempt.failureCategory -ceq 'none') 'Requested custom Setup exit was rejected or lost'
+$failed=$false
+try{$null=Native-Record $syntheticSetup @('PRIVATE_ARGUMENT_TOKEN')}catch{$failed=$true}
+$attempt=$script:lastNativeAttempt
+Assert-State ($failed -and -not $attempt.invocationReturned -and -not $attempt.operationAccepted -and $attempt.failureCategory -ceq 'tool-exit') 'A custom Setup exit was accepted without an explicit expectation'
+Assert-State ($script:syntheticNativeCalls -eq 11) 'Synthetic wrapper coverage differs'
 foreach($case in @(@{name='accessweaver.exe';wanted='core'},@{name='accessweaver-0.1.0-alpha-windows-arm64-setup.exe';wanted='setup'},@{name='unins009.exe';wanted='uninstaller'},@{name='PRIVATE_PROGRAM.exe';wanted='other'})){
     Assert-State ((Get-InstallerNativeToolClass $case.name) -ceq $case.wanted) 'Native tool classification differs'
 }
