@@ -3,9 +3,11 @@ import hashlib
 import io
 import json
 import os
+import signal
 from pathlib import Path
 import stat
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
@@ -14,7 +16,7 @@ import zipfile
 from unittest.mock import patch
 
 from release_archive import (epoch_from_timestamp, publish_release_directory, stage_release_documents,
-                             timestamp, tracked_release_documents, write_archive)
+                             timestamp, tracked_release_documents, validate_release_binaries, write_archive)
 import verify_release as release
 
 
@@ -76,6 +78,58 @@ class ArchiveTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "different inventory"):
                 publish_release_directory(staged, empty, names)
             self.assertEqual(list(empty.iterdir()), [])
+
+    def test_release_requires_exact_nonempty_target_inventory(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            names = [f"accessweaver-{system}-{arch}" + (".exe" if system == "windows" else "")
+                     for system, arch in sorted(release.TARGETS)]
+            for name in names + ["BUILD-INFO.json"]:
+                (root / name).write_bytes(b"inert fixture")
+            self.assertEqual([path.name for path in validate_release_binaries(root)], sorted(names))
+            windows = root / "accessweaver-windows-amd64.exe"
+            windows.rename(windows.with_suffix(""))
+            with self.assertRaisesRegex(ValueError, "exactly the ten"):
+                validate_release_binaries(root)
+            windows.with_suffix("").rename(windows)
+            windows.write_bytes(b"")
+            with self.assertRaisesRegex(ValueError, "bounded regular release file"):
+                validate_release_binaries(root)
+
+    @unittest.skipUnless(sys.platform.startswith(("linux", "darwin", "freebsd", "openbsd")),
+                         "requires POSIX process termination and directory publication")
+    def test_process_kill_on_each_side_of_release_publication(self):
+        script = """
+import os
+from pathlib import Path
+import signal
+import sys
+from release_archive import publish_release_directory
+
+root = Path(sys.argv[1])
+stage = root / "private"
+stage.mkdir()
+(stage / "candidate.zip").write_bytes(b"complete")
+if sys.argv[2] == "before":
+    os.kill(os.getpid(), signal.SIGKILL)
+(stage / "SHA256SUMS.txt").write_bytes(b"checksums")
+publish_release_directory(stage, root / "published", {"candidate.zip", "SHA256SUMS.txt"})
+os.kill(os.getpid(), signal.SIGKILL)
+"""
+        for when in ("before", "after"):
+            with self.subTest(when=when), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                result = subprocess.run([sys.executable, "-c", script, str(root), when],
+                                        cwd=Path(__file__).resolve().parent, capture_output=True, timeout=15)
+                self.assertEqual(result.returncode, -signal.SIGKILL, result.stderr)
+                if when == "before":
+                    self.assertFalse((root / "published").exists())
+                    self.assertTrue((root / "private" / "candidate.zip").is_file())
+                else:
+                    self.assertEqual({path.name for path in (root / "published").iterdir()},
+                                     {"candidate.zip", "SHA256SUMS.txt"})
+                    self.assertEqual((root / "published" / "candidate.zip").read_bytes(), b"complete")
+                    self.assertFalse((root / "private").exists())
 
     def test_epoch_validation_and_roundtrip(self):
         for epoch in ("0", "1", "1760000001", "4294967295"):

@@ -26,15 +26,16 @@ from tempfile import TemporaryDirectory
 import hashlib
 import json
 import platform
-import re
 import subprocess
 import sys
 import zlib
 sys.path.insert(0, "scripts")
-from release_archive import epoch_from_timestamp, publish_release_directory, tracked_release_documents, write_archive
+from release_archive import (epoch_from_timestamp, publish_release_directory, tracked_release_documents,
+                             validate_release_binaries, write_archive)
 from sbom import generate
 
 label, binaries = sys.argv[1], Path(sys.argv[2])
+release_binaries = validate_release_binaries(binaries)
 build_info = json.loads((binaries / "BUILD-INFO.json").read_text(encoding="utf-8"))
 epoch = epoch_from_timestamp(build_info["builtAt"])
 destination = Path("dist") / label
@@ -62,13 +63,9 @@ def build_release(out):
     go_license = Path(subprocess.check_output(["go", "env", "GOROOT"], text=True).strip()) / "LICENSE"
     documents = tracked_release_documents(Path.cwd())
     artifacts = []
-    for binary in sorted(binaries.iterdir()):
-        if binary.name == "BUILD-INFO.json":
-            continue
-        match = re.fullmatch(r"accessweaver-([a-z]+)-([a-z0-9]+)(\.exe)?", binary.name)
-        if not match:
-            raise SystemExit(f"Unexpected binary: {binary.name}")
-        target_os, target_arch, extension = match.groups()
+    for binary in release_binaries:
+        target_os, target_arch = binary.stem.removeprefix("accessweaver-").split("-")
+        extension = binary.suffix
         directory = f"accessweaver-{label}-{target_os}-{target_arch}"
         pairs = [(binary, f"{directory}/accessweaver{extension or ''}")]
         pairs += [(path, f"{directory}/{path.as_posix()}") for path in notices + documents]

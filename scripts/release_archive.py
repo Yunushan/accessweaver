@@ -81,6 +81,22 @@ def write_archive(archive, pairs, epoch, executable):
                             output.addfile(info, content)
 
 
+def validate_release_binaries(directory):
+    """Require one output for every portable target before assembling archives."""
+    from verify_release import TARGETS, release_file, MAX_FILE
+
+    names = {
+        f"accessweaver-{system}-{arch}" + (".exe" if system == "windows" else "")
+        for system, arch in TARGETS
+    }
+    if {path.name for path in directory.iterdir()} != names | {"BUILD-INFO.json"}:
+        raise ValueError("Expected exactly the ten portable release binaries and build metadata")
+    release_file(directory / "BUILD-INFO.json", 64 << 10)
+    for name in sorted(names):
+        release_file(directory / name, MAX_FILE)
+    return [directory / name for name in sorted(names)]
+
+
 def publish_release_directory(staged, destination, names):
     """Publish a complete portable release, or confirm an identical prior run."""
     from verify_release import publish_staged_file, release_file, MAX_FILE
