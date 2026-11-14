@@ -28,6 +28,9 @@ func TestScanCannotInstallFailedPartialOrOpaqueCommands(t *testing.T) {
 		"* SUMMARY\nworking without bypass",
 		"* SUMMARY\ntest_https_tls12 ipv4 example.com : winws2 --lua-desync=x --daemon",
 		"* SUMMARY\ntest_https_tls12 ipv4 example.com : winws2 --lua-desync=x --hostlist=temporary.txt",
+		"* SUMMARY\ntest_https_tls12 ipv4 example.com : winws2 --lua-init=@temporary.lua --lua-desync=x",
+		"* SUMMARY\ntest_https_tls12 ipv4 example.com : winws2 --lua-desync=x --lua-i=@temporary.lua",
+		"* SUMMARY\ntest_https_tls12 ipv4 example.com : winws2 --lua-desync=x --lua-init temporary.lua",
 		"* SUMMARY\ntest_https_tls12 ipv4 example.com : winws2 --lua-desync=x\n* COMMON\n",
 	} {
 		if _, err := SelectScanStrategy(report, "zapret2"); err == nil {

@@ -325,6 +325,12 @@ try {
     [void][IO.Directory]::CreateDirectory((Join-Path $root 'logs'))
     $scanReport=Join-Path $root 'logs\zapret2-blockcheck.txt'
     $script:scanBinary=Join-Path $scanBundle 'winws2.exe';[IO.File]::WriteAllText($script:scanBinary,'inert')
+    [void][IO.Directory]::CreateDirectory((Join-Path $scanBundle 'lua'))
+    $library=Join-Path $scanBundle 'lua\zapret-lib.lua'
+    $antidpi=Join-Path $scanBundle 'lua\zapret-antidpi.lua'
+    [IO.File]::WriteAllText($library,'inert library')
+    [IO.File]::WriteAllText($antidpi,'inert antidpi')
+    $luaHashes=@((Get-WorkflowFileHash $library),(Get-WorkflowFileHash $antidpi))
     $inputData=[pscustomobject]@{ispHook=$null;controller='fixture-controller'}
     $assetNames=@{zapret2='winws2.exe'}
     function Ensure-Asset {param($engine);if($engine -cne 'zapret2'){throw 'Unexpected fixture engine'};return $script:scanBinary}
@@ -340,10 +346,11 @@ try {
         & $scanFunctions['Publish-WorkflowFile'] $path $bytes
         $script:scanWrites++
     }
-    function Install-Method([string]$ScannedEngineSHA256){
+    function Install-Method([string]$ScannedEngineSHA256,[string[]]$ScannedLuaSHA256){
         $arguments=@($r.args)
-        if($ScannedEngineSHA256 -cne (Get-WorkflowFileHash $script:scanBinary) -or $arguments[-1] -cne '--lua-desync=fixture'){
-            throw 'The scan engine digest and selected strategy did not reach installation'
+        if($ScannedEngineSHA256 -cne (Get-WorkflowFileHash $script:scanBinary) -or
+           ($ScannedLuaSHA256 -join ',') -cne ($luaHashes -join ',') -or $arguments[-1] -cne '--lua-desync=fixture'){
+            throw 'The scan engine and Lua digests and selected strategy did not reach installation'
         }
         $script:scanInstalls++
         return @{fixture=$true}
@@ -363,6 +370,7 @@ try {
                 'parser-invalid-protocol' {return @{stdout=$valid.Replace('https','unknown');exitCode=0;outputComplete=$true}}
                 'parser-invalid-args' {return @{stdout='{"protocol":"https","common":true,"args":[1]}';exitCode=0;outputComplete=$true}}
                 'parser-control-args' {return @{stdout='{"protocol":"https","common":true,"args":["--lua-desync=fixture\u000a"]}';exitCode=0;outputComplete=$true}}
+                'parser-lua-init' {return @{stdout=$valid.Replace('["','["--lua-i=@temporary.lua","');exitCode=0;outputComplete=$true}}
                 'complete' {return @{stdout=$valid.Replace('true','false');exitCode=0;outputComplete=$true}}
             }
             return @{stdout=$valid;exitCode=0;outputComplete=($script:scanMode -cne 'parser-incomplete')}
@@ -382,14 +390,17 @@ try {
         if($script:scanMode -ceq 'scan-engine-changed'){
             [IO.File]::WriteAllText((Join-Path $working 'winws2.exe'),'changed executable')
         }
+        if($script:scanMode -ceq 'scan-lua-changed'){
+            [IO.File]::WriteAllText((Join-Path $working 'lua\zapret-antidpi.lua'),'changed Lua library')
+        }
         if($script:scanMode -ceq 'scan-missing'){return @{stdout='* SUMMARY fixture'}}
         if($script:scanMode -ceq 'scan-empty'){return @{stdout='';outputComplete=$true}}
         if($script:scanMode -ceq 'scan-invalid-completion'){return @{stdout='* SUMMARY fixture';outputComplete='true'}}
         return @{stdout='* SUMMARY fixture';outputComplete=($script:scanMode -cne 'scan-incomplete')}
     }
     $env:BASH_ENV='ordinary-fixture-startup'
-    $modes=@('scan-incomplete','scan-missing','scan-empty','scan-invalid-completion','scan-engine-changed','parser-incomplete','parser-missing','parser-no-strategy','parser-invalid-json',
-        'parser-array','parser-no-common','parser-invalid-protocol','parser-invalid-args','parser-control-args','complete','complete-default','complete-multi','complete-implicit')
+    $modes=@('scan-incomplete','scan-missing','scan-empty','scan-invalid-completion','scan-engine-changed','scan-lua-changed','parser-incomplete','parser-missing','parser-no-strategy','parser-invalid-json',
+        'parser-array','parser-no-common','parser-invalid-protocol','parser-invalid-args','parser-control-args','parser-lua-init','complete','complete-default','complete-multi','complete-implicit')
     foreach($mode in $modes){
         $script:scanMode=$mode;$script:scanWrites=0;$script:scanInstalls=0;$script:scanLaunches=0;$script:scanSelectionArgs=@()
         $script:undo=[Collections.Generic.List[object]]::new()
@@ -408,6 +419,9 @@ try {
             Assert ($rejected -and $script:scanWrites -eq 0 -and $script:scanInstalls -eq 0) ('Scan rejects '+$mode+' before saving or installation')
             if($mode -ceq 'scan-engine-changed'){
                 Assert ($message -ceq 'Windows blockcheck engine executable changed during the scan') 'Changed scan engine has a specific refusal'
+            }
+            if($mode -ceq 'scan-lua-changed'){
+                Assert ($message -ceq 'Zapret2 Lua libraries differ from the completed strategy scan') 'Changed scan Lua library has a specific refusal'
             }
         }else{
             Assert ($rejected -and $script:scanWrites -eq 1 -and $script:scanInstalls -eq 0 -and
@@ -448,6 +462,39 @@ try {
         try {[void](& $scanFunctions['Ensure-Asset'] 'zapret2' ('0'*64))}
         catch {$rejected=$_.Exception.Message -ceq 'The selected engine executable differs from the completed strategy scan'}
         Assert ($rejected -and -not (Test-Path -LiteralPath (Join-Path $root 'components'))) 'A changed engine is refused before component staging'
+        $engineHash=Get-WorkflowFileHash $script:scanBinary
+        [IO.File]::WriteAllText($library,'replacement library')
+        try {
+            $rejected=$false
+            try {[void](& $scanFunctions['Ensure-Asset'] 'zapret2' $engineHash $luaHashes)}
+            catch {$rejected=$_.Exception.Message -ceq 'Zapret2 Lua libraries differ from the completed strategy scan'}
+            Assert ($rejected -and -not (Test-Path -LiteralPath (Join-Path $root 'components'))) 'A changed source Lua library is refused before component staging'
+        } finally {[IO.File]::WriteAllText($library,'inert library')}
+        & {
+            $r=[pscustomobject]@{engine='zapret2';args=@('--lua-desync=fixture');mode='service';dns='unchanged'}
+            function Get-Service {}
+            function Save-Hostlist {}
+            function Install-EngineService($engine,$binary,$arguments) {
+                if($engine -cne 'zapret2' -or $binary -cne $script:scanBinary){throw 'Unexpected staged engine'}
+                $script:scanServiceArgs=$arguments
+            }
+            $script:scanServiceArgs=$null
+            & $scanFunctions['Install-Method'] -ScannedEngineSHA256 $engineHash -ScannedLuaSHA256 $luaHashes
+            Assert ($script:scanServiceArgs[0] -ceq ('--lua-init=@'+$library) -and
+                $script:scanServiceArgs[1] -ceq ('--lua-init=@'+$antidpi)) 'Service uses both validated Lua libraries in upstream order'
+            $script:scanServiceArgs=$null
+            [IO.File]::WriteAllText($antidpi,'replacement staged library')
+            try {
+                $rejected=$false
+                try {& $scanFunctions['Install-Method'] -ScannedEngineSHA256 $engineHash -ScannedLuaSHA256 $luaHashes}
+                catch {$rejected=$_.Exception.Message -ceq 'Zapret2 Lua libraries differ from the completed strategy scan'}
+                Assert ($rejected -and -not $script:scanServiceArgs) 'A changed staged Lua library is refused before service creation'
+            } finally {[IO.File]::WriteAllText($antidpi,'inert antidpi')}
+            $r.args=@('--lua-init=@operator.lua','--lua-desync=fixture')
+            & $scanFunctions['Install-Method']
+            Assert (@($script:scanServiceArgs | Where-Object {$_ -like '--lua-init=*'}).Count -eq 1 -and
+                $script:scanServiceArgs -ccontains '--lua-init=@operator.lua') 'Manual install preserves an explicitly supplied Lua initializer'
+        }
     } finally {$r=$ordinaryRequest}
     $alternative=Join-Path $scanBundle 'alternative'
     [void][IO.Directory]::CreateDirectory($alternative)

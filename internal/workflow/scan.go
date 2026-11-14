@@ -91,6 +91,12 @@ func parseScanOutput(output, engine string) ([]ScanStrategy, bool, error) {
 			if arg == "--" || strings.HasPrefix(arg, "--daemon") || strings.HasPrefix(arg, "--service") || strings.HasPrefix(arg, "--hostlist") || arg == "-D" {
 				valid = false
 			}
+			// Lua initializers are supplied by the installer. A reported
+			// initializer can run scan-only code or refer to temporary files.
+			name, _, _ := strings.Cut(arg, "=")
+			if engine == "zapret2" && strings.HasPrefix(name, "--") && strings.HasPrefix("--lua-init", name) {
+				valid = false
+			}
 			if engine == "zapret2" && strings.HasPrefix(arg, "--lua-desync=") {
 				hasStrategy = true
 			}

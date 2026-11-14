@@ -1233,12 +1233,26 @@ function Component-ArchivePath([string]$directory,[string]$url) {
     if(-not (Under $target $directory)){throw 'Invalid component archive destination'}
     return $target
 }
-function Ensure-Asset([string]$engine,[string]$ExpectedSHA256) {
+function Get-ZapretLuaBundle([string]$directory,[string[]]$ExpectedSHA256) {
+    $lua=Join-Path $directory 'lua'
+    # Match upstream blockcheck's initialization order.
+    $paths=@((Join-Path $lua 'zapret-lib.lua'),(Join-Path $lua 'zapret-antidpi.lua'))
+    for($i=0;$i -lt $paths.Count;$i++){
+        $digest=Get-WorkflowFileHash $paths[$i]
+        if($ExpectedSHA256 -and $digest -ine $ExpectedSHA256[$i]){
+            throw 'Zapret2 Lua libraries differ from the completed strategy scan'
+        }
+        if(-not $digest){throw 'Zapret2 requires its matching upstream Lua asset bundle'}
+        @{path=$paths[$i];sha256=$digest}
+    }
+}
+function Ensure-Asset([string]$engine,[string]$ExpectedSHA256,[string[]]$ExpectedLuaSHA256) {
     $plan=if($engine -in @('proxifyre','wgcf','dnscrypt')){Component-ArchitecturePlan $engine}else{$null}
     $source=if($ExpectedSHA256 -and $r.bundlePath){Find-Source $engine -SourceRoots @($r.bundlePath)}else{Find-Source $engine}
     if($ExpectedSHA256 -and (-not $source -or (Get-WorkflowFileHash $source) -ine $ExpectedSHA256)){
         throw 'The selected engine executable differs from the completed strategy scan'
     }
+    if($ExpectedLuaSHA256){Get-ZapretLuaBundle (Split-Path -Parent $source) $ExpectedLuaSHA256 | Out-Null}
     if (-not $source) {
         $repos=@{byedpi='hufrea/byedpi';proxifyre='wiresock/proxifyre';wgcf='ViRb3/wgcf';zapret='cagritaskn/SplitWire-Turkey';zapret2='cagritaskn/SplitWire-Turkey';goodbyedpi='ValdikSS/GoodbyeDPI';dnscrypt='DNSCrypt/dnscrypt-proxy';drover='hdrover/discord-drover'}
         $patterns=@{byedpi='x86_64-w64.*zip$';proxifyre='x64\.zip$';wgcf='windows_amd64.exe$';zapret='ZIP.*Windows.*zip$';zapret2='ZIP.*Windows.*zip$';goodbyedpi='goodbyedpi.*zip$';dnscrypt='win64.*zip$';drover='drover.*zip$'}
@@ -2853,7 +2867,7 @@ function Assert-ByeDPIArguments([string[]]$arguments) {
         if($blocked){throw 'Managed ByeDPI installation reserves listener/process options; use full strategy option names without option terminators or argument files'}
     }
 }
-function Install-Method([string]$ScannedEngineSHA256) {
+function Install-Method([string]$ScannedEngineSHA256,[string[]]$ScannedLuaSHA256) {
     if($r.engine -eq 'byedpi'){Assert-ByeDPIArguments @($r.args)}
     if(($r.engine -eq 'wiresock' -and $r.mode -eq 'standard') -or ($r.engine -eq 'byedpi' -and $r.mode -eq 'dll')){if(-not @(Discord-Directories).Count){throw 'Install stable Discord before selecting the Discord DLL setup mode'}}
     if($r.engine -ne 'dnscrypt' -and $r.dns -and $r.dns -ne 'unchanged' -and -not $script:dnsConfigured){Configure-DNS $r.dns}
@@ -2865,10 +2879,17 @@ function Install-Method([string]$ScannedEngineSHA256) {
             if($ScannedEngineSHA256 -and (Get-Service -Name ('AccessWeaver-'+$r.engine) -ErrorAction SilentlyContinue)){
                 throw 'Remove the existing managed engine service before installing a scanned strategy'
             }
-            $binary=Ensure-Asset $r.engine $ScannedEngineSHA256;$arguments=@($r.args)
+            if($ScannedEngineSHA256 -and $r.engine -eq 'zapret2' -and @($ScannedLuaSHA256).Count -ne 2){
+                throw 'Zapret2 scan did not verify both Lua libraries'
+            }
+            $binary=Ensure-Asset $r.engine $ScannedEngineSHA256 $ScannedLuaSHA256
+            $arguments=@($r.args)
             if(-not $arguments.Count){if($r.engine -eq 'goodbyedpi'){$arguments=@('-5')}else{throw 'Select a tested preset or supply strategy arguments'}}
             $arguments=@(Packet-Arguments $r.engine $arguments)
-            if($r.engine -eq 'zapret2' -and -not @($arguments | Where-Object {$_ -match '^--lua-init(=|$)'}).Count){$lua=Join-Path (Split-Path -Parent $binary) 'lua';foreach($name in @('zapret-lib.lua','zapret-antidpi.lua')){$asset=Join-Path $lua $name;if(-not (Test-Path -LiteralPath $asset)){throw 'Zapret2 requires its matching upstream Lua asset bundle'};$arguments=@('--lua-init=@'+$asset)+$arguments}}
+            if($r.engine -eq 'zapret2' -and ($ScannedLuaSHA256 -or -not @($arguments | Where-Object {$_ -match '^--lua-init(=|$)'}).Count)){
+                $initializers=@(Get-ZapretLuaBundle (Split-Path -Parent $binary) $ScannedLuaSHA256 | ForEach-Object {'--lua-init=@'+$_.path})
+                $arguments=$initializers+$arguments
+            }
             $list=Join-Path (Split-Path -Parent $binary) 'accessweaver-hostlist.txt'
             if($r.engine -eq 'goodbyedpi' -and -not $r.domains -and -not (Test-Path -LiteralPath (Join-Path (Split-Path -Parent $binary) 'accessweaver-hostlist.saved.txt'))){$r|Add-Member -NotePropertyName domains -NotePropertyValue @('discord.com','discord.gg','discordapp.com','discordapp.net','discord.media','roblox.com','wattpad.com') -Force}
             Save-Hostlist
@@ -3394,6 +3415,10 @@ function Scan-Strategies {
         if(-not $binary){throw 'Windows blockcheck bundle lacks the selected engine'}
         $engineSHA256=Get-WorkflowFileHash $binary
         if(-not $engineSHA256){throw 'Windows blockcheck engine executable could not be verified'}
+        $luaSHA256=@()
+        if($r.engine -eq 'zapret2'){
+            $luaSHA256=@(Get-ZapretLuaBundle $check.Directory.FullName | ForEach-Object {$_.sha256})
+        }
         $arguments=@('--noprofile','--norc',(ConvertTo-ScanCygwinPath $check.FullName))
         $privateState=Join-Path $candidate ('state-'+[guid]::NewGuid().ToString('N'))
         [void][IO.Directory]::CreateDirectory($privateState)
@@ -3417,6 +3442,7 @@ function Scan-Strategies {
         if((Get-WorkflowFileHash $binary) -ine $engineSHA256){
             throw 'Windows blockcheck engine executable changed during the scan'
         }
+        if($luaSHA256){Get-ZapretLuaBundle $check.Directory.FullName $luaSHA256 | Out-Null}
         if($null -eq $result -or $result.outputComplete -isnot [bool] -or -not $result.outputComplete -or
            $result.stdout -isnot [string] -or [string]::IsNullOrWhiteSpace($result.stdout)){
             throw 'Scan output was incomplete; no strategy was selected'
@@ -3424,7 +3450,7 @@ function Scan-Strategies {
         $report=Join-Path $root ('logs\'+$r.engine+'-blockcheck.txt')
         # The latest complete scan is diagnostic evidence for selection and rollback.
         Publish-WorkflowFile $report ([Text.UTF8Encoding]::new($false).GetBytes($result.stdout))
-        return @{scanLevel=$level;output=$result.stdout;reportPath=$report;engineSHA256=$engineSHA256;note='Review detected strategies before installing. A scan result is not a guarantee for UDP voice.'}
+        return @{scanLevel=$level;output=$result.stdout;reportPath=$report;engineSHA256=$engineSHA256;luaSHA256=$luaSHA256;note='Review detected strategies before installing. A scan result is not a guarantee for UDP voice.'}
     } finally {
         $resolved=[IO.Path]::GetFullPath($candidate)
         if((Split-Path -Parent $resolved) -ine $scanParent -or (Split-Path -Leaf $resolved) -cnotmatch '^scan-zapret2?-[a-f0-9]{32}$'){
@@ -3465,12 +3491,17 @@ function Auto-Install {
            [Text.Encoding]::UTF8.GetByteCount($argument) -gt 4096){
             throw 'Scan strategy selection returned an invalid result'
         }
+        $name=($argument -split '=',2)[0]
+        if($r.engine -eq 'zapret2' -and $name.StartsWith('--',[StringComparison]::Ordinal) -and
+           '--lua-init'.StartsWith($name,[StringComparison]::Ordinal)){
+            throw 'Scan strategy selection returned an invalid result'
+        }
     }
     $capture=if($r.engine -eq 'zapret2'){@('--wf-tcp-out=80,443','--wf-udp-out=443,50000-65535')}else{@('--wf-tcp=80,443','--wf-udp=443,50000-65535')}
     $filter=if($selected.protocol -eq 'quic'){'--filter-udp=443'}elseif($selected.protocol -eq 'http'){'--filter-tcp=80'}else{'--filter-tcp=443'}
     $r | Add-Member -NotePropertyName args -NotePropertyValue @($capture+@($filter)+@($selected.args)) -Force
     $r | Add-Member -NotePropertyName mode -NotePropertyValue 'service' -Force
-    $installed=Install-Method -ScannedEngineSHA256 $scan.engineSHA256
+    $installed=Install-Method -ScannedEngineSHA256 $scan.engineSHA256 -ScannedLuaSHA256 $scan.luaSHA256
     return @{installed=$installed;selectedStrategy=$selected;scanReport=$scan.reportPath;engineSHA256=$scan.engineSHA256;note='Only the protocol and scan targets in the report were tested. UDP voice and other networks require separate verification.'}
 }
 function Get-RefreshTaskInspection {
