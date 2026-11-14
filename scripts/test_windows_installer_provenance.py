@@ -9,6 +9,7 @@ from unittest.mock import patch
 from verify_windows_installer_provenance import (
     validate_installation_path_refusals, validate_setup_completion_refusal, validate_uninstall_registration_refusal,
     validate_post_restoration_refusal, validate_restoration_controller_refusals, validate_setup_marker_replacement,
+    validate_setup_uninstall_registration_refusal,
 )
 from verify_windows_installer_provenance import BUNDLE_NAME,DEFAULT_VERSIONS,WORKFLOW,check_rejections,stage,subject_names,validate_build,verification_command,verify
 
@@ -59,6 +60,26 @@ class SetupCompletionRefusalTests(unittest.TestCase):
         ):
             with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, "refusal and recovery"):
                 validate_setup_completion_refusal({**record, **invalid})
+
+
+    def test_rejects_unproven_uninstall_registration_repair(self):
+        record = {
+            "fixtureSHA256": "a" * 64, "exitCode": 1603, "elapsedMilliseconds": 83,
+            "deadlineMilliseconds": 180000, "refusalLogged": True, "changedCommandPreserved": True,
+            "installedPayloadVerified": True, "pendingMarkerRetained": True, "managedDetectionRefused": True,
+            "unrelatedStatePreserved": True, "genuineRetryVerified": True,
+        }
+        self.assertEqual(validate_setup_uninstall_registration_refusal(record),
+                         {"setupUninstallRegistrationRefusalVerified": True})
+        for invalid in (
+            {"changedCommandPreserved": False}, {"installedPayloadVerified": 1},
+            {"genuineRetryVerified": False}, {"managedDetectionRefused": False}, {"pendingMarkerRetained": False},
+            {"fixtureSHA256": "b" * 63}, {"elapsedMilliseconds": 180000}, {"exitCode": 0}, {"private": True},
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                validate_setup_uninstall_registration_refusal({**record, **invalid})
+        with self.assertRaises(ValueError):
+            validate_setup_uninstall_registration_refusal(None)
 
 
 class InstallationPathRefusalTests(unittest.TestCase):

@@ -26,8 +26,9 @@ begin
 end;
 
 function AWReadRegistration(const View: LongWord; const ReadLocation: Boolean;
-  var Found: Boolean; var Version, Location: String): String;
+  const ExpectedUninstaller: String; var Found: Boolean; var Version, Location: String): String;
 var Parent, Uninstall, Product, Status: LongWord;
+    Command, QuietCommand, Expected: String;
 begin
   Result := ''; Found := False; Version := ''; Location := '';
   Parent := 0; Uninstall := 0; Product := 0;
@@ -56,8 +57,17 @@ begin
     if not AWReadRegistrationString(Product, 'DisplayVersion', $30000006, 256, Version) then begin
       Result := 'The installed AccessWeaver version is unreadable, oversized or has an unsupported type. Review the installation before retrying.'; Exit;
     end;
-    if ReadLocation and not AWReadRegistrationString(Product, 'InstallLocation', $30000002, 261, Location) then
-      Result := 'Cannot verify the registered AccessWeaver installation directory. Review the installation before retrying.';
+    if ReadLocation and not AWReadRegistrationString(Product, 'InstallLocation', $30000002, 261, Location) then begin
+      Result := 'Cannot verify the registered AccessWeaver installation directory. Review the installation before retrying.'; Exit;
+    end;
+    if ExpectedUninstaller <> '' then begin
+      { Inno 6.7.1 writes these forms when UninstallLogging is disabled. }
+      Expected := '"' + ExpectedUninstaller + '"';
+      if not AWReadRegistrationString(Product, 'UninstallString', $30000002, 300, Command) or
+         not AWReadRegistrationString(Product, 'QuietUninstallString', $30000002, 300, QuietCommand) or
+         (AWOrdinal(Command, Expected) <> 0) or (AWOrdinal(QuietCommand, Expected + ' /SILENT') <> 0) then
+        Result := 'The registered AccessWeaver uninstall commands do not match the installed uninstaller.';
+    end;
   finally
     if Product <> 0 then AWCloseRegistrationKey(Product);
     if Uninstall <> 0 then AWCloseRegistrationKey(Uninstall);

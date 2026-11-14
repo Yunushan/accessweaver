@@ -58,6 +58,7 @@ UninstallDisplayIcon={app}\accessweaver.exe
 CloseApplications=yes
 RestartApplications=no
 SetupLogging=yes
+UninstallLogging=no
 SetupMutex=Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092
 [Files]
 Source: "{#BuildRoot}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -250,16 +251,25 @@ begin
 end;
 
 function AWVerifyCompletedInstall(const Destination: String; var Held: AWDirectoryHandles;
-  var Executable, BuildInfo, SBOM: LongWord): Boolean;
-var Found64, Found32: Boolean; Version, Location, Version32, Location32: String;
+  var Executable, BuildInfo, SBOM, Uninstaller: LongWord): Boolean;
+var Found64, Found32: Boolean;
+    Version, Location, Version32, Location32, UninstallerPath: String;
+    Info: AWFileInfo;
 begin
   Result := False;
   if not AWLockInstallationDirectory(Destination, Held) then Exit;
   if not AWVerifyInstalledFile(Destination + '\accessweaver.exe', '{#PayloadDigest}', {#PayloadBytes}, True, Executable) then Exit;
   if not AWVerifyInstalledFile(Destination + '\BUILD-INFO.json', '{#BuildInfoDigest}', {#BuildInfoBytes}, False, BuildInfo) then Exit;
   if not AWVerifyInstalledFile(Destination + '\SBOM.cdx.json', '{#PayloadSBOMDigest}', {#PayloadSBOMBytes}, False, SBOM) then Exit;
-  if AWReadRegistration($0100, True, Found64, Version, Location) <> '' then Exit;
-  if AWReadRegistration($0200, False, Found32, Version32, Location32) <> '' then Exit;
+  UninstallerPath := ExpandConstant('{uninstallexe}');
+  if not AWIsInstallationDirectory(Destination, ExtractFileDir(UninstallerPath)) then Exit;
+  Uninstaller := AWOpenReplaceProbe(UninstallerPath, $80000000, 1, 0, 3, $00200000, 0);
+  if Uninstaller = $FFFFFFFF then Exit;
+  if AWGetFileInfo(Uninstaller, Info) = 0 then Exit;
+  if ((Info.Attributes and ($00000400 or $00000010)) <> 0) or (Info.Links <> 1) or
+     (Info.SizeHigh <> 0) or (Info.SizeLow = 0) or (Info.SizeLow > 536870912) then Exit;
+  if AWReadRegistration($0100, True, UninstallerPath, Found64, Version, Location) <> '' then Exit;
+  if AWReadRegistration($0200, False, '', Found32, Version32, Location32) <> '' then Exit;
   Result := Found64 and not Found32 and (Version = '{#ReleaseVersion}') and
     AWIsInstallationDirectory(Destination, Location);
 end;
@@ -298,9 +308,9 @@ var Found64, Found32, ReadLocation: Boolean;
     Ordering: Integer;
 begin
   ReadLocation := Destination <> '';
-  Result := AWReadRegistration($0100, ReadLocation, Found64, Version64, Location64);
+  Result := AWReadRegistration($0100, ReadLocation, '', Found64, Version64, Location64);
   if Result <> '' then Exit;
-  Result := AWReadRegistration($0200, ReadLocation, Found32, Version32, Location32);
+  Result := AWReadRegistration($0200, ReadLocation, '', Found32, Version32, Location32);
   if Result <> '' then Exit;
   if Found64 and Found32 then begin
     Result := 'Multiple machine installations of AccessWeaver are registered. Review them before retrying.'; Exit;
@@ -322,13 +332,13 @@ begin
 end;
 
 procedure AWCompleteInstallation(const Destination: String);
-var Held: AWDirectoryHandles; Executable, BuildInfo, SBOM: LongWord; I: Integer;
+var Held: AWDirectoryHandles; Executable, BuildInfo, SBOM, Uninstaller: LongWord; I: Integer;
     Verified: Boolean;
 begin
-  Executable := $FFFFFFFF; BuildInfo := $FFFFFFFF; SBOM := $FFFFFFFF;
+  Executable := $FFFFFFFF; BuildInfo := $FFFFFFFF; SBOM := $FFFFFFFF; Uninstaller := $FFFFFFFF;
   try
     try
-      Verified := AWVerifyCompletedInstall(Destination, Held, Executable, BuildInfo, SBOM);
+      Verified := AWVerifyCompletedInstall(Destination, Held, Executable, BuildInfo, SBOM, Uninstaller);
     except
       Verified := False;
     end;
@@ -344,6 +354,7 @@ begin
       Log('AccessWeaver installed payload and registration verified. Pending installation record retired.');
     end;
   finally
+    if Uninstaller <> $FFFFFFFF then AWCloseNativeHandle(Uninstaller);
     if SBOM <> $FFFFFFFF then AWCloseNativeHandle(SBOM);
     if BuildInfo <> $FFFFFFFF then AWCloseNativeHandle(BuildInfo);
     if Executable <> $FFFFFFFF then AWCloseNativeHandle(Executable);
@@ -387,9 +398,9 @@ function AWUninstallDirectoryPreflight(const Destination: String): String;
 var Found64, Found32: Boolean;
     Version, Location, OtherVersion, OtherLocation: String;
 begin
-  Result := AWReadRegistration($0100, True, Found64, Version, Location);
+  Result := AWReadRegistration($0100, True, '', Found64, Version, Location);
   if Result <> '' then Exit;
-  Result := AWReadRegistration($0200, False, Found32, OtherVersion, OtherLocation);
+  Result := AWReadRegistration($0200, False, '', Found32, OtherVersion, OtherLocation);
   if Result <> '' then Exit;
   if not Found64 or Found32 or not AWIsInstallationDirectory(Destination, Location) then
     Result := 'This uninstaller does not match the active AccessWeaver installation directory. Use the registered uninstaller.'
