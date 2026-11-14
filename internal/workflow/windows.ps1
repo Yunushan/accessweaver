@@ -3103,8 +3103,7 @@ function Restore-DNS([string]$ExpectedSHA256,$ResolverReload) {
     # Receipt publication may overlap an adapter or policy change. The active
     # snapshot takes precedence over a receipt until retirement succeeds.
     Assert-RestoredDNSState $plans $dohPlans $dohAvailable
-    Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
-    Remove-Item -LiteralPath $snapshot -ErrorAction Stop
+    Remove-VerifiedDNSRecoverySnapshot $snapshot $snapshotSHA256
     if(Get-DNSRecoverySnapshotDigest){throw 'Original DNS snapshot retirement could not be verified'}
     Event 'Original DNS and DoH settings restored'
 }
@@ -4842,6 +4841,87 @@ function Assert-DNSRecoverySnapshotUnchanged([string]$ExpectedSHA256) {
     if(($ExpectedSHA256 -and $observed -ine $ExpectedSHA256) -or (-not $ExpectedSHA256 -and $observed)){
         throw 'Original DNS snapshot changed during preflight; retain it for review'
     }
+}
+function Remove-VerifiedDNSRecoverySnapshot([string]$Path,[string]$ExpectedSHA256) {
+    No-Reparse $Path
+    if(-not ('AccessWeaver.DNSRecoverySnapshotRemoval' -as [type])){
+        Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
+using System;
+using System.IO;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+
+namespace AccessWeaver
+{
+    public static class DNSRecoverySnapshotRemoval
+    {
+        private const uint ReadAndDelete = 0x80010000;
+        private const uint OpenExisting = 3;
+        private const uint OpenReparsePoint = 0x00200000;
+        private const int FileAttributeTagInfo = 9;
+        private const int FileDispositionInfo = 4;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct AttributeTagInfo
+        {
+            public FileAttributes Attributes;
+            public uint ReparseTag;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern SafeFileHandle CreateFileW(string path, uint access, FileShare sharing,
+            IntPtr security, uint disposition, uint flags, IntPtr template);
+
+        [DllImport("kernel32.dll", ExactSpelling = true)]
+        private static extern bool GetFileInformationByHandleEx(SafeFileHandle file, int informationClass,
+            out AttributeTagInfo information, uint size);
+
+        [DllImport("kernel32.dll", ExactSpelling = true)]
+        private static extern bool SetFileInformationByHandle(SafeFileHandle file, int informationClass,
+            ref byte deleteFile, uint size);
+
+        public static SafeFileHandle Open(string path)
+        {
+            // Exclusive access serializes hash verification and delete disposition.
+            var handle = CreateFileW(path, ReadAndDelete, FileShare.None, IntPtr.Zero,
+                OpenExisting, OpenReparsePoint, IntPtr.Zero);
+            try
+            {
+                AttributeTagInfo info;
+                if (handle.IsInvalid || !GetFileInformationByHandleEx(handle, FileAttributeTagInfo,
+                    out info, (uint)Marshal.SizeOf(typeof(AttributeTagInfo))) ||
+                    (info.Attributes & (FileAttributes.ReparsePoint | FileAttributes.Directory)) != 0)
+                    throw new IOException("DNS recovery snapshot could not be opened for verified retirement");
+                return handle;
+            }
+            catch
+            {
+                handle.Dispose();
+                throw;
+            }
+        }
+
+        public static void MarkForDeletion(SafeFileHandle handle)
+        {
+            byte deleteFile = 1;
+            if (!SetFileInformationByHandle(handle, FileDispositionInfo, ref deleteFile, 1))
+                throw new IOException("Original DNS snapshot retirement failed");
+        }
+    }
+}
+'@
+    }
+    $handle=[AccessWeaver.DNSRecoverySnapshotRemoval]::Open($Path)
+    try {
+        $stream=[IO.FileStream]::new($handle,[IO.FileAccess]::Read)
+        try {
+            $bytes=Read-WorkflowRecoveryJournalBytes $stream 8MB
+            if(-not $bytes.Length -or (Get-WorkflowBytesSHA256 $bytes) -ine $ExpectedSHA256){
+                throw 'Original DNS snapshot changed during preflight; retain it for review'
+            }
+            [AccessWeaver.DNSRecoverySnapshotRemoval]::MarkForDeletion($handle)
+        } finally {$stream.Dispose()}
+    } finally {$handle.Dispose()}
 }
 function Get-DNSRecoverySnapshotDigest {
     $path=Join-Path $root 'profiles\dns-original.json'

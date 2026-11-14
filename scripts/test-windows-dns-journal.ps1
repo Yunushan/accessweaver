@@ -4,7 +4,7 @@ $path=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.ps
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'DNS journal source failed parsing'}
-foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-DNSRecoveryFileBytes','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Get-WorkflowFileHash','Copy-WorkflowFileToNewPath','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Publish-RecordedWorkflowFile','Backup-File','Restore-RecordedWorkflowFile','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Test-DNSCryptLoopbackAddress','Wait-DNSCryptListeners','Get-EffectiveDNSCryptListeners','Assert-EffectiveDNSCryptListeners','Test-DNSIPv4Answer','Assert-DNSCryptConfiguration','Assert-DNSRecoverySnapshotUnchanged','Rollback','Remove-All','Get-ManagedFirewallRule','Remove-ManagedFirewallRule','Firewall','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Assert-DNSCryptCanBeRemoved','Remove-RecordedService')){
+foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-DNSRecoveryFileBytes','Remove-VerifiedDNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Get-WorkflowFileHash','Copy-WorkflowFileToNewPath','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Publish-RecordedWorkflowFile','Backup-File','Restore-RecordedWorkflowFile','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Test-DNSCryptLoopbackAddress','Wait-DNSCryptListeners','Get-EffectiveDNSCryptListeners','Assert-EffectiveDNSCryptListeners','Test-DNSIPv4Answer','Assert-DNSCryptConfiguration','Assert-DNSRecoverySnapshotUnchanged','Rollback','Remove-All','Get-ManagedFirewallRule','Remove-ManagedFirewallRule','Firewall','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Assert-DNSCryptCanBeRemoved','Remove-RecordedService')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -100,6 +100,27 @@ $script:journalPath=Join-Path $root $r.journalId
 $script:journalState='running'
 $script:events=[Collections.Generic.List[string]]::new()
 try {
+    if($env:OS -ceq 'Windows_NT'){
+        $originalFrame=[Text.Encoding]::ASCII.GetBytes('inert original snapshot')
+        $replacementFrame=[Text.Encoding]::ASCII.GetBytes('inert replacement snapshot')
+        $originalDigest=Get-WorkflowBytesSHA256 $originalFrame
+        [IO.File]::WriteAllBytes($snapshot,$replacementFrame)
+        $refused=$false
+        try{Remove-VerifiedDNSRecoverySnapshot $snapshot $originalDigest}
+        catch{$refused=$_.Exception.Message -ceq 'Original DNS snapshot changed during preflight; retain it for review'}
+        Require ($refused -and (Get-DNSRecoverySnapshotDigest) -ceq (Get-WorkflowBytesSHA256 $replacementFrame)) 'Retirement removed a replacement snapshot'
+        [IO.File]::WriteAllBytes($snapshot,$originalFrame)
+        $guard=[IO.File]::Open($snapshot,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        try {
+            $refused=$false
+            try{Remove-VerifiedDNSRecoverySnapshot $snapshot $originalDigest}
+            catch{$refused=$_.Exception.Message -like '*could not be opened for verified retirement*'}
+            Require $refused 'Retirement accepted an externally held snapshot'
+        } finally {$guard.Dispose()}
+        Require ((Get-DNSRecoverySnapshotDigest) -ceq $originalDigest) 'Refused retirement changed the active snapshot'
+        Remove-VerifiedDNSRecoverySnapshot $snapshot $originalDigest
+        Require (-not [IO.File]::Exists($snapshot)) 'Verified retirement left the active snapshot in place'
+    }
     & {
         $calls=[Collections.Generic.List[string]]::new()
         $fixture=@{present=$true;restoreFails=$true;inspectionFails=$false;methodFails=$false;ownershipFault=$false;servicePresent=$false;listenerNeeded=$false}
