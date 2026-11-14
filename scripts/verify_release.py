@@ -280,7 +280,10 @@ def verify_go_metadata(binary, binary_name, info):
                 "Packaged binary Git revision or modification state differs")
 
 
-def verify(directory, execute_native=False, *, check_go_metadata=False, require_update_build=False):
+def verify(directory, execute_native=False, *, check_go_metadata=False, require_update_build=False,
+           selected_target=None):
+    require(selected_target is None or (selected_target in TARGETS and not execute_native),
+            "Target-specific verification requires a known target and forbids execution")
     manifest_path = directory / "BUILD-MANIFEST.json"
     release_file(manifest_path, 1 << 20)
     manifest_bytes = manifest_path.read_bytes()
@@ -314,7 +317,9 @@ def verify(directory, execute_native=False, *, check_go_metadata=False, require_
     require(set(checksums) == archive_names | {manifest_path.name}, "Unexpected or omitted checksum files")
     require(checksums[manifest_path.name] == hashlib.sha256(manifest_bytes).hexdigest(), "Manifest checksum differs")
 
-    expected_files = set(checksums) | {checksum_path.name}
+    artifacts = [item for item in manifest["artifacts"]
+                 if selected_target is None or (item["goos"], item["goarch"]) == selected_target]
+    expected_files = {item["file"] for item in artifacts} | {manifest_path.name, checksum_path.name}
     with os.scandir(directory) as entries:
         names = set()
         for entry in entries:
@@ -327,7 +332,7 @@ def verify(directory, execute_native=False, *, check_go_metadata=False, require_
     host_os = {"win32": "windows", "darwin": "darwin", "linux": "linux"}.get(sys.platform, sys.platform.split("-")[0])
     host_arch = {"amd64": "amd64", "x86_64": "amd64", "arm64": "arm64", "aarch64": "arm64"}.get(platform.machine().lower())
     native = None
-    for item in manifest["artifacts"]:
+    for item in artifacts:
         target = item["goos"], item["goarch"]
         name = item["file"]
         path = directory / name
@@ -357,7 +362,7 @@ def verify(directory, execute_native=False, *, check_go_metadata=False, require_
     if execute_native:
         require(native is not None, "No artifact matches the current host")
         execute_metadata(*native, require_update_build=require_update_build)
-    print(f"Verified {len(archive_names)} archives, checksums, required notices and source identity. "
+    print(f"Verified {len(artifacts)} archive(s), checksums, required notices and source identity. "
           f"Static Go metadata={check_go_metadata}, native metadata execution={execute_native}.")
 
 

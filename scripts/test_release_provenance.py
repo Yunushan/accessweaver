@@ -112,6 +112,31 @@ class ProvenanceTests(unittest.TestCase):
                 self.assertEqual(authenticate.call_count, 12)
                 contents.assert_called_once()
 
+    def test_selected_target_requires_exact_archive_and_authenticates_three_subjects(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            archive = "accessweaver-preview-windows-arm64.zip"
+            for path in root.iterdir():
+                if path.name not in {archive, BUNDLE_NAME, "BUILD-MANIFEST.json", "SHA256SUMS.txt"}:
+                    path.unlink()
+            with patch("verify_release_provenance.authenticate") as authenticate, patch(
+                "verify_release_provenance.verify_contents"
+            ) as contents:
+                with self.assertRaises(ValueError):
+                    verify(root, COMMIT, REF)
+                authenticate.assert_not_called()
+                with self.assertRaisesRegex(ValueError, "Unattested or omitted"):
+                    verify(root, COMMIT, REF, selected_target=("windows", "amd64"))
+                authenticate.reset_mock()
+                result = verify(root, COMMIT, REF, selected_target=("windows", "arm64"))
+                self.assertEqual(result["target"], "windows/arm64")
+                self.assertEqual(result["subjectsVerified"], 3)
+                self.assertEqual([call.args[0].name for call in authenticate.call_args_list],
+                                 ["BUILD-MANIFEST.json", "SHA256SUMS.txt", archive])
+                self.assertEqual(contents.call_args.kwargs,
+                                 {"execute_native": False, "selected_target": ("windows", "arm64")})
+
     def test_every_subject_must_be_attested_by_the_expected_run(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

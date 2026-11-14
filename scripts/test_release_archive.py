@@ -349,6 +349,27 @@ class ReleaseVerificationTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     release.verify(directory)
 
+    def test_selected_target_checks_manifest_checksum_and_embedded_identity(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            manifest = self.fixture(directory)
+            target = ("windows", "amd64")
+            item = manifest["artifacts"][0]
+            for other in manifest["artifacts"][1:]:
+                (directory / other["file"]).unlink()
+            info = dict(version=manifest["version"], commit=manifest["sourceCommit"],
+                        sourceState="clean", builtAt=manifest["builtAt"], goVersion="go1.27.4",
+                        platform="windows", arch="amd64")
+            with patch.object(release, "inspect_archive", return_value=(info, b"fixture")) as inspect:
+                release.verify(directory, selected_target=target)
+                inspect.assert_called_once()
+                info["arch"] = "arm64"
+                with self.assertRaisesRegex(ValueError, "Inconsistent arch"):
+                    release.verify(directory, selected_target=target)
+                (directory / item["file"]).write_bytes(b"x" * item["bytes"])
+                with self.assertRaisesRegex(ValueError, "Checksum mismatch"):
+                    release.verify(directory, selected_target=target)
+
     def test_native_execution_occurs_only_after_every_archive_passes(self):
         for fault in ("none", "checksum", "sdk"):
             with self.subTest(fault=fault), tempfile.TemporaryDirectory() as folder:

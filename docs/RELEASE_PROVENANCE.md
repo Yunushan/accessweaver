@@ -6,7 +6,7 @@ The action is `actions/attest` v4.2.2 pinned to commit `1e69f48acb82d1966a394da9
 
 ## Verify a downloaded candidate
 
-Use a trusted, supported GitHub CLI that implements all flags used by `scripts/verify_release_provenance.py`, together with Python 3 and the verifier from the reviewed candidate source commit. Later verifiers may require newer inventory/content contracts and reject older alpha archives; use the approved candidate version rather than removing checks. Missing tools, unsupported flags, unavailable trust services or verification failures stop acceptance; do not remove constraints to make verification pass. The archive download must be in a private directory containing only the thirteen release files. Do not extract or run a downloaded executable first.
+Use a trusted, supported GitHub CLI that implements all flags used by `scripts/verify_release_provenance.py`, together with Python 3 and the verifier from the reviewed candidate source commit. Later verifiers may require newer inventory/content contracts and reject older alpha archives; use the approved candidate version rather than removing checks. Missing tools, unsupported flags, unavailable trust services or verification failures stop acceptance; do not remove constraints to make verification pass. Keep the download in a private directory. Full release verification requires all thirteen files. Do not extract or run a downloaded executable first.
 
 Obtain the expected full source commit and complete ref from your independently approved release record. Do not copy these trust choices from an unverified manifest or bundle. For an approved release tag, run:
 
@@ -14,7 +14,7 @@ Obtain the expected full source commit and complete ref from your independently 
 python scripts/verify_release_provenance.py DOWNLOADED_DIRECTORY --source-commit FULL_TRUSTED_COMMIT --source-ref refs/tags/APPROVED_VERSION_TAG
 ```
 
-If you retained `githubAssetSHA256` from Windows update discovery, pass `--expected-asset-sha256 FILENAME SHA256` for each of its four entries. The verifier compares those pins against the frozen download and reports `assetDigestsMatched`. The complete thirteen-file release and independently trusted commit and ref are still required.
+If you retained `githubAssetSHA256` from Windows update discovery, pass `--expected-asset-sha256 FILENAME SHA256` for each of its four entries. The verifier compares those pins against the frozen download and reports `assetDigestsMatched`. To verify only one target, supply its archive, the build manifest, checksums and provenance bundle, and add `--target windows/amd64` or `--target windows/arm64`. The independently trusted commit and ref remain required. Target verification authenticates three signed subjects and inspects only the selected archive.
 
 A manual preview uses its independently recorded commit and `refs/heads/main`. The verifier pins all of the following:
 

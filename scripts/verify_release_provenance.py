@@ -17,7 +17,7 @@ import tarfile
 import tempfile
 import zipfile
 
-from verify_release import PROVENANCE_BUNDLE as BUNDLE_NAME, artifact_names, require, snapshot, verify as verify_contents
+from verify_release import PROVENANCE_BUNDLE as BUNDLE_NAME, TARGETS, artifact_names, require, snapshot, verify as verify_contents
 
 REPOSITORY = "Yunushan/accessweaver"
 WORKFLOW = REPOSITORY + "/.github/workflows/release.yml"
@@ -88,25 +88,27 @@ def authenticate(path, bundle, commit, ref, gh, *, run_id=None):
 
 
 @contextmanager
-def authenticated_snapshot(directory, commit, ref, gh="gh", *, run_id=None, asset_sha256=None):
+def authenticated_snapshot(directory, commit, ref, gh="gh", *, run_id=None, asset_sha256=None, selected_target=None):
     """Keep the authenticated release files available to a trusted caller."""
     validate_identity(commit, ref)
     if run_id is not None:
         validate_run_id(run_id)
+    require(selected_target is None or selected_target in TARGETS, "Expected an approved release target")
     with tempfile.TemporaryDirectory(prefix="accessweaver-provenance-") as temporary:
         private = Path(temporary)
-        names = snapshot(directory, private, 13)
+        names = snapshot(directory, private, 13 if selected_target is None else 4)
         if asset_sha256 is not None:
             verify_expected_asset_digests(private, names, asset_sha256)
-        provenance = _verify_snapshot(private, names, commit, ref, gh, run_id=run_id)
+        selection = {} if selected_target is None else {"selected_target": selected_target}
+        provenance = _verify_snapshot(private, names, commit, ref, gh, run_id=run_id, **selection)
         if asset_sha256 is not None:
             provenance["assetDigestsMatched"] = len(asset_sha256)
         yield private, provenance
 
 
-def verify(directory, commit, ref, gh="gh", *, run_id=None, asset_sha256=None):
+def verify(directory, commit, ref, gh="gh", *, run_id=None, asset_sha256=None, selected_target=None):
     with authenticated_snapshot(directory, commit, ref, gh, run_id=run_id,
-                                asset_sha256=asset_sha256) as (_, provenance):
+                                asset_sha256=asset_sha256, selected_target=selected_target) as (_, provenance):
         return provenance
 
 
@@ -123,9 +125,9 @@ def verify_expected_asset_digests(directory, names, asset_sha256):
         require(actual.hexdigest() == expected, "Release asset differs from its expected SHA-256: " + name)
 
 
-def _verify_snapshot(directory, names, commit, ref, gh, *, run_id=None):
+def _verify_snapshot(directory, names, commit, ref, gh, *, run_id=None, selected_target=None):
     require({BUNDLE_NAME, "BUILD-MANIFEST.json", "SHA256SUMS.txt"} <= names,
-            "Expected ten archives, manifest, checksums and provenance bundle")
+            "Expected release archives, manifest, checksums and provenance bundle")
     bundle = directory / BUNDLE_NAME
     regular_file(bundle, 16 << 20)
     manifest_path = directory / "BUILD-MANIFEST.json"
@@ -142,6 +144,9 @@ def _verify_snapshot(directory, names, commit, ref, gh, *, run_id=None):
                 "Authenticated manifest release label and version must match the expected tag")
     require(manifest.get("unsigned") is True, "Current core binaries must retain their unsigned label")
     archives = artifact_names(manifest)
+    if selected_target is not None:
+        archives = {item["file"] for item in manifest["artifacts"]
+                    if (item["goos"], item["goarch"]) == selected_target}
     require(names == archives | {BUNDLE_NAME, "BUILD-MANIFEST.json", "SHA256SUMS.txt"},
             "Unattested or omitted release input")
     subjects = [directory / "SHA256SUMS.txt"] + [directory / name for name in sorted(archives)]
@@ -149,10 +154,14 @@ def _verify_snapshot(directory, names, commit, ref, gh, *, run_id=None):
         authenticate(subject, bundle, commit, ref, gh, run_id=run_id)
     # Existing content checks validate all archive paths, notices, checksums and
     # embedded identities. No --execute-native path is enabled by this verifier.
-    verify_contents(directory, execute_native=False)
-    return {"repository": REPOSITORY, "workflow": WORKFLOW, "sourceCommit": commit,
-            "sourceRef": ref, "subjectsVerified": 12, "hostedRunnerRequired": True,
-            "publisherSignatureVerified": False, "productionQualificationComplete": False}
+    selection = {} if selected_target is None else {"selected_target": selected_target}
+    verify_contents(directory, execute_native=False, **selection)
+    result = {"repository": REPOSITORY, "workflow": WORKFLOW, "sourceCommit": commit,
+              "sourceRef": ref, "subjectsVerified": 1 + len(subjects), "hostedRunnerRequired": True,
+              "publisherSignatureVerified": False, "productionQualificationComplete": False}
+    if selected_target is not None:
+        result["target"] = "/".join(selected_target)
+    return result
 
 
 def main():
@@ -164,6 +173,8 @@ def main():
     parser.add_argument("--gh", default="gh", help="trusted GitHub CLI executable")
     parser.add_argument("--expected-asset-sha256", action="append", nargs=2, metavar=("FILENAME", "SHA256"),
                         help="compare a saved asset digest before authenticating the release; repeat for each file")
+    parser.add_argument("--target", choices=sorted("/".join(target) for target in TARGETS),
+                        help="verify a single approved target and its three release metadata files")
     args = parser.parse_args()
     expected_assets = None
     if args.expected_asset_sha256 is not None:
@@ -173,7 +184,8 @@ def main():
     try:
         with redirect_stdout(sys.stderr):
             result = verify(args.directory, args.source_commit, args.source_ref, args.gh,
-                            run_id=args.workflow_run_id, asset_sha256=expected_assets)
+                            run_id=args.workflow_run_id, asset_sha256=expected_assets,
+                            selected_target=tuple(args.target.split("/")) if args.target else None)
         print(json.dumps(result))
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile) as error:
         print("Release provenance verification failed: " + str(error), file=sys.stderr)
