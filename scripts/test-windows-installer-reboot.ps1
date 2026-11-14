@@ -367,8 +367,13 @@ function Assert-RebootProfileReadable([string]$Controller,[string]$ControllerSHA
     }
 }
 function Assert-InstalledDetection([bool]$Detected,[string]$CandidateVersion=$Version,[string]$CandidateSHA256=$PayloadSHA256,[string]$UninstallerDigest='',[string]$CandidateSBOMSHA256=$PayloadSBOMSHA256,
-        [string]$CandidateBuildInfoSHA256=$BuildInfoSHA256){
-    $output=@(& $detector -Version $CandidateVersion -Architecture $Architecture -PayloadSHA256 $CandidateSHA256 -UninstallerSHA256 $UninstallerDigest -PayloadSBOMSHA256 $CandidateSBOMSHA256 -BuildInfoSHA256 $CandidateBuildInfoSHA256 2>&1)
+        [string]$CandidateBuildInfoSHA256=$BuildInfoSHA256,[string]$CandidatePublisherSHA256=$PayloadPublisherCertificateSHA256){
+    $arguments=@{
+        Version=$CandidateVersion;Architecture=$Architecture;PayloadSHA256=$CandidateSHA256;
+        UninstallerSHA256=$UninstallerDigest;PayloadSBOMSHA256=$CandidateSBOMSHA256;
+        BuildInfoSHA256=$CandidateBuildInfoSHA256;PayloadPublisherSHA256=$CandidatePublisherSHA256
+    }
+    $output=@(& $detector @arguments 2>&1)
     if($LASTEXITCODE -ne 0){throw 'Installed candidate detection could not complete'}
     if($Detected){
         if($output.Count -ne 1 -or $output[0] -cne 'AccessWeaver detected'){throw 'Approved installed payload was not detected'}
@@ -487,7 +492,7 @@ try {
                 Assert-RebootPath $controller
                 $guard=[IO.File]::Open($controller,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
                 try {
-                    Assert-InstalledDetection $true $PreviousVersion $PreviousPayloadSHA256 -CandidateSBOMSHA256 $PreviousPayloadSBOMSHA256 -CandidateBuildInfoSHA256 $PreviousBuildInfoSHA256
+                    Assert-InstalledDetection $true $PreviousVersion $PreviousPayloadSHA256 -CandidateSBOMSHA256 $PreviousPayloadSBOMSHA256 -CandidateBuildInfoSHA256 $PreviousBuildInfoSHA256 -CandidatePublisherSHA256 $PreviousPayloadPublisherCertificateSHA256
                     Assert-InstalledPublisher $PreviousPayloadSHA256 $PreviousPayloadPublisherCertificateSHA256
                     $expected.previousPayloadTrustVerified=$true
                     $comparison=@(& $controller system check-version $Version 2>$null) -join ""
@@ -521,7 +526,7 @@ try {
                     Assert-RebootSetupLog $refusalLog @('PrepareToInstall failed: The installed AccessWeaver release differs from the approved upgrade baseline.')
                     $stage='upgrade-baseline-refusal-readback'
                     Assert-RebootInstalledState $before (Get-RebootInstalledTreeDigest $install) (Get-RebootRegistrationDigest)
-                    Assert-InstalledDetection $true $PreviousVersion $PreviousPayloadSHA256 -CandidateSBOMSHA256 $PreviousPayloadSBOMSHA256 -CandidateBuildInfoSHA256 $PreviousBuildInfoSHA256
+                    Assert-InstalledDetection $true $PreviousVersion $PreviousPayloadSHA256 -CandidateSBOMSHA256 $PreviousPayloadSBOMSHA256 -CandidateBuildInfoSHA256 $PreviousBuildInfoSHA256 -CandidatePublisherSHA256 $PreviousPayloadPublisherCertificateSHA256
                     Assert-RebootUserProfile $userProfile $expected.userProfileSHA256
                     $expected.setupWrongBaselineRefusedWithStatePreserved=$true
 

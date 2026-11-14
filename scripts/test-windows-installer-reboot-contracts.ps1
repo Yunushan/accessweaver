@@ -65,12 +65,12 @@ Assert-Refused {Assert-RebootIdentity $falseClaim $expected}
         $Version='2.0.0';$PayloadSHA256='a'*64;$PayloadSBOMSHA256='b'*64;$BuildInfoSHA256='7'*64
         $PublisherCertificateSHA256='c'*64;$PayloadPublisherCertificateSHA256='d'*64;$Architecture='amd64';$controller='inert.exe'
         $trace=[Collections.Generic.List[object]]::new()
-        $behavior=@{publisherCode=0;detectorCode=0;detected=$true}
+        $behavior=@{publisherCode=0;detectorCode=0;detected=$true;expectedPublisher=$PayloadPublisherCertificateSHA256}
         $detector={
-            param($Version,$Architecture,$PayloadSHA256,$UninstallerSHA256,$PayloadSBOMSHA256,$BuildInfoSHA256)
-            $trace.Add(@{version=$Version;arch=$Architecture;payload=$PayloadSHA256;uninstaller=$UninstallerSHA256;sbom=$PayloadSBOMSHA256;buildInfo=$BuildInfoSHA256})
+            param($Version,$Architecture,$PayloadSHA256,$UninstallerSHA256,$PayloadSBOMSHA256,$BuildInfoSHA256,$PayloadPublisherSHA256)
+            $trace.Add(@{version=$Version;arch=$Architecture;payload=$PayloadSHA256;uninstaller=$UninstallerSHA256;sbom=$PayloadSBOMSHA256;buildInfo=$BuildInfoSHA256;publisher=$PayloadPublisherSHA256})
             $global:LASTEXITCODE=$behavior.detectorCode
-            if($behavior.detected){Write-Output 'AccessWeaver detected'}
+            if($behavior.detected -and $PayloadPublisherSHA256 -ceq $behavior.expectedPublisher){Write-Output 'AccessWeaver detected'}
         }
         $publisher={
             param($Artifact,$ArtifactSHA256,$PublisherCertificateSHA256)
@@ -84,15 +84,20 @@ Assert-Refused {Assert-RebootIdentity $falseClaim $expected}
         if($LASTEXITCODE -ne 19){throw 'Publisher verifier changed the caller exit status'}
         if($trace[0].version -cne $Version -or $trace[0].arch -cne $Architecture -or
            $trace[0].payload -cne $PayloadSHA256 -or $trace[0].sbom -cne $PayloadSBOMSHA256 -or $trace[0].buildInfo -cne $BuildInfoSHA256 -or $trace[0].uninstaller -cne ('d'*64) -or
+           $trace[0].publisher -cne $PayloadPublisherCertificateSHA256 -or
            $trace[1].artifact -cne $controller -or $trace[1].sha256 -cne $PayloadSHA256 -or $trace[1].publisher -cne $PayloadPublisherCertificateSHA256){
             throw 'Installed candidate pins did not reach verification'
         }
-        Assert-InstalledDetection $true '1.0.0' ('e'*64) -CandidateSBOMSHA256 ('f'*64) -CandidateBuildInfoSHA256 ('9'*64)
+        $behavior.expectedPublisher='a'*64
+        Assert-InstalledDetection $true '1.0.0' ('e'*64) -CandidateSBOMSHA256 ('f'*64) -CandidateBuildInfoSHA256 ('9'*64) -CandidatePublisherSHA256 ('a'*64)
         Assert-InstalledPublisher ('e'*64) ('a'*64)
         if($trace[2].version -cne '1.0.0' -or $trace[2].payload -cne ('e'*64) -or $trace[2].sbom -cne ('f'*64) -or $trace[2].buildInfo -cne ('9'*64) -or
+           $trace[2].publisher -cne ('a'*64) -or
            $trace[3].artifact -cne $controller -or $trace[3].sha256 -cne ('e'*64) -or $trace[3].publisher -cne ('a'*64)){
             throw 'Prior installed payload verification did not receive the independent pins'
         }
+        Assert-Refused {Assert-InstalledDetection $true -CandidatePublisherSHA256 ('b'*64)}
+        $behavior.expectedPublisher=$PayloadPublisherCertificateSHA256
         $behavior.detected=$false
         Assert-Refused {Assert-InstalledDetection $true}
         $behavior.detectorCode=1
