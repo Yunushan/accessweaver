@@ -79,7 +79,8 @@ jobs:
           go -C scripts/security-tools mod verify
           go -C scripts/security-tools install golang.org/x/vuln/cmd/govulncheck
           go -C scripts/security-tools install github.com/rhysd/actionlint/cmd/actionlint
-          "$GOBIN/actionlint" -shellcheck= -pyflakes=
+          # actionlint 1.7.12 predates the documented concurrency.queue key.
+          "$GOBIN/actionlint" -shellcheck= -pyflakes= -ignore '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$'
           python3 -m unittest discover -s scripts -p test_vulnerability_report.py -v
           python3 -m unittest discover -s scripts -p test_darwin_audit_command_capture.py -v
           python3 -m unittest discover -s scripts -p test_fixture_qualification.py -v
