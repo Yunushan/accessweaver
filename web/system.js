@@ -93,7 +93,7 @@ function isApplicationWorkflow(action){
 function applicationRecoveryMessage(action,state,result,resultPresent=result!=null){
  if(!isApplicationWorkflow(action))return '';
  if(state==='interrupted'||(state==='failed'&&!resultPresent))return 'applicationInterruptedNotice';
- if(state==='failed'&&result?.externalEffectsPending===true)return 'applicationRecoveryNotice';
+ if(state==='failed'&&result?.externalEffectsPending!==false)return 'applicationRecoveryNotice';
  return '';
 }
 function renderSystemJob(job){
@@ -281,7 +281,8 @@ function renderHistoryDetail(){
  if(!record)return;
  const job=historyUI.detailReady?historyUI.job:null;
  const matchingJob=job?.id===record.id&&job.action===record.action&&job.state===record.state;
- const message=applicationRecoveryMessage(record.action,record.state,matchingJob?job.result:null,record.resultPresent);
+ const showRecovery=record.state==='interrupted'||!record.resultPresent||matchingJob||historyUI.largePreview;
+ const message=showRecovery?applicationRecoveryMessage(record.action,record.state,matchingJob?job.result:null,record.resultPresent):'';
  if(message){notice.textContent=t(message);notice.hidden=false;}
  $('history-detail-title').textContent=historyText('historyDetailTitle',{record:historyRecordName(record)});
  $('history-detail-summary').textContent=[historyOperation(record),t('historyState_'+record.state),t('historyClass_'+record.classification),historySize(record.size),t('historyProtected')].join(' · ');

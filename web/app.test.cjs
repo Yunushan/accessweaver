@@ -620,7 +620,12 @@ test('application failure exposes vendor uncertainty and preserves the protected
  }
  render('install','failed',undefined);
  assert.equal(notice.hidden,true);
- for(const [action,state,flag] of [['app-install','failed','true'],['app-remove','succeeded',true],['app-start','running',true],['install','failed',true]]){
+ for(const result of [{},{externalEffectsPending:'true'},false]){
+  render('app-install','failed',result);
+  assert.equal(notice.dataset.i18n,'applicationRecoveryNotice');assert.equal(notice.hidden,false);
+  assert.equal(output.getAttribute('aria-describedby'),notice.id);
+ }
+ for(const [action,state,flag] of [['app-install','failed',false],['app-remove','succeeded',true],['app-start','running',true],['install','failed',true]]){
   render(action,state,{journal:'application.json',externalEffectsPending:flag});
   assert.equal(notice.hidden,true);assert.equal(output.getAttribute('aria-describedby'),null);assert.equal(journal.value,protectedName);
  }
@@ -859,8 +864,11 @@ test('retained application history distinguishes interrupted work and confirmed 
  render(failed,job);
  assert.equal(notice.hidden,false);assert.match(notice.textContent,/may have changed/);
  assert.equal(output.getAttribute('aria-describedby'),notice.id+' history-detail-limited');
- for(const value of [null,{...job,id:'different'},{...job,action:'app-remove'},{...job,state:'running'},{...job,result:{externalEffectsPending:'true'}}]){
+ for(const value of [null,{...job,id:'different'},{...job,action:'app-remove'},{...job,state:'running'},{...job,result:{externalEffectsPending:false}}]){
   render(failed,value);assert.equal(notice.hidden,true);assert.equal(notice.textContent,'');
+ }
+ for(const result of [null,{},{externalEffectsPending:'true'}]){
+  render(failed,{...job,result});assert.equal(notice.hidden,false);assert.match(notice.textContent,/may have changed/);
  }
  render(failed,job,false);assert.equal(notice.hidden,true);
  render({...failed,resultPresent:false},null,false);
@@ -953,11 +961,13 @@ test('legacy history labels distinguish canonical opaque refs and oversized logi
 
 
 test('large history entries skip JSON detail parsing and keep exact private raw export available',async()=>{
- const env=onlineHistory(),record=historyFixtureRecord({size:3*1024*1024});env.put('historyRows',[record]);env.run('historyUI.items=historyRows');
+ const env=onlineHistory(),record=historyFixtureRecord({size:3*1024*1024,action:'app-remove',state:'failed',resultPresent:true});env.put('historyRows',[record]);env.run('historyUI.items=historyRows');
  const routes=[];let downloaded;
  env.context.fetch=async path=>{routes.push(path);return new Response(new Uint8Array(record.size),{headers:{'Content-Type':'application/octet-stream','ETag':'"'+record.revision+'"','X-AccessWeaver-Revision':record.revision}})};
  env.context.downloadFile=data=>downloaded=data;
  await env.run('selectHistoryRecord("record_A")');assert.equal(routes.length,0);assert.equal(env.get('history-export-record').disabled,false);assert.match(env.get('history-detail').textContent,/too large for the desktop preview/);
+ assert.match(env.get('history-application-recovery').textContent,/may have changed/);
+ assert.equal(env.get('history-detail').getAttribute('aria-describedby'),'history-application-recovery');
  await env.run('exportHistoryRecord()');assert.equal(routes.length,1);assert.match(routes[0],/\/record_A\/export\?/);assert.equal(downloaded.size,record.size);
 });
 

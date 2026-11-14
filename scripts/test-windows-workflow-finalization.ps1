@@ -20,6 +20,12 @@ if((Get-FileHash -LiteralPath $finalizerSource -Algorithm SHA256).Hash.ToLowerIn
 $script:finalizerChecks=0
 $finalizerToken='0123456789abcdef0123456789abcdef0123456789abcdef'
 function Assert-Finalizer([bool]$Value,[string]$Message){if(-not $Value){throw $Message};$script:finalizerChecks++}
+foreach($flag in @($false,$true)){
+    $fallback=New-WorkflowResultFailureReport @{externalEffectsPending=$flag} $finalizerToken 'result-too-large'
+    Assert-Finalizer ($fallback.externalEffectsPending -is [bool] -and $fallback.externalEffectsPending -eq $flag) 'Fallback lost the typed external effects observation'
+}
+$fallback=New-WorkflowResultFailureReport @{externalEffectsPending='false'} $finalizerToken 'result-too-large'
+Assert-Finalizer (-not $fallback.ContainsKey('externalEffectsPending')) 'Fallback published an unverified external effects observation'
 & {
     $admin=[Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
     $users=[Security.Principal.SecurityIdentifier]::new('S-1-5-32-545')

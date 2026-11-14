@@ -5040,7 +5040,7 @@ function New-WorkflowResultFailureReport([Collections.IDictionary]$Result,[strin
         foreach($failure in $cleanup){if($failure -isnot [string] -or $failure -cnotin @('journal-save','mutex-release','mutex-dispose','uninstaller-start')){$known=$false}}
         if($known){$fallback.finalizationFailures=$cleanup}
     }
-    if($Result['externalEffectsPending'] -is [bool] -and $Result['externalEffectsPending']){$fallback.externalEffectsPending=$true}
+    if($Result['externalEffectsPending'] -is [bool]){$fallback.externalEffectsPending=$Result['externalEffectsPending']}
     return $fallback
 }
 function Publish-WorkflowResult([string]$Path,[Collections.IDictionary]$Result,[string]$ResultToken,[int]$MaximumBytes=32MB) {
