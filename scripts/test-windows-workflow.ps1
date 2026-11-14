@@ -335,8 +335,20 @@ try {
         param($program,$arguments,$codes,[switch]$Secret,[int]$Timeout,$WorkingDirectory,$ChildEnvironment)
         if($program -ceq 'fixture-controller'){
             $script:scanSelectionArgs=@($arguments)
-            if($script:scanMode -ceq 'parser-missing'){return @{stdout='{"protocol":"https","args":["--lua-desync=fixture"]}'}}
-            return @{stdout='{"protocol":"https","args":["--lua-desync=fixture"]}';outputComplete=($script:scanMode -cne 'parser-incomplete')}
+            if(-not $Secret -or ($codes -join ',') -cne '0,1'){throw 'Expected closed scan selection exit codes and private output'}
+            $valid='{"protocol":"https","common":true,"args":["--lua-desync=fixture"]}'
+            switch -CaseSensitive ($script:scanMode){
+                'parser-missing' {return @{stdout=$valid;exitCode=0}}
+                'parser-no-strategy' {return @{stdout='';stderr='PRIVATE_PARSER_PATH';exitCode=1;outputComplete=$true}}
+                'parser-invalid-json' {return @{stdout='{PRIVATE_PARSER_PATH';exitCode=0;outputComplete=$true}}
+                'parser-array' {return @{stdout=('['+$valid+']');exitCode=0;outputComplete=$true}}
+                'parser-no-common' {return @{stdout=$valid.Replace('true','false');exitCode=0;outputComplete=$true}}
+                'parser-invalid-protocol' {return @{stdout=$valid.Replace('https','unknown');exitCode=0;outputComplete=$true}}
+                'parser-invalid-args' {return @{stdout='{"protocol":"https","common":true,"args":[1]}';exitCode=0;outputComplete=$true}}
+                'parser-control-args' {return @{stdout='{"protocol":"https","common":true,"args":["--lua-desync=fixture\u000a"]}';exitCode=0;outputComplete=$true}}
+                'complete' {return @{stdout=$valid.Replace('true','false');exitCode=0;outputComplete=$true}}
+            }
+            return @{stdout=$valid;exitCode=0;outputComplete=($script:scanMode -cne 'parser-incomplete')}
         }
         $system=Join-Path $env:SystemRoot 'System32'
         if($program -cne (Join-Path $scanBundle 'bash.exe') -or $WorkingDirectory -cne $scanBundle -or $Timeout -ne 4200 -or
@@ -351,12 +363,14 @@ try {
         return @{stdout='* SUMMARY fixture';outputComplete=($script:scanMode -cne 'scan-incomplete')}
     }
     $env:BASH_ENV='ordinary-fixture-startup'
-    foreach($mode in @('scan-incomplete','scan-missing','parser-incomplete','parser-missing','complete','complete-default','complete-multi')){
+    $modes=@('scan-incomplete','scan-missing','parser-incomplete','parser-missing','parser-no-strategy','parser-invalid-json',
+        'parser-array','parser-no-common','parser-invalid-protocol','parser-invalid-args','parser-control-args','complete','complete-default','complete-multi')
+    foreach($mode in $modes){
         $script:scanMode=$mode;$script:scanWrites=0;$script:scanInstalls=0;$script:scanSelectionArgs=@()
-        $targets=@();if($mode -eq 'complete-multi'){$targets=@('example.com','example.net')}elseif($mode -ne 'complete-default'){$targets=@('example.com')}
+        $targets=@();if($mode -in @('complete-multi','parser-no-common')){$targets=@('example.com','example.net')}elseif($mode -ne 'complete-default'){$targets=@('example.com')}
         $r=[pscustomobject]@{engine='zapret2';bundlePath=$scanBundle;scan='quick';targets=@($targets);dns='unchanged'}
-        $oldPath=$env:PATH;$rejected=$false
-        try {[void](Auto-Install)}catch{$rejected=$true}
+        $oldPath=$env:PATH;$rejected=$false;$message=''
+        try {[void](Auto-Install)}catch{$rejected=$true;$message=$_.Exception.Message}
         if($mode -like 'complete*'){
             Assert (-not $rejected -and $script:scanWrites -eq 1 -and $script:scanInstalls -eq 1) ('Complete '+$mode+' scan reaches only the mocked installer')
             $requireCommon=(@($script:scanSelectionArgs | Where-Object {$_ -ceq '--require-common'}).Count -eq 1)
@@ -365,7 +379,13 @@ try {
         }elseif($mode -like 'scan-*'){
             Assert ($rejected -and $script:scanWrites -eq 0 -and $script:scanInstalls -eq 0) ('Scan rejects '+$mode+' before saving or installation')
         }else{
-            Assert ($rejected -and $script:scanWrites -eq 1 -and $script:scanInstalls -eq 0) ('Scan rejects '+$mode+' before installation')
+            Assert ($rejected -and $script:scanWrites -eq 1 -and $script:scanInstalls -eq 0 -and
+                -not $r.PSObject.Properties['args'] -and -not $r.PSObject.Properties['mode']) ('Scan rejects '+$mode+' before installation')
+            if($mode -eq 'parser-no-strategy'){
+                Assert ($message -ceq 'No usable strategy was selected. Review the scan report before installing manually.') 'No strategy provides a fixed operator message'
+            }elseif($mode -notin @('parser-incomplete','parser-missing')){
+                Assert ($message -ceq 'Scan strategy selection returned an invalid result') 'Invalid selection metadata is refused with a fixed message'
+            }
         }
         Assert ($env:PATH -ceq $oldPath) 'Scan preserves the process PATH after success or refusal'
         Assert ($script:stagedScanBundle -and -not (Test-Path -LiteralPath $script:stagedScanBundle)) 'Ordinary scan removes its private workspace after success or refusal'

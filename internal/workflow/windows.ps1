@@ -3390,10 +3390,34 @@ function Auto-Install {
     if($r.dns -and $r.dns -ne 'unchanged' -and -not $script:dnsConfigured){Configure-DNS $r.dns}
     $scan=Scan-Strategies
     $selectionArgs=@('system','parse-scan',$scan.reportPath,$r.engine)
-    if(-not $r.targets -or @($r.targets).Count -gt 1){$selectionArgs+=@('--require-common')}
-    $selectionResult=Native $inputData.controller $selectionArgs
-    if($null -eq $selectionResult -or $selectionResult.outputComplete -ne $true){throw 'Scan strategy selection output was incomplete; no strategy was installed'}
-    $selected=$selectionResult.stdout|ConvertFrom-Json
+    $requireCommon=-not $r.targets -or @($r.targets).Count -gt 1
+    if($requireCommon){$selectionArgs+=@('--require-common')}
+    $selectionResult=Native $inputData.controller $selectionArgs @(0,1) -Secret
+    if($null -eq $selectionResult -or $selectionResult.outputComplete -isnot [bool] -or -not $selectionResult.outputComplete){
+        throw 'Scan strategy selection output was incomplete; no strategy was installed'
+    }
+    if($selectionResult.exitCode -eq 1){
+        throw 'No usable strategy was selected. Review the scan report before installing manually.'
+    }
+    $selectionJSON=$selectionResult.stdout
+    if($selectionResult.exitCode -ne 0 -or $selectionJSON -isnot [string] -or $selectionJSON.Length -gt 1MB -or
+       -not $selectionJSON.TrimStart().StartsWith('{')){
+        throw 'Scan strategy selection returned an invalid result'
+    }
+    try {$selected=ConvertFrom-Json -InputObject $selectionJSON -ErrorAction Stop}
+    catch {throw 'Scan strategy selection returned an invalid result'}
+    if($selected -isnot [pscustomobject] -or @($selected.PSObject.Properties).Count -ne 3 -or
+       $selected.protocol -isnot [string] -or $selected.protocol -cnotin @('http','https','quic') -or
+       $selected.common -isnot [bool] -or ($requireCommon -and -not $selected.common) -or
+       $selected.args -isnot [array] -or $selected.args.Count -lt 1 -or $selected.args.Count -gt 125){
+        throw 'Scan strategy selection returned an invalid result'
+    }
+    foreach($argument in $selected.args){
+        if($argument -isnot [string] -or $argument -match '[\x00\r\n]' -or
+           [Text.Encoding]::UTF8.GetByteCount($argument) -gt 4096){
+            throw 'Scan strategy selection returned an invalid result'
+        }
+    }
     $capture=if($r.engine -eq 'zapret2'){@('--wf-tcp-out=80,443','--wf-udp-out=443,50000-65535')}else{@('--wf-tcp=80,443','--wf-udp=443,50000-65535')}
     $filter=if($selected.protocol -eq 'quic'){'--filter-udp=443'}elseif($selected.protocol -eq 'http'){'--filter-tcp=80'}else{'--filter-tcp=443'}
     $r | Add-Member -NotePropertyName args -NotePropertyValue @($capture+@($filter)+@($selected.args)) -Force
