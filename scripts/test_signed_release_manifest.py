@@ -517,7 +517,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
         shutil.copyfile(prepared, manifest)
         sign_manifest()
         report = self.verify(approved, pin)
-        self.assertEqual(report["schemaVersion"], 2)
+        self.assertEqual(report["schemaVersion"], 3)
         self.assertEqual(report["subjectsVerified"], 12)
         clean_entry, upgrade_entry, arm_entry = report["windowsDetection"]
         self.assertEqual(clean_entry, {
@@ -532,6 +532,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
         self.assertEqual(upgrade_entry, {
             **clean_entry, "installMode": "upgrade", "previousVersion": "1.2.2-rc.1",
             "previousPayloadSHA256": "d" * 64, "uninstallerSHA256": "e" * 64, "rebootEvidenceSHA256": upgrade[1],
+            "previousPayloadSBOMSHA256": "1" * 64, "previousPayloadPublisherSHA256": "2" * 64,
         })
         self.assertEqual(arm_entry["target"], "windows/arm64")
         self.assertEqual(arm_entry["payloadSBOMSHA256"],
@@ -567,13 +568,40 @@ class SignedReleaseManifestTests(unittest.TestCase):
         completed = subprocess.run(command, check=True, capture_output=True, text=True, timeout=30)
         self.assertEqual(json.loads(completed.stdout)["managedUpdate"], qualified_report)
         (staging / qualified_report["installer"]).unlink()
-        for revoked in (clean[1], "b" * 64, "d" * 64, "e" * 64):
+        for revoked in (clean[1], "b" * 64, "d" * 64, "e" * 64,
+                        upgrade_entry["previousPayloadSBOMSHA256"], upgrade_entry["previousPayloadPublisherSHA256"]):
             current_pin = self.write_policy({**self.policy, "subjectSHA256": [revoked]})
             with self.subTest(revoked=revoked), self.assertRaisesRegex(ValueError, "revoked"):
-                self.verify(approved, pin, policy_pin=current_pin)
+                self.verify(approved, pin, policy_pin=current_pin, stage_directory=staging, **qualified)
+            self.assertEqual(list(staging.iterdir()), [])
         self.write_policy(self.policy)
 
-        data = json.loads(manifest.read_bytes())
+        original = manifest.read_bytes()
+        data = json.loads(original)
+        legacy_entries = [
+            {field: value for field, value in entry.items() if field not in release.WINDOWS_PREVIOUS_TRUST_FIELDS}
+            for entry in data["windowsDetection"]
+        ]
+        manifest.write_bytes(release.encode_manifest(COMMIT, REF, release.inventory(self.candidate, self.subjects), legacy_entries))
+        sign_manifest()
+        legacy_report = self.verify(approved, pin, **qualified)
+        self.assertEqual(legacy_report["schemaVersion"], 2)
+        self.assertEqual(legacy_report["managedUpdate"]["windowsUpgradeDetection"],
+                         {field: value for field, value in upgrade_entry.items()
+                          if field not in release.WINDOWS_PREVIOUS_TRUST_FIELDS})
+
+        for bad_entries in (
+            [legacy_entries[0], {**legacy_entries[1], "previousPayloadPublisherSHA256": "2" * 64}],
+            [{**legacy_entries[0], "previousPayloadPublisherSHA256": "2" * 64,
+              "previousPayloadSBOMSHA256": "1" * 64}],
+            [legacy_entries[0], {**legacy_entries[1], "previousPayloadPublisherSHA256": "invalid",
+                                 "previousPayloadSBOMSHA256": "1" * 64}],
+        ):
+            with self.assertRaises(ValueError):
+                release.validate_detection(bad_entries, release.inventory(self.candidate, self.subjects), VERSION)
+
+        manifest.write_bytes(original)
+        sign_manifest()
         data["windowsDetection"][0]["uninstallerSHA256"] = "a" * 64
         manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
         with self.assertRaises(subprocess.CalledProcessError):
