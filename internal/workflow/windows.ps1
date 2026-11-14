@@ -2332,56 +2332,63 @@ function Get-DNSCryptAdapterIdentities([object[]]$Adapters) {
     }
     return ,$identities
 }
+function Test-DNSCryptLoopbackAddress([Net.IPAddress]$Address) {
+    if($Address.IsIPv4MappedToIPv6){$Address=$Address.MapToIPv4()}
+    return [Net.IPAddress]::IsLoopback($Address)
+}
 function Test-DNSCryptListenerNeeded([object[]]$Records) {
     try {
         $inventory=@(Get-NetAdapter -IncludeHidden -ErrorAction Stop)
         $identities=Get-DNSCryptAdapterIdentities $inventory
-        $clients=@(Read-DNSClientInventory)
-        if(-not $inventory.Count -or -not $clients.Count){return $true}
-        # Down and excluded interfaces can still depend on the listener.
-        # Their reported DNS addresses can lag behind the stored override.
-        $observedFamilies=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-        foreach($client in $clients){
-            $family=Get-DNSClientFamily $client.AddressFamily
-            [void]$observedFamilies.Add(([string]$client.InterfaceIndex)+'/'+$family)
-            foreach($server in $client.ServerAddresses){
-                $address=$null
-                if(-not [Net.IPAddress]::TryParse([string]$server,[ref]$address) -or
-                   [Net.IPAddress]::IsLoopback($address)){return $true}
-            }
-        }
-        foreach($adapter in $inventory){
-            foreach($family in @('IPv4','IPv6')){
-                $exposed=$observedFamilies.Contains(([string]$adapter.ifIndex)+'/'+$family)
-                $stored=@(Read-DNSStaticOverride $adapter $family -AllowMissingKey:(-not $exposed))
-                foreach($server in $stored){
-                    if([Net.IPAddress]::IsLoopback([Net.IPAddress]::Parse($server))){return $true}
+        # Changes to DNS settings alone do not alter the adapter identity set.
+        for($pass=0;$pass -lt 2;$pass++){
+            $clients=@(Read-DNSClientInventory)
+            if(-not $inventory.Count -or -not $clients.Count){return $true}
+            # Down and excluded interfaces can still depend on the listener.
+            # Their reported DNS addresses can lag behind the stored override.
+            $observedFamilies=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+            foreach($client in $clients){
+                $family=Get-DNSClientFamily $client.AddressFamily
+                [void]$observedFamilies.Add(([string]$client.InterfaceIndex)+'/'+$family)
+                foreach($server in $client.ServerAddresses){
+                    $address=$null
+                    if(-not [Net.IPAddress]::TryParse([string]$server,[ref]$address) -or
+                       (Test-DNSCryptLoopbackAddress $address)){return $true}
                 }
             }
-        }
-        # A saved original can depend on the listener even after a switch to DoH.
-        foreach($record in $Records){
-            $matches=@($inventory | Where-Object {[string]$_.InterfaceGuid -eq $record.guid})
-            if($matches.Count -ne 1){return $true}
-            $adapter=$matches[0];$bounds=Get-OriginalDNSBounds $record
-            foreach($number in @('4','6')){
-                if(-not $bounds['bound'+$number]){continue}
-                $family='IPv'+$number
-                if(@(Get-DNSClientRows $clients $adapter.ifIndex $family).Count -ne 1){return $true}
-                if(-not $record.('dhcp'+$number)){
-                    $original=@(Get-StaticDNSServers @($record.('ipv'+$number)) $family $record.index)
-                    foreach($server in $original){
-                        if([Net.IPAddress]::IsLoopback([Net.IPAddress]::Parse($server))){return $true}
+            foreach($adapter in $inventory){
+                foreach($family in @('IPv4','IPv6')){
+                    $exposed=$observedFamilies.Contains(([string]$adapter.ifIndex)+'/'+$family)
+                    $stored=@(Read-DNSStaticOverride $adapter $family -AllowMissingKey:(-not $exposed))
+                    foreach($server in $stored){
+                        if(Test-DNSCryptLoopbackAddress ([Net.IPAddress]::Parse($server))){return $true}
                     }
                 }
             }
-        }
-        # A DNS client row can refer to a different adapter after index reuse.
-        # Verify the complete identity set after checking the stored overrides.
-        $observed=Get-DNSCryptAdapterIdentities @(Get-NetAdapter -IncludeHidden -ErrorAction Stop)
-        if($observed.Count -ne $identities.Count){return $true}
-        foreach($index in $identities.Keys){
-            if(-not $observed.ContainsKey($index) -or $observed[$index] -ne $identities[$index]){return $true}
+            # A saved original can depend on the listener even after a switch to DoH.
+            foreach($record in $Records){
+                $matches=@($inventory | Where-Object {[string]$_.InterfaceGuid -eq $record.guid})
+                if($matches.Count -ne 1){return $true}
+                $adapter=$matches[0];$bounds=Get-OriginalDNSBounds $record
+                foreach($number in @('4','6')){
+                    if(-not $bounds['bound'+$number]){continue}
+                    $family='IPv'+$number
+                    if(@(Get-DNSClientRows $clients $adapter.ifIndex $family).Count -ne 1){return $true}
+                    if(-not $record.('dhcp'+$number)){
+                        $original=@(Get-StaticDNSServers @($record.('ipv'+$number)) $family $record.index)
+                        foreach($server in $original){
+                            if(Test-DNSCryptLoopbackAddress ([Net.IPAddress]::Parse($server))){return $true}
+                        }
+                    }
+                }
+            }
+            # A DNS client row can refer to a different adapter after index reuse.
+            # Verify the complete identity set after checking the stored overrides.
+            $observed=Get-DNSCryptAdapterIdentities @(Get-NetAdapter -IncludeHidden -ErrorAction Stop)
+            if($observed.Count -ne $identities.Count){return $true}
+            foreach($index in $identities.Keys){
+                if(-not $observed.ContainsKey($index) -or $observed[$index] -ne $identities[$index]){return $true}
+            }
         }
     } catch {
         return $true
