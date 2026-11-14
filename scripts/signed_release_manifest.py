@@ -361,6 +361,27 @@ def load_detection_evidence(directory, evidence, subjects, version):
     return entries
 
 
+def require_windows_lifecycle_evidence(entries, windows_build_info):
+    required = {"windows/amd64", "windows/arm64"}
+    common_fields = {WINDOWS_PAYLOAD_PUBLISHER, WINDOWS_BUILD_INFO, WINDOWS_DETECTOR}
+    upgrade_fields = {*WINDOWS_PREVIOUS_TRUST_FIELDS, *WINDOWS_DOWNGRADE_FIELDS,
+                      WINDOWS_PREVIOUS_BUILD_INFO, WINDOWS_SETUP_BASELINE, WINDOWS_SETUP_WRONG_BASELINE}
+    coverage = set()
+    for entry in entries:
+        target = entry["target"]
+        mode = entry["installMode"]
+        require(common_fields <= entry.keys()
+                and entry[WINDOWS_BUILD_INFO] == windows_build_info.get(target),
+                f"Windows lifecycle evidence for {target} {mode} requires the qualified detector, publisher and SBOM build binding")
+        if mode == "upgrade":
+            require(upgrade_fields <= entry.keys(),
+                    f"Windows lifecycle evidence for {target} upgrade requires prior trust, Setup baseline refusal and downgrade refusal")
+        coverage.add((target, mode))
+    missing = sorted((target, mode) for target in required for mode in ("clean", "upgrade")
+                     if (target, mode) not in coverage)
+    require(not missing, "Missing Windows lifecycle evidence: " + ", ".join(f"{target} {mode}" for target, mode in missing))
+
+
 def encode_manifest(commit, ref, subjects, windows_detection=()):
     has_payload_publisher = any(WINDOWS_PAYLOAD_PUBLISHER in entry for entry in windows_detection)
     has_previous_trust = any(WINDOWS_PREVIOUS_TRUST_FIELDS[0] in entry for entry in windows_detection)
@@ -399,7 +420,7 @@ def encode_manifest(commit, ref, subjects, windows_detection=()):
     return (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
 
 
-def prepare(directory, output, commit, ref, *, windows_reboot_evidence=()):
+def prepare(directory, output, commit, ref, *, windows_reboot_evidence=(), require_windows_lifecycle=False):
     subjects = release_subjects(commit, ref)
     require(output.name == MANIFEST and output.parent.resolve() != directory.resolve(),
             "Write the manifest outside the source artifact directory")
@@ -411,7 +432,9 @@ def prepare(directory, output, commit, ref, *, windows_reboot_evidence=()):
         entries = []
         if windows_reboot_evidence:
             entries = load_detection_evidence(directory, windows_reboot_evidence, files, version)
-        validate_release_sboms(root, files, commit, version, entries)
+        _, _, windows_build_info = validate_release_sboms(root, files, commit, version, entries)
+        if require_windows_lifecycle:
+            require_windows_lifecycle_evidence(entries, windows_build_info)
         manifest = encode_manifest(commit, ref, files, entries)
         with output.open("xb") as stream:
             stream.write(manifest)
@@ -994,7 +1017,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
            resume_windows_upgrade_setup_sha256=None, require_windows_setup_wrong_baseline_refusal=False,
            resume_windows_upgrade_baseline_argument=None, launch_staged_windows_setup=False,
            detect_installed_windows_upgrade=False, windows_upgrade_attempt_id=None, windows_upgrade_start_receipt=None,
-           windows_setup_wait_seconds=None, windows_upgrade_result_receipt=None):
+           windows_setup_wait_seconds=None, windows_upgrade_result_receipt=None, require_windows_lifecycle=False):
     if windows_setup_wait_seconds is not None:
         require(launch_staged_windows_setup and type(windows_setup_wait_seconds) is int
                 and 1 <= windows_setup_wait_seconds <= 4_294_966,
@@ -1162,6 +1185,9 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             "revocationListSHA256": revocation_list_sha256.lower(), "revocationCheckPassed": True,
             "nativePublisherChecksPerformed": False, "productionQualificationComplete": False,
         }
+        if require_windows_lifecycle:
+            require_windows_lifecycle_evidence(entries, windows_build_info)
+            report["windowsLifecycleEvidenceVerified"] = True
         if target is not None:
             report["managedUpdate"] = managed_update(files, target, current_version, version)
         if windows_build_info or entries:
@@ -1427,6 +1453,8 @@ def main():
     execution.add_argument("--detect-installed-windows-upgrade", action="store_true",
                            help="confirm the installed Windows upgrade using the original signed assignment")
     for command in (prepare_args, verify_args):
+        command.add_argument("--require-windows-lifecycle", action="store_true",
+                             help="require signed clean and upgrade reboot evidence on AMD64 and ARM64, including downgrade refusal")
         command.add_argument("directory", type=Path)
         command.add_argument("--source-commit", required=True)
         command.add_argument("--source-ref", required=True)
@@ -1434,7 +1462,8 @@ def main():
     try:
         if args.operation == "prepare":
             prepare(args.directory, args.output, args.source_commit, args.source_ref,
-                    windows_reboot_evidence=[(Path(path), pin) for path, pin in args.windows_reboot_evidence])
+                    windows_reboot_evidence=[(Path(path), pin) for path, pin in args.windows_reboot_evidence],
+                    require_windows_lifecycle=args.require_windows_lifecycle)
         else:
             inventory = args.windows_upgrade_inventory
             if inventory is not None:
@@ -1468,7 +1497,8 @@ def main():
                                     windows_upgrade_attempt_id=args.windows_upgrade_attempt_id,
                                     windows_upgrade_start_receipt=receipt,
                                     windows_setup_wait_seconds=args.windows_setup_wait_seconds,
-                                    windows_upgrade_result_receipt=result_receipt)
+                                    windows_upgrade_result_receipt=result_receipt,
+                                    require_windows_lifecycle=args.require_windows_lifecycle)
             print(json.dumps(report))
             if args.launch_staged_windows_setup:
                 update = report["managedUpdate"]

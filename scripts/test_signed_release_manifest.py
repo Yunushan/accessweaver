@@ -267,6 +267,50 @@ class SignedReleaseManifestTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             release.prepare(self.candidate, output, COMMIT, REF)
 
+    def windows_lifecycle_reports(self):
+        evidence = {}
+        for arch in ("amd64", "arm64"):
+            self.set_windows_build_info_pin(arch, "6" * 64)
+            evidence[arch, "clean"] = self.write_reboot_report(
+                f"{arch}-clean.json", architecture=arch, schemaVersion=13)
+            evidence[arch, "upgrade"] = self.write_reboot_report(
+                f"{arch}-upgrade.json", architecture=arch, schemaVersion=13, installMode="upgrade",
+                previousVersion="1.2.2-rc.1", previousPayloadSHA256="d" * 64,
+                userProfilePreservedThroughUpgrade=True, downgradeRequested=True,
+                downgradeRefused=True, downgradeStatePreserved=True,
+                previousSetupSHA256="8" * 64, previousPublisherSHA256="9" * 64,
+            )
+        return evidence
+
+    def test_prepare_can_require_windows_lifecycle_coverage(self):
+        output = self.root / release.MANIFEST
+        evidence = self.windows_lifecycle_reports()
+        for missing in evidence:
+            provided = [item for path, item in evidence.items() if path != missing]
+            with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, "Missing Windows lifecycle evidence"):
+                release.prepare(self.candidate, output, COMMIT, REF, windows_reboot_evidence=provided,
+                                require_windows_lifecycle=True)
+        arm_upgrade, _ = evidence["arm64", "upgrade"]
+        incomplete = json.loads(arm_upgrade.read_bytes())
+        without_downgrade = {**incomplete, "downgradeRequested": False, "downgradeRefused": False,
+                             "downgradeStatePreserved": False, "previousSetupSHA256": "", "previousPublisherSHA256": ""}
+        for record, message in (
+            (without_downgrade, "downgrade refusal"),
+            ({key: value for key, value in {**incomplete, "schemaVersion": 12}.items()
+              if key != release.WINDOWS_SETUP_WRONG_BASELINE}, "Setup baseline refusal"),
+        ):
+            arm_upgrade.write_text(json.dumps(record), encoding="utf-8")
+            provided = {**evidence, ("arm64", "upgrade"): (arm_upgrade, release.digest(arm_upgrade))}
+            with self.subTest(record=message), self.assertRaisesRegex(ValueError, message):
+                release.prepare(self.candidate, output, COMMIT, REF, windows_reboot_evidence=list(provided.values()),
+                                require_windows_lifecycle=True)
+            self.assertFalse(output.exists())
+        arm_upgrade.write_text(json.dumps(incomplete), encoding="utf-8")
+        evidence["arm64", "upgrade"] = (arm_upgrade, release.digest(arm_upgrade))
+        release.prepare(self.candidate, output, COMMIT, REF, windows_reboot_evidence=list(evidence.values()),
+                        require_windows_lifecycle=True)
+        self.assertEqual(len(json.loads(output.read_bytes())["windowsDetection"]), 4)
+
     def test_prepare_rejects_mismatched_or_malformed_sboms(self):
         output = self.root / release.MANIFEST
         name = f"accessweaver-{VERSION}-windows-amd64-setup.exe.cdx.json"
@@ -491,6 +535,47 @@ class SignedReleaseManifestTests(unittest.TestCase):
                                 ("darwin/arm64", "1.0.0-01")):
             with self.subTest(target=target, version=version), self.assertRaises(ValueError):
                 release.managed_update(files, target, version, VERSION)
+
+    def test_real_cms_windows_lifecycle_gate(self):
+        self.assertIsNotNone(OPENSSL, "OpenSSL is required for CMS signing fixtures")
+
+        def openssl(*arguments):
+            subprocess.run([OPENSSL, *map(str, arguments)], check=True, timeout=30,
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        key = self.root / "lifecycle.key"
+        pem = self.root / "lifecycle.pem"
+        cert = self.root / "lifecycle.cer"
+        openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-sha256",
+                "-subj", "/CN=Disposable Windows lifecycle fixture", "-keyout", key, "-out", pem)
+        openssl("x509", "-in", pem, "-outform", "DER", "-out", cert)
+        evidence = self.windows_lifecycle_reports()
+        prepared = self.root / release.MANIFEST
+        manifest = self.candidate / release.MANIFEST
+        signature = self.candidate / release.SIGNATURE
+        for complete in (False, True):
+            if prepared.exists():
+                prepared.unlink()
+            if manifest.exists():
+                manifest.unlink()
+                signature.unlink()
+            provided = list(evidence.values()) if complete else [evidence["amd64", "clean"]]
+            release.prepare(self.candidate, prepared, COMMIT, REF, windows_reboot_evidence=provided)
+            shutil.copyfile(prepared, manifest)
+            openssl("cms", "-sign", "-binary", "-md", "sha256", "-in", manifest,
+                    "-signer", pem, "-inkey", key, "-outform", "DER", "-out", signature)
+            pin = release.digest(cert)
+            if complete:
+                report = self.verify(cert, pin, require_windows_lifecycle=True)
+                self.assertIs(report["windowsLifecycleEvidenceVerified"], True)
+                self.assertIs(report["productionQualificationComplete"], False)
+                revoked = self.write_policy({**self.policy, "subjectSHA256": [evidence["arm64", "upgrade"][1]]})
+                with self.assertRaisesRegex(ValueError, "revoked"):
+                    self.verify(cert, pin, policy_pin=revoked, require_windows_lifecycle=True)
+            else:
+                with self.assertRaisesRegex(ValueError, "Missing Windows lifecycle evidence"):
+                    self.verify(cert, pin, require_windows_lifecycle=True)
+                self.assertNotIn("windowsLifecycleEvidenceVerified", self.verify(cert, pin))
 
     def test_real_cms_approval_and_refusals(self):
         self.assertIsNotNone(OPENSSL, "OpenSSL is required for CMS signing fixtures")
