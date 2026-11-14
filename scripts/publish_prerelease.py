@@ -223,10 +223,12 @@ def verify_native_qualification(directory, package, manifest, commit, ref, expec
             execution_path = frozen / "execution.json"
             if candidate.stat().st_size > 16 << 10:
                 raise ValueError("Packaged qualification receipt exceeds its size bound")
+            bundle_digest = None
             if run_id is not None:
                 bundle = frozen / QUALIFICATION_BUNDLE
                 for subject in (candidate, execution_path):
                     authenticate_qualification(subject, bundle, commit, ref, run_id)
+                bundle_digest = digest(bundle)
             candidate_bytes = candidate.read_bytes()
             execution_bytes = execution_path.read_bytes()
             receipt = json.loads(candidate_bytes)
@@ -259,7 +261,9 @@ def verify_native_qualification(directory, package, manifest, commit, ref, expec
             "candidate.json": hashlib.sha256(candidate_bytes).hexdigest(),
             "execution.json": hashlib.sha256(execution_bytes).hexdigest(),
         }
-    return hashlib.sha256(json.dumps(verified_reports, sort_keys=True, separators=(",", ":")).encode("ascii")).hexdigest()
+        if bundle_digest is not None:
+            verified_reports[target][QUALIFICATION_BUNDLE] = bundle_digest
+    return verified_reports
 
 
 @contextmanager
@@ -273,11 +277,25 @@ def verified_candidate(directory, commit, ref, rebuild_checksums_sha256, native_
         if (rebuild_checksums_sha256 is not None
                 and expected.get("SHA256SUMS.txt") != "sha256:" + rebuild_checksums_sha256):
             raise ValueError("Published candidate differs from the authenticated rebuild reference")
-        qualification_digest = None
+        qualification = None
         if native_qualification is not None:
             manifest = json.loads((frozen / "BUILD-MANIFEST.json").read_bytes())
-            qualification_digest = verify_native_qualification(native_qualification, frozen, manifest, commit, ref, expected, run_id)
-        yield frozen, expected, qualification_digest
+            reports = verify_native_qualification(native_qualification, frozen, manifest, commit, ref, expected, run_id)
+            canonical = json.dumps(reports, sort_keys=True, separators=(",", ":")).encode("ascii")
+            qualification = {
+                "schemaVersion": 1,
+                "sourceCommit": commit,
+                "sourceRef": ref,
+                "repository": REPOSITORY,
+                "workflow": WORKFLOW,
+                "workflowRunID": run_id,
+                "manifestSHA256": expected["BUILD-MANIFEST.json"].removeprefix("sha256:"),
+                "provenanceBundleSHA256": expected[BUNDLE_NAME].removeprefix("sha256:"),
+                "rebuildReferenceChecksumsSHA256": rebuild_checksums_sha256,
+                "qualificationSHA256": hashlib.sha256(canonical).hexdigest(),
+                "targetEvidenceSHA256": reports,
+            }
+        yield frozen, expected, qualification
 
 
 def publish(directory, commit, ref, *, rebuild_checksums_sha256=None, native_qualification=None,
@@ -287,8 +305,10 @@ def publish(directory, commit, ref, *, rebuild_checksums_sha256=None, native_qua
         raise ValueError("Prerelease publication requires a version tag")
     tag = ref.removeprefix("refs/tags/")
     with verified_candidate(directory, commit, ref, rebuild_checksums_sha256, native_qualification, run_id) as candidate:
-        frozen, expected, qualification_digest = candidate
-        if expected_qualification_sha256 is not None and qualification_digest != expected_qualification_sha256:
+        frozen, expected, qualification = candidate
+        if expected_qualification_sha256 is not None and (
+            qualification is None or qualification["qualificationSHA256"] != expected_qualification_sha256
+        ):
             raise ValueError("Packaged qualification inputs differ from the read-only verification job")
         publish_verified(frozen, tag, commit, expected)
 
@@ -377,7 +397,7 @@ def main():
     parser.add_argument("--verify-only", action="store_true",
                         help="verify package, rebuild and qualification without accessing release state")
     parser.add_argument("--expected-qualification-sha256",
-                        help="digest of the staging and execution files from the read-only verification job")
+                        help="digest of target evidence and attestation files from the read-only verification job")
     parser.add_argument("--workflow-run-id", required=True, help="expected GitHub Actions run ID for the target attestations")
     args = parser.parse_args()
     if not re.fullmatch(r"[1-9][0-9]{0,19}", args.workflow_run_id):
@@ -392,8 +412,8 @@ def main():
             with redirect_stdout(sys.stderr):
                 with verified_candidate(args.directory.absolute(), args.source_commit, args.source_ref,
                                         args.rebuild_checksums_sha256, args.native_qualification, args.workflow_run_id) as candidate:
-                    _, _, qualification_digest = candidate
-            print(json.dumps({"qualificationSHA256": qualification_digest}))
+                    _, _, qualification = candidate
+            print(json.dumps(qualification, indent=2))
         else:
             publish(args.directory.absolute(), args.source_commit, args.source_ref,
                     rebuild_checksums_sha256=args.rebuild_checksums_sha256, native_qualification=args.native_qualification,

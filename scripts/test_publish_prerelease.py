@@ -152,7 +152,7 @@ class PrereleasePublicationTests(unittest.TestCase):
                       patch.object(publisher, "publish_verified") as publish_verified):
                     if fault is None:
                         with publisher.verified_candidate(self.directory, self.commit, self.ref, None, receipts) as candidate:
-                            approved_digest = candidate[2]
+                            approved_digest = candidate[2]["qualificationSHA256"]
                         publisher.publish(self.directory, self.commit, self.ref, native_qualification=receipts,
                                           expected_qualification_sha256=approved_digest)
                         publish_verified.assert_called_once()
@@ -242,8 +242,26 @@ class PrereleasePublicationTests(unittest.TestCase):
                 with (patch.object(sys, "argv", [*argv, publisher.digest(checksums)]),
                       contextlib.redirect_stdout(io.StringIO()) as output):
                     self.assertEqual(publisher.main(), 0)
-                    preview_digest = json.loads(output.getvalue())["qualificationSHA256"]
+                    preview = json.loads(output.getvalue())
+                    preview_digest = preview["qualificationSHA256"]
                     self.assertRegex(preview_digest, r"^[0-9a-f]{64}$")
+                    self.assertEqual(preview["sourceCommit"], self.commit)
+                    self.assertEqual(preview["sourceRef"], preview_ref)
+                    self.assertEqual(preview["workflowRunID"], "123456")
+                    self.assertEqual(preview["manifestSHA256"], publisher.digest(manifest_path))
+                    self.assertEqual(preview["provenanceBundleSHA256"], publisher.digest(bundle_path))
+                    self.assertEqual(preview["rebuildReferenceChecksumsSHA256"], publisher.digest(checksums))
+                    expected_reports = {
+                        f"{system}/{arch}": {
+                            name: publisher.digest(receipts / f"release-qualified-{system}-{arch}" / name)
+                            for name in ("candidate.json", "execution.json", publisher.QUALIFICATION_BUNDLE)
+                        }
+                        for system, arch in publisher.TARGETS
+                    }
+                    self.assertEqual(preview["targetEvidenceSHA256"], expected_reports)
+                    canonical = json.dumps(expected_reports, sort_keys=True, separators=(",", ":")).encode("ascii")
+                    self.assertEqual(preview_digest, hashlib.sha256(canonical).hexdigest())
+                    self.assertNotIn(str(self.directory), output.getvalue())
                     verify.assert_called_once()
                     self.assertEqual(authenticate.call_count, 20)
                     self.assertTrue(all(call.args[4] == "123456" for call in authenticate.call_args_list))
@@ -258,6 +276,16 @@ class PrereleasePublicationTests(unittest.TestCase):
                       contextlib.redirect_stdout(io.StringIO()) as output):
                     self.assertEqual(publisher.main(), 0)
                     self.assertNotEqual(json.loads(output.getvalue())["qualificationSHA256"], preview_digest)
+                result_path.write_bytes(original_result)
+                target_bundle = result_path.with_name(publisher.QUALIFICATION_BUNDLE)
+                target_bundle.write_bytes(target_bundle.read_bytes() + b"\n")
+                with (patch.object(sys, "argv", [*argv, publisher.digest(checksums)]),
+                      contextlib.redirect_stdout(io.StringIO()) as output):
+                    self.assertEqual(publisher.main(), 0)
+                    changed = json.loads(output.getvalue())
+                    self.assertNotEqual(changed["qualificationSHA256"], preview_digest)
+                    self.assertEqual(changed["targetEvidenceSHA256"]["windows/arm64"][publisher.QUALIFICATION_BUNDLE],
+                                     publisher.digest(target_bundle))
                 result_path.unlink()
                 with (patch.object(sys, "argv", [*argv, publisher.digest(checksums)]),
                       contextlib.redirect_stderr(io.StringIO()) as errors):
