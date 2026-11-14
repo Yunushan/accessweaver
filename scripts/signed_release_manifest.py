@@ -1156,16 +1156,22 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                 else:
                     update["installedDetection"] = "setup-failed"
                 if attempt is not None:
-                    with hold_windows_staging_directory(stage_directory):
-                        require(staging_directory_identity(stage_directory) == stage_directory_id,
-                                "Managed update staging directory changed before receipt publication")
-                        result_receipt = {**attempt, "setupExitCode": code,
-                                          "installedDetection": update["installedDetection"]}
-                        if "installedDetectionReason" in update:
-                            result_receipt["installedDetectionReason"] = update["installedDetectionReason"]
-                        write_windows_upgrade_receipt(
-                            stage_directory / (windows_upgrade_attempt_id + ".result.json"), result_receipt,
-                        )
+                    result_receipt = {**attempt, "setupExitCode": code,
+                                      "installedDetection": update["installedDetection"]}
+                    if "installedDetectionReason" in update:
+                        result_receipt["installedDetectionReason"] = update["installedDetectionReason"]
+                    try:
+                        with hold_windows_staging_directory(stage_directory):
+                            require(staging_directory_identity(stage_directory) == stage_directory_id,
+                                    "Managed update staging directory changed before receipt publication")
+                            write_windows_upgrade_receipt(
+                                stage_directory / (windows_upgrade_attempt_id + ".result.json"), result_receipt,
+                            )
+                    except (OSError, ValueError):
+                        # Setup has already exited. Keep its outcome available to the agent.
+                        update["resultReceiptStatus"] = "unverified"
+                    else:
+                        update["resultReceiptStatus"] = "published"
         return report
 
 
@@ -1263,7 +1269,11 @@ def main():
             print(json.dumps(report))
             if args.launch_staged_windows_setup:
                 update = report["managedUpdate"]
-                return 1 if update["installedDetection"] == "unverified" else update["setupExitCode"]
+                code = update["setupExitCode"]
+                if code == 0 and (update["installedDetection"] == "unverified"
+                                  or update.get("resultReceiptStatus") == "unverified"):
+                    return 1
+                return code
             if args.detect_installed_windows_upgrade:
                 return 0 if report["managedUpdate"]["installedDetection"] == "detected" else 1
     except (ValueError, OSError, subprocess.SubprocessError):

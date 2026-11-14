@@ -1175,6 +1175,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 (staging / (attempt_id + ".result.json")).unlink()
                 self.assertEqual(result["setupExitCode"], 0)
                 self.assertEqual(result["installedDetection"], "detected")
+                self.assertEqual(result["resultReceiptStatus"], "published")
                 detect.assert_called_once_with(result["windowsUpgradeDetection"], launch_options["windows_payload_publisher"])
 
                 real_check = release.require_current_revocation_policy
@@ -1200,6 +1201,19 @@ class SignedReleaseManifestTests(unittest.TestCase):
                         self.assertEqual(receipt, {**attempt, "setupExitCode": 0, "installedDetection": "unverified",
                                                    "installedDetectionReason": "revocation-policy-expired"})
                         receipt_path.unlink()
+
+                for setup_code, expected_detection in ((0, "detected"), (3010, "restart-required"), (7, "setup-failed")):
+                    with self.subTest(result_receipt_unavailable=setup_code):
+                        launch.return_value = setup_code
+                        with patch.object(release, "write_windows_upgrade_receipt", side_effect=PermissionError) as write:
+                            result = self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
+                                                 windows_upgrade_attempt_id=attempt_id)["managedUpdate"]
+                        self.assertEqual(result["setupExitCode"], setup_code)
+                        self.assertEqual(result["installedDetection"], expected_detection)
+                        self.assertEqual(result["resultReceiptStatus"], "unverified")
+                        self.assertEqual(write.call_args.args[0], receipt_path)
+                        self.assertFalse(receipt_path.exists())
+
                 detect.reset_mock()
                 launch.return_value = 7
                 result = self.verify(approved, pin, policy_pin=launch_pin, **launch_options)["managedUpdate"]
@@ -1499,10 +1513,20 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
                 "--source-commit", COMMIT, "--source-ref", REF, "--approval-certificate", "approval.cer",
                 "--approval-certificate-sha256", "b" * 64, "--revocation-list", "revocation.json",
                 "--revocation-list-sha256", self.policy_pin, "--launch-staged-windows-setup"]
-        for code, detection, expected in ((0, "detected", 0), (0, "unverified", 1),
-                                          (7, "setup-failed", 7), (3010, "restart-required", 3010)):
-            report = {"managedUpdate": {"setupExitCode": code, "installedDetection": detection}}
-            with self.subTest(code=code), patch.object(sys, "argv", argv), \
+        cases = (
+            (0, "detected", None, 0),
+            (0, "detected", "published", 0),
+            (0, "unverified", "published", 1),
+            (0, "detected", "unverified", 1),
+            (7, "setup-failed", "unverified", 7),
+            (3010, "restart-required", "unverified", 3010),
+        )
+        for code, detection, receipt_status, expected in cases:
+            update = {"setupExitCode": code, "installedDetection": detection}
+            if receipt_status is not None:
+                update["resultReceiptStatus"] = receipt_status
+            report = {"managedUpdate": update}
+            with self.subTest(code=code, detection=detection, receipt_status=receipt_status), patch.object(sys, "argv", argv), \
                     patch.object(release, "verify", return_value=report) as verify, redirect_stdout(io.StringIO()) as output:
                 self.assertEqual(release.main(), expected)
                 self.assertEqual(json.loads(output.getvalue()), report)
