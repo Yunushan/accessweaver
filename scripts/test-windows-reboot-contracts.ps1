@@ -5,17 +5,17 @@ $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'DNS reboot fixture failed parsing'}
 foreach($name in @('Assert-DNSRebootAdmission','Save-DNSRebootRecord','Get-DNSRebootJournalID','Assert-DNSRebootJournal',
-        'Assert-RebootResolver','Wait-DNSRebootObservation','Test-DNSRebootServicesRemoved')){
+        'Get-DNSRebootCoverage','Assert-DNSRebootConfigured','Assert-RebootResolver','Wait-DNSRebootObservation','Test-DNSRebootServicesRemoved')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
     if($nodes.Count -ne 1){throw 'Expected one DNS reboot evidence function'}
-    if($name -cin @('Assert-RebootResolver','Wait-DNSRebootObservation','Test-DNSRebootServicesRemoved')){
+    if($name -cin @('Get-DNSRebootCoverage','Assert-DNSRebootConfigured','Assert-RebootResolver','Wait-DNSRebootObservation','Test-DNSRebootServicesRemoved')){
         foreach($command in $nodes[0].FindAll({param($node)$node -is [Management.Automation.Language.CommandAst]},$true)){
             $callback=$command.InvocationOperator -eq [Management.Automation.Language.TokenKind]::Ampersand -and
                 $command.CommandElements[0] -is [Management.Automation.Language.VariableExpressionAst] -and
                 $command.CommandElements[0].VariablePath.UserPath -ceq 'Observe'
-            if(-not $callback -and $command.GetCommandName() -cnotin @('Clear-DnsClientCache','Resolve-DnsName','Start-Sleep','Get-Service','ForEach-Object')){
+            if(-not $callback -and $command.GetCommandName() -cnotin @('Clear-DnsClientCache','Resolve-DnsName','Start-Sleep','Get-Service','ForEach-Object','Where-Object','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceConfigured')){
                 throw 'DNS reboot observation has an unexpected command boundary'
             }
         }
@@ -28,7 +28,7 @@ function Refuse([scriptblock]$Action){
     if(-not $rejected){throw 'Invalid DNS reboot evidence was accepted'}
 }
 $journalId='workflow-'+('a'*32)+'.json'
-$saved=@{schemaVersion=5;qualificationID=('a'*32);method='doh';guestID='synthetic';
+$saved=@{schemaVersion=6;qualificationID=('a'*32);method='doh';guestID='synthetic';
     binarySHA256=('a'*64);fixtureSHA256=('b'*64);oracleSHA256=('c'*64);snapshotSHA256=('D'*64);
     journalId=$journalId;journalSHA256=('E'*64);boot='639303000000000000'}
 $current=$saved.Clone()
@@ -45,7 +45,7 @@ foreach($value in @($saved.boot,'639302000000000000','unknown')){
     Refuse {Assert-DNSRebootAdmission $saved $changed}
 }
 $legacy=$saved.Clone()
-$legacy.schemaVersion=4
+$legacy.schemaVersion=5
 Refuse {Assert-DNSRebootAdmission $legacy $current}
 foreach($value in @('..\\'+$journalId,'workflow-'+('A'*32)+'.json','foreign.json')){
     $invalid=$saved.Clone();$invalid.journalId=$value
@@ -69,6 +69,40 @@ foreach($invalid in @(
     @{action='dns';state='succeeded';undo=@(@{kind='dns';snapshotSHA256=('F'*64);snapshotActive=$true})},
     @{action='dns';state='succeeded';undo=@(@{kind='dns';snapshotSHA256=$saved.snapshotSHA256;snapshotActive=$false})}
 )){Refuse {Assert-DNSRebootJournal $invalid $saved.snapshotSHA256}}
+
+# The shared oracle definitions perform no host reads when imported.
+. (Join-Path $PSScriptRoot 'dns-acceptance-state.ps1')
+& {
+    $primary='00000000-0000-0000-0000-000000000001'
+    $secondary='00000000-0000-0000-0000-000000000002'
+    $primaryRow=@{guid=$primary;selected=$true;ipv4=@{mode='dhcp';servers=@()};ipv6=@{mode='static';servers=@('2001:db8::1')}}
+    $secondaryRow=@{guid=$secondary;selected=$false;ipv4=@{mode='static';servers=@('192.0.2.1')};ipv6=@{mode='dhcp';servers=@()}}
+    $baseline=@{schemaVersion=1;adapters=@($primaryRow,$secondaryRow);dohAvailable=$false;doh=@()}
+    $coverage=Get-DNSRebootCoverage $baseline 'static-ipv6'
+    if($coverage['static-ipv6'] -ne 1 -or $coverage['dhcp-ipv4'] -ne 1 -or
+        $coverage['static-ipv4'] -ne 0 -or $coverage['dhcp-ipv6'] -ne 0){
+        throw 'DNS reboot coverage must count only selected families'
+    }
+    foreach($missing in @('static-ipv4','dhcp-ipv6','invalid','')){
+        Refuse {Get-DNSRebootCoverage $baseline $missing}
+    }
+    $configuredRow=$primaryRow.Clone()
+    $configuredRow.ipv4=@{mode='static';servers=@('127.0.0.1')}
+    $configuredRow.ipv6=@{mode='static';servers=@('::1')}
+    $configured=$baseline.Clone();$configured.adapters=@($configuredRow,$secondaryRow)
+    Assert-DNSRebootConfigured $baseline $configured 'dnscrypt'
+    $secondaryRow.selected=$true
+    Refuse {Assert-DNSRebootConfigured $baseline $configured 'dnscrypt'}
+    $configuredRow.selected=$false
+    $secondaryRow.selected=$false
+    Refuse {Assert-DNSRebootConfigured $baseline $configured 'dnscrypt'}
+    $secondaryRow.selected=$true
+    Refuse {Assert-DNSRebootConfigured $baseline $configured 'dnscrypt'}
+    $secondaryRow.selected=$false
+    $configuredRow.selected=$true
+    $configuredRow.ipv4=@{mode='static';servers=@('192.0.2.1')}
+    Refuse {Assert-DNSRebootConfigured $baseline $configured 'dnscrypt'}
+}
 
 # Run the actual observation functions with no resolver or service access.
 & {
@@ -232,10 +266,22 @@ $root=[IO.Path]::Combine([IO.Path]::GetTempPath(),('aw-dns-reboot-publication-'+
 $shared=Join-Path $root 'share'
 $destination=Join-Path $shared 'reboot-results.json'
 $report=Join-Path $root 'reboot-results.json'
-$record=@{schemaVersion=5;qualificationID=('a'*32);method='doh';binarySHA256=('A'*64);fixtureSHA256=('B'*64);oracleSHA256=('C'*64)
+$record=@{schemaVersion=6;qualificationID=('a'*32);method='doh';binarySHA256=('A'*64);fixtureSHA256=('B'*64);oracleSHA256=('C'*64)
+    requiredOriginalMode='static-ipv6';originalModeCoverage=@{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0;'static-ipv6'=1}
     rebootVerified=$true;servicesVerified=$true;configuredStateVerified=$true;resolverVerified=$true
     journalBindingVerified=$true;journalRecoveryAccepted=$true;originalStateRestored=$true;originalResolverVerified=$true
     snapshotRetired=$true;servicesRemoved=$true;passed=$true;stage='complete';cleanupStage='complete'}
+foreach($invalid in @(
+    @{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0},
+    @{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0;'static-ipv6'=0},
+    @{'dhcp-ipv4'=1;'static-ipv4'=-1;'dhcp-ipv6'=0;'static-ipv6'=1},
+    @{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0;'static-ipv6'='1'},
+    @{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0;'static-ipv6'=1;unknown=0}
+)){
+    $candidate=$record.Clone();$candidate.originalModeCoverage=$invalid
+    $data=[Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $candidate -Depth 8))
+    Refuse {Assert-DNSRebootPublicReport $data}
+}
 $script:verifications=0;$script:retirements=0
 $verify={
     $script:verifications++

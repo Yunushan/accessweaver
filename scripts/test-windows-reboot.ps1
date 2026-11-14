@@ -3,13 +3,14 @@
 param(
     [Parameter(Mandatory)][ValidateSet('Prepare','Verify')][string]$Phase,
     [string]$Executable='C:\AccessWeaver-Test\accessweaver.exe',
-    [ValidateSet('auto','doh','dnscrypt')][string]$DNS='auto'
+    [ValidateSet('auto','doh','dnscrypt')][string]$DNS='auto',
+    [ValidateSet('any','dhcp-ipv4','static-ipv4','dhcp-ipv6','static-ipv6')][string]$RequiredOriginalMode='any'
 )
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 
 function Assert-DNSRebootAdmission($Saved,$Current) {
-    if($Saved.schemaVersion -ne 5 -or $Saved.method -cnotin @('doh','dnscrypt') -or
+    if($Saved.schemaVersion -ne 6 -or $Saved.method -cnotin @('doh','dnscrypt') -or
        $Saved.qualificationID -isnot [string] -or $Saved.qualificationID -cnotmatch '\A[a-f0-9]{32}\z' -or
        $Saved.guestID -cne $Current.guestID -or $Saved.binarySHA256 -cne $Current.binarySHA256 -or
        $Saved.oracleSHA256 -cne $Current.oracleSHA256 -or $Saved.fixtureSHA256 -cne $Current.fixtureSHA256 -or
@@ -99,7 +100,7 @@ if(@($guest).Count -ne 1 -or -not [guid]::TryParseExact([string]$guest.UUID,'D',
 $os=Get-CimInstance Win32_OperatingSystem
 if(@($os).Count -ne 1 -or $os.LastBootUpTime -isnot [DateTime]){throw 'Cannot identify guest boot'}
 $current=@{
-    schemaVersion=5;guestID=$guestID.ToString('D');
+    schemaVersion=6;guestID=$guestID.ToString('D');
     binarySHA256=(Get-DNSRebootDigest $Executable 128MB);oracleSHA256=(Get-DNSRebootDigest $oracle 1MB);
     fixtureSHA256=(Get-DNSRebootDigest $PSCommandPath 1MB);
     boot=$os.LastBootUpTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
@@ -132,6 +133,33 @@ function Invoke-TestWorkflow([hashtable]$Request) {
         }
         return $job.result
     } finally {[IO.File]::Delete($path)}
+}
+function Get-DNSRebootCoverage([object]$Before,[string]$RequiredMode) {
+    $original=Get-DNSAcceptanceIndex $Before
+    $coverage=[ordered]@{'dhcp-ipv4'=0;'static-ipv4'=0;'dhcp-ipv6'=0;'static-ipv6'=0}
+    foreach($record in $original.adapters.Values){
+        if(-not $record.selected){continue}
+        foreach($family in @('ipv4','ipv6')){
+            $mode=$record.$family.mode
+            if($mode -cne 'not-exposed'){$coverage[$mode+'-'+$family]++}
+        }
+    }
+    if(-not ($coverage.Values -gt 0) -or
+        ($RequiredMode -cne 'any' -and (-not $coverage.Contains($RequiredMode) -or $coverage[$RequiredMode] -le 0))){
+        throw 'Active DNS adapters do not cover the required original mode'
+    }
+    return $coverage
+}
+function Assert-DNSRebootConfigured([object]$Before,[object]$After,[string]$Method) {
+    $original=Get-DNSAcceptanceIndex $Before
+    $observed=Get-DNSAcceptanceIndex $After
+    $selected=@($original.adapters.Keys | Where-Object {$original.adapters[$_].selected})
+    $active=@($observed.adapters.Keys | Where-Object {$observed.adapters[$_].selected})
+    if($selected.Count -ne $active.Count){throw 'Active DNS adapter coverage changed after reboot'}
+    foreach($guid in $active){
+        if($guid -notin $selected){throw 'Active DNS adapter coverage changed after reboot'}
+    }
+    Assert-DNSAcceptanceConfigured $Before $After $Method
 }
 function Assert-RebootResolver {
     Clear-DnsClientCache -ErrorAction Stop
@@ -199,6 +227,8 @@ try {
             throw 'A fresh guest checkpoint and results directory are required'
         }
         $before=Read-DNSAcceptanceState
+        $RequiredOriginalMode=$RequiredOriginalMode.ToLowerInvariant()
+        [void](Get-DNSRebootCoverage $before $RequiredOriginalMode)
         Assert-RebootResolver
         if($DNS -eq 'auto'){$DNS=if(Get-Command Get-DnsClientDohServerAddress -ErrorAction SilentlyContinue){'doh'}else{'dnscrypt'}}
         [void][IO.Directory]::CreateDirectory($private)
@@ -210,14 +240,16 @@ try {
             $security.AddAccessRule($rule)
         }
         Set-Acl -LiteralPath $private -AclObject $security -ErrorAction Stop
-        Save-DNSRebootRecord (Join-Path $private 'original.json') @{schemaVersion=5;dns=$before}
+        Save-DNSRebootRecord (Join-Path $private 'original.json') @{schemaVersion=6;dns=$before}
         [void](Invoke-TestWorkflow @{action='install';engine='byedpi';mode='service';bundlePath='C:\AccessWeaver-Test\components'})
         $applied=Invoke-TestWorkflow @{action='dns';dns=$DNS;bundlePath='C:\AccessWeaver-Test\components'}
         Assert-RebootServices $DNS
-        Assert-DNSAcceptanceConfigured $before (Read-DNSAcceptanceState) $DNS
+        Assert-DNSRebootConfigured $before (Read-DNSAcceptanceState) $DNS
         Assert-RebootResolver
+        Assert-DNSRebootConfigured $before (Read-DNSAcceptanceState) $DNS
         $current.qualificationID=[guid]::NewGuid().ToString('N')
         $current.method=$DNS
+        $current.requiredOriginalMode=$RequiredOriginalMode
         $current.dns=$before
         $current.snapshotSHA256=Get-DNSRebootDigest $snapshot 8MB
         $current.journalId=Get-DNSRebootJournalID $applied.journal $logDirectory
@@ -239,13 +271,14 @@ try {
     $current.snapshotSHA256=Get-DNSRebootDigest $snapshot 8MB
     Assert-DNSRebootAdmission $saved $current
     Assert-DNSRebootJournal (Get-Content -LiteralPath $journalPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop) $current.snapshotSHA256
-    [void](Get-DNSAcceptanceIndex $saved.dns)
+    $coverage=Get-DNSRebootCoverage $saved.dns $saved.requiredOriginalMode
     if(Test-Path -LiteralPath $report){throw 'DNS reboot evidence already exists'}
     if(Test-Path -LiteralPath (Join-Path $private 'verification-started.json')){
         throw 'Interrupted DNS reboot verification requires a fresh checkpoint'
     }
-    Save-DNSRebootRecord (Join-Path $private 'verification-started.json') @{schemaVersion=5}
-    $outcome=[ordered]@{schemaVersion=5;qualificationID=$saved.qualificationID;method=$saved.method;binarySHA256=$current.binarySHA256;
+    Save-DNSRebootRecord (Join-Path $private 'verification-started.json') @{schemaVersion=6}
+    $outcome=[ordered]@{schemaVersion=6;qualificationID=$saved.qualificationID;method=$saved.method;binarySHA256=$current.binarySHA256;
+        requiredOriginalMode=$saved.requiredOriginalMode;originalModeCoverage=$coverage;
         fixtureSHA256=$current.fixtureSHA256;oracleSHA256=$current.oracleSHA256;
         rebootVerified=$true;servicesVerified=$false;configuredStateVerified=$false;
         resolverVerified=$false;journalBindingVerified=$true;journalRecoveryAccepted=$false;
@@ -255,10 +288,14 @@ try {
         Wait-DNSRebootObservation {Assert-RebootServices $saved.method}
         $outcome.servicesVerified=$true
         $outcome.stage='configured-state'
-        Assert-DNSAcceptanceConfigured $saved.dns (Read-DNSAcceptanceState) $saved.method
+        Wait-DNSRebootObservation {Assert-DNSRebootConfigured $saved.dns (Read-DNSAcceptanceState) $saved.method}
         $outcome.configuredStateVerified=$true
         $outcome.stage='resolver'
         Wait-DNSRebootObservation {Assert-RebootResolver}
+        $outcome.stage='configured-state'
+        $outcome.configuredStateVerified=$false
+        Assert-DNSRebootConfigured $saved.dns (Read-DNSAcceptanceState) $saved.method
+        $outcome.configuredStateVerified=$true
         $outcome.resolverVerified=$true
         $outcome.stage='complete'
     } catch {

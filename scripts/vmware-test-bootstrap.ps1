@@ -59,7 +59,8 @@ try{
                     }
                     $method=if($request.dns){[string]$request.dns}else{'auto'}
                     if($method -cnotin @('auto','doh','dnscrypt')){throw 'Unknown DNS reboot method'}
-                    & (Join-Path $local 'test-windows-reboot.ps1') -Phase Prepare -Executable $binary -DNS $method
+                    $originalMode=if($null -eq $request.dnsOriginalMode){'any'}else{[string]$request.dnsOriginalMode}
+                    & (Join-Path $local 'test-windows-reboot.ps1') -Phase Prepare -Executable $binary -DNS $method -RequiredOriginalMode $originalMode
                     $arguments='-NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\AccessWeaver-Test\vmware-reboot-resume.ps1 -ExecutableName '+$executable
                     $action=New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Argument $arguments
                     $trigger=New-ScheduledTaskTrigger -AtStartup;$trigger.Delay='PT30S'

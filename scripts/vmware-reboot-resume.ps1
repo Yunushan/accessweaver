@@ -27,16 +27,34 @@ function Assert-DNSRebootPublicReport([byte[]]$Data) {
     $flags=@('rebootVerified','servicesVerified','configuredStateVerified','resolverVerified','journalBindingVerified',
         'journalRecoveryAccepted','originalStateRestored','originalResolverVerified','snapshotRetired','servicesRemoved','passed')
     $digests=@('binarySHA256','fixtureSHA256','oracleSHA256')
-    $keys=@('schemaVersion','qualificationID','method','stage','cleanupStage')+$flags+$digests
+    $modes=@('dhcp-ipv4','static-ipv4','dhcp-ipv6','static-ipv6')
+    $keys=@('schemaVersion','qualificationID','method','requiredOriginalMode','originalModeCoverage','stage','cleanupStage')+$flags+$digests
     if($record -isnot [pscustomobject] -or @($record.PSObject.Properties).Count -ne $keys.Count -or
         @($record.PSObject.Properties.Name | Where-Object {$_ -cnotin $keys}).Count -ne 0 -or
-        ($record.schemaVersion -isnot [int] -and $record.schemaVersion -isnot [long]) -or $record.schemaVersion -ne 5 -or
+        ($record.schemaVersion -isnot [int] -and $record.schemaVersion -isnot [long]) -or $record.schemaVersion -ne 6 -or
         $record.qualificationID -isnot [string] -or $record.qualificationID -cnotmatch '\A[a-f0-9]{32}\z' -or
         $record.method -isnot [string] -or $record.method -cnotin @('doh','dnscrypt') -or
         $record.stage -isnot [string] -or $record.cleanupStage -isnot [string] -or
         $record.stage -cnotin @('services','configured-state','resolver','complete') -or
         $record.cleanupStage -cnotin @('journal-recovery','original-state','original-resolver','snapshot-retirement','recovered','complete')){
         throw 'DNS reboot report schema refused'
+    }
+    $coverage=$record.originalModeCoverage
+    if($coverage -isnot [pscustomobject] -or @($coverage.PSObject.Properties).Count -ne $modes.Count -or
+        @($coverage.PSObject.Properties.Name | Where-Object {$_ -cnotin $modes}).Count -ne 0 -or
+        $record.requiredOriginalMode -isnot [string] -or $record.requiredOriginalMode -cnotin (@('any')+$modes)){
+        throw 'DNS reboot original mode coverage refused'
+    }
+    $covered=$false
+    foreach($mode in $modes){
+        $count=$coverage.$mode
+        if(($count -isnot [int] -and $count -isnot [long]) -or $count -lt 0 -or $count -gt [int]::MaxValue){
+            throw 'DNS reboot original mode count refused'
+        }
+        if($count -gt 0){$covered=$true}
+    }
+    if(-not $covered -or ($record.requiredOriginalMode -cne 'any' -and $coverage.($record.requiredOriginalMode) -eq 0)){
+        throw 'DNS reboot required original mode is missing'
     }
     foreach($flag in $flags){if($record.$flag -isnot [bool]){throw 'DNS reboot report flag refused'}}
     foreach($digest in $digests){
