@@ -12,7 +12,8 @@ import tempfile
 from threading import Timer
 from urllib.parse import urlencode
 
-from verify_release_provenance import BUNDLE_NAME, REPOSITORY, validate_identity, verify
+from verify_release import TARGETS, release_file
+from verify_release_provenance import BUNDLE_NAME, REPOSITORY, WORKFLOW, validate_identity, verify
 from verify_release_rebuild import digest, snapshot
 
 REMOTE = "https://github.com/" + REPOSITORY + ".git"
@@ -154,7 +155,35 @@ def reuse_existing_bundle(directory, release, commit, tag, expected):
     return {**expected, BUNDLE_NAME: bundle["digest"]}
 
 
-def publish(directory, commit, ref, *, rebuild_checksums_sha256=None):
+def verify_native_qualification(directory, manifest, commit, ref, expected):
+    """Bind successful target jobs to the authenticated snapshot we will publish."""
+    artifacts = {(item["goos"], item["goarch"]): item["file"] for item in manifest["artifacts"]}
+    folders = {"release-qualified-" + "-".join(target) for target in TARGETS}
+    if directory.is_symlink() or {path.name for path in directory.iterdir()} != folders:
+        raise ValueError("Expected one successful packaged qualification receipt for each desktop target")
+    for target in sorted(TARGETS):
+        folder = directory / ("release-qualified-" + "-".join(target))
+        path = folder / "candidate.json"
+        if folder.is_symlink() or {item.name for item in folder.iterdir()} != {path.name}:
+            raise ValueError("Unexpected packaged qualification receipt contents")
+        release_file(path, 16 << 10)
+        receipt = json.loads(path.read_bytes())
+        archive = artifacts[target]
+        identity = {
+            "schemaVersion": 1, "repository": REPOSITORY, "workflow": WORKFLOW,
+            "sourceCommit": commit, "sourceRef": ref, "target": "/".join(target),
+            "archive": archive, "archiveSha256": expected[archive].removeprefix("sha256:"),
+            "manifestSha256": expected["BUILD-MANIFEST.json"].removeprefix("sha256:"),
+            "bundleSha256": expected[BUNDLE_NAME].removeprefix("sha256:"),
+            "provenanceSubjectsVerified": 12,
+        }
+        if (receipt.get("authenticatedBeforeStaging") is not True
+                or any(type(receipt.get(key)) is not type(value) or receipt[key] != value
+                       for key, value in identity.items())):
+            raise ValueError("Packaged qualification does not match " + "/".join(target))
+
+
+def publish(directory, commit, ref, *, rebuild_checksums_sha256=None, native_qualification=None):
     validate_identity(commit, ref)
     prefix = "refs/tags/v"
     if not ref.startswith(prefix) or "/" in ref[len(prefix):] or ref == prefix:
@@ -168,6 +197,9 @@ def publish(directory, commit, ref, *, rebuild_checksums_sha256=None):
         if (rebuild_checksums_sha256 is not None
                 and expected.get("SHA256SUMS.txt") != "sha256:" + rebuild_checksums_sha256):
             raise ValueError("Published candidate differs from the authenticated rebuild reference")
+        if native_qualification is not None:
+            manifest = json.loads((frozen / "BUILD-MANIFEST.json").read_bytes())
+            verify_native_qualification(native_qualification, manifest, commit, ref, expected)
         publish_verified(frozen, tag, commit, expected)
 
 
@@ -250,10 +282,12 @@ def main():
     parser.add_argument("--source-ref", required=True)
     parser.add_argument("--rebuild-checksums-sha256", required=True,
                         help="SHA-256 of the authenticated checksum file from the successful rebuild comparison")
+    parser.add_argument("--native-qualification", type=Path, required=True,
+                        help="directory containing the ten successful packaged target receipts")
     args = parser.parse_args()
     try:
         publish(args.directory.absolute(), args.source_commit, args.source_ref,
-                rebuild_checksums_sha256=args.rebuild_checksums_sha256)
+                rebuild_checksums_sha256=args.rebuild_checksums_sha256, native_qualification=args.native_qualification)
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError):
         print("Prerelease verification or publication failed; inspect the draft and keep existing assets intact.",
               file=sys.stderr)

@@ -618,6 +618,14 @@ jobs:
         run: bash scripts/test-linux-session.sh ./build/packaged-native/accessweaver
       - name: Bind all results to the authenticated candidate
         run: node scripts/check-packaged-evidence.cjs complete build/packaged-native
+      - name: Retain successful packaged target receipt
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-qualified-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: build/packaged-native/candidate.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
       - name: Retain public candidate acceptance evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -689,6 +697,14 @@ jobs:
           ACCESSWEAVER_DISPOSABLE_BSD_GUEST_TEST: '1'
           ACCESSWEAVER_BSD_ARCH: ${{ matrix.arch }}
         run: python3 scripts/test-bsd-guest.py --packaged-candidate build/packaged-bsd
+      - name: Retain successful packaged target receipt
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-qualified-freebsd-${{ matrix.arch }}
+          path: build/packaged-bsd/candidate.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
       - name: Retain public archived-candidate execution evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -753,6 +769,14 @@ jobs:
           ACCESSWEAVER_DISPOSABLE_OPENBSD_GUEST_TEST: '1'
           ACCESSWEAVER_BSD_ARCH: ${{ matrix.arch }}
         run: python3 scripts/test-openbsd-guest.py --packaged-candidate build/packaged-openbsd
+      - name: Retain successful packaged target receipt
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-qualified-openbsd-${{ matrix.arch }}
+          path: build/packaged-openbsd/candidate.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
       - name: Retain public archived-candidate execution evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -779,6 +803,11 @@ jobs:
         with:
           artifact-ids: ${{ needs.package.outputs.artifact_id || '0' }}
           path: release-assets/${{ needs.package.outputs.label }}
+      - name: Download successful packaged target receipts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-qualified-*
+          path: release-qualification
       - name: Verify and publish prerelease assets
         shell: bash
         env:
@@ -788,4 +817,4 @@ jobs:
         run: |
           verified_directory="release-assets/${PACKAGE_DIRECTORY#dist/}"
           python3 scripts/publish_prerelease.py "$verified_directory" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" \
-            --rebuild-checksums-sha256 "$REBUILD_CHECKSUMS_SHA256"
+            --rebuild-checksums-sha256 "$REBUILD_CHECKSUMS_SHA256" --native-qualification release-qualification

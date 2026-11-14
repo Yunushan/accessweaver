@@ -75,6 +75,54 @@ class PrereleasePublicationTests(unittest.TestCase):
                     publish_verified.assert_not_called()
                 verify.assert_called_once()
 
+    def test_publication_requires_matching_receipts_for_all_targets(self):
+        names = sorted(self.assets)
+        manifest = {"artifacts": []}
+        manifest_path = self.directory / "BUILD-MANIFEST.json"
+        (self.directory / names[11]).rename(manifest_path)
+        bundle_path = self.directory / publisher.BUNDLE_NAME
+        (self.directory / names[12]).rename(bundle_path)
+        with tempfile.TemporaryDirectory() as folder:
+            receipts = Path(folder)
+            for target, name in zip(sorted(publisher.TARGETS), names):
+                system, arch = target
+                manifest["artifacts"].append({"goos": system, "goarch": arch, "file": name})
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            for item in manifest["artifacts"]:
+                system, arch, name = item["goos"], item["goarch"], item["file"]
+                target = receipts / f"release-qualified-{system}-{arch}"
+                target.mkdir()
+                receipt = {"schemaVersion": 1, "repository": publisher.REPOSITORY, "workflow": publisher.WORKFLOW,
+                           "sourceCommit": self.commit, "sourceRef": self.ref, "target": f"{system}/{arch}",
+                           "archive": name, "archiveSha256": publisher.digest(self.directory / name),
+                           "manifestSha256": publisher.digest(manifest_path), "bundleSha256": publisher.digest(bundle_path),
+                           "provenanceSubjectsVerified": 12, "authenticatedBeforeStaging": True}
+                (target / "candidate.json").write_text(json.dumps(receipt), encoding="utf-8")
+            path = receipts / "release-qualified-windows-arm64" / "candidate.json"
+            original = path.read_bytes()
+            faults = (None, "missing", "extra", "archiveSha256", "manifestSha256", "bundleSha256", "target", "sourceRef")
+            for fault in faults:
+                with self.subTest(fault=fault), patch.object(publisher, "verify"), patch.object(
+                    publisher, "publish_verified",
+                ) as publish_verified:
+                    if fault is None:
+                        publisher.publish(self.directory, self.commit, self.ref, native_qualification=receipts)
+                        publish_verified.assert_called_once()
+                        continue
+                    elif fault == "missing":
+                        path.unlink()
+                    elif fault == "extra":
+                        (path.parent / "extra.json").touch()
+                    else:
+                        path.write_text(json.dumps({**json.loads(original), fault: "different"}), encoding="utf-8")
+                    try:
+                        with self.assertRaises((ValueError, OSError)):
+                            publisher.publish(self.directory, self.commit, self.ref, native_qualification=receipts)
+                        publish_verified.assert_not_called()
+                    finally:
+                        (path.parent / "extra.json").unlink(missing_ok=True)
+                        path.write_bytes(original)
+
     def test_new_draft_uploads_and_verifies_before_publication(self):
         self.run_publisher([None, self.release(True, 0), self.release(True), self.release(False)])
         args = [entry.args for entry in self.calls.call_args_list]
