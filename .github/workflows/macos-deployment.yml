@@ -16,6 +16,8 @@ on:
       - scripts/sbom/**
       - scripts/verify_release_provenance.py
       - scripts/verify_release_rebuild.py
+      - scripts/signed_release_manifest.py
+      - scripts/test_signed_release_manifest.py
       - cmd/accessweaver-launcher/**
       - scripts/macos_launcher.py
       - scripts/test_macos_launcher.py
@@ -78,6 +80,7 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts -p test_macos_deployment.py -v
           python3 -m unittest discover -s scripts -p test_macos_installer_publisher.py -v
+          python3 -m unittest discover -s scripts -p test_signed_release_manifest.py -k test_retry_recovers_after_exit -v
           python3 -m unittest discover -s scripts -p test_macos_deployment_provenance.py -v
           python3 -m unittest discover -s scripts -p test_macos_launcher.py -v
           go test ./internal/packageupgrade ./cmd/accessweaver-launcher ./cmd/accessweaver-installer -count=1

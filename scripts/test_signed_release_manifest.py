@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -581,13 +582,14 @@ class SignedReleaseManifestTests(unittest.TestCase):
         self.assertEqual(alias.read_bytes(), original_installer)
         staged_file.unlink()
 
+        native_publish = release.publish_staged_installer
         for competing_bytes in (original_installer, conflicting):
             def publish_concurrently(source, destination):
                 destination.write_bytes(competing_bytes)
-                os_link(source, destination)
+                native_publish(source, destination)
 
             with self.subTest(matching=competing_bytes == original_installer), \
-                    patch.object(release.os, "link", side_effect=publish_concurrently):
+                    patch.object(release, "publish_staged_installer", side_effect=publish_concurrently):
                 if competing_bytes == original_installer:
                     self.assertTrue(self.verify(approved, pin, **update)["managedUpdate"]["installerStaged"])
                 else:
@@ -995,6 +997,52 @@ class SignedReleaseManifestTests(unittest.TestCase):
                     self.assertEqual(destination.read_bytes(), original)
                     self.assertEqual(list(staging.iterdir()), [destination])
                     destination.unlink()
+
+    @unittest.skipUnless(sys.platform in ("win32", "darwin", "linux"), "requires native exclusive rename")
+    def test_retry_recovers_after_exit_immediately_after_publication(self):
+        update = release.managed_update(release.inventory(self.candidate, self.subjects),
+                                        "windows/amd64", "1.2.2-rc.1", VERSION)
+        source = self.candidate / update["installer"]
+        staging = self.root / "interrupted-staging"
+        staging.mkdir()
+        child = """
+import os
+from pathlib import Path
+import sys
+from unittest.mock import patch
+
+sys.path.insert(0, sys.argv[1])
+import signed_release_manifest as release
+
+source, staging = map(Path, sys.argv[2:4])
+update = {"installer": source.name, "installerSHA256": release.digest(source)}
+publish = release.publish_staged_installer
+
+def publish_then_exit(staged, destination):
+    publish(staged, destination)
+    os._exit(73)
+
+with patch.object(release, "publish_staged_installer", side_effect=publish_then_exit):
+    release.stage_managed_update(source.parent, staging, update, {"schemaVersion": 1},
+                                 size=source.stat().st_size,
+                                 directory_identity=release.staging_directory_identity(staging))
+"""
+        process = subprocess.run([sys.executable, "-c", child, str(Path(release.__file__).parent),
+                                  str(source), str(staging)], timeout=20, capture_output=True)
+        self.assertEqual(process.returncode, 73, process.stderr.decode(errors="replace"))
+        destination = staging / source.name
+        original = source.read_bytes()
+        published = destination.stat()
+        self.assertEqual(published.st_nlink, 1)
+        abandoned = [path for path in staging.iterdir() if path != destination]
+        self.assertEqual(len(abandoned), 1)
+        self.assertEqual(list(abandoned[0].iterdir()), [])
+
+        release.stage_managed_update(self.candidate, staging, update, self.policy,
+                                     size=len(original), directory_identity=release.staging_directory_identity(staging))
+        self.assertTrue(os.path.samestat(published, destination.stat()))
+        self.assertEqual(destination.read_bytes(), original)
+        self.assertEqual(list(abandoned[0].iterdir()), [])
 
     def test_staging_refuses_changed_snapshot_size_and_directory(self):
         update = release.managed_update(release.inventory(self.candidate, self.subjects),
