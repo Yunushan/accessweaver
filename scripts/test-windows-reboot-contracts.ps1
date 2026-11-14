@@ -5,7 +5,7 @@ $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'DNS reboot fixture failed parsing'}
 foreach($name in @('Assert-DNSRebootAdmission','Save-DNSRebootRecord','Open-DNSRebootInput','Read-DNSRebootRecord',
-        'Get-DNSRebootDigest','Open-ApprovedDNSRebootController','Get-DNSRebootJournalID','Assert-DNSRebootJournal',
+        'Get-DNSRebootDigest','Assert-DNSRebootControllerArchitecture','Open-ApprovedDNSRebootController','Get-DNSRebootJournalID','Assert-DNSRebootJournal',
         'Get-DNSRebootCoverage','Assert-DNSRebootConfigured','Assert-RebootResolver','Assert-DNSRebootActiveResolver','Wait-DNSRebootObservation','Test-DNSRebootServicesRemoved',
         'Invoke-DNSRebootPreparation')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
@@ -70,11 +70,15 @@ try {
 $controllerFixture=Join-Path ([IO.Path]::GetTempPath()) ('accessweaver-dns-pin-'+[guid]::NewGuid().ToString('N'))
 $controller=$null
 try {
-    [IO.File]::WriteAllText($controllerFixture,'inert test content')
+    $image=[byte[]]::new(90)
+    $image[0]=0x4d;$image[1]=0x5a;$image[60]=64;$image[64]=0x50;$image[65]=0x45
+    $image[68]=0x64;$image[69]=0x86;$image[88]=0x0b;$image[89]=0x02
+    [IO.File]::WriteAllBytes($controllerFixture,$image)
     $digest=(Get-FileHash -LiteralPath $controllerFixture -Algorithm SHA256).Hash
-    Refuse {Open-ApprovedDNSRebootController $controllerFixture 'invalid'}
-    Refuse {Open-ApprovedDNSRebootController $controllerFixture ('0'*64)}
-    $controller=Open-ApprovedDNSRebootController $controllerFixture $digest.ToLowerInvariant()
+    Refuse {Open-ApprovedDNSRebootController $controllerFixture 'invalid' 'amd64'}
+    Refuse {Open-ApprovedDNSRebootController $controllerFixture ('0'*64) 'amd64'}
+    Refuse {Open-ApprovedDNSRebootController $controllerFixture $digest 'arm64'}
+    $controller=Open-ApprovedDNSRebootController $controllerFixture $digest.ToLowerInvariant() 'amd64'
     if($controller -isnot [IO.FileStream]){throw 'DNS reboot controller approval did not retain its file handle'}
     if($env:OS -ceq 'Windows_NT'){
         Refuse {[IO.File]::WriteAllText($controllerFixture,'replacement')}
@@ -82,7 +86,19 @@ try {
     }
     $controller.Dispose()
     [IO.File]::WriteAllText($controllerFixture,'replacement')
-    Refuse {Open-ApprovedDNSRebootController $controllerFixture $digest}
+    Refuse {Open-ApprovedDNSRebootController $controllerFixture $digest 'amd64'}
+    $armImage=$image.Clone();$armImage[69]=0xaa
+    [IO.File]::WriteAllBytes($controllerFixture,$armImage)
+    $armDigest=(Get-FileHash -LiteralPath $controllerFixture -Algorithm SHA256).Hash
+    $armController=Open-ApprovedDNSRebootController $controllerFixture $armDigest 'arm64'
+    try {Refuse {Assert-DNSRebootControllerArchitecture $armController 'amd64'}}
+    finally {$armController.Dispose()}
+    foreach($bad in @(@{index=60;value=255},@{index=64;value=0},@{index=89;value=1})){
+        $invalid=$image.Clone();$invalid[$bad.index]=$bad.value
+        [IO.File]::WriteAllBytes($controllerFixture,$invalid)
+        $invalidDigest=(Get-FileHash -LiteralPath $controllerFixture -Algorithm SHA256).Hash
+        Refuse {Open-ApprovedDNSRebootController $controllerFixture $invalidDigest 'amd64'}
+    }
 } finally {
     if($null -ne $controller){$controller.Dispose()}
     [IO.File]::Delete($controllerFixture)
@@ -152,7 +168,7 @@ if($stages.Count -ne 3 -or $stages[0].GetCommandName() -cne 'Register-ScheduledT
     throw 'VMware DNS preparation must follow task registration and retire the task on failure'
 }
 $journalId='workflow-'+('a'*32)+'.json'
-$saved=@{schemaVersion=7;qualificationID=('a'*32);method='doh';requiredOriginalMode='static-ipv6';guestID='synthetic';
+$saved=@{schemaVersion=8;architecture='amd64';qualificationID=('a'*32);method='doh';requiredOriginalMode='static-ipv6';guestID='synthetic';
     binarySHA256=('a'*64);fixtureSHA256=('b'*64);oracleSHA256=('c'*64);snapshotSHA256=('D'*64);
     journalId=$journalId;journalSHA256=('E'*64);boot='639303000000000000'}
 $current=$saved.Clone()
@@ -492,12 +508,12 @@ $root=[IO.Path]::Combine([IO.Path]::GetTempPath(),('aw-dns-reboot-publication-'+
 [void][IO.Directory]::CreateDirectory($root)
 $shared=Join-Path $root 'share'
 $report=Join-Path $root 'reboot-results.json'
-$record=@{schemaVersion=9;qualificationID=('a'*32);method='doh';binarySHA256=('A'*64);fixtureSHA256=('B'*64);oracleSHA256=('C'*64)
+$record=@{schemaVersion=10;architecture='amd64';qualificationID=('a'*32);method='doh';binarySHA256=('A'*64);fixtureSHA256=('B'*64);oracleSHA256=('C'*64)
     requiredOriginalMode='static-ipv6';originalModeCoverage=@{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0;'static-ipv6'=1}
     rebootVerified=$true;servicesVerified=$true;configuredStateVerified=$true;resolverVerified=$true
     journalBindingVerified=$true;journalRecoveryAccepted=$true;originalStateRestored=$true;originalResolverVerified=$true
     snapshotRetired=$true;restorationReceiptVerified=$true;servicesRemoved=$true;passed=$true;stage='complete';cleanupStage='recovered';teardownStage='complete'}
-$legacy=$record.Clone();$legacy.schemaVersion=8;$legacy.Remove('restorationReceiptVerified')
+$legacy=$record.Clone();$legacy.schemaVersion=9;$legacy.Remove('architecture')
 $pin=$record.binarySHA256.ToLowerInvariant()
 $qualificationID=$record.qualificationID
 $method=$record.method
@@ -507,7 +523,7 @@ $oraclePin=$record.oracleSHA256.ToLowerInvariant()
 $destination=Join-Path $shared ('reboot-results-'+$qualificationID+'.json')
 $secondID='b'*32
 $secondDestination=Join-Path $shared ('reboot-results-'+$secondID+'.json')
-Refuse {Assert-DNSRebootPublicReport ([Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $legacy -Depth 8))) $pin $qualificationID $method $originalMode $fixturePin $oraclePin}
+Refuse {Assert-DNSRebootPublicReport ([Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $legacy -Depth 8))) $pin $qualificationID $method $originalMode $fixturePin $oraclePin 'amd64'}
 foreach($invalid in @(
     @{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0},
     @{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0;'static-ipv6'=0},
@@ -517,12 +533,13 @@ foreach($invalid in @(
 )){
     $candidate=$record.Clone();$candidate.originalModeCoverage=$invalid
     $data=[Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $candidate -Depth 8))
-    Refuse {Assert-DNSRebootPublicReport $data $pin $qualificationID $method $originalMode $fixturePin $oraclePin}
+    Refuse {Assert-DNSRebootPublicReport $data $pin $qualificationID $method $originalMode $fixturePin $oraclePin 'amd64'}
 }
 foreach($invalid in @(
     @{stage='services';servicesVerified=$false},
     @{cleanupStage='original-resolver'},
     @{restorationReceiptVerified=$false},
+    @{architecture='arm64'},
     @{cleanupStage='restoration-receipt';restorationReceiptVerified=$true},
     @{teardownStage='services-remain'},
     @{teardownStage='unknown';servicesRemoved=$false}
@@ -531,12 +548,12 @@ foreach($invalid in @(
     $candidate.passed=$false
     foreach($key in $invalid.Keys){$candidate[$key]=$invalid[$key]}
     $data=[Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $candidate -Depth 8))
-    Refuse {Assert-DNSRebootPublicReport $data $pin $qualificationID $method $originalMode $fixturePin $oraclePin}
+    Refuse {Assert-DNSRebootPublicReport $data $pin $qualificationID $method $originalMode $fixturePin $oraclePin 'amd64'}
 }
 $candidate=$record.Clone()
 $candidate.cleanupStage='restoration-receipt';$candidate.restorationReceiptVerified=$false;$candidate.passed=$false
 $data=[Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $candidate -Depth 8))
-if((Assert-DNSRebootPublicReport $data $pin $qualificationID $method $originalMode $fixturePin $oraclePin) -ne $false){
+if((Assert-DNSRebootPublicReport $data $pin $qualificationID $method $originalMode $fixturePin $oraclePin 'amd64') -ne $false){
     throw 'A missing restoration receipt was credited as a pass'
 }
 $candidate=$record.Clone()
@@ -544,7 +561,7 @@ $candidate.stage='configured-readback';$candidate.configuredStateVerified=$false
 $candidate.cleanupStage='original-state';$candidate.originalStateRestored=$false;$candidate.originalResolverVerified=$false
 $candidate.snapshotRetired=$false;$candidate.restorationReceiptVerified=$false;$candidate.teardownStage='complete';$candidate.passed=$false
 $data=[Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $candidate -Depth 8))
-if((Assert-DNSRebootPublicReport $data $pin $qualificationID $method $originalMode $fixturePin $oraclePin) -ne $false){
+if((Assert-DNSRebootPublicReport $data $pin $qualificationID $method $originalMode $fixturePin $oraclePin 'amd64') -ne $false){
     throw 'Successful bulk teardown was credited as successful journal recovery'
 }
 $startupCommand=$startup.EndBlock.Extent.Text
@@ -560,23 +577,23 @@ $verify={
 }
 $retire={$script:retirements++}
 try {
-    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode $fixturePin $oraclePin}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode $fixturePin $oraclePin 'amd64'}
     if($script:verifications -ne 1 -or $script:retirements -ne 0 -or -not [IO.File]::Exists($report)){
         throw 'Unavailable share discarded the result or retired the task'
     }
     [void][IO.Directory]::CreateDirectory($shared)
-    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire ('0'*64) $qualificationID $method $originalMode $fixturePin $oraclePin}
-    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin ('b'*32) $method $originalMode $fixturePin $oraclePin}
-    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID 'dnscrypt' $originalMode $fixturePin $oraclePin}
-    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method 'dhcp-ipv4' $fixturePin $oraclePin}
-    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode ('0'*64) $oraclePin}
-    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode $fixturePin ('0'*64)}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire ('0'*64) $qualificationID $method $originalMode $fixturePin $oraclePin 'amd64'}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin ('b'*32) $method $originalMode $fixturePin $oraclePin 'amd64'}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID 'dnscrypt' $originalMode $fixturePin $oraclePin 'amd64'}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method 'dhcp-ipv4' $fixturePin $oraclePin 'amd64'}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode ('0'*64) $oraclePin 'amd64'}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode $fixturePin ('0'*64) 'amd64'}
     if([IO.File]::Exists($destination) -or $script:verifications -ne 1 -or $script:retirements -ne 0){
         throw 'A mismatched DNS reboot report was published or retired its task'
     }
-    Refuse {Complete-DNSRebootStartup $report $shared $verify {throw 'Synthetic task retirement failure'} $pin $qualificationID $method $originalMode $fixturePin $oraclePin}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify {throw 'Synthetic task retirement failure'} $pin $qualificationID $method $originalMode $fixturePin $oraclePin 'amd64'}
     if(-not [IO.File]::Exists($destination)){throw 'Task retirement failure lost the published result'}
-    if(-not (Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode $fixturePin $oraclePin) -or $script:verifications -ne 1 -or
+    if(-not (Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode $fixturePin $oraclePin 'amd64') -or $script:verifications -ne 1 -or
         $script:retirements -ne 1 -or [IO.Directory]::GetFileSystemEntries($shared).Length -ne 1){
         throw 'Publication retry repeated verification or left a staging file'
     }
@@ -584,7 +601,7 @@ try {
     $firstReport=[IO.File]::ReadAllText($destination)
     $second=$record.Clone();$second.qualificationID=$secondID
     Save-DNSRebootRecord $report $second
-    if(-not (Complete-DNSRebootStartup $report $shared {throw 'Existing second report must be reused'} $retire $pin $secondID $method $originalMode $fixturePin $oraclePin) -or
+    if(-not (Complete-DNSRebootStartup $report $shared {throw 'Existing second report must be reused'} $retire $pin $secondID $method $originalMode $fixturePin $oraclePin 'amd64') -or
         [IO.File]::ReadAllText($destination) -cne $firstReport -or
         (Get-Content -LiteralPath $secondDestination -Raw | ConvertFrom-Json).qualificationID -cne $secondID){
         throw 'Qualifications could not publish independently to the same share'
@@ -595,7 +612,7 @@ try {
     $different=$record.Clone();$different.qualificationID=$secondID
     Save-DNSRebootRecord $destination $different
     $before=[IO.File]::ReadAllText($destination)
-    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode $fixturePin $oraclePin}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode $fixturePin $oraclePin 'amd64'}
     if([IO.File]::ReadAllText($destination) -cne $before -or $script:retirements -ne 2){
         throw 'Publication replaced different evidence or retired its task'
     }
@@ -603,7 +620,7 @@ try {
     [IO.File]::Delete($report)
     $record.servicesVerified=$false
     Save-DNSRebootRecord $report $record
-    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode $fixturePin $oraclePin}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode $fixturePin $oraclePin 'amd64'}
     if([IO.File]::Exists($destination) -or $script:retirements -ne 2){
         throw 'Inconsistent passing report was published'
     }
@@ -612,13 +629,13 @@ try {
     $passed=Complete-DNSRebootStartup $report $shared {
         Save-DNSRebootRecord $report $record
         throw 'Synthetic acceptance failure with evidence'
-    } $retire $pin $qualificationID $method $originalMode $fixturePin $oraclePin
+    } $retire $pin $qualificationID $method $originalMode $fixturePin $oraclePin 'amd64'
     if($passed -or -not [IO.File]::Exists($destination) -or $script:retirements -ne 3){
         throw 'Completed failed report was lost or reported as passed'
     }
     [IO.File]::Delete($destination)
     [IO.File]::Delete($report)
-    Refuse {Complete-DNSRebootStartup $report $shared {throw 'Synthetic interruption before publication'} $retire $pin $qualificationID $method $originalMode $fixturePin $oraclePin}
+    Refuse {Complete-DNSRebootStartup $report $shared {throw 'Synthetic interruption before publication'} $retire $pin $qualificationID $method $originalMode $fixturePin $oraclePin 'amd64'}
     if([IO.File]::Exists($destination) -or $script:retirements -ne 3){
         throw 'Interrupted verification fabricated evidence or retired the task'
     }

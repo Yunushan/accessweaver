@@ -31,7 +31,7 @@ function Read-DNSRebootReport([string]$Path) {
     } finally {$stream.Dispose()}
 }
 function Assert-DNSRebootPublicReport([byte[]]$Data,[string]$ApprovedSHA256,[string]$ExpectedQualificationID,
-    [string]$ExpectedMethod,[string]$ExpectedOriginalMode,[string]$ExpectedFixtureSHA256,[string]$ExpectedOracleSHA256) {
+    [string]$ExpectedMethod,[string]$ExpectedOriginalMode,[string]$ExpectedFixtureSHA256,[string]$ExpectedOracleSHA256,[string]$ExpectedArchitecture) {
     $record=[Text.UTF8Encoding]::new($false,$true).GetString($Data) | ConvertFrom-Json -ErrorAction Stop
     $flags=@('rebootVerified','servicesVerified','configuredStateVerified','resolverVerified','journalBindingVerified',
         'journalRecoveryAccepted','originalStateRestored','originalResolverVerified','snapshotRetired','restorationReceiptVerified','servicesRemoved','passed')
@@ -40,12 +40,14 @@ function Assert-DNSRebootPublicReport([byte[]]$Data,[string]$ApprovedSHA256,[str
     $stages=@('services','configured-state','resolver','configured-readback','complete')
     $cleanupStages=@('journal-recovery','original-state','original-resolver','snapshot-retirement','restoration-receipt','recovered')
     $teardownStages=@('remove-all','original-state','original-resolver','snapshot-retirement','service-inventory','services-remain','complete')
-    $keys=@('schemaVersion','qualificationID','method','requiredOriginalMode','originalModeCoverage','stage','cleanupStage','teardownStage')+$flags+$digests
+    $keys=@('schemaVersion','qualificationID','method','architecture','requiredOriginalMode','originalModeCoverage','stage','cleanupStage','teardownStage')+$flags+$digests
     if($record -isnot [pscustomobject] -or @($record.PSObject.Properties).Count -ne $keys.Count -or
         @($record.PSObject.Properties.Name | Where-Object {$_ -cnotin $keys}).Count -ne 0 -or
-        ($record.schemaVersion -isnot [int] -and $record.schemaVersion -isnot [long]) -or $record.schemaVersion -ne 9 -or
+        ($record.schemaVersion -isnot [int] -and $record.schemaVersion -isnot [long]) -or $record.schemaVersion -ne 10 -or
         $record.qualificationID -isnot [string] -or $record.qualificationID -cnotmatch '\A[a-f0-9]{32}\z' -or
         $record.method -isnot [string] -or $record.method -cnotin @('doh','dnscrypt') -or
+        $record.architecture -isnot [string] -or $record.architecture -cnotin @('amd64','arm64') -or
+        $record.architecture -cne $ExpectedArchitecture -or
         $record.stage -isnot [string] -or $record.cleanupStage -isnot [string] -or $record.teardownStage -isnot [string] -or
         $record.stage -cnotin $stages -or $record.cleanupStage -cnotin $cleanupStages -or $record.teardownStage -cnotin $teardownStages){
         throw 'DNS reboot report schema refused'
@@ -114,7 +116,7 @@ function Publish-DNSRebootPublicReport([string]$Destination,[byte[]]$Data) {
     } finally {[IO.File]::Delete($staged)}
 }
 function Complete-DNSRebootStartup([string]$Report,[string]$ResultsDirectory,[scriptblock]$Verify,[scriptblock]$Retire,[string]$ApprovedSHA256,[string]$ExpectedQualificationID,
-    [string]$ExpectedMethod,[string]$ExpectedOriginalMode,[string]$ExpectedFixtureSHA256,[string]$ExpectedOracleSHA256) {
+    [string]$ExpectedMethod,[string]$ExpectedOriginalMode,[string]$ExpectedFixtureSHA256,[string]$ExpectedOracleSHA256,[string]$ExpectedArchitecture) {
     if(-not [IO.File]::Exists($Report)){
         try{[void](& $Verify)}catch{
             # A failed acceptance can still have a complete fixed report.
@@ -122,7 +124,7 @@ function Complete-DNSRebootStartup([string]$Report,[string]$ResultsDirectory,[sc
         }
     }
     $data=Read-DNSRebootReport $Report
-    $passed=Assert-DNSRebootPublicReport $data $ApprovedSHA256 $ExpectedQualificationID $ExpectedMethod $ExpectedOriginalMode $ExpectedFixtureSHA256 $ExpectedOracleSHA256
+    $passed=Assert-DNSRebootPublicReport $data $ApprovedSHA256 $ExpectedQualificationID $ExpectedMethod $ExpectedOriginalMode $ExpectedFixtureSHA256 $ExpectedOracleSHA256 $ExpectedArchitecture
     $destination=Join-Path $ResultsDirectory ('reboot-results-'+$ExpectedQualificationID+'.json')
     Publish-DNSRebootPublicReport $destination $data
     [void](& $Retire)
@@ -140,6 +142,10 @@ $private=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'AccessWeaver 
 $report=Join-Path $private 'reboot-results.json'
 $resultsDirectory='\\vmware-host\Shared Folders\AccessWeaver-Results'
 $binary=Join-Path 'C:\AccessWeaver-Test' $ExecutableName
+$nativeArchitecture=@{X64='amd64';Arm64='arm64'}[[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()]
+if(-not $nativeArchitecture -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne [Runtime.InteropServices.RuntimeInformation]::OSArchitecture){
+    throw 'A native 64-bit Windows DNS reboot guest and shell are required'
+}
 $passed=Complete-DNSRebootStartup $report $resultsDirectory {
     $fixture='C:\AccessWeaver-Test\test-windows-reboot.ps1'
     $stream=[IO.File]::Open($fixture,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
@@ -152,5 +158,5 @@ $passed=Complete-DNSRebootStartup $report $resultsDirectory {
     } finally {$stream.Dispose()}
 } {
     Unregister-ScheduledTask -TaskName 'AccessWeaver-Parity-Reboot-Verify' -Confirm:$false -ErrorAction Stop
-} $ExecutableSHA256 $QualificationID ($DNS.ToLowerInvariant()) ($RequiredOriginalMode.ToLowerInvariant()) $FixtureSHA256 $OracleSHA256
+} $ExecutableSHA256 $QualificationID ($DNS.ToLowerInvariant()) ($RequiredOriginalMode.ToLowerInvariant()) $FixtureSHA256 $OracleSHA256 $nativeArchitecture
 if(-not $passed){throw 'DNS reboot acceptance failed; fixed evidence published'}

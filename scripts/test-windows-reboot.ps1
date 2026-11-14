@@ -14,7 +14,8 @@ $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 
 function Assert-DNSRebootAdmission($Saved,$Current) {
-    if($Saved.schemaVersion -ne 7 -or $Saved.method -isnot [string] -or
+    if($Saved.schemaVersion -ne 8 -or $Saved.architecture -isnot [string] -or
+       $Saved.architecture -cnotin @('amd64','arm64') -or $Saved.architecture -cne $Current.architecture -or $Saved.method -isnot [string] -or
        $Saved.method -cnotin @('doh','dnscrypt') -or $Saved.method -cne $Current.method -or
        $Saved.requiredOriginalMode -isnot [string] -or $Saved.requiredOriginalMode -cne $Current.requiredOriginalMode -or
        $Saved.qualificationID -isnot [string] -or $Saved.qualificationID -cnotmatch '\A[a-f0-9]{32}\z' -or
@@ -61,7 +62,28 @@ function Get-DNSRebootDigest([string]$Path,[long]$Maximum) {
         return (Get-FileHash -InputStream $stream -Algorithm SHA256).Hash
     } finally {$stream.Dispose()}
 }
-function Open-ApprovedDNSRebootController([string]$Path,[string]$ExpectedSHA256) {
+function Assert-DNSRebootControllerArchitecture([IO.Stream]$Stream,[string]$Architecture) {
+    $machine=@{amd64=0x8664;arm64=0xaa64}[$Architecture]
+    $reader=[IO.BinaryReader]::new($Stream,[Text.Encoding]::ASCII,$true)
+    try {
+        $Stream.Position=0
+        if($null -eq $machine -or $Stream.Length -lt 90 -or $reader.ReadUInt16() -ne 0x5a4d){
+            throw 'DNS reboot controller must be a native Windows executable'
+        }
+        $Stream.Position=60
+        $offset=$reader.ReadInt32()
+        if($offset -lt 64 -or $offset -gt ($Stream.Length-26)){
+            throw 'DNS reboot controller PE header is outside the approved file'
+        }
+        $Stream.Position=$offset
+        if($reader.ReadUInt32() -ne 0x4550 -or $reader.ReadUInt16() -ne $machine){
+            throw 'DNS reboot controller does not match the native guest architecture'
+        }
+        $Stream.Position=$offset+24
+        if($reader.ReadUInt16() -ne 0x20b){throw 'DNS reboot controller must use the PE32+ format'}
+    } finally {$reader.Dispose()}
+}
+function Open-ApprovedDNSRebootController([string]$Path,[string]$ExpectedSHA256,[string]$Architecture) {
     $stream=Open-DNSRebootInput $Path
     try {
         if($ExpectedSHA256 -cnotmatch '\A[A-Fa-f0-9]{64}\z' -or
@@ -69,6 +91,7 @@ function Open-ApprovedDNSRebootController([string]$Path,[string]$ExpectedSHA256)
             (Get-FileHash -InputStream $stream -Algorithm SHA256).Hash -ine $ExpectedSHA256){
             throw 'Staged DNS reboot controller does not match the approved candidate'
         }
+        Assert-DNSRebootControllerArchitecture $stream $Architecture
         return $stream
     } catch {
         $stream.Dispose()
@@ -149,8 +172,12 @@ $os=Get-CimInstance Win32_OperatingSystem
 if(@($os).Count -ne 1 -or $os.LastBootUpTime -isnot [DateTime]){throw 'Cannot identify guest boot'}
 $DNS=$DNS.ToLowerInvariant()
 if($DNS -ceq 'auto'){$DNS=if(Get-Command Get-DnsClientDohServerAddress -ErrorAction SilentlyContinue){'doh'}else{'dnscrypt'}}
+$nativeArchitecture=@{X64='amd64';Arm64='arm64'}[[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()]
+if(-not $nativeArchitecture -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne [Runtime.InteropServices.RuntimeInformation]::OSArchitecture){
+    throw 'A native 64-bit Windows DNS reboot guest and shell are required'
+}
 $current=@{
-    schemaVersion=7;method=$DNS;requiredOriginalMode=$RequiredOriginalMode.ToLowerInvariant();guestID=$guestID.ToString('D');qualificationID=$QualificationID;
+    schemaVersion=8;architecture=$nativeArchitecture;method=$DNS;requiredOriginalMode=$RequiredOriginalMode.ToLowerInvariant();guestID=$guestID.ToString('D');qualificationID=$QualificationID;
     binarySHA256=$ExecutableSHA256.ToUpperInvariant();
     fixtureSHA256=(Get-DNSRebootDigest $PSCommandPath 1MB);
     boot=$os.LastBootUpTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
@@ -309,7 +336,7 @@ function Assert-RebootServices([string]$Method) {
 $previousHome=$env:ACCESSWEAVER_HOME
 # Hold the approved executable through all dispatches. Windows read sharing
 # permits execution while denying writes, renames and deletion of the file.
-$controller=Open-ApprovedDNSRebootController $Executable $current.binarySHA256
+$controller=Open-ApprovedDNSRebootController $Executable $current.binarySHA256 $nativeArchitecture
 try {
     $oracleStream=Open-DNSRebootInput $oracle
     try {
@@ -382,7 +409,7 @@ try {
         throw 'Interrupted DNS reboot verification requires a fresh checkpoint'
     }
     Save-DNSRebootRecord (Join-Path $private 'verification-started.json') @{schemaVersion=7}
-    $outcome=[ordered]@{schemaVersion=9;qualificationID=$saved.qualificationID;method=$saved.method;binarySHA256=$current.binarySHA256;
+    $outcome=[ordered]@{schemaVersion=10;qualificationID=$saved.qualificationID;method=$saved.method;architecture=$current.architecture;binarySHA256=$current.binarySHA256;
         requiredOriginalMode=$saved.requiredOriginalMode;originalModeCoverage=$coverage;
         fixtureSHA256=$current.fixtureSHA256;oracleSHA256=$current.oracleSHA256;
         rebootVerified=$true;servicesVerified=$false;configuredStateVerified=$false;
