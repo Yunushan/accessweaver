@@ -96,6 +96,12 @@ class ReadinessRegisterTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "differs from the assessed candidate"):
             self.summary()
 
+    def test_register_rejects_duplicate_fields_at_any_depth(self):
+        for data in (b'{"candidateCommit":null,"candidateCommit":null}',
+                     b'{"areas":[{"status":"failed","status":"passed"}]}'):
+            with self.subTest(data=data), self.assertRaisesRegex(ValueError, "duplicate JSON field"):
+                readiness.load_register(data)
+
     def test_production_check_requires_an_independently_supplied_candidate(self):
         with patch.object(sys, "argv", ["check_readiness_evidence.py", "--require-complete"]), \
                 redirect_stderr(io.StringIO()) as messages, self.assertRaises(SystemExit) as failure:
@@ -111,6 +117,11 @@ class ReadinessRegisterTests(unittest.TestCase):
             return subprocess.check_output(["git", *arguments], cwd=self.root, timeout=30).decode("ascii").strip()
 
         git("init", "-q")
+        git("add", self.evidence)
+        git("-c", "user.name=Readiness Test", "-c", "user.email=test@example.invalid",
+            "-c", "commit.gpgsign=false", "commit", "-qm", "Build candidate source")
+        self.commit = git("rev-parse", "HEAD")
+        self.register["candidateCommit"] = self.qualification["sourceCommit"] = self.commit
         argv = ["check_readiness_evidence.py", "--candidate-commit", self.commit, "--require-complete", "--json"]
         for complete in (False, True):
             if complete:
@@ -142,6 +153,20 @@ class ReadinessRegisterTests(unittest.TestCase):
                 redirect_stdout(io.StringIO()) as output, redirect_stderr(io.StringIO()):
             self.assertEqual(readiness.main(), 1)
             self.assertEqual(json.loads(output.getvalue())["assessmentCommit"], earlier_assessment)
+
+        for identity, error in ((git("rev-parse", f"HEAD:{self.evidence}"), "Git commit"),
+                                ("b" * len(self.commit), "unavailable")):
+            self.register["candidateCommit"] = self.qualification["sourceCommit"] = identity
+            register.write_text(json.dumps(self.register), encoding="utf-8")
+            git("add", self.evidence, "docs/readiness-gates.json")
+            git("-c", "user.name=Readiness Test", "-c", "user.email=test@example.invalid",
+                "-c", "commit.gpgsign=false", "commit", "-qm", "Assess invalid candidate")
+            invalid = ["check_readiness_evidence.py", "--candidate-commit", identity, "--require-complete"]
+            with self.subTest(identity=identity), patch.object(sys, "argv", invalid), \
+                    patch.object(readiness, "__file__", str(self.root / "scripts" / "check_readiness_evidence.py")), \
+                    redirect_stdout(io.StringIO()) as output, self.assertRaisesRegex(ValueError, error):
+                readiness.main()
+            self.assertEqual(output.getvalue(), "")
 
     def test_invalid_status_cannot_be_counted(self):
         for status in ("pass", "Passed", "", False, None):

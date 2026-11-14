@@ -32,11 +32,31 @@ def git_object(root, *arguments):
     return subprocess.check_output(["git", "--no-replace-objects", *arguments], cwd=root, timeout=30)
 
 
+def require_commit(root, identity, purpose):
+    if not isinstance(identity, str) or not re.fullmatch(COMMIT, identity):
+        raise ValueError(f"Expected a full lowercase {purpose} commit")
+    try:
+        resolved = git_object(root, "rev-parse", "--verify", "--quiet", identity + "^{object}").strip()
+    except subprocess.CalledProcessError:
+        raise ValueError(f"{purpose.capitalize()} commit is unavailable in this repository") from None
+    if resolved != identity.encode("ascii"):
+        raise ValueError(f"Expected a full lowercase {purpose} commit")
+    if git_object(root, "cat-file", "-t", identity).strip() != b"commit":
+        raise ValueError(f"Expected a Git commit for the {purpose}")
+
+
+def load_register(data):
+    def unique_fields(pairs):
+        record = dict(pairs)
+        if len(record) != len(pairs):
+            raise ValueError("Readiness register contains a duplicate JSON field")
+        return record
+
+    return json.loads(data.decode("utf-8"), object_pairs_hook=unique_fields)
+
+
 def committed_assessment(root, assessment_commit):
-    if not re.fullmatch(COMMIT, assessment_commit):
-        raise ValueError("Expected a full lowercase assessment commit")
-    if git_object(root, "cat-file", "-t", assessment_commit).strip() != b"commit":
-        raise ValueError("Expected a Git commit for the readiness assessment")
+    require_commit(root, assessment_commit, "assessment")
     files = {}
     for item in git_object(root, "ls-tree", "-rz", assessment_commit).split(b"\0"):
         if not item:
@@ -48,7 +68,7 @@ def committed_assessment(root, assessment_commit):
     register_path = "docs/readiness-gates.json"
     if register_path not in files:
         raise ValueError("Readiness register is missing from the assessment commit")
-    register = json.loads(git_object(root, "cat-file", "blob", files[register_path]))
+    register = load_register(git_object(root, "cat-file", "blob", files[register_path]))
 
     def committed_digest(path):
         return hashlib.sha256(git_object(root, "cat-file", "blob", files[path])).hexdigest()
@@ -164,7 +184,7 @@ def main():
     if args.require_complete and assessment_commit is None:
         assessment_commit = git_object(root, "rev-parse", "--verify", "HEAD").decode("ascii").strip()
     if assessment_commit is None:
-        register = json.loads((root / "docs/readiness-gates.json").read_text(encoding="utf-8"))
+        register = load_register((root / "docs/readiness-gates.json").read_bytes())
         tracked = set(git_object(root, "ls-files", "-z").decode("utf-8").split("\0"))
         summary = summarize(register, root, tracked, candidate_commit=args.candidate_commit)
     else:
@@ -172,6 +192,8 @@ def main():
         summary = summarize(register, root, files, candidate_commit=args.candidate_commit,
                             evidence_digest=evidence_digest)
         summary["assessmentCommit"] = assessment_commit
+    if summary["candidateCommit"] is not None:
+        require_commit(root, summary["candidateCommit"], "candidate")
     if args.json:
         print(json.dumps(summary))
     else:
