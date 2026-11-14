@@ -1668,12 +1668,10 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         if($queryFails){throw 'Fixture SCM query refused'}
         return $serviceState
     }
-    function Read-ManagedServiceCommand {param($Name);return $serviceCommand}
-    function Get-Service {
-        param($Name,$ErrorAction)
-        $record=[pscustomobject]@{Status=$serviceStatus}
-        $record | Add-Member ScriptMethod Dispose {}
-        return $record
+    function Read-ManagedServiceRegistration {
+        param($Name)
+        if($Name -cne 'SplitCordDpiService'){throw 'Unexpected SplitCord registration query'}
+        return [pscustomobject]@{PathName=$serviceCommand;State=$serviceStatus}
     }
     $queryFails=$false
     $serviceState=0;$serviceCommand='"'+$binary+'"';$serviceStatus='Running'
@@ -1838,6 +1836,7 @@ try {
         if($ErrorAction -cne 'Stop'){throw 'Expected a complete fixture process query'}
         if($script:appRemovalInvoked -and $script:appReappearance -ceq 'replacement'){$script:appRemovalMoved=$true}
         if($script:appRemovalInvoked -and $script:appReappearance -ceq 'original'){[IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(3))}
+        if($script:appRemovalInvoked -and $script:appReappearance -ceq 'service'){$script:appServiceRemains=$true}
         return $script:appRemovalProcesses
     }
     $script:appReappearance=$null
@@ -1952,6 +1951,15 @@ try {
     try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'SplitCord service removal could not be verified'}
     Assert ($rejected -and $script:appRemovalEvents.Count -eq 0) 'SplitCord removal detects an orphaned service when the desktop client is absent'
     $script:appServiceRemains=$false
+    $script:appReappearance='service'
+    [IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
+    $script:appRemovalInvoked=$false
+    $rejected=$false
+    try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'SplitCord service removal could not be verified'}
+    Assert ($rejected -and $script:appRemovalInvoked -and $script:appServiceRemains -and
+        $script:appRemovalEvents.Count -eq 0) 'SplitCord removal detects service reappearance during process verification'
+    $script:appServiceRemains=$false
+    $script:appReappearance=$null
     [IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
     $script:appRemovalInvoked=$false
     $removed=Remove-App 'splitcord'

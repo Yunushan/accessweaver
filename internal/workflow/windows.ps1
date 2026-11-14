@@ -2828,18 +2828,22 @@ function Assert-DNSCryptServiceState($Entry,[switch]$ManualStopped) {
         throw 'DNSCrypt service identity changed during startup verification'
     }
 }
-function Read-ManagedServiceCommand([string]$Name,[switch]$RequireAutomaticRunning,[switch]$RequireManualStopped) {
+function Read-ManagedServiceRegistration([string]$Name) {
     $rows=@(Get-CimInstance -ClassName Win32_Service -Filter ("Name='"+$Name+"'") -ErrorAction Stop)
     if($rows.Count -ne 1 -or $rows[0].Name -ine $Name -or $rows[0].PathName -isnot [string]){
         throw 'Managed service registration could not be verified'
     }
-    if($RequireAutomaticRunning -and ($rows[0].StartMode -cne 'Auto' -or $rows[0].State -cne 'Running')){
+    return $rows[0]
+}
+function Read-ManagedServiceCommand([string]$Name,[switch]$RequireAutomaticRunning,[switch]$RequireManualStopped) {
+    $service=Read-ManagedServiceRegistration $Name
+    if($RequireAutomaticRunning -and ($service.StartMode -cne 'Auto' -or $service.State -cne 'Running')){
         throw 'DNSCrypt service automatic startup or running state could not be verified'
     }
-    if($RequireManualStopped -and ($rows[0].StartMode -cne 'Manual' -or $rows[0].State -cne 'Stopped')){
+    if($RequireManualStopped -and ($service.StartMode -cne 'Manual' -or $service.State -cne 'Stopped')){
         throw 'DNSCrypt service manual startup or stopped state could not be verified'
     }
-    return $rows[0].PathName
+    return $service.PathName
 }
 function Assert-ManagedServiceOwnership([string]$Name) {
     if($Name -notmatch '\AAccessWeaver-(byedpi|proxifyre|zapret|zapret2|goodbyedpi|dnscrypt)\z'){
@@ -3267,13 +3271,11 @@ function Wait-SplitCordService([string]$App,[int]$Seconds=20) {
         finally {$script:externalEffectsPending=$previousEffects}
         if(-not $binary -and $state -eq 1060){return}
         if($binary -and $state -eq 0){
-            $command=Read-ManagedServiceCommand $name
-            if($command -ine $binary -and $command -ine ('"'+$binary+'"')){
+            $service=Read-ManagedServiceRegistration $name
+            if($service.PathName -ine $binary -and $service.PathName -ine ('"'+$binary+'"')){
                 throw 'SplitCord service registration differs from the installed application'
             }
-            $service=Get-Service -Name $name -ErrorAction Stop
-            try {if($service.Status -eq 'Running'){return}}
-            finally {$service.Dispose()}
+            if($service.State -ceq 'Running'){return}
         }
         if($deadline.Elapsed.TotalSeconds -ge $Seconds){break}
         Start-Sleep -Milliseconds 250
@@ -3440,6 +3442,7 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
     if((Find-App $variant) -or (Test-Path -LiteralPath $app -ErrorAction Stop)){
         throw 'Application installation reappeared during uninstall verification'
     }
+    if($variant -eq 'splitcord'){Wait-SplitCordService '' 0}
     Event ('Application uninstalled: '+$variant)
     return $true
 }
