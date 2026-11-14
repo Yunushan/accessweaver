@@ -131,6 +131,44 @@ begin
     Result := 'Retry the approved installer in the original AccessWeaver installation directory.';
 end;
 
+function AWPathAttributes(const Path: String): LongWord;
+  external 'GetFileAttributesW@kernel32.dll stdcall';
+function AWDriveType(const Root: String): LongWord;
+  external 'GetDriveTypeW@kernel32.dll stdcall';
+
+function AWInstallationPathPreflight(const Directory: String; AllowMissing: Boolean): String;
+var Target, Root, Part: String; Attributes, Code: LongWord; Start, I: Integer;
+begin
+  Result := 'AccessWeaver requires a local installation directory without junctions or symbolic links.';
+  Target := RemoveBackslashUnlessRoot(Directory);
+  if (Length(Target) < 4) or (Length(Target) > 259) or PathHasInvalidCharacters(Target, True) then Exit;
+  if (Target[2] <> ':') or (Target[3] <> '\') or (Pos('/', Target) <> 0) then Exit;
+  Root := Copy(Target, 1, 3);
+  if AWDriveType(Root) <> 3 then Exit; { DRIVE_FIXED }
+  { Check lexical components before probing any path. }
+  Target := Target + '\';
+  Start := 4;
+  for I := 4 to Length(Target) do begin
+    if Target[I] = '\' then begin
+      Part := Copy(Target, Start, I - Start);
+      if Part = '' then Exit;
+      if (Part[Length(Part)] = '.') or (Part[Length(Part)] = ' ') then Exit;
+      Start := I + 1;
+    end;
+  end;
+  { Check from root to leaf so a parent junction is never accepted as a directory. }
+  for I := 4 to Length(Target) do begin
+    if Target[I] = '\' then begin
+      Attributes := AWPathAttributes(Copy(Target, 1, I - 1));
+      if Attributes = $FFFFFFFF then begin
+        Code := DLLGetLastError;
+        if not AllowMissing or ((Code <> 2) and (Code <> 3)) then Exit;
+      end else if ((Attributes and $00000400) <> 0) or ((Attributes and $00000010) = 0) then Exit;
+    end;
+  end;
+  Result := '';
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var Failure, Destination: String;
 begin
@@ -141,6 +179,7 @@ begin
       (Length('{#ReleaseVersion}') > 256) then
       RaiseException('Cannot record the AccessWeaver installation destination.');
     Failure := AWPendingSetupPreflight(Destination);
+    if Failure = '' then Failure := AWInstallationPathPreflight(Destination, True);
     if Failure <> '' then RaiseException(Failure);
     if not RegWriteStringValue(HKLM64, AWLifecycleRegistry, AWPendingInstall, '{#ReleaseVersion}|' + Destination) or
       not AWFlushLifecycleRecord then
@@ -216,8 +255,6 @@ begin
   end;
 end;
 
-function AWPayloadAttributes(const Path: String): LongWord;
-  external 'GetFileAttributesW@kernel32.dll stdcall';
 function AWOpenReplaceProbe(const Path: String; Access, Sharing, Security,
   Disposition, Flags, Template: LongWord): LongWord;
   external 'CreateFileW@kernel32.dll stdcall';
@@ -227,7 +264,7 @@ var Path: String; Attributes, Handle, Code: LongWord;
 begin
   Result := 'The AccessWeaver executable cannot be replaced. Close it and release any file locks before retrying setup.';
   Path := ExpandConstant('{app}\accessweaver.exe');
-  Attributes := AWPayloadAttributes(Path);
+  Attributes := AWPathAttributes(Path);
   if Attributes = $FFFFFFFF then begin
     Code := DLLGetLastError;
     if (Code = 2) or (Code = 3) then Result := '';
@@ -247,6 +284,7 @@ begin
   else begin
     Result := AWRegistrationPreflight(ExpandConstant('{app}'));
     if Result = '' then Result := AWPendingSetupPreflight(ExpandConstant('{app}'));
+    if Result = '' then Result := AWInstallationPathPreflight(ExpandConstant('{app}'), True);
     if Result = '' then Result := AWPayloadReplacementPreflight;
   end;
 end;
@@ -271,6 +309,7 @@ begin
   if (Result = '') and (PendingVersion <> '') then
     Result := 'An AccessWeaver installation is incomplete. Retry the approved installer before uninstalling.';
   if Result = '' then Result := AWUninstallDirectoryPreflight(ExpandConstant('{app}'));
+  if Result = '' then Result := AWInstallationPathPreflight(ExpandConstant('{app}'), False);
 end;
 
 function InitializeUninstall: Boolean;

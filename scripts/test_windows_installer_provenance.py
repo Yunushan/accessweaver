@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
-from verify_windows_installer_provenance import validate_uninstall_registration_refusal
+from verify_windows_installer_provenance import validate_installation_path_refusals, validate_uninstall_registration_refusal
 from verify_windows_installer_provenance import BUNDLE_NAME,DEFAULT_VERSIONS,WORKFLOW,check_rejections,stage,subject_names,validate_build,verification_command,verify
 
 COMMIT='a'*40
@@ -33,6 +33,25 @@ class ArchitectureRefusalTests(unittest.TestCase):
                     validate_architecture_refusal({"architectureRefusal": {**observation, **override}}, host)
             with self.assertRaises(ValueError):
                 validate_architecture_refusal({}, host)
+
+
+class InstallationPathRefusalTests(unittest.TestCase):
+    def test_requires_both_ordered_junction_cases_and_all_preservation_checks(self):
+        leaf = {
+            "kind": "leaf-junction", "exitCode": 7, "elapsedMilliseconds": 41, "deadlineMilliseconds": 180000,
+            "preflightRefusalLogged": True, "targetPreserved": True, "pendingMarkerAbsent": True,
+            "registrationsAbsent": True, "machineStateUnchanged": True,
+        }
+        ancestor = {**leaf, "kind": "ancestor-junction"}
+        self.assertEqual(validate_installation_path_refusals([leaf, ancestor]),
+                         {"installationPathRefusalsVerified": 2})
+        for invalid in (
+            None, [leaf], [ancestor, leaf], [leaf, leaf],
+            [leaf, {**ancestor, "exitCode": 1}], [leaf, {**ancestor, "targetPreserved": False}],
+            [leaf, {**ancestor, "pendingMarkerAbsent": 1}], [leaf, {**ancestor, "unexpected": True}],
+        ):
+            with self.subTest(observation=invalid), self.assertRaisesRegex(ValueError, "refusal"):
+                validate_installation_path_refusals(invalid)
 
 
 class RedirectedUpgradeTests(unittest.TestCase):
