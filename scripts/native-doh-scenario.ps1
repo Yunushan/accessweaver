@@ -56,7 +56,7 @@ function Invoke-NativeDoHScenario([scriptblock]$Apply,[scriptblock]$Capture,[scr
 # Exercise the regular recover command with two genuine configuration journals.
 # Callbacks keep journal identities and captured adapter state out of the report.
 function Invoke-NativeDNSJournalScenario([scriptblock]$Apply,[scriptblock]$Capture,[scriptblock]$Resolve,[scriptblock]$ReadBinding) {
-    $result=@{outcome='failed';code='baseline';firstBindingVerified=$false;bindingRotated=$false;staleJournalRejected=$false;configuredStatePreserved=$false;currentJournalRecovered=$false;restoredStateVerified=$false;restoredResolverVerified=$false;emergencyRestoreAttempted=$false;emergencyRestoreAccepted=$false;emergencyStateVerified=$false}
+    $result=@{outcome='failed';code='baseline';firstBindingVerified=$false;bindingRotated=$false;reappliedStateVerified=$false;reappliedResolverVerified=$false;staleJournalRejected=$false;configuredStatePreserved=$false;currentJournalRecovered=$false;restoredStateVerified=$false;restoredResolverVerified=$false;emergencyRestoreAttempted=$false;emergencyRestoreAccepted=$false;emergencyStateVerified=$false}
     try {
         $before=& $Capture
         $index=Get-DNSAcceptanceIndex $before
@@ -69,7 +69,8 @@ function Invoke-NativeDNSJournalScenario([scriptblock]$Apply,[scriptblock]$Captu
         $result.code='first-binding'
         $first=& $ReadBinding ''
         $result.firstBindingVerified=$true
-        Assert-DNSAcceptanceConfigured $before (& $Capture) 'doh'
+        $firstConfigured=& $Capture
+        Assert-DNSAcceptanceConfigured $before $firstConfigured 'doh'
 
         $result.code='second-configuration'
         [void](& $Apply @{action='dns';dns='doh'})
@@ -77,8 +78,19 @@ function Invoke-NativeDNSJournalScenario([scriptblock]$Apply,[scriptblock]$Captu
         $current=& $ReadBinding $first.journalId
         if($first.journalId -ceq $current.journalId -or $first.digest -ceq $current.digest){throw 'DNS journal binding did not rotate'}
         $result.bindingRotated=$true
+        $result.code='reapplied-state'
         $configured=& $Capture
         Assert-DNSAcceptanceConfigured $before $configured 'doh'
+        Assert-DNSAcceptanceRestored $firstConfigured $configured
+        $result.reappliedStateVerified=$true
+
+        $result.code='reapplied-resolver'
+        [void](& $Resolve)
+        $result.code='reapplied-state-after-query'
+        $afterQuery=& $Capture
+        Assert-DNSAcceptanceConfigured $before $afterQuery 'doh'
+        Assert-DNSAcceptanceRestored $configured $afterQuery
+        $result.reappliedResolverVerified=$true
 
         $result.code='stale-journal'
         [void](& $Apply @{action='recover';journalId=$first.journalId} -ExpectStaleJournal)

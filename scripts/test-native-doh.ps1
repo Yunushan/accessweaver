@@ -679,7 +679,8 @@ public static class AccessWeaverNativeDoHIdentity {
             -not (Test-Path -LiteralPath $heldSnapshot) -and -not $script:overflow -and -not $script:captureFailed)
     }
     if($ScenarioKind -ceq 'journal-recovery'){
-        $scenarioPassed=($journalScenario.outcome -ceq 'passed' -and $snapshotRemoved -and $script:cliCount -eq 4 -and
+        $scenarioPassed=($journalScenario.outcome -ceq 'passed' -and $journalScenario.reappliedStateVerified -and
+            $journalScenario.reappliedResolverVerified -and $snapshotRemoved -and $script:cliCount -eq 4 -and
             $script:joined -eq 4 -and -not $script:overflow -and -not $script:captureFailed)
     }
     if($ScenarioKind -ceq 'static-ipv6'){$scenarioPassed=($scenarioPassed -and $staticFixture.outcome -ceq 'passed' -and $script:staticSnapshotNormalized -and $script:staticFirewallProtected -and $script:staticFirewallRemoved)}

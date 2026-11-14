@@ -317,7 +317,7 @@ try {
         }
     }
     }
-    foreach($failure in @('none','baseline','first-configuration','first-binding','second-configuration','second-binding','stale-journal','configured-state','current-journal','restored-state','restored-resolver')){
+    foreach($failure in @('none','baseline','first-configuration','first-binding','second-configuration','second-binding','reapplied-state','reapplied-resolver','reapplied-state-after-query','stale-journal','configured-state','current-journal','restored-state','restored-resolver')){
         New-ACase
         $script:journalBaseline=Read-DNSAcceptanceState
         Set-AConfigured 'doh'
@@ -350,10 +350,14 @@ try {
             if($failure -ceq 'baseline'){throw 'Fixture baseline failed'}
             if($script:journalConfigures -eq 0 -or $script:journalTrace -contains 'emergency-restore'){return $script:journalBaseline}
             if($script:journalTrace -contains 'current-journal'){return $script:journalAfter}
+            if($script:journalConfigures -eq 2 -and (
+                ($failure -ceq 'reapplied-state' -and $script:journalQueries -eq 1) -or
+                ($failure -ceq 'reapplied-state-after-query' -and $script:journalQueries -eq 2))){return $script:journalBaseline}
             return $script:journalConfigured
         } -Resolve {
             $script:journalQueries++
-            if($script:journalQueries -eq 2 -and $failure -ceq 'restored-resolver'){throw 'Fixture restored query failed'}
+            if($script:journalQueries -eq 2 -and $failure -ceq 'reapplied-resolver'){throw 'Fixture reapplication query failed'}
+            if($script:journalQueries -eq 3 -and $failure -ceq 'restored-resolver'){throw 'Fixture restored query failed'}
         } -ReadBinding {
             param($Previous,$KnownCurrent)
             if(-not $Previous){
@@ -375,10 +379,16 @@ try {
             $result.emergencyStateVerified -eq $emergency) 'journal-scenario-result'
         if($passed){
             Assert-A (($script:journalTrace -join ',') -ceq 'first-configuration,second-configuration,stale-journal,current-journal' -and
-                $script:journalQueries -eq 2 -and $result.firstBindingVerified -and $result.bindingRotated -and
+                $script:journalQueries -eq 3 -and $result.firstBindingVerified -and $result.bindingRotated -and
+                $result.reappliedStateVerified -and $result.reappliedResolverVerified -and
                 $result.staleJournalRejected -and $result.configuredStatePreserved -and $result.currentJournalRecovered -and
                 $result.restoredStateVerified -and $result.restoredResolverVerified) 'journal-scenario-order'
         }elseif($emergency){
+            if($failure -cin @('reapplied-state','reapplied-resolver','reapplied-state-after-query')){
+                Assert-A (-not $result.reappliedResolverVerified -and
+                    $result.reappliedStateVerified -eq ($failure -cne 'reapplied-state') -and
+                    $script:journalTrace -cnotcontains 'stale-journal') 'journal-scenario-order'
+            }
             Assert-A ($script:journalTrace[$script:journalTrace.Count-1] -ceq 'emergency-restore') 'journal-scenario-order'
         }else{
             Assert-A ($script:journalTrace.Count -eq 0 -and $script:journalQueries -eq 0) 'journal-scenario-order'
