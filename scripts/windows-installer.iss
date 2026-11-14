@@ -304,6 +304,33 @@ begin
     (Info.SizeHigh = 0) and (Info.SizeLow > 0) and (Info.SizeLow <= 536870912);
 end;
 
+function AWCheckPackageDirectory(const Path: String; Hold: Boolean; var Held: AWDirectoryHandles): String;
+var Attributes, Code: LongWord;
+begin
+  Result := AWInstallationPathPreflight(Path, True);
+  if (Result <> '') or not Hold then Exit;
+  Attributes := AWPathAttributes(Path);
+  if Attributes = $FFFFFFFF then begin
+    Code := DLLGetLastError;
+    if (Code = 2) or (Code = 3) then Exit;
+  end else if AWLockInstallationDirectory(Path, Held) then Exit;
+  Result := 'The AccessWeaver package directory could not be verified.';
+end;
+
+function AWCheckPackageDirectories(const Destination: String; Hold: Boolean; var Held: AWDirectoryHandles): String;
+begin
+  Result := AWCheckPackageDirectory(Destination + '\licenses', Hold, Held);
+  if Result = '' then Result := AWCheckPackageDirectory(Destination + '\docs', Hold, Held);
+  if Result = '' then Result := AWCheckPackageDirectory(Destination + '\docs\assets', Hold, Held);
+  if Result = '' then Result := AWCheckPackageDirectory(Destination + '\docs\qualification', Hold, Held);
+end;
+
+function AWPackageDirectoryPreflight(const Destination: String): String;
+var Unused: AWDirectoryHandles;
+begin
+  Result := AWCheckPackageDirectories(Destination, False, Unused);
+end;
+
 function AWVerifyCompletedInstall(const Destination: String; var Held: AWDirectoryHandles;
   var Executable, BuildInfo, SBOM, Uninstaller, UninstallData: LongWord): Boolean;
 var Found64, Found32: Boolean;
@@ -311,6 +338,7 @@ var Found64, Found32: Boolean;
 begin
   Result := False;
   if not AWLockInstallationDirectory(Destination, Held) then Exit;
+  if AWCheckPackageDirectories(Destination, True, Held) <> '' then Exit;
   if not AWVerifyInstalledFile(Destination + '\accessweaver.exe', '{#PayloadDigest}', {#PayloadBytes}, True, Executable) then Exit;
   if not AWVerifyInstalledFile(Destination + '\BUILD-INFO.json', '{#BuildInfoDigest}', {#BuildInfoBytes}, True, BuildInfo) then Exit;
   if not AWVerifyInstalledFile(Destination + '\SBOM.cdx.json', '{#PayloadSBOMDigest}', {#PayloadSBOMBytes}, True, SBOM) then Exit;
@@ -346,16 +374,6 @@ begin
   finally
     if AWCloseNativeHandle(Handle) = 0 then Result := False;
   end;
-end;
-
-function AWPackageDirectoryPreflight(const Destination: String): String;
-begin
-  { Check the packaged directory tree before Setup copies files or the
-    uninstaller processes its deletion log. Missing directories are safe. }
-  Result := AWInstallationPathPreflight(Destination + '\licenses', True);
-  if Result = '' then Result := AWInstallationPathPreflight(Destination + '\docs', True);
-  if Result = '' then Result := AWInstallationPathPreflight(Destination + '\docs\assets', True);
-  if Result = '' then Result := AWInstallationPathPreflight(Destination + '\docs\qualification', True);
 end;
 
 function AWPayloadReplacementPreflight(const Destination: String): String;

@@ -57,10 +57,10 @@ function Assert-InstallerPEArchitecture([string]$Binary, [string]$Arch) {
 
 function Assert-InstallerPackageDirectories([string]$Root,[string]$SetupScript) {
     $source=[IO.File]::ReadAllText($SetupScript)
-    $preflight=[regex]::Match($source,'(?ms)^function AWPackageDirectoryPreflight\(.*?^end;')
+    $preflight=[regex]::Match($source,'(?ms)^function AWCheckPackageDirectories\(.*?^end;')
     if(-not $preflight.Success){throw 'Installer package directory preflight is missing'}
     $checked=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    $pattern="AWInstallationPathPreflight\(Destination \+ '\\([^']+)', True\)"
+    $pattern="AWCheckPackageDirectory\(Destination \+ '\\([^']+)', Hold, Held\)"
     foreach($match in [regex]::Matches($preflight.Value,$pattern)){
         if(-not $checked.Add($match.Groups[1].Value)){throw 'Duplicate installer package directory check'}
     }

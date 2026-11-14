@@ -218,10 +218,12 @@ def validate_setup_uninstall_registration_refusal(value):
     return {"setupUninstallRegistrationRefusalVerified": True}
 
 
-def validate_setup_marker_replacement(value, check_subject_guards=False):
+def validate_setup_marker_replacement(value, check_subject_guards=False, *, check_package_guards=False):
     flags = {"replacementPreserved", "completionRefusalLogged", "approvedPayloadVerified", "unrelatedStatePreserved"}
     if check_subject_guards:
         flags.add("subjectAndDirectoryGuardsVerified")
+    if check_package_guards:
+        flags.add("packageDirectoryGuardsVerified")
     require(isinstance(value, dict)
             and value.keys() == flags | {"exitCode", "elapsedMilliseconds", "deadlineMilliseconds"}
             and type(value["exitCode"]) is int and value["exitCode"] == 1603
@@ -231,6 +233,8 @@ def validate_setup_marker_replacement(value, check_subject_guards=False):
     verified = {"setupMarkerReplacementRefusalVerified": True}
     if check_subject_guards:
         verified["setupCompletionSubjectAndDirectoryGuardsVerified"] = True
+    if check_package_guards:
+        verified["setupCompletionPackageDirectoryGuardsVerified"] = True
     return verified
 
 
@@ -438,7 +442,7 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
     if report_schema is not None:
         require(type(report.get("schemaVersion")) is int and report["schemaVersion"] == report_schema,
                 "Native lifecycle report schema differs from the approved schema")
-    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in range(11, 50) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in range(11, 51) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -465,7 +469,8 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
         setup_readback.update(validate_setup_completion_refusal(report.get("setupCompletionRefusal")))
     if report["schemaVersion"] >= 32:
         setup_readback.update(validate_setup_marker_replacement(
-            report.get("setupMarkerReplacement"), check_subject_guards=report["schemaVersion"] >= 33))
+            report.get("setupMarkerReplacement"), check_subject_guards=report["schemaVersion"] >= 33,
+            check_package_guards=report["schemaVersion"] >= 50))
     if report["schemaVersion"] >= 34:
         setup_readback.update(validate_setup_uninstall_registration_refusal(report.get("setupUninstallRegistrationRefusal")))
     if report["schemaVersion"] >= 35:
@@ -633,7 +638,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("directory",type=Path)
     parser.add_argument("--source-commit",required=True);parser.add_argument("--source-ref",required=True);parser.add_argument("--architecture",required=True)
     parser.add_argument("--versions",nargs=2,default=DEFAULT_VERSIONS);parser.add_argument("--gh",default="gh");parser.add_argument("--check-rejections",action="store_true");parser.add_argument("--stage-build-root",type=Path);parser.add_argument("--run-id",required=True)
-    parser.add_argument("--report-schema", type=int, choices=range(11, 50),
+    parser.add_argument("--report-schema", type=int, choices=range(11, 51),
                         help="require the report schema approved for this invocation")
     parser.add_argument("--run-attempt", help="require the approved GitHub Actions attempt on every subject")
     args=parser.parse_args()

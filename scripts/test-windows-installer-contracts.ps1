@@ -104,9 +104,9 @@ Assert ($replaceProbe.Contains('AWOpenReplaceProbe(Path, $00010080, $00000007, 0
 $installerBuild=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'build-windows-installer.ps1'))
 Assert ($installerBuild -cmatch '(?s)stage-docs.*Assert-InstallerPackageDirectories \$stage \$setupScript.*& \$Compiler') 'Installer build must check the staged directory tree before compiling it'
 $replacement=[regex]::Match($installerSource,'(?ms)^function AWPayloadReplacementPreflight\([^;\r\n]+\): String;\r?\nbegin.*?^end;').Value
-$packageDirectories=[regex]::Match($installerSource,'(?ms)^function AWPackageDirectoryPreflight\(.*?^end;').Value
+$packageDirectories=[regex]::Match($installerSource,'(?ms)^function AWCheckPackageDirectories\(.*?^end;').Value
 foreach($directory in @('licenses','docs','docs\assets','docs\qualification')){
-    Assert ($packageDirectories.Contains("AWInstallationPathPreflight(Destination + '\$directory', True)")) 'Setup must check each packaged subdirectory'
+    Assert ($packageDirectories.Contains("AWCheckPackageDirectory(Destination + '\$directory', Hold, Held)")) 'Setup must check each packaged subdirectory'
 }
 Assert ($replacement -cmatch '(?s)AWPackageDirectoryPreflight\(Destination\).*if Result <> '''' then Exit') 'Setup must refuse a redirected package subdirectory before replacement'
 foreach($name in @('accessweaver.exe','BUILD-INFO.json','SBOM.cdx.json')){
@@ -118,6 +118,7 @@ $uninstallRegistration=[regex]::Match($installerSource,'(?ms)^function AWUninsta
 Assert ($uninstallRegistration -cmatch "AWOrdinal\(Version, '\{#ReleaseVersion\}'\) <> 0") 'Uninstall must match the exact release version in the machine registration'
 Assert ($uninstallRegistration.Contains("AWReadRegistration(`$0100, True, ExpandConstant('{uninstallexe}'),")) 'Native uninstall must verify that both machine registration commands bind its original executable'
 $completion=[regex]::Match($installerSource,'(?ms)^function AWVerifyCompletedInstall\(.*?^end;').Value
+Assert ($completion -cmatch '(?s)AWLockInstallationDirectory\(Destination, Held\).*AWCheckPackageDirectories\(Destination, True, Held\).*AWVerifyInstalledFile') 'Setup completion must hold protected package directories before verifying files'
 $verifiedFile=[regex]::Match($installerSource,'(?ms)^function AWVerifyInstalledFileDigests\(.*?^end;').Value
 $retirement=[regex]::Match($installerSource,'(?ms)^procedure AWCompleteInstallation\(.*?^end;').Value
 $directoryLock=[regex]::Match($installerSource,'(?ms)^function AWLockInstallationDirectory\(.*?^end;').Value

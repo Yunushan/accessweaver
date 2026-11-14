@@ -356,6 +356,14 @@ class SetupMarkerReplacementTests(unittest.TestCase):
             {"setupMarkerReplacementRefusalVerified": True, "setupCompletionSubjectAndDirectoryGuardsVerified": True},
         )
 
+        guarded = {**record, "subjectAndDirectoryGuardsVerified": True}
+        for bad in (guarded, {**guarded, "packageDirectoryGuardsVerified": False}):
+            with self.assertRaises(ValueError):
+                validate_setup_marker_replacement(bad, check_subject_guards=True, check_package_guards=True)
+        self.assertTrue(validate_setup_marker_replacement({**guarded, "packageDirectoryGuardsVerified": True},
+                                                         check_subject_guards=True, check_package_guards=True)
+                        ["setupCompletionPackageDirectoryGuardsVerified"])
+
 
 class PostRestorationRefusalTests(unittest.TestCase):
     def test_requires_completed_restoration_and_refused_deletion(self):
