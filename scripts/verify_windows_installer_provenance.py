@@ -306,6 +306,20 @@ def validate_restoration_controller_refusals(cases, *, require_hardlink=False):
     return {"restorationControllerVerificationRefusalsVerified": True}
 
 
+def validate_post_restoration_refusal(value):
+    flags = {
+        "restorationSucceededBeforeRefusal", "registrationChangeObserved", "deletionRefused",
+        "installedFileTreePreserved", "otherRegistrationValuesPreserved", "profilePreserved", "machineStateUnchanged",
+    }
+    require(isinstance(value, dict)
+            and value.keys() == flags | {"exitCode", "elapsedMilliseconds", "deadlineMilliseconds"}
+            and type(value["exitCode"]) is int and value["exitCode"] == 1
+            and type(value["deadlineMilliseconds"]) is int and value["deadlineMilliseconds"] == 180000
+            and type(value["elapsedMilliseconds"]) is int and 0 <= value["elapsedMilliseconds"] < 180000
+            and all(value[key] is True for key in flags), "Post-restoration deletion refusal was not verified")
+    return {"postRestorationRefusalVerified": True}
+
+
 def validate_fixed_restoration(refused, removed):
     require(refused.get("workflowLockRefusalVerified") is True
             and refused.get("controllerAndRegistrationRetained") is True
@@ -319,7 +333,7 @@ def validate_fixed_restoration(refused, removed):
 
 def validate_contents(root,commit,ref,arch,versions):
     report=load(root,arch+".json")
-    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -391,6 +405,8 @@ def validate_contents(root,commit,ref,arch,versions):
         restoration.update(validate_restoration_controller_refusals(
             report.get("restorationLaunchCases"), require_hardlink=report["schemaVersion"] >= 30,
         ))
+    if report["schemaVersion"] >= 31:
+        restoration.update(validate_post_restoration_refusal(report.get("postRestorationRefusal")))
     if report["schemaVersion"] >= 15:
         require(operations[-2].get("registeredUninstallerBindingVerified") is True,
                 "Registered workflow uninstaller binding was not verified")

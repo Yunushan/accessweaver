@@ -8,9 +8,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 )
 
 type processIdentity struct {
@@ -57,6 +60,37 @@ func writeNew(path string, value any) error {
 	return f.Close()
 }
 
+// This mode is used only by the disposable host fixture. It changes the
+// version of the registration for its own installed fixture executable.
+func changeRegisteredVersion(config, expected, replacement string) error {
+	if expected != "0.1.1-alpha" || replacement != "0.1.0-alpha" {
+		return fmt.Errorf("unexpected fixture release")
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	key, err := registry.OpenKey(registry.LOCAL_MACHINE,
+		`SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{B13D4677-4660-4E63-B3DB-03077ACBB092}_is1`,
+		registry.QUERY_VALUE|registry.SET_VALUE|registry.WOW64_64KEY)
+	if err != nil {
+		return err
+	}
+	defer key.Close()
+	directory, kind, err := key.GetStringValue("InstallLocation")
+	if err != nil || kind != registry.SZ || !strings.EqualFold(filepath.Clean(directory), filepath.Dir(executable)) {
+		return fmt.Errorf("fixture registration location differs")
+	}
+	version, kind, err := key.GetStringValue("DisplayVersion")
+	if err != nil || kind != registry.SZ || version != expected {
+		return fmt.Errorf("fixture registration version differs")
+	}
+	if err = key.SetStringValue("DisplayVersion", replacement); err != nil {
+		return err
+	}
+	return writeNew(config+".ready", map[string]string{"mode": "change-registration-before-success"})
+}
+
 func run() error {
 	if len(os.Args) == 3 && os.Args[1] == "--owned-child" {
 		own, err := identity(os.Getpid())
@@ -86,12 +120,17 @@ func run() error {
 		return fmt.Errorf("invalid fixture configuration")
 	}
 	var input struct {
-		Mode string `json:"mode"`
+		Mode               string `json:"mode"`
+		ExpectedVersion    string `json:"expectedVersion"`
+		ReplacementVersion string `json:"replacementVersion"`
 	}
 	err = json.NewDecoder(f).Decode(&input)
 	f.Close()
 	if err != nil {
 		return err
+	}
+	if input.Mode == "change-registration-before-success" {
+		return changeRegisteredVersion(config, input.ExpectedVersion, input.ReplacementVersion)
 	}
 	if input.Mode != "exit-failure-with-child" && input.Mode != "exit-success-with-child" && input.Mode != "hang-with-child" && input.Mode != "owner-termination-with-child" {
 		return fmt.Errorf("unknown fixture mode")

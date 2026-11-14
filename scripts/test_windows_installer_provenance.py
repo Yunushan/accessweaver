@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 from verify_windows_installer_provenance import (
     validate_installation_path_refusals, validate_setup_completion_refusal, validate_uninstall_registration_refusal,
-    validate_restoration_controller_refusals,
+    validate_post_restoration_refusal, validate_restoration_controller_refusals,
 )
 from verify_windows_installer_provenance import BUNDLE_NAME,DEFAULT_VERSIONS,WORKFLOW,check_rejections,stage,subject_names,validate_build,verification_command,verify
 
@@ -233,6 +233,21 @@ class RestorationControllerRefusalTests(unittest.TestCase):
                     cases[:4] + [{**cases[4], "nativeError": 193}]):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 validate_restoration_controller_refusals(bad)
+
+
+class PostRestorationRefusalTests(unittest.TestCase):
+    def test_requires_completed_restoration_and_refused_deletion(self):
+        record = {
+            "exitCode": 1, "elapsedMilliseconds": 120, "deadlineMilliseconds": 180000,
+            "restorationSucceededBeforeRefusal": True, "registrationChangeObserved": True,
+            "deletionRefused": True, "installedFileTreePreserved": True,
+            "otherRegistrationValuesPreserved": True, "profilePreserved": True, "machineStateUnchanged": True,
+        }
+        self.assertEqual(validate_post_restoration_refusal(record), {"postRestorationRefusalVerified": True})
+        for field in ("restorationSucceededBeforeRefusal", "registrationChangeObserved", "deletionRefused",
+                      "installedFileTreePreserved", "otherRegistrationValuesPreserved"):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_post_restoration_refusal({**record, field: False})
 
 
 class FixedRestorationTests(unittest.TestCase):

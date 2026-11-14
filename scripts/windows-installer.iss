@@ -436,6 +436,7 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var ResultCode, Controller: LongWord; Failure, Executable, Destination: String;
     Payload: TFileStream; Held: AWDirectoryHandles; Info: AWFileInfo; I: Integer;
+    Restored, HandlesClosed: Boolean;
 begin
   if CurUninstallStep <> usUninstall then Exit;
   { Inno reaches this step after confirmation and app-mutex checks, before
@@ -449,6 +450,7 @@ begin
   Destination := ExpandConstant('{app}');
   Executable := Destination + '\accessweaver.exe';
   Payload := nil; Controller := $FFFFFFFF;
+  Restored := False; HandlesClosed := True;
   Failure := 'Cannot verify the installed AccessWeaver restoration controller. Repair the installation with its approved installer.';
   try
     if AWLockRestorationDirectory(Destination, Held) then begin
@@ -470,16 +472,29 @@ begin
       Failure := AWUninstallPreflight;
       if Failure = '' then begin
         Log('AccessWeaver system restoration starts at the uninstall step.');
-        if AWRunBoundedRestoration(Executable, 'system installer-restore --confirm',
-          Destination, AWRestorationDeadlineMilliseconds, ResultCode, Failure) then Exit;
-        Log('AccessWeaver system restoration failed; process result/error code: ' + IntToStr(ResultCode));
+        Restored := AWRunBoundedRestoration(Executable, 'system installer-restore --confirm',
+          Destination, AWRestorationDeadlineMilliseconds, ResultCode, Failure);
+        if not Restored then
+          Log('AccessWeaver system restoration failed; process result/error code: ' + IntToStr(ResultCode))
+        else begin
+          Failure := AWUninstallPreflight;
+          if Failure <> '' then
+            Log('AccessWeaver installation registration or pending state changed during restoration.');
+        end;
       end;
     end;
   finally
     if Payload <> nil then Payload.Free;
-    if Controller <> $FFFFFFFF then AWCloseNativeHandle(Controller);
-    for I := GetArrayLength(Held) - 1 downto 0 do AWCloseNativeHandle(Held[I]);
+    if Controller <> $FFFFFFFF then
+      if AWCloseNativeHandle(Controller) = 0 then HandlesClosed := False;
+    for I := GetArrayLength(Held) - 1 downto 0 do
+      if AWCloseNativeHandle(Held[I]) = 0 then HandlesClosed := False;
   end;
+  if not HandlesClosed then begin
+    if Failure <> '' then Log(Failure);
+    Failure := 'AccessWeaver restoration file handle cleanup could not be confirmed.';
+  end;
+  if Restored and HandlesClosed and (Failure = '') then Exit;
   Log(Failure);
   if not UninstallSilent then
     MsgBox('AccessWeaver could not restore its system changes. Review the recovery journal in ProgramData\AccessWeaver\logs, then retry uninstalling.', mbError, MB_OK);
