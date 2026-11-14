@@ -2247,6 +2247,19 @@ function Test-DNSIPv4Answer([object[]]$Answers,[string]$Name) {
     }
     return $false
 }
+function Wait-OrdinaryDNSResolver([int]$TimeoutSeconds) {
+    $timer=[Diagnostics.Stopwatch]::StartNew()
+    do {
+        try {
+            Clear-DnsClientCache -ErrorAction Stop
+            $answers=@(Resolve-DnsName -Name 'example.com.' -Type A -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
+            if(Test-DNSIPv4Answer $answers 'example.com'){return $true}
+        }catch{}
+        if($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds){break}
+        Start-Sleep -Seconds 2
+    } while($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds)
+    return $false
+}
 function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds=30,
         [string]$FailureMessage='DNSCrypt loopback readiness could not be verified before adapter configuration') {
     $pending=@($Servers)
@@ -2703,17 +2716,7 @@ function Configure-DNS([string]$method) {
     if($method -ceq 'doh'){
         Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy changed after adapter configuration; retain the original DNS snapshot'
     }
-    $ready=$false;$timer=[Diagnostics.Stopwatch]::StartNew()
-    do {
-        try {
-            Clear-DnsClientCache -ErrorAction Stop
-            $answers=@(Resolve-DnsName -Name 'example.com.' -Type A -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
-            if(Test-DNSIPv4Answer $answers 'example.com'){$ready=$true;break}
-        }catch{}
-        if($timer.Elapsed.TotalSeconds -ge 90){break}
-        Start-Sleep -Seconds 2
-    } while($timer.Elapsed.TotalSeconds -lt 90)
-    if(-not $ready){
+    if(-not (Wait-OrdinaryDNSResolver 90)){
         if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'DNS recovery snapshot disappeared during verification'}
         Restore-DNS $snapshotSHA256
         throw 'Resolver verification failed; original DNS settings restored: the ordinary resolver did not return the expected DNS answer'
@@ -2737,6 +2740,13 @@ function Configure-DNS([string]$method) {
         if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before disabling automatic startup'}
         Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
         Set-Service -Name $serviceName -StartupType Manual -ErrorAction Stop
+        Assert-DNSCryptServiceState $existingResolver -ManualStopped
+        # The earlier query may have succeeded through the old listener.
+        if(-not (Wait-OrdinaryDNSResolver 10)){
+            throw 'DoH resolver verification failed after stopping DNSCrypt; retain the original DNS snapshot'
+        }
+        Assert-ConfiguredDNSServers $adapters $records $servers
+        Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy changed after stopping DNSCrypt; retain the original DNS snapshot'
         Assert-DNSCryptServiceState $existingResolver -ManualStopped
     }
     if($method -ceq 'dnscrypt'){Assert-DNSCryptServiceState $resolver}
