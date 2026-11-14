@@ -6,18 +6,18 @@ $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[re
 if($errors.Count){throw 'DNS reboot fixture failed parsing'}
 foreach($name in @('Assert-DNSRebootAdmission','Save-DNSRebootRecord','Open-DNSRebootInput','Read-DNSRebootRecord',
         'Get-DNSRebootDigest','Open-ApprovedDNSRebootController','Get-DNSRebootJournalID','Assert-DNSRebootJournal',
-        'Get-DNSRebootCoverage','Assert-DNSRebootConfigured','Assert-RebootResolver','Wait-DNSRebootObservation','Test-DNSRebootServicesRemoved',
+        'Get-DNSRebootCoverage','Assert-DNSRebootConfigured','Assert-RebootResolver','Assert-DNSRebootActiveResolver','Wait-DNSRebootObservation','Test-DNSRebootServicesRemoved',
         'Invoke-DNSRebootPreparation')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
     if($nodes.Count -ne 1){throw 'Expected one DNS reboot evidence function'}
-    if($name -cin @('Get-DNSRebootCoverage','Assert-DNSRebootConfigured','Assert-RebootResolver','Wait-DNSRebootObservation','Test-DNSRebootServicesRemoved')){
+    if($name -cin @('Get-DNSRebootCoverage','Assert-DNSRebootConfigured','Assert-RebootResolver','Assert-DNSRebootActiveResolver','Wait-DNSRebootObservation','Test-DNSRebootServicesRemoved')){
         foreach($command in $nodes[0].FindAll({param($node)$node -is [Management.Automation.Language.CommandAst]},$true)){
             $callback=$command.InvocationOperator -eq [Management.Automation.Language.TokenKind]::Ampersand -and
                 $command.CommandElements[0] -is [Management.Automation.Language.VariableExpressionAst] -and
                 $command.CommandElements[0].VariablePath.UserPath -ceq 'Observe'
-            if(-not $callback -and $command.GetCommandName() -cnotin @('Clear-DnsClientCache','Resolve-DnsName','Start-Sleep','Get-Service','ForEach-Object','Where-Object','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceConfigured')){
+            if(-not $callback -and $command.GetCommandName() -cnotin @('Clear-DnsClientCache','Resolve-DnsName','Assert-RebootResolver','Start-Sleep','Get-Service','ForEach-Object','Where-Object','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceConfigured')){
                 throw 'DNS reboot observation has an unexpected command boundary'
             }
         }
@@ -231,7 +231,8 @@ foreach($invalid in @(
 # Run the actual observation functions with no resolver or service access.
 & {
     $state=@{flushes=0;requests=[Collections.Generic.List[string]]::new();waits=0;attempts=0;
-        cacheFails=$false;serviceFails=$false;services=@();answers=@{}}
+        cacheFails=$false;serviceFails=$false;services=@();answers=@{};failedListener='';
+        servers=[Collections.Generic.List[string]]::new()}
     function Clear-DnsClientCache {
         [CmdletBinding()]param()
         if($ErrorActionPreference -ne 'Stop'){throw 'DNS cache clear must fail closed'}
@@ -239,10 +240,12 @@ foreach($invalid in @(
         if($state.cacheFails){throw 'Synthetic cache flush failure'}
     }
     function Resolve-DnsName {
-        [CmdletBinding()]param($Name,$Type,[switch]$DnsOnly,[switch]$NoHostsFile,[switch]$QuickTimeout)
+        [CmdletBinding()]param($Name,$Type,[switch]$DnsOnly,[switch]$NoHostsFile,[switch]$QuickTimeout,[string]$Server)
         if($Name -cne 'example.com.' -or $Type -cnotin @('A','AAAA') -or -not $DnsOnly -or -not $NoHostsFile -or
            -not $QuickTimeout -or $ErrorActionPreference -ne 'Stop'){throw 'Unexpected ordinary DNS request'}
         $state.requests.Add($Type)
+        $state.servers.Add($Server)
+        if($Server -and $Server -ceq $state.failedListener){throw 'Synthetic listener failure'}
         $state.answers[$Type]
     }
     function Get-Service {
@@ -288,6 +291,38 @@ foreach($invalid in @(
     $state.requests.Clear()
     Refuse {Assert-RebootResolver}
     if($state.flushes -ne 14 -or $state.requests.Count){throw 'Failed cache flush allowed a DNS query'}
+
+    $state.cacheFails=$false
+    $state.answers.AAAA=@([pscustomobject]$answer6)
+    $coverage=[ordered]@{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0;'static-ipv6'=1}
+    $state.servers.Clear()
+    Assert-DNSRebootActiveResolver $coverage 'dnscrypt'
+    if(($state.servers -join ',') -cne ',,127.0.0.1,127.0.0.1,::1,::1'){
+        throw 'Dual-family DNSCrypt verification did not query both loopback listeners'
+    }
+    foreach($listener in @('127.0.0.1','::1')){
+        $state.failedListener=$listener
+        Refuse {Assert-DNSRebootActiveResolver $coverage 'dnscrypt'}
+    }
+    $state.servers.Clear()
+    Assert-DNSRebootActiveResolver $coverage 'doh'
+    if($state.servers.Count -ne 2 -or ($state.servers -join ',') -cne ','){
+        throw 'DoH verification must use the ordinary resolver'
+    }
+    $state.servers.Clear()
+    $coverage['static-ipv6']=0
+    Assert-DNSRebootActiveResolver $coverage 'dnscrypt'
+    if(($state.servers -join ',') -cne ',,127.0.0.1,127.0.0.1'){
+        throw 'IPv4-only DNSCrypt verification queried an unassigned listener'
+    }
+    $state.servers.Clear()
+    $state.failedListener='127.0.0.1'
+    $coverage['dhcp-ipv4']=0
+    $coverage['dhcp-ipv6']=1
+    Assert-DNSRebootActiveResolver $coverage 'dnscrypt'
+    if(($state.servers -join ',') -cne ',,::1,::1'){
+        throw 'IPv6-only DNSCrypt verification queried an unassigned listener'
+    }
 
     Wait-DNSRebootObservation {
         $state.attempts++

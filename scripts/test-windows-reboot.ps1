@@ -220,13 +220,15 @@ function Assert-DNSRebootConfigured([object]$Before,[object]$After,[string]$Meth
     }
     Assert-DNSAcceptanceConfigured $Before $After $Method
 }
-function Assert-RebootResolver {
+function Assert-RebootResolver([string]$Server='') {
     Clear-DnsClientCache -ErrorAction Stop
+    $resolver=@{}
+    if($Server){$resolver.Server=$Server}
     # Query both record types through the ordinary resolver. An AAAA answer
     # says nothing about the transport address family used for that lookup.
     $recordTypes=[ordered]@{A=[Net.Sockets.AddressFamily]::InterNetwork;AAAA=[Net.Sockets.AddressFamily]::InterNetworkV6}
     foreach($type in $recordTypes.Keys){
-        $answers=@(Resolve-DnsName -Name 'example.com.' -DnsOnly -Type $type -NoHostsFile -QuickTimeout -ErrorAction Stop)
+        $answers=@(Resolve-DnsName -Name 'example.com.' -DnsOnly -Type $type -NoHostsFile -QuickTimeout -ErrorAction Stop @resolver)
         $verified=$false
         foreach($answer in $answers){
             $address=$null
@@ -239,6 +241,18 @@ function Assert-RebootResolver {
             }
         }
         if(-not $verified){throw ('Ordinary Windows DNS returned no valid '+$type+' answer')}
+    }
+}
+function Assert-DNSRebootActiveResolver([System.Collections.IDictionary]$Coverage,[string]$Method) {
+    Assert-RebootResolver
+    if($Method -eq 'dnscrypt'){
+        # An ordinary DNS response can mask a failed listener in the other family.
+        if($Coverage['dhcp-ipv4'] + $Coverage['static-ipv4'] -gt 0){
+            Assert-RebootResolver -Server '127.0.0.1'
+        }
+        if($Coverage['dhcp-ipv6'] + $Coverage['static-ipv6'] -gt 0){
+            Assert-RebootResolver -Server '::1'
+        }
     }
 }
 function Wait-DNSRebootObservation([scriptblock]$Observe,[int]$TimeoutSeconds=60) {
@@ -299,7 +313,7 @@ try {
         }
         $before=Read-DNSAcceptanceState
         $RequiredOriginalMode=$RequiredOriginalMode.ToLowerInvariant()
-        [void](Get-DNSRebootCoverage $before $RequiredOriginalMode)
+        $coverage=Get-DNSRebootCoverage $before $RequiredOriginalMode
         Assert-RebootResolver
         if($DNS -eq 'auto'){$DNS=if(Get-Command Get-DnsClientDohServerAddress -ErrorAction SilentlyContinue){'doh'}else{'dnscrypt'}}
         [void][IO.Directory]::CreateDirectory($private)
@@ -317,7 +331,7 @@ try {
             $applied=Invoke-TestWorkflow @{action='dns';dns=$DNS;bundlePath='C:\AccessWeaver-Test\components'}
             Assert-RebootServices $DNS
             Assert-DNSRebootConfigured $before (Read-DNSAcceptanceState) $DNS
-            Assert-RebootResolver
+            Assert-DNSRebootActiveResolver $coverage $DNS
             Assert-DNSRebootConfigured $before (Read-DNSAcceptanceState) $DNS
             $current.method=$DNS
             $current.requiredOriginalMode=$RequiredOriginalMode
@@ -372,7 +386,7 @@ try {
         Wait-DNSRebootObservation {Assert-DNSRebootConfigured $saved.dns (Read-DNSAcceptanceState) $saved.method}
         $outcome.configuredStateVerified=$true
         $outcome.stage='resolver'
-        Wait-DNSRebootObservation {Assert-RebootResolver}
+        Wait-DNSRebootObservation {Assert-DNSRebootActiveResolver $coverage $saved.method}
         $outcome.stage='configured-state'
         $outcome.configuredStateVerified=$false
         Assert-DNSRebootConfigured $saved.dns (Read-DNSAcceptanceState) $saved.method
