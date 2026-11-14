@@ -45,7 +45,7 @@ foreach($name in $selected){
     . ([scriptblock]::Create($nodes[0].Extent.Text))
 }
 $script:checks=0;$script:contractOutcome='failed';$script:contractCode='unexpected-contract-error'
-$script:closedContractCodes=@('service-reactivation-result','service-reactivation-order','static-stage-source','static-resolver-source-callback','static-closed-failure-map','static-fixture-result','static-fixture-cleanup','static-fixture-order','static-fixture-flags','static-fixture-preflight','component-retry-contract','component-closed-error-map','forwarder-closed-error-map','rollback-native-result','rollback-native-flags','rollback-native-cleanup','rollback-native-order','rollback-native-preflight','fixed-dns-response','journal-scenario-order','journal-scenario-result','journal-scenario-private-output','journal-refusal-marker','missing-snapshot-scenario','missing-snapshot-retained','missing-snapshot-marker','verification-marker-boundary','failure-native-result','failure-native-flags','failure-native-cleanup','failure-native-order','failure-native-preflight','roundtrip-does-not-inject','native-method-forwarded','native-invalid-method-no-effects','capture-identity-change-refused','unexposed-state-preserved','unexposed-state-not-selected','unexposed-access-refused','unexposed-registry-change-refused','single-family-configured-state','client-inventory-failure-phase','capture-stage-complete','capture-stage-refusal','native-coordinator-result','native-coordinator-cleanup','remove-all-native-recovery','service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
+$script:closedContractCodes=@('service-reactivation-result','service-reactivation-order','static-stage-source','static-resolver-source-callback','static-closed-failure-map','static-fixture-result','static-fixture-cleanup','static-fixture-order','static-fixture-flags','static-fixture-preflight','component-retry-contract','component-closed-error-map','forwarder-closed-error-map','rollback-native-result','rollback-native-flags','rollback-native-cleanup','rollback-native-order','rollback-native-preflight','fixed-dns-response','journal-scenario-order','journal-scenario-result','journal-scenario-private-output','journal-refusal-marker','missing-snapshot-scenario','missing-snapshot-retained','missing-snapshot-marker','verification-marker-boundary','failure-native-result','failure-native-flags','failure-native-cleanup','failure-native-order','failure-native-preflight','roundtrip-does-not-inject','native-method-forwarded','native-invalid-method-no-effects','capture-identity-change-refused','final-capture-topology-change-refused','unexposed-state-preserved','unexposed-state-not-selected','unexposed-access-refused','unexposed-registry-change-refused','single-family-configured-state','client-inventory-failure-phase','capture-stage-complete','capture-stage-refusal','native-coordinator-result','native-coordinator-cleanup','remove-all-native-recovery','service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
 function Assert-A([bool]$Value,[string]$Code){if(-not $Value){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('Acceptance contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-A([scriptblock]$Operation){$failed=$false;try{& $Operation | Out-Null}catch{$failed=$true};Assert-A $failed 'expected-refusal'}
 $script:g1='abcdef00-0000-0000-0000-000000000001';$script:g2='abcdef00-0000-0000-0000-000000000002'
@@ -58,6 +58,7 @@ function New-AData {
 function Original-ADoh {return [pscustomobject]@{ServerAddress='192.0.2.90';DohTemplate='https://original.invalid/dns-query';AllowFallbackToUdp=$true;AutoUpgrade=$false}}
 function New-ACase {
     $script:adapters=@([pscustomobject]@{InterfaceGuid=$script:g1;ifIndex=77;Status='Up';InterfaceDescription='Fixture adapter'},[pscustomobject]@{InterfaceGuid=$script:g2;ifIndex=88;Status='Down';InterfaceDescription='Second fixture adapter'})
+    $script:lateTopologyChange=''
     $script:renumberAfterInventory=$false;$script:exposure=@{};$script:registryAbsent=@{};$script:registryValues=@{};$script:data=New-AData;$script:doh=@((Original-ADoh));$script:available=$true;$script:registryFailure='';$script:dnsFailure='';$script:dohFailure=$false
     $script:staticStagingWrites=0;$script:staticWaitCalls=0;$script:staticPendingReads=0;$script:staticPendingShape='';$script:staticTeardownFault='';$script:resolveFailure=$false;$script:operationFailure=$false;$script:restoreFailure=$false;$script:serviceStatus='Running';$script:actions=[Collections.Generic.List[string]]::new();$script:dnsReads=0
 }
@@ -96,7 +97,19 @@ function Get-DnsClientServerAddress {
     if($null -eq $InterfaceIndex -and $script:renumberAfterInventory){$script:adapters[0].ifIndex=101;$script:renumberAfterInventory=$false}
 }
 function Get-Command {[CmdletBinding()]param([string]$Name);if($Name -cne 'Get-DnsClientDohServerAddress'){throw 'Unexpected acceptance command discovery'};if($script:available){return [pscustomobject]@{Name=$Name}}}
-function Get-DnsClientDohServerAddress {[CmdletBinding()]param();if($script:dohFailure){throw 'fixture-doh-inspection'};return $script:doh}
+function Get-DnsClientDohServerAddress {
+    [CmdletBinding()]param()
+    if($script:dohFailure){throw 'fixture-doh-inspection'}
+    switch -CaseSensitive ($script:lateTopologyChange){
+        'renumber' {$script:adapters[0].ifIndex=101}
+        'replace' {$script:adapters[0].InterfaceGuid='abcdef00-0000-0000-0000-000000000003'}
+        'remove' {$script:adapters=@($script:adapters[1])}
+        'duplicate' {$script:adapters[1]=$script:adapters[0]}
+        'down' {$script:adapters[0].Status='Down'}
+        'excluded' {$script:adapters[0].InterfaceDescription='Fixture WireGuard adapter'}
+    }
+    return $script:doh
+}
 function Get-Service {[CmdletBinding()]param($Name);if($Name -ceq 'MpsSvc'){return [pscustomobject]@{Status='Running'}};if($Name -cne 'AccessWeaver-dnscrypt'){throw 'Unexpected acceptance service'};return [pscustomobject]@{Status=$script:serviceStatus}}
 function Clear-DnsClientCache {[CmdletBinding()]param()}
 function Resolve-DnsName {[CmdletBinding()]param($Name,[switch]$DnsOnly,[switch]$QuickTimeout);if($Name -cne 'example.com' -or -not $DnsOnly -or -not $QuickTimeout){throw 'Unexpected acceptance resolver boundary'};if($script:resolveFailure){throw 'fixture-resolver-failure'};return [pscustomobject]@{Name='example.com'}}
@@ -235,6 +248,20 @@ try {
     try{[void](Read-DNSAcceptanceState ([ref]$capturePhase))}catch{$refused=$true}
     Assert-A ($refused -and $capturePhase -ceq 'dns-inventory') 'client-inventory-failure-phase'
     New-ACase;$script:renumberAfterInventory=$true;Reject-A {Read-DNSAcceptanceState};Assert-A ($script:actions.Count -eq 0) 'capture-identity-change-refused'
+    foreach($change in @('renumber','replace','remove','duplicate','down','excluded')){
+        New-ACase
+        $script:lateTopologyChange=$change
+        $capturePhase='';$refused=$false
+        try{[void](Read-DNSAcceptanceState ([ref]$capturePhase))}
+        catch{$refused=$_.Exception.Message -ceq 'DNS acceptance adapter changed during capture'}
+        Assert-A ($refused -and $capturePhase -ceq 'inventory' -and $script:actions.Count -eq 0) 'final-capture-topology-change-refused'
+    }
+    New-ACase
+    $script:adapters[1].ifIndex=$script:adapters[0].ifIndex
+    $script:exposure[$script:g2+'/IPv4']=$false
+    $script:exposure[$script:g2+'/IPv6']=$false
+    Reject-A {Read-DNSAcceptanceState}
+    Assert-A ($script:actions.Count -eq 0) 'capture-identity-change-refused'
     New-ACase;$capturePhase='';[void](Read-DNSAcceptanceState ([ref]$capturePhase));Assert-A ($capturePhase -ceq 'complete') 'capture-stage-complete'
     New-ACase;$script:registryFailure='IPv6';$capturePhase='';$refused=$false
     try{[void](Read-DNSAcceptanceState ([ref]$capturePhase))}catch{$refused=$true}

@@ -49,11 +49,17 @@ function Read-DNSAcceptanceState([ref]$Stage,[ref]$Progress) {
         $key=([string]$index)+'/'+$family
         if($clientIndex.ContainsKey($key)){throw 'DNS acceptance client family duplicated'};$clientIndex[$key]=$entry
     }
-    $known=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase);$adapters=@()
+    $bindings=@{};$indexes=[Collections.Generic.HashSet[uint32]]::new();$adapters=@()
     foreach($adapter in $inventory){
         if($null -ne $Progress){$Progress.Value.adapterOrdinal++;$Progress.Value.selected=($adapter.Status -eq 'Up' -and $adapter.InterfaceDescription -notmatch 'WireSock|WireGuard|TAP|TUN')}
         $guid=Convert-DNSAcceptanceGuid ([string]$adapter.InterfaceGuid)
-        if(-not $known.Add($guid)){throw 'Duplicate DNS acceptance adapter identity'}
+        if($bindings.ContainsKey($guid)){throw 'Duplicate DNS acceptance adapter identity'}
+        $index=[uint32]0
+        if(-not [uint32]::TryParse([string]$adapter.ifIndex,[ref]$index) -or $index -eq 0 -or -not $indexes.Add($index)){
+            throw 'DNS acceptance adapter changed during capture'
+        }
+        $eligible=$adapter.Status -eq 'Up' -and $adapter.InterfaceDescription -notmatch 'WireSock|WireGuard|TAP|TUN'
+        $bindings[$guid]=@{index=$index;eligible=$eligible}
         $current=@(Get-NetAdapter -ErrorAction Stop | Where-Object {(Convert-DNSAcceptanceGuid ([string]$_.InterfaceGuid)) -ceq $guid})
         if($current.Count -ne 1 -or $current[0].ifIndex -ne $adapter.ifIndex){throw 'DNS acceptance adapter changed during capture'}
         $families=@{};$exposed=$false
@@ -80,7 +86,7 @@ function Read-DNSAcceptanceState([ref]$Stage,[ref]$Progress) {
             }
             $families[$family]=@{mode=$mode;servers=@($servers)}
         }
-        $selected=($exposed -and $adapter.Status -eq 'Up' -and $adapter.InterfaceDescription -notmatch 'WireSock|WireGuard|TAP|TUN')
+        $selected=$exposed -and $eligible
         if($null -ne $Progress){$Progress.Value.selected=$selected}
         $adapters+=@{guid=$guid;selected=$selected;ipv4=$families.IPv4;ipv6=$families.IPv6}
     }
@@ -94,6 +100,21 @@ function Read-DNSAcceptanceState([ref]$Stage,[ref]$Progress) {
             $address=Convert-DNSAcceptanceAddress $entry.ServerAddress ''
             if(-not $seen.Add($address) -or $entry.DohTemplate -isnot [string] -or [string]::IsNullOrWhiteSpace($entry.DohTemplate) -or $entry.AllowFallbackToUdp -isnot [bool] -or $entry.AutoUpgrade -isnot [bool]){throw 'DNS acceptance DoH metadata malformed or duplicated'}
             $doh+=@{address=$address;template=$entry.DohTemplate;fallback=$entry.AllowFallbackToUdp;upgrade=$entry.AutoUpgrade}
+        }
+    }
+    # The DoH and registry reads can overlap a change after the last per-adapter
+    # check. Fence the entire observation by GUID, index and selection inputs.
+    if($null -ne $Stage){$Stage.Value='inventory'}
+    $final=@(Get-NetAdapter -ErrorAction Stop)
+    $seenAdapters=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    if($final.Count -ne $bindings.Count){throw 'DNS acceptance adapter changed during capture'}
+    foreach($adapter in $final){
+        $guid=Convert-DNSAcceptanceGuid ([string]$adapter.InterfaceGuid)
+        $binding=$bindings[$guid]
+        $eligible=$adapter.Status -eq 'Up' -and $adapter.InterfaceDescription -notmatch 'WireSock|WireGuard|TAP|TUN'
+        if(-not $seenAdapters.Add($guid) -or $null -eq $binding -or
+           $adapter.ifIndex -ne $binding.index -or $eligible -ne $binding.eligible){
+            throw 'DNS acceptance adapter changed during capture'
         }
     }
     if($null -ne $Stage){$Stage.Value='complete'}
