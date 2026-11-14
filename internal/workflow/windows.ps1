@@ -1542,6 +1542,33 @@ function Confirm-WireSockDisconnected([string]$cli) {
     try {$state=Get-WireSockReportedState (Native $cli @('status') -Secret -Timeout 15)}catch{}
     if($state -cnotin @('NotConnected','Disconnected')){throw $refusal}
 }
+function Remove-ModernWireSockProfile([string]$cli,[string]$profile,[switch]$Disconnect,[switch]$RequireIdle) {
+    try {$profiles=@(Get-ManagedWireSockProfiles $cli)}
+    catch {throw 'WireSock profile inventory could not be verified before removal; the ownership record was retained'}
+    if($profiles -cnotcontains $profile){
+        if(($Disconnect -or $RequireIdle) -and $profiles.Count){
+            throw 'WireSock removal could not confirm the only managed vendor profile; the ownership record was retained'
+        }
+        return
+    }
+    if(($Disconnect -or $RequireIdle) -and $profiles.Count -ne 1){
+        throw 'WireSock removal could not confirm the only managed vendor profile; the ownership record was retained'
+    }
+    if($Disconnect){Confirm-WireSockDisconnected $cli}
+    if($RequireIdle){
+        $status=Get-WireSockReportedState (Native $cli @('status') -Secret -Timeout 15)
+        if($status -cnotin @('NotConnected','Disconnected')){
+            throw 'WireSock recovery cannot confirm the vendor is idle without an ownership record'
+        }
+    }
+    try {[void](Native $cli @('delete',$profile) -Secret)}
+    catch {throw 'WireSock profile deletion command failed; the ownership record was retained'}
+    try {$remaining=@(Get-ManagedWireSockProfiles $cli)}
+    catch {throw 'WireSock profile deletion could not be verified; the ownership record was retained'}
+    if($remaining -ccontains $profile -or (($Disconnect -or $RequireIdle) -and $remaining.Count)){
+        throw 'WireSock profile deletion could not be verified; the ownership record was retained'
+    }
+}
 function Disconnect-OwnedWireSock($record) {
     if($record.legacy){
         $script:externalEffectsPending=$true
@@ -2691,20 +2718,7 @@ function Remove-Method([string]$engine,[switch]$OwnedOnly) {
                 Disconnect-OwnedWireSock $owned
                 [void](Native $owned.cli @('uninstall') -Secret)
             }else{
-                try {$profiles=@(Get-ManagedWireSockProfiles $owned.cli)}
-                catch {throw 'WireSock profile inventory could not be verified before removal; the ownership record was retained'}
-                if($profiles.Count -gt 0){
-                    # Disconnect affects the active vendor connection globally.
-                    if($profiles.Count -ne 1 -or $profiles[0] -cne $owned.profile){
-                        throw 'WireSock removal could not confirm the only managed vendor profile; the ownership record was retained'
-                    }
-                    Disconnect-OwnedWireSock $owned
-                    try {[void](Native $owned.cli @('delete',$owned.profile) -Secret)}
-                    catch {throw 'WireSock profile deletion command failed; the ownership record was retained'}
-                    try {$remaining=@(Get-ManagedWireSockProfiles $owned.cli)}
-                    catch {throw 'WireSock profile deletion could not be verified; the ownership record was retained'}
-                    if($remaining.Count){throw 'WireSock profile deletion could not be verified; the ownership record was retained'}
-                }
+                Remove-ModernWireSockProfile $owned.cli $owned.profile -Disconnect
             }
             Remove-Item -LiteralPath $recordPath -ErrorAction Stop
             if(Test-Path -LiteralPath $recordPath -ErrorAction Stop){throw 'WireSock ownership record removal could not be verified'}
@@ -3665,7 +3679,7 @@ function Restore-RecordedWorkflowFile($item) {
         }
     }
 }
-function Rollback {
+function Rollback([string]$OwnerlessWireSockProfile) {
     foreach($entry in $script:undo){
         if($entry.kind -in @('service','started-service')){
             try {[void](Assert-RecordedServiceBinding $entry)}catch{return $_.Exception.Message}
@@ -3681,6 +3695,14 @@ function Rollback {
         } catch {return $_.Exception.Message}
     }
     $rollbackErrors=@()
+    $wireSock=@($script:undo | Where-Object {$_.kind -ceq 'wiresock' -and -not $_.legacy})
+    $ownershipPath=Join-Path $root 'profiles\wiresock-owned.json'
+    $ownershipFile=$null
+    if($wireSock.Count -eq 1){
+        $records=@($script:undo | Where-Object {$_.kind -ceq 'file' -and $_.path -ieq $ownershipPath})
+        if($records.Count -gt 1){return 'Recovery journal contains duplicate WireSock ownership records'}
+        if($records.Count -eq 1){$ownershipFile=$records[0]}
+    }
     for($i=$script:undo.Count-1;$i -ge 0;$i--){$item=$script:undo[$i];try{switch($item.kind){
         'service' {Remove-RecordedService $item.name -Entry $item}
         'started-service' {
@@ -3697,22 +3719,22 @@ function Rollback {
                 Stop-Service 'wiresock-client-service' -ErrorAction SilentlyContinue
                 [void](Native $item.cli @('uninstall') -Secret)
             }else{
-                if($item.importOnly -isnot [bool] -or -not $item.importOnly){
-                    Confirm-WireSockDisconnected $item.cli
-                }
-                [void](Native $item.cli @('delete',$item.profile) -Secret)
+                $connectAttempted=$item.importOnly -isnot [bool] -or -not $item.importOnly
+                $requireIdle=$connectAttempted -and $item.profile -ceq $OwnerlessWireSockProfile
+                Remove-ModernWireSockProfile $item.cli $item.profile -Disconnect:($connectAttempted -and -not $requireIdle) -RequireIdle:$requireIdle
+                if($ownershipFile){Restore-RecordedWorkflowFile $ownershipFile}
             }
         }
         'drover' {Restore-Drover $item.manifestSHA256}
         'cache' {if(-not (Under $item.path $env:APPDATA) -or -not (Under $item.backup (Join-Path $root 'backups'))){throw 'Invalid cache recovery path'};No-Reparse $item.path;No-Reparse $item.backup;if(Test-Path -LiteralPath $item.backup){if(Test-Path -LiteralPath $item.path){throw 'Discord created new cache; original cache backup retained for manual review'};Move-Item -LiteralPath $item.backup -Destination $item.path}}
         'file' {
-            if($item.path -ieq (Join-Path $root 'profiles\dns-original.json')){continue}
+            if($item.path -ieq (Join-Path $root 'profiles\dns-original.json') -or ($ownershipFile -and $item.path -ieq $ownershipPath)){continue}
             Restore-RecordedWorkflowFile $item
         }
     }}catch{
         $rollbackErrors+=@($_.Exception.Message)
-        # Keep earlier files when a service or firewall rule still refers to them.
-        if($item.kind -in @('service','firewall')){break}
+        # Keep earlier files when a service, rule or profile still needs cleanup.
+        if($item.kind -in @('service','firewall','wiresock')){break}
     }}
     return $rollbackErrors
 }
@@ -3855,6 +3877,9 @@ function Confirm-DNSRecoveryEntry($Entry) {
 function Recover-Operation {
     if($r.journalId -notmatch '^workflow-[a-fA-F0-9]{32}\.json$'){throw 'Invalid recovery journal name'}
     $journal=Join-Path $root ('logs\'+$r.journalId);No-Reparse $journal;$saved=Read-WorkflowRecoveryJournal $journal
+    $wireSockEntries=@($saved.undo | Where-Object {$_.kind -ceq 'wiresock'})
+    if($wireSockEntries.Count -gt 1){throw 'Recovery journal contains duplicate WireSock entries'}
+    $ownerlessWireSockProfile=''
     foreach($entry in @($saved.undo)){
         switch($entry.kind){
             'file' {if($entry.path -ieq (Join-Path $root 'profiles\dns-original.json')){[void](Confirm-DNSRecoverySnapshot $null);continue};$allowed=(Under $entry.path $root);if(-not $allowed){$allowed=(Under $entry.path (Join-Path $env:LOCALAPPDATA 'Discord')) -and ([IO.Path]::GetFileName($entry.path) -in @('version.dll','drover.ini'))};if(-not $allowed){throw 'Recovery journal contains an unmanaged file path'};if($entry.backup -and -not (Under $entry.backup (Join-Path $root 'backups'))){throw 'Recovery backup is outside protected storage'}}
@@ -3886,19 +3911,20 @@ function Recover-Operation {
                         }
                     }
                     $profiles=@(Get-ManagedWireSockProfiles $entry.cli)
-                    if($profiles.Count -ne 1 -or $profiles[0] -cne $entry.profile){
+                    if($profiles.Count -gt 0 -and ($profiles.Count -ne 1 -or $profiles[0] -cne $entry.profile)){
                         throw 'WireSock recovery cannot confirm the journaled profile is the only managed vendor profile'
                     }
                     if(-not $hasOwner){
                         # A vendor profile can exist while another profile is
                         # connected. Without an owner, only retry named deletion
                         # after a complete status query confirms the tunnel is idle.
-                        $status=Get-WireSockReportedState (Native $entry.cli @('status') -Secret -Timeout 15)
-                        if($status -cnotin @('NotConnected','Disconnected')){
-                            throw 'WireSock recovery cannot confirm the vendor is idle without an ownership record'
+                        if($profiles.Count){
+                            $status=Get-WireSockReportedState (Native $entry.cli @('status') -Secret -Timeout 15)
+                            if($status -cnotin @('NotConnected','Disconnected')){
+                                throw 'WireSock recovery cannot confirm the vendor is idle without an ownership record'
+                            }
                         }
-                        if($phase){$entry.importOnly=$true}
-                        else{$entry | Add-Member -NotePropertyName importOnly -NotePropertyValue $true}
+                        $ownerlessWireSockProfile=$entry.profile
                     }
                 }
             }
@@ -3916,7 +3942,7 @@ function Recover-Operation {
         }
     }
     $script:undo.Clear();foreach($entry in @($saved.undo)){$script:undo.Add($entry)};Save-Journal
-    $errors=@(Rollback);if($errors.Count){throw ($errors -join '; ')}
+    $errors=@(Rollback -OwnerlessWireSockProfile $ownerlessWireSockProfile);if($errors.Count){throw ($errors -join '; ')}
     Event 'Selected operation recovered'
 }
 function Throw-WorkflowResultFailure([string]$Code) {

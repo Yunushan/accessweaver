@@ -93,6 +93,9 @@ function Get-WorkflowOutcome($run,$job) {
         '^Timed out: (wiresock-connect-cli|wiresock-client)\.exe$' {return 'vendor-cli-timeout'}
         '^WireSock disconnect command failed; the managed profile was retained$' {return 'disconnect-command-failed'}
         '^WireSock profile deletion command failed; the ownership record was retained$' {return 'profile-deletion-command-failed'}
+        '^WireSock profile deletion could not be verified; the ownership record was retained$' {return 'profile-inventory-unverified'}
+        '^WireSock profile inventory could not be verified before removal; the ownership record was retained$' {return 'profile-inventory-unverified'}
+        '^WireSock removal could not confirm the only managed vendor profile; the ownership record was retained$' {return 'recovery-inventory-mismatch'}
         '^WireSock connection was not confirmed by vendor status$' {return 'connection-unconfirmed'}
         '^WireSock profile inventory could not be verified; retry before importing a profile$' {return 'profile-inventory-unverified'}
         '^A managed WireSock profile remains in the vendor inventory; recover the earlier workflow before retrying setup$' {return 'managed-profile-remains'}

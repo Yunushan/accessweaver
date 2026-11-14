@@ -1013,6 +1013,8 @@ try {
         $script:undo=[Collections.Generic.List[object]]::new()
         $failDisconnect=$false
         $idleStatus='Disconnected'
+        $script:fixtureRollbackProfileDeleted=$false
+        $leaveVendorProfile=$false
         function Native {
             param($program,$arguments,[switch]$Secret,[int]$Timeout)
             if(-not $Secret -or ($arguments[0] -eq 'delete' -and $arguments[1] -cne $profileName)){
@@ -1024,20 +1026,53 @@ try {
                 if($Timeout -ne 15){throw 'Expected bounded WireSock status query'}
                 return @{outputComplete=$true;stdout=$idleStatus}
             }
+            if($arguments[0] -ceq 'list'){
+                return @{stdout=$(if(-not $script:fixtureRollbackProfileDeleted){$profileName}else{''});outputComplete=$true}
+            }
+            if($arguments[0] -ceq 'delete' -and -not $leaveVendorProfile){$script:fixtureRollbackProfileDeleted=$true}
             return @{exitCode=0}
         }
         $entry=@{kind='wiresock';cli='C:\fixture\wiresock-connect-cli.exe';profile=$profileName;importOnly=$true}
         $script:undo.Add($entry)
-        Assert (@(Rollback).Count -eq 0 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'delete') 'WireSock import-only recovery leaves the active connection alone'
+        Assert (@(Rollback).Count -eq 0 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'list,delete,list') 'WireSock import-only recovery leaves the active connection alone'
         $entry.importOnly=$false
+        $script:fixtureRollbackProfileDeleted=$false
         $script:fixtureWireSockRollbackCalls.Clear()
-        Assert (@(Rollback).Count -eq 0 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'disconnect,delete') 'WireSock recovery after a connection attempt retains both cleanup steps'
+        Assert (@(Rollback).Count -eq 0 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'list,disconnect,delete,list') 'WireSock recovery after a connection attempt retains both cleanup steps'
         $failDisconnect=$true
+        $script:fixtureRollbackProfileDeleted=$false
         $script:fixtureWireSockRollbackCalls.Clear()
-        Assert (@(Rollback).Count -eq 0 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'disconnect,status,delete') 'WireSock recovery can delete its recorded profile after confirmed idle status'
+        Assert (@(Rollback).Count -eq 0 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'list,disconnect,status,delete,list') 'WireSock recovery can delete its recorded profile after confirmed idle status'
         $idleStatus='Disconnecting'
+        $script:fixtureRollbackProfileDeleted=$false
         $script:fixtureWireSockRollbackCalls.Clear()
-        Assert (@(Rollback).Count -eq 1 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'disconnect,status') 'WireSock recovery refuses deletion while the vendor is still disconnecting'
+        Assert (@(Rollback).Count -eq 1 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'list,disconnect,status') 'WireSock recovery refuses deletion while the vendor is still disconnecting'
+        $failDisconnect=$false
+        $leaveVendorProfile=$true
+        $root=Join-Path $testRoot 'wiresock-rollback-ownership'
+        $directory=Join-Path $root 'profiles'
+        [void][IO.Directory]::CreateDirectory($directory)
+        $ownedPath=Join-Path $directory 'wiresock-owned.json'
+        [IO.File]::WriteAllText($ownedPath,'inert owner')
+        $script:undo.Add(@{kind='file';path=$ownedPath;expectedHash=(Get-WorkflowFileHash $ownedPath)})
+        $script:fixtureWireSockRollbackCalls.Clear()
+        Assert (@(Rollback).Count -eq 1 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'list,disconnect,delete,list' -and
+            [IO.File]::Exists($ownedPath)) 'WireSock rollback retains its owner when vendor deletion is unverified'
+        $script:fixtureRollbackProfileDeleted=$true
+        $script:fixtureWireSockRollbackCalls.Clear()
+        Assert (@(Rollback).Count -eq 0 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'list' -and
+            -not [IO.File]::Exists($ownedPath)) 'WireSock rollback resumes after vendor deletion and retires its recorded ownership file'
+        $script:undo.RemoveAt(1)
+        $script:fixtureRollbackProfileDeleted=$false
+        $script:fixtureWireSockRollbackCalls.Clear()
+        $idleStatus='Connected'
+        Assert (@(Rollback -OwnerlessWireSockProfile $profileName).Count -eq 1 -and
+            ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'list,status') 'WireSock ownerless rollback rechecks idle status at deletion'
+        $idleStatus='Disconnected'
+        $leaveVendorProfile=$false
+        $script:fixtureWireSockRollbackCalls.Clear()
+        Assert (@(Rollback -OwnerlessWireSockProfile $profileName).Count -eq 0 -and
+            ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'list,status,delete,list') 'WireSock ownerless rollback verifies named deletion without disconnecting'
     } finally {$script:undo=$previousUndo}
 }
 # Drive the actual connection function and recover its generated undo entry.
@@ -1093,6 +1128,7 @@ try {
                     }
                     if(-not [IO.File]::Exists($arguments[1])){throw 'Missing staged import configuration'}
                     $calls.Add($command)
+                    $fixtureInventory.stdout=$entry.profile
                     if($mode -ceq 'import'){throw 'Fixture import failure'}
                 }
                 'connect' {
@@ -1111,6 +1147,7 @@ try {
                         throw 'Rollback targeted a different profile'
                     }
                     $calls.Add($command)
+                    $fixtureInventory.stdout=''
                 }
                 default {throw 'Unexpected vendor command'}
             }
@@ -1118,9 +1155,9 @@ try {
         }
         foreach($case in @(
             @{mode='copy';calls='list';label='WireSock retires failed import staging before any vendor command'},
-            @{mode='import';calls='list,save-import,import,delete';label='WireSock import failure rolls back only the generated profile'},
-            @{mode='journal';calls='list,save-import,import,save-connect,delete';label='WireSock journal failure before connect preserves the active tunnel'},
-            @{mode='connect';calls='list,save-import,import,save-connect,connect,disconnect,delete';label='WireSock connect failure uses the persisted connection recovery phase'}
+            @{mode='import';calls='list,save-import,import,list,delete,list';label='WireSock import failure rolls back only the generated profile'},
+            @{mode='journal';calls='list,save-import,import,save-connect,list,delete,list';label='WireSock journal failure before connect preserves the active tunnel'},
+            @{mode='connect';calls='list,save-import,import,save-connect,connect,list,disconnect,delete,list';label='WireSock connect failure uses the persisted connection recovery phase'}
         )){
             $mode=$case.mode
             $calls.Clear()
@@ -1169,6 +1206,7 @@ try {
         Assert $true 'WireSock records only a fixed vendor status and discards private output'
         foreach($check in $checks){
             $calls.Clear()
+            $fixtureInventory.stdout='1. Independent profile'
             $script:undo=[Collections.Generic.List[object]]::new()
             $fixtureStatus=@{stdout=$check.stdout;outputComplete=$check.complete}
             if($check.want -ceq 'Connected'){
@@ -1183,7 +1221,7 @@ try {
                 }
                 $errors=@(Rollback)
                 if(-not $refused -or $errors.Count -ne 0 -or
-                    ($calls -join ',') -cne 'list,save-import,import,save-connect,connect,status,disconnect,delete'){
+                    ($calls -join ',') -cne 'list,save-import,import,save-connect,connect,status,list,disconnect,delete,list'){
                     throw 'Unconfirmed connection did not use the persisted recovery phase'
                 }
             }
@@ -1222,7 +1260,9 @@ try {
             return @{stdout=$vendorState;outputComplete=$true}
         }
         function Save-Journal {$calls.Add('save')}
-        function Rollback {$calls.Add('rollback')}
+        function Rollback([string]$OwnerlessWireSockProfile){
+            if($OwnerlessWireSockProfile){$calls.Add('rollback-ownerless')}else{$calls.Add('rollback')}
+        }
         function Event {}
         $currentProfile=$newProfile
         $vendorProfiles=@($oldProfile)
@@ -1230,7 +1270,7 @@ try {
         try {Recover-Operation}catch{$refused=$_.Exception.Message -ceq 'WireSock recovery journal differs from the current managed profile'}
         Assert ($refused -and $calls.Count -eq 0 -and $script:undo.Count -eq 0) 'WireSock recovery refuses a journal for a different current owner'
         [IO.File]::Delete($ownerPath)
-        foreach($inventory in @(@{profiles=@()},@{profiles=@($oldProfile,$newProfile)})){
+        foreach($inventory in @(@{profiles=@($newProfile)},@{profiles=@($oldProfile,$newProfile)})){
             $vendorProfiles=$inventory.profiles
             $calls.Clear()
             $refused=$false
@@ -1239,7 +1279,12 @@ try {
                 throw 'Unsafe WireSock replay reached recovery'
             }
         }
-        Assert $true 'WireSock recovery refuses missing or competing vendor profiles before global disconnect'
+        Assert $true 'WireSock recovery refuses competing vendor profiles before global disconnect'
+        $vendorProfiles=@()
+        $calls.Clear()
+        Recover-Operation
+        Assert (($calls -join ',') -ceq 'list,save,rollback-ownerless' -and $script:undo[0].importOnly -eq $false) 'WireSock recovery admits an absent vendor profile without a global disconnect'
+        $script:undo.Clear()
         $vendorProfiles=@($oldProfile)
         $calls.Clear()
         $vendorState='Connected'
@@ -1249,8 +1294,8 @@ try {
         $calls.Clear()
         $vendorState='Disconnected'
         Recover-Operation
-        Assert (($calls -join ',') -ceq 'list,status,save,rollback' -and $script:undo.Count -eq 1 -and
-            $script:undo[0].importOnly -eq $true) 'WireSock recovery without an owner selects named deletion after confirmed idle status'
+        Assert (($calls -join ',') -ceq 'list,status,save,rollback-ownerless' -and $script:undo.Count -eq 1 -and
+            $script:undo[0].importOnly -eq $false) 'WireSock recovery without an owner selects named deletion after confirmed idle status'
         $entry.importOnly=$false
         [IO.File]::WriteAllText($ownerPath,'synthetic marker')
         $currentProfile=$oldProfile
@@ -1262,7 +1307,7 @@ try {
         $vendorProfiles=@($newProfile)
         $calls.Clear()
         Recover-Operation
-        Assert (($calls -join ',') -ceq 'save,rollback') 'WireSock import-only recovery does not inspect the active profile inventory'
+        Assert (($calls -join ',') -ceq 'save,rollback') 'WireSock import-only replay skips the global disconnect preflight'
     } finally {$script:undo=$previousUndo}
 }
 # Exercise the updates dispatch helper with fixed public-shape release metadata.
