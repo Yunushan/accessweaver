@@ -2196,22 +2196,19 @@ function Get-ActiveDNSAdapters([object[]]$Adapters,[object[]]$Clients) {
 # differs. Compare both effective settings and the stored static override.
 function Assert-ConfiguredDNSServers([object[]]$Adapters,[object[]]$Records,[string[]]$Servers) {
     if($Adapters.Count -eq 0 -or $Servers.Count -eq 0){throw 'Configured DNS readback is incomplete'}
-    $first=@(Get-NetAdapter -ErrorAction Stop);$clients=@(Read-DNSClientInventory);$last=@(Get-NetAdapter -ErrorAction Stop)
+    $first=@(Get-NetAdapter -ErrorAction Stop);$clients=@(Read-DNSClientInventory)
     $activeBefore=@(Get-ActiveDNSAdapters $first $clients)
-    $activeAfter=@(Get-ActiveDNSAdapters $last $clients)
-    if($activeBefore.Count -ne $Adapters.Count -or $activeAfter.Count -ne $Adapters.Count){
+    if($activeBefore.Count -ne $Adapters.Count){
         throw 'Active DNS adapter coverage changed during readback'
     }
     foreach($adapter in $Adapters){
         $guid=[string]$adapter.InterfaceGuid
         $before=@($activeBefore | Where-Object {[string]$_.InterfaceGuid -eq $guid})
-        $after=@($activeAfter | Where-Object {[string]$_.InterfaceGuid -eq $guid})
         $saved=@($Records | Where-Object {[string]$_.guid -eq $guid})
-        if([string]::IsNullOrWhiteSpace($guid) -or $before.Count -ne 1 -or $after.Count -ne 1 -or $saved.Count -ne 1 -or
+        if([string]::IsNullOrWhiteSpace($guid) -or $before.Count -ne 1 -or $saved.Count -ne 1 -or
            $before[0].ifIndex -le 0 -or
-           $before[0].ifIndex -ne $after[0].ifIndex -or
            @($first | Where-Object {$_.ifIndex -eq $before[0].ifIndex}).Count -ne 1 -or
-           @($last | Where-Object {$_.ifIndex -eq $after[0].ifIndex}).Count -ne 1){
+           @($first | Where-Object {[string]$_.InterfaceGuid -eq $guid}).Count -ne 1){
             throw 'Configured DNS adapter changed during readback'
         }
         $bounds=Get-OriginalDNSBounds $saved[0]
@@ -2226,6 +2223,17 @@ function Assert-ConfiguredDNSServers([object[]]$Adapters,[object[]]$Records,[str
             if(($actual -join ',') -cne ($expected -join ',')){throw 'Configured DNS servers differ'}
             $stored=@(Read-DNSStaticOverride $before[0] $family)
             if(($stored -join ',') -cne ($expected -join ',')){throw 'Stored DNS servers do not match the configured static addresses'}
+        }
+    }
+    $last=@(Get-NetAdapter -ErrorAction Stop)
+    $activeAfter=@(Get-ActiveDNSAdapters $last $clients)
+    if($activeAfter.Count -ne $activeBefore.Count){throw 'Active DNS adapter coverage changed during readback'}
+    foreach($binding in $activeBefore){
+        $guid=[string]$binding.InterfaceGuid
+        $matches=@($activeAfter | Where-Object {$_.ifIndex -eq $binding.ifIndex -and [string]$_.InterfaceGuid -eq $guid})
+        if($matches.Count -ne 1 -or @($last | Where-Object {$_.ifIndex -eq $binding.ifIndex}).Count -ne 1 -or
+           @($last | Where-Object {[string]$_.InterfaceGuid -eq $guid}).Count -ne 1){
+            throw 'Configured DNS adapter changed during readback'
         }
     }
 }
