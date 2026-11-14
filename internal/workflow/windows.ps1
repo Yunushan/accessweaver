@@ -3306,42 +3306,68 @@ function Preserve-DiscordCache {
     Move-Item -LiteralPath $cache -Destination $destination
     Event 'Discord cache preserved in protected backup storage'
 }
+function Find-WindowsScanTools([string]$Base,[string]$Pattern) {
+    No-Reparse $Base
+    $scripts=@(Get-ChildItem -LiteralPath $Base -Recurse -Filter $Pattern -File -ErrorAction Stop | Select-Object -First 2)
+    if($scripts.Count -gt 1){throw 'Windows blockcheck bundle contains multiple matching scripts'}
+    if($scripts.Count -eq 0){return $null}
+    $runtimes=@(Get-ChildItem -LiteralPath $Base -Recurse -Filter 'bash.exe' -File -ErrorAction Stop | Select-Object -First 2)
+    if($runtimes.Count -gt 1){throw 'Windows blockcheck bundle contains multiple Bash runtimes'}
+    if($runtimes.Count -eq 0){return $null}
+    No-Reparse $scripts[0].FullName
+    No-Reparse $runtimes[0].FullName
+    return @{check=$scripts[0];bash=$runtimes[0]}
+}
 function Scan-Strategies {
     if($r.engine -notin @('zapret','zapret2')){throw 'Strategy scans require Zapret or Zapret2'}
     $scanParent=[IO.Path]::GetFullPath((Join-Path $root 'temp'))
     $managed=[bool]$inputData.managedPolicy
+    $explicitBundle=[bool]$r.bundlePath
     $candidate=Join-Path $scanParent ('scan-'+$r.engine+'-'+[guid]::NewGuid().ToString('N'))
-    if($managed){
-        if(-not $r.bundlePath -or -not (Test-Path -LiteralPath $r.bundlePath -PathType Container)){
-            throw 'Managed strategy scans require an approved Windows blockcheck bundle'
+    if($managed -and -not $explicitBundle){throw 'Managed strategy scans require an approved Windows blockcheck bundle'}
+    if($explicitBundle){
+        if(-not (Test-Path -LiteralPath $r.bundlePath -PathType Container -ErrorAction Stop)){
+            throw 'The selected Windows blockcheck bundle directory is unavailable'
         }
         $bundle=[IO.Path]::GetFullPath($r.bundlePath)
         No-Reparse $bundle
-        if(Under $candidate $bundle){throw 'Managed scan staging must be outside the approved bundle'}
+        if(Under $candidate $bundle){throw 'Strategy scan staging must be outside the selected bundle'}
     }
     if(Test-Path -LiteralPath $candidate -ErrorAction Stop){throw 'Strategy scan staging path already exists'}
     Protect-Dir $candidate
     try {
-        if($managed){
-            # Keep the reviewed bundle's layout and prevent older scan assets
-            # from being mixed into this run.
+        if($explicitBundle){
+            # Preserve the bundle layout without mixing cached files into the run.
             Copy-Tree $bundle $candidate -Disposable
             if(-not (Find-Source $r.engine -SourceRoots @($candidate))){
-                throw 'Approved Windows blockcheck bundle lacks the selected engine'
+                throw 'Selected Windows blockcheck bundle lacks the selected engine'
             }
             $search=@($candidate)
         }else{
             $binary=Ensure-Asset $r.engine;$dir=Split-Path -Parent $binary
-            $search=@($r.bundlePath,(Split-Path -Parent $dir),(Join-Path $env:ProgramFiles 'SplitWire-Turkey\res\zapret')) | Where-Object {$_ -and (Test-Path -LiteralPath $_)}
+            $search=@((Split-Path -Parent $dir),(Join-Path $env:ProgramFiles 'SplitWire-Turkey\res\zapret')) | Where-Object {$_ -and (Test-Path -LiteralPath $_ -PathType Container -ErrorAction Stop)}
         }
-        $check=$null;$bash=$null
-        foreach($base in $search){$pattern=if($r.engine -eq 'zapret2'){'blockcheck2.sh'}else{'blockcheck.sh'};$check=Get-ChildItem -LiteralPath $base -Recurse -Filter $pattern -File|Select-Object -First 1;if($check){$bash=Get-ChildItem -LiteralPath $base -Recurse -Filter 'bash.exe' -File|Select-Object -First 1;if($bash){break}}}
-        if(-not $check -or -not $bash){throw 'Supply the official Windows blockcheck bundle, including its Cygwin bash runtime'}
-        if(-not (Under $check.FullName $root)){$scanDir=Join-Path $root ('components\scan-'+$r.engine);Protect-Dir $scanDir;Copy-Tree $check.Directory.FullName $scanDir;$check=Get-Item -LiteralPath (Join-Path $scanDir $check.Name)}
-        if(-not (Under $bash.FullName $root)){$runtimeDir=Join-Path $root 'components\cygwin';Protect-Dir $runtimeDir;$bashRoot=Split-Path -Parent $bash.Directory.FullName;Copy-Tree $bashRoot $runtimeDir;$bash=Get-Item -LiteralPath (Join-Path $runtimeDir 'bin\bash.exe')}
+        $pattern=if($r.engine -eq 'zapret2'){'blockcheck2.sh'}else{'blockcheck.sh'}
+        $tools=$null
+        foreach($base in $search){
+            $tools=Find-WindowsScanTools $base $pattern
+            if($tools){break}
+        }
+        if(-not $tools){throw 'Supply the official Windows blockcheck bundle, including its Cygwin bash runtime'}
+        $check=$tools.check
+        $bash=$tools.bash
+        if(-not (Under $check.FullName $root) -or -not (Under $bash.FullName $root)){
+            if(Under $candidate $base){throw 'Strategy scan staging must be outside the discovered bundle'}
+            # Copy the discovered tree together so the original relative layout is preserved.
+            Copy-Tree $base $candidate -Disposable
+            $tools=Find-WindowsScanTools $candidate $pattern
+            if(-not $tools){throw 'Copied blockcheck bundle is incomplete'}
+            $check=$tools.check
+            $bash=$tools.bash
+        }
         if($r.engine -eq 'zapret2' -and $inputData.ispHook){
             $hook=Join-Path $check.Directory.FullName 'blockcheck2.d\standard\00-accessweaver-isp.sh'
-            if($managed){
+            if(Under $hook $candidate){
                 No-Reparse $hook
                 [void][IO.Directory]::CreateDirectory((Split-Path -Parent $hook))
                 [IO.File]::WriteAllText($hook,$inputData.ispHook,[Text.UTF8Encoding]::new($false))

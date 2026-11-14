@@ -314,6 +314,7 @@ try {
 # partial summary must never be saved or reach installation as a success.
 $previousScanInput=$inputData;$previousScanRequest=$r;$previousScanRoot=$root;$previousScanAssetNames=$assetNames
 $oldOrdinaryBashEnv=$env:BASH_ENV
+$previousScanProgramFiles=$env:ProgramFiles
 $previousScanUndo=$script:undo
 $scanFunctions=@{};foreach($name in @('Ensure-Asset','Native','Publish-WorkflowFile','Install-Method','Protect-Dir','Assert-TrustedTree')){$scanFunctions[$name]=(Get-Command $name).ScriptBlock}
 try {
@@ -325,6 +326,7 @@ try {
     $scanReport=Join-Path $root 'logs\zapret2-blockcheck.txt'
     $script:scanBinary=Join-Path $scanBundle 'winws2.exe';[IO.File]::WriteAllText($script:scanBinary,'inert')
     $inputData=[pscustomobject]@{ispHook=$null;controller='fixture-controller'}
+    $assetNames=@{zapret2='winws2.exe'}
     function Ensure-Asset {param($engine);if($engine -cne 'zapret2'){throw 'Unexpected fixture engine'};return $script:scanBinary}
     function Protect-Dir([string]$path){
         if((Split-Path -Parent $path) -ine (Join-Path $root 'temp')){throw 'Unexpected strategy scan workspace'}
@@ -359,8 +361,10 @@ try {
             return @{stdout=$valid;exitCode=0;outputComplete=($script:scanMode -cne 'parser-incomplete')}
         }
         $system=Join-Path $env:SystemRoot 'System32'
-        if($program -cne (Join-Path $scanBundle 'bash.exe') -or $WorkingDirectory -cne $scanBundle -or $Timeout -ne 4200 -or
-           $ChildEnvironment.Count -ne 11 -or $ChildEnvironment.PATH -cne ($scanBundle+';'+$system) -or
+        $script:scanLaunches++
+        $working=if($r.bundlePath -or $script:scanMode -ceq 'complete-discovered'){$script:stagedScanBundle}else{$scanBundle}
+        if($program -cne (Join-Path $working 'bash.exe') -or $WorkingDirectory -cne $working -or $Timeout -ne 4200 -or
+           $ChildEnvironment.Count -ne 11 -or $ChildEnvironment.PATH -cne ($working+';'+$system) -or
            $env:BASH_ENV -cne 'ordinary-fixture-startup' -or $ChildEnvironment.ContainsKey('BASH_ENV') -or $ChildEnvironment.SCANLEVEL -cne 'quick' -or
            $ChildEnvironment.BATCH -cne '1' -or $ChildEnvironment.DOMAINS -cne $(if($r.targets){$r.targets -join ' '}else{'discord.com discord.gg'}) -or
            -not (Under $ChildEnvironment.HOME $script:stagedScanBundle) -or $ChildEnvironment.TEMP -cne $ChildEnvironment.HOME -or
@@ -374,19 +378,20 @@ try {
     }
     $env:BASH_ENV='ordinary-fixture-startup'
     $modes=@('scan-incomplete','scan-missing','scan-empty','scan-invalid-completion','parser-incomplete','parser-missing','parser-no-strategy','parser-invalid-json',
-        'parser-array','parser-no-common','parser-invalid-protocol','parser-invalid-args','parser-control-args','complete','complete-default','complete-multi')
+        'parser-array','parser-no-common','parser-invalid-protocol','parser-invalid-args','parser-control-args','complete','complete-default','complete-multi','complete-implicit')
     foreach($mode in $modes){
-        $script:scanMode=$mode;$script:scanWrites=0;$script:scanInstalls=0;$script:scanSelectionArgs=@()
+        $script:scanMode=$mode;$script:scanWrites=0;$script:scanInstalls=0;$script:scanLaunches=0;$script:scanSelectionArgs=@()
         $script:undo=[Collections.Generic.List[object]]::new()
         [IO.File]::WriteAllText($scanReport,'previous complete report')
         $targets=@();if($mode -in @('complete-multi','parser-no-common')){$targets=@('example.com','example.net')}elseif($mode -ne 'complete-default'){$targets=@('example.com')}
-        $r=[pscustomobject]@{engine='zapret2';bundlePath=$scanBundle;scan='quick';targets=@($targets);dns='unchanged'}
+        $bundle=if($mode -eq 'complete-implicit'){$null}else{$scanBundle}
+        $r=[pscustomobject]@{engine='zapret2';bundlePath=$bundle;scan='quick';targets=@($targets);dns='unchanged'}
         $oldPath=$env:PATH;$rejected=$false;$message=''
         try {[void](Auto-Install)}catch{$rejected=$true;$message=$_.Exception.Message}
         if($mode -like 'complete*'){
             Assert (-not $rejected -and $script:scanWrites -eq 1 -and $script:scanInstalls -eq 1) ('Complete '+$mode+' scan reaches only the mocked installer')
             $requireCommon=(@($script:scanSelectionArgs | Where-Object {$_ -ceq '--require-common'}).Count -eq 1)
-            if($mode -eq 'complete'){Assert (-not $requireCommon) 'Single-target scan does not require a common section'}
+            if($mode -in @('complete','complete-implicit')){Assert (-not $requireCommon) 'Single-target scan does not require a common section'}
             else{Assert $requireCommon ('Multi-target '+$mode+' scan requires a common section')}
         }elseif($mode -like 'scan-*'){
             Assert ($rejected -and $script:scanWrites -eq 0 -and $script:scanInstalls -eq 0) ('Scan rejects '+$mode+' before saving or installation')
@@ -405,8 +410,45 @@ try {
         Assert ($env:PATH -ceq $oldPath) 'Scan preserves the process PATH after success or refusal'
         Assert ($script:stagedScanBundle -and -not (Test-Path -LiteralPath $script:stagedScanBundle)) 'Ordinary scan removes its private workspace after success or refusal'
     }
+    $externalProgramFiles=Join-Path $testRoot 'scan-program-files'
+    $discoveredBundle=Join-Path $externalProgramFiles 'SplitWire-Turkey\res\zapret'
+    [void][IO.Directory]::CreateDirectory($discoveredBundle)
+    Copy-Tree $scanBundle $discoveredBundle -Disposable
+    [IO.File]::Delete((Join-Path $scanBundle 'blockcheck2.sh'))
+    try {
+        $env:ProgramFiles=$externalProgramFiles
+        $script:scanMode='complete-discovered';$script:scanWrites=0;$script:scanLaunches=0
+        $r=[pscustomobject]@{engine='zapret2';bundlePath=$null;scan='quick';targets=@('example.com')}
+        $discovered=Scan-Strategies
+        Assert ($discovered.scanLevel -ceq 'quick' -and $script:scanWrites -eq 1 -and $script:scanLaunches -eq 1 -and
+            -not (Test-Path -LiteralPath $script:stagedScanBundle) -and
+            (Test-Path -LiteralPath (Join-Path $discoveredBundle 'blockcheck2.sh') -PathType Leaf)) 'Discovered external tools run together from fresh staging and preserve their source'
+    } finally {
+        $env:ProgramFiles=$previousScanProgramFiles
+        [IO.File]::WriteAllText((Join-Path $scanBundle 'blockcheck2.sh'),'inert')
+    }
+    $alternative=Join-Path $scanBundle 'alternative'
+    [void][IO.Directory]::CreateDirectory($alternative)
+    foreach($case in @(
+        @{duplicate='blockcheck2.sh';message='Windows blockcheck bundle contains multiple matching scripts'},
+        @{duplicate='bash.exe';message='Windows blockcheck bundle contains multiple Bash runtimes'}
+    )){
+        $file=Join-Path $alternative $case.duplicate
+        [IO.File]::WriteAllText($file,'inert alternative')
+        try {
+            $r.bundlePath=$scanBundle
+            $script:scanLaunches=0;$script:scanWrites=0;$refused=$false
+            try {[void](Scan-Strategies)}catch{$refused=$_.Exception.Message -ceq $case.message}
+            Assert ($refused -and $script:scanLaunches -eq 0 -and $script:scanWrites -eq 0 -and
+                -not (Test-Path -LiteralPath $script:stagedScanBundle)) ('Selected scan bundle refuses ambiguous '+$case.duplicate)
+        } finally {[IO.File]::Delete($file)}
+    }
+    $missing=Join-Path $testRoot 'absent-scan-bundle'
+    $r.bundlePath=$missing
+    $refused=$false
+    try {[void](Scan-Strategies)}catch{$refused=$_.Exception.Message -ceq 'The selected Windows blockcheck bundle directory is unavailable'}
+    Assert ($refused -and $script:scanLaunches -eq 0) 'An unavailable explicit scan bundle cannot use a cached fallback'
     $inputData=[pscustomobject]@{managedPolicy=$true;ispHook=$null}
-    $assetNames=@{zapret2='winws2.exe'}
     $r=[pscustomobject]@{engine='zapret2';bundlePath=$null;scan='quick';targets=@('example.com')}
     $script:scanWrites=0
     $refused=$false
