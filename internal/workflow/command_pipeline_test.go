@@ -40,7 +40,7 @@ func TestWorkflowCommandPipelineSourceChild(t *testing.T) {
 }
 
 func workflowPipelineChild(mode string) int {
-	if mode != "complete" && mode != "cancel" && mode != "wrong-token" {
+	if mode != "complete" && mode != "cancel" && mode != "wrong-token" && mode != "output-failure" {
 		return 91
 	}
 	input, err := io.ReadAll(io.LimitReader(os.Stdin, (64<<10)+1))
@@ -82,6 +82,11 @@ func workflowPipelineChild(mode string) int {
 	}
 	if _, err = io.WriteString(os.Stdout, "source-pipeline-stdout\n"); err != nil {
 		return 94
+	}
+	if mode == "output-failure" {
+		// Write exactly once, then remain alive without relying on either pipe.
+		time.Sleep(30 * time.Second)
+		return 95
 	}
 	if _, err = io.WriteString(os.Stderr, "source-pipeline-stderr\n"); err != nil {
 		return 94
@@ -223,6 +228,40 @@ ready:
 	terminal := f.manager.TerminalError(job.ID)
 	if (*command).ProcessState.Success() || !errors.As(terminal, &exit) || !errors.Is(terminal, context.Canceled) || len(f.manager.Snapshot().Result) == 0 {
 		t.Fatal("actual owned cancellation lost the child exit, context cause or correlated report")
+	}
+}
+
+type workflowPipelineFailingWriter struct{ err error }
+
+func (w workflowPipelineFailingWriter) Write([]byte) (int, error) { return 0, w.err }
+
+func TestWorkflowCommandPipelineLogFailureStopsLiveWorker(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "result.json")
+	frame, err := json.Marshal(map[string]string{"resultPath": path, "resultToken": strings.Repeat("0", 48)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, stop := context.WithTimeout(context.Background(), 12*time.Second)
+	defer stop()
+	cmd, err := workflowPipelineCommand(ctx, frame, "output-failure")
+	if err != nil {
+		t.Fatal(err)
+	}
+	logFailure := errors.New("fixture output persistence failure")
+	observation, outputClosed, runErr := runWorkflowCommandWithOutput(cmd, configureCommand(cmd), workflowPipelineFailingWriter{err: logFailure})
+	if ctx.Err() != nil {
+		t.Fatal("log failure left the worker running until the parent deadline")
+	}
+	if !observation.Accepted || !observation.Bound || !observation.Waited || !observation.OwnerClosed ||
+		outputClosed || !errors.Is(runErr, logFailure) || !errors.Is(runErr, ErrWorkflowPersistence) {
+		t.Fatalf("incomplete worker failure observations: %+v, outputClosed=%t, error=%v", observation, outputClosed, runErr)
+	}
+	if cmd.ProcessState.Success() || cmd.ProcessState.ExitCode() == 95 {
+		t.Fatal("worker was not terminated by its owner")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("worker did not reach the fixture output boundary", err)
 	}
 }
 
