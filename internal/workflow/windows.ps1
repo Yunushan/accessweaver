@@ -2472,7 +2472,7 @@ function Configure-DNS([string]$method) {
         Publish-WorkflowFile $config $updatedConfig -Recorded -BeforeHash $configBefore
         if($existingResolver){
             if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before restart'}
-            Set-Service -Name $serviceName -StartupType Automatic -ErrorAction Stop
+            Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
             Restart-Service -Name $serviceName -ErrorAction Stop
             $service=Get-Service -Name $serviceName -ErrorAction Stop
             try {$service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))}
@@ -2573,6 +2573,11 @@ function Configure-DNS([string]$method) {
         Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
         Stop-Service -Name $serviceName -ErrorAction Stop
         Set-Service -Name $serviceName -StartupType Manual -ErrorAction Stop
+    }
+    if($method -ceq 'dnscrypt' -and $existingResolver){
+        if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before enabling automatic startup'}
+        Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+        Set-Service -Name $serviceName -StartupType Automatic -ErrorAction Stop
     }
     Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
     Event ('Encrypted DNS configured: '+$method)

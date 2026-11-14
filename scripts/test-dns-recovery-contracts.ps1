@@ -63,7 +63,7 @@ function New-DNSCase {
     $script:replaceSnapshotOnActivation=$false;$script:replaceSnapshotOnInterfaceRead=0
     $script:failAction='';$script:failAddress='';$script:failDelete=$false;$script:failSnapshotWrite=$false;$script:failJournalWrite=$false;$script:corruptSnapshotWrite=$false;$script:failActivationWrite=$false;$script:failReceiptWrite=$false
     $script:configureDohReadFault='';$script:postConfigureDohReadFault='';$script:configureDohFaultAddress='';$script:resolverQueries=0;$script:configurationLag=0;$script:readbackWaits=0
-    $script:resolverServicePresent=$false;$script:resolverOwnershipFault=$false;$script:resolverBindingFailureRead=0;$script:resolverBindingReads=0;$script:serviceRestarts=0;$script:dnscryptConfigReads=0;$script:dnscryptConfigWrites=0;$script:stageDNSCrypt=$false;$script:changeDNSCryptBeforePublish=$false;$script:serviceStops=0;$script:serviceStartupChanges=0
+    $script:resolverServicePresent=$false;$script:resolverOwnershipFault=$false;$script:resolverBindingFailureRead=0;$script:resolverBindingReads=0;$script:serviceRestarts=0;$script:dnscryptConfigReads=0;$script:dnscryptConfigWrites=0;$script:stageDNSCrypt=$false;$script:changeDNSCryptBeforePublish=$false;$script:failDNSCryptRestart=$false;$script:serviceStops=0;$script:serviceStartupChanges=0
     $script:listenerQueries=[Collections.Generic.List[string]]::new()
     $script:ordinaryResolverWaits=0;$script:emptyOrdinaryAnswers=0;$script:resolverDrift=''
     $script:listenerReplies=@{};$script:listenerChecksBeforeAdapters=$true;$script:listenerWaits=0;$script:refuseListenerWait=$false
@@ -399,15 +399,17 @@ function Set-Service {
     param($Name,$StartupType,$ErrorAction)
     if($Name -cne 'AccessWeaver-dnscrypt' -or $ErrorAction -cne 'Stop' -or
         ($StartupType -ceq 'Manual' -and $script:serviceStops -ne 1) -or
-        ($StartupType -ceq 'Automatic' -and (-not $script:stageDNSCrypt -or $script:resolverBindingReads -ne 2)) -or
+        ($StartupType -ceq 'Automatic' -and (-not $script:stageDNSCrypt -or $script:resolverBindingReads -ne 3 -or
+            $script:serviceRestarts -ne 1 -or $script:resolverQueries -lt 1)) -or
         $StartupType -cnotin @('Manual','Automatic')){throw 'Unexpected service startup change'}
     $script:serviceStartupChanges++
 }
 function Restart-Service {
     param($Name,$ErrorAction)
     if($Name -cne 'AccessWeaver-dnscrypt' -or $ErrorAction -cne 'Stop' -or
-        -not $script:stageDNSCrypt -or $script:serviceStartupChanges -ne 1){throw 'Unexpected fixture service restart'}
+        -not $script:stageDNSCrypt -or $script:serviceStartupChanges -ne 0){throw 'Unexpected fixture service restart'}
     $script:serviceRestarts++
+    if($script:failDNSCryptRestart){throw 'Synthetic DNSCrypt service restart failure'}
 }
 function Stop-Service {
     param($Name,$ErrorAction)
@@ -662,11 +664,19 @@ try {
                 $script:serviceStartupChanges -eq 0 -and (Mutation-Count) -eq 0) 'dns-service-binding-before-mutation'
         }else{
             Configure-DNS 'dnscrypt'
-            Assert-DNS ($script:resolverBindingReads -eq 2 -and $script:dnscryptConfigReads -eq 1 -and
-                $script:dnscryptConfigWrites -eq 1 -and $script:serviceRestarts -eq 1 -and $script:dnsConfigured) 'dnscrypt-restarts-verified-service'
+            Assert-DNS ($script:resolverBindingReads -eq 3 -and $script:dnscryptConfigReads -eq 1 -and
+                $script:dnscryptConfigWrites -eq 1 -and $script:serviceRestarts -eq 1 -and
+                $script:serviceStartupChanges -eq 1 -and $script:dnsConfigured) 'dnscrypt-restarts-verified-service'
         }
         [IO.File]::Delete((Join-Path $root 'dnscrypt-proxy.toml'))
     }
+    New-DNSCase;$script:stageDNSCrypt=$true;$script:resolverServicePresent=$true;$script:failDNSCryptRestart=$true
+    [IO.File]::WriteAllText((Join-Path $root 'dnscrypt-proxy.toml'),"listen_addresses = ['192.0.2.53:53']")
+    Reject-DNS {Configure-DNS 'dnscrypt'} 'Synthetic DNSCrypt service restart failure'
+    Assert-DNS ($script:serviceRestarts -eq 1 -and $script:dnscryptConfigWrites -eq 1 -and
+        $script:serviceStartupChanges -eq 0 -and (Mutation-Count) -eq 0 -and
+        $script:resolverQueries -eq 0 -and -not $script:dnsConfigured) 'dns-service-binding-before-mutation'
+
     foreach($existingConfig in @($true,$false)){
         New-DNSCase;$script:stageDNSCrypt=$true;$script:resolverServicePresent=$true
         $target=Join-Path $root 'dnscrypt-proxy.toml'
@@ -775,7 +785,8 @@ try {
             $script:refuseListenerWait=$true
             Reject-DNS {Configure-DNS 'dnscrypt'}
             Assert-DNS ((Mutation-Count) -eq 0 -and $script:resolverQueries -eq 0 -and $script:journalActive -and
-                [IO.File]::Exists($snapshot) -and -not $script:dnsConfigured) 'dnscrypt-listener-refusal-preserves-adapter-state'
+                $script:serviceStartupChanges -eq 0 -and [IO.File]::Exists($snapshot) -and
+                -not $script:dnsConfigured) 'dnscrypt-listener-refusal-preserves-adapter-state'
         } else {
             Configure-DNS 'dnscrypt'
             $expected=switch($family){'IPv4' {'127.0.0.1'} 'IPv6' {'::1'} 'both' {'127.0.0.1,::1,::1'}}
