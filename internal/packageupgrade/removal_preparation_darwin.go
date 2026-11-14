@@ -73,6 +73,34 @@ func (s *deploymentStore) openRemovalPreparationDirectory(resumeName string) (*o
 	return dir, nil
 }
 
+// A reserved bundle has entered the live authority but its exchange may have
+// been interrupted. Only sealed removal recovery may resolve that reservation.
+func (s *deploymentStore) refuseReservedRemoval(entries []os.DirEntry) error {
+	for _, entry := range entries {
+		if !recordName.MatchString(entry.Name()) {
+			continue
+		}
+		// Ordinary commit staging may have been interrupted in its initial
+		// private mode. Inspect the marker name even in that directory.
+		dir, e := darwintrust.OpenDirectoryAt(s.root, entry.Name(), s.owner)
+		if e != nil {
+			return e
+		}
+		var marker unix.Stat_t
+		e = unix.Fstatat(int(dir.Fd()), removalFenceName, &marker, unix.AT_SYMLINK_NOFOLLOW)
+		if closeErr := dir.Close(); closeErr != nil {
+			return errors.Join(e, closeErr)
+		}
+		if e == nil {
+			return errors.New("a reserved removal must be resolved before changing the deployment")
+		}
+		if !errors.Is(e, unix.ENOENT) {
+			return e
+		}
+	}
+	return nil
+}
+
 func (s *deploymentStore) checkRemovalPreimage(f removalFence, plan removalPlan, staging string) error {
 	next, e := s.state.deactivate()
 	if e != nil {

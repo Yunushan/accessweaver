@@ -301,6 +301,9 @@ func beginDeploymentMode(parent *os.File, owner uint32, observe func(string) err
 	if !os.SameFile(runtimeInfo, currentInfo) {
 		return fail(errors.New("runtime coordination identity changed"))
 	}
+	if e = s.refuseReservedRemoval(entries); e != nil {
+		return fail(e)
+	}
 	s.versions, e = deploymentDirectory(s.root, "versions", owner, initialize && !hasHistory)
 	if e != nil {
 		return fail(e)
