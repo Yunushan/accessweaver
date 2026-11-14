@@ -1265,7 +1265,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 launch.assert_not_called()
                 self.assertEqual(list(staging.iterdir()), [])
 
-                start_file = self.root / (attempt_id + ".started.json")
+                start_file = staging / (attempt_id + ".started.json")
                 receipt_options = {**detect_options, "resume_windows_upgrade_setup_sha256": None,
                                    "resume_windows_upgrade_baseline_argument": None}
                 for change, message in (
@@ -1284,20 +1284,24 @@ class SignedReleaseManifestTests(unittest.TestCase):
                                     windows_upgrade_start_receipt=(start_file, release.digest(start_file)))
                     detect.assert_not_called()
 
-                start_file.write_text(json.dumps(attempt), encoding="utf-8")
+                start_file.unlink()
+                start_digest = release.write_windows_upgrade_receipt(start_file, attempt)
+                self.assertEqual(start_digest, release.digest(start_file))
                 with self.assertRaisesRegex(ValueError, "independently approved fingerprint"):
                     self.verify(approved, pin, policy_pin=launch_pin, **receipt_options,
                                 windows_upgrade_start_receipt=(start_file, "0" * 64))
                 newer_policy = {**launch_policy, "sequence": 5}
                 newer_pin = self.write_policy(newer_policy)
-                receipt = (start_file, release.digest(start_file))
+                receipt = (start_file, start_digest)
                 recovered = self.verify(approved, pin, policy_pin=newer_pin, **receipt_options,
                                         windows_upgrade_start_receipt=receipt)["managedUpdate"]
                 self.assertEqual(recovered["attemptID"], attempt_id)
                 self.assertEqual(recovered["installedDetection"], "detected")
                 detect.assert_called_once()
                 launch.assert_not_called()
-                self.assertEqual(list(staging.iterdir()), [])
+                self.assertEqual(list(staging.iterdir()), [start_file])
+                self.assertEqual(release.digest(start_file), start_digest)
+                start_file.unlink()
             self.write_policy(self.policy)
         strict_args = [*retry_cli, "--require-windows-setup-wrong-baseline-refusal"]
         refused = subprocess.run(strict_args, capture_output=True, text=True, timeout=30)
@@ -1698,6 +1702,7 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
             with patch.object(release.subprocess, "Popen", side_effect=start_fixture) as launch:
                 with self.assertRaises(subprocess.TimeoutExpired):
                     release.launch_windows_setup(directory, update, self.policy, **options)
+                self.assertEqual(update["startReceiptSHA256"], release.digest(started))
                 self.assertIsNone(process.poll())
                 with self.assertRaises(FileExistsError):
                     release.launch_windows_setup(directory, update, self.policy, **options)

@@ -717,13 +717,15 @@ def require_native_windows_setup_host(target, *, elevated=True):
 
 
 def write_windows_upgrade_receipt(destination, receipt):
+    content = (json.dumps(receipt, sort_keys=True) + "\n").encode("ascii")
     with tempfile.TemporaryDirectory(prefix=".accessweaver-receipt-", dir=destination.parent) as temporary:
         staged = Path(temporary) / "receipt.json"
         with staged.open("xb") as stream:
-            stream.write((json.dumps(receipt, sort_keys=True) + "\n").encode("ascii"))
+            stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
         publish_staged_installer(staged, destination)
+    return hashlib.sha256(content).hexdigest()
 
 
 def launch_windows_setup(directory, update, policy, *, size, directory_identity, attempt=None, wait_seconds=None):
@@ -739,7 +741,9 @@ def launch_windows_setup(directory, update, policy, *, size, directory_identity,
             if attempt is not None:
                 require(not os.path.lexists(directory / (attempt["attemptID"] + ".result.json")),
                         "Windows upgrade attempt already has a result receipt")
-                write_windows_upgrade_receipt(directory / (attempt["attemptID"] + ".started.json"), attempt)
+                update["startReceiptSHA256"] = write_windows_upgrade_receipt(
+                    directory / (attempt["attemptID"] + ".started.json"), attempt,
+                )
                 require_current_revocation_policy(policy)
             # Popen's context manager waits on exit, which would defeat a wait limit.
             process = subprocess.Popen(arguments, executable=str(setup), cwd=windows_system_directory(),
