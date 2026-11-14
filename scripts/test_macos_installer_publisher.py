@@ -128,8 +128,22 @@ class PublisherTests(unittest.TestCase):
             calls = []
             mode = "approved"
 
-            def tool(arguments):
+            leaf_bytes = b"synthetic Developer ID Application DER bytes"
+            leaf_pin = hashlib.sha256(leaf_bytes).hexdigest()
+
+            def tool(arguments, *, cwd=None):
                 executable, action, *_ = arguments
+                if action == "--display":
+                    self.assertEqual(arguments[2], "--extract-certificates")
+                    self.assertTrue(cwd.is_dir())
+                    is_helper = arguments[-1].name != publisher.BUNDLE_NAME
+                    if mode == "missing-app-leaf" and not is_helper:
+                        return ""
+                    wrong_leaf = ((mode == "wrong-leaf-app" and not is_helper)
+                                  or (mode == "wrong-leaf-helper" and is_helper))
+                    (cwd / "codesign0").write_bytes(b"different leaf" if wrong_leaf else leaf_bytes)
+                    (cwd / "codesign1").write_bytes(b"inert intermediate")
+                    return ""
                 calls.append((executable, action))
                 if action == "--check-signature":
                     return PACKAGE_OUTPUT
@@ -165,9 +179,10 @@ class PublisherTests(unittest.TestCase):
                             target.write_bytes(b"changed after signature")
                 return ""
 
-            def verify(digest=helper_digest):
+            def verify(digest=helper_digest, application_pin=None):
                 return publisher.verify(directory, package_digest, TEAM, PIN, detector_output=destination,
-                                        detector_sha256=digest, architecture="arm64")
+                                        detector_sha256=digest, architecture="arm64",
+                                        application_certificate_sha256=application_pin)
 
             with patch.object(publisher, "tool", side_effect=tool):
                 for mode, digest, error in (
@@ -184,9 +199,23 @@ class PublisherTests(unittest.TestCase):
                         verify(digest)
                     self.assertFalse(destination.exists())
                     self.assertEqual(sorted(p.name for p in root.iterdir()), ["input"])
+                for mode, error in (
+                    ("wrong-leaf-app", ValueError), ("wrong-leaf-helper", ValueError),
+                    ("missing-app-leaf", FileNotFoundError),
+                ):
+                    with self.subTest(mode=mode), self.assertRaises(error):
+                        verify(application_pin=leaf_pin)
+                    self.assertFalse(destination.exists())
+
                 mode = "approved"
+                app_report = publisher.verify(directory, package_digest, TEAM, PIN, architecture="arm64",
+                                              application_certificate_sha256=leaf_pin.upper())
+                self.assertEqual(app_report["applicationCertificateSHA256"], leaf_pin)
+                self.assertNotIn("managedDetector", app_report)
+                self.assertFalse(destination.exists())
                 calls.clear()
-                report = verify()
+                report = verify(application_pin=leaf_pin)
+                self.assertEqual(report["applicationCertificateSHA256"], leaf_pin)
                 self.assertEqual(calls, [
                     ("/usr/sbin/pkgutil", "--check-signature"), ("/usr/sbin/spctl", "--assess"),
                     ("/usr/bin/xcrun", "stapler"), ("/usr/sbin/pkgutil", "--expand-full"),
@@ -200,7 +229,7 @@ class PublisherTests(unittest.TestCase):
                 self.assertEqual(destination.stat().st_nlink, 1)
                 mode = "existing"
                 before = destination.stat()
-                retry = verify()
+                retry = verify(application_pin=leaf_pin)
                 self.assertEqual(retry, report)
                 self.assertEqual(destination.stat().st_ino, before.st_ino)
                 self.assertEqual(destination.stat().st_mtime_ns, before.st_mtime_ns)
@@ -235,6 +264,10 @@ class PublisherTests(unittest.TestCase):
                     with self.assertRaises((ValueError, FileNotFoundError)):
                         publisher.verify(directory, package_digest, TEAM, PIN, detector_output=output,
                                          detector_sha256=pin, architecture=arch)
+                for arch, invalid_pin in ((None, leaf_pin), ("arm64", "wrong")):
+                    with self.assertRaises(ValueError):
+                        publisher.verify(directory, package_digest, TEAM, PIN, architecture=arch,
+                                         application_certificate_sha256=invalid_pin)
                 native.assert_not_called()
 
     def test_signing_options_require_complete_approved_identity(self):

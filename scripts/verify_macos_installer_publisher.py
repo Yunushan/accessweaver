@@ -37,10 +37,10 @@ def check_leaf(output, team, fingerprint):
     raise ValueError("Package leaf fingerprint is missing")
 
 
-def tool(arguments):
+def tool(arguments, *, cwd=None):
     with tempfile.TemporaryFile() as output:
         subprocess.run(arguments, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.DEVNULL,
-                       check=True, timeout=90, env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL": "C"})
+                       check=True, timeout=90, cwd=cwd, env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL": "C"})
         output.seek(0)
         data = output.read(65537)
     require(len(data) <= 65536, "Publisher tool output exceeded limit")
@@ -89,7 +89,17 @@ def verify_detector_bytes(path, approved_sha256):
     require(hashlib.sha256(data).hexdigest() == approved_sha256, "Package helper differs from the approved digest")
 
 
-def verify_packaged_application(package, team, architecture):
+def check_application_certificate(path, approved_sha256):
+    # codesign writes the embedded chain as codesign0 (leaf), codesign1, etc.
+    with tempfile.TemporaryDirectory(prefix="accessweaver-application-chain-") as temporary:
+        directory = Path(temporary)
+        tool(["/usr/bin/codesign", "--display", "--extract-certificates", path], cwd=directory)
+        leaf = read_expanded_executable(directory / "codesign0", 64 << 10)
+        require(hashlib.sha256(leaf).hexdigest() == approved_sha256,
+                "Developer ID Application leaf certificate differs from the approved fingerprint")
+
+
+def verify_packaged_application(package, team, architecture, application_pin=None):
     expanded = package.parent / "expanded"
     tool(["/usr/sbin/pkgutil", "--expand-full", package, expanded])
     payload = expanded / "Payload"
@@ -104,10 +114,12 @@ def verify_packaged_application(package, team, architecture):
     requirement = developer_application_requirement(team)
     tool(["/usr/bin/codesign", "--verify", "--strict", "--all-architectures",
           "-R=" + requirement + f' and identifier "{BUNDLE_ID}"', app])
+    if application_pin is not None:
+        check_application_certificate(app, application_pin)
     return expanded
 
 
-def stage_detector(expanded, team, architecture, approved_sha256, destination):
+def stage_detector(expanded, team, architecture, approved_sha256, destination, application_pin=None):
     scripts = expanded / "Scripts"
     require(stat.S_ISDIR(scripts.lstat().st_mode), "Expected an ordinary expanded package scripts directory")
     data = read_expanded_executable(scripts / "postinstall", 16 << 20)
@@ -125,6 +137,8 @@ def stage_detector(expanded, team, architecture, approved_sha256, destination):
         verify_detector_bytes(staged, approved_sha256)
         tool(["/usr/bin/codesign", "--verify", "--strict", "--all-architectures",
               "-R=" + developer_application_requirement(team), staged])
+        if application_pin is not None:
+            check_application_certificate(staged, application_pin)
         verify_detector_bytes(staged, approved_sha256)
         try:
             os.link(staged, destination)
@@ -135,12 +149,17 @@ def stage_detector(expanded, team, architecture, approved_sha256, destination):
 
 
 def verify(directory, artifact_sha256, team, certificate_sha256, *,
-           detector_output=None, detector_sha256=None, architecture=None):
+           detector_output=None, detector_sha256=None, architecture=None,
+           application_certificate_sha256=None):
     require(sys.platform == "darwin", "macOS is required for Developer ID verification")
     require(FINGERPRINT.fullmatch(artifact_sha256) and FINGERPRINT.fullmatch(certificate_sha256)
             and re.fullmatch(r"[A-Z0-9]{10}", team), "Invalid approved publisher inputs")
     if architecture is not None:
         require(architecture in ("amd64", "arm64"), "Invalid approved application architecture")
+    if application_certificate_sha256 is not None:
+        require(architecture is not None and FINGERPRINT.fullmatch(application_certificate_sha256),
+                "Developer ID Application certificate pin requires an approved architecture and SHA-256")
+        application_certificate_sha256 = application_certificate_sha256.lower()
     if detector_output is not None or detector_sha256 is not None:
         require(detector_output is not None and detector_output.name == "accessweaver-installer"
                 and not detector_output.parent.resolve().is_relative_to(directory.resolve())
@@ -160,9 +179,10 @@ def verify(directory, artifact_sha256, team, certificate_sha256, *,
         require(digest(package) == artifact_sha256, "Package digest differs from the approved release")
         check_package_publisher(package, team, certificate_sha256)
         if architecture is not None:
-            expanded = verify_packaged_application(package, team, architecture)
+            expanded = verify_packaged_application(package, team, architecture, application_certificate_sha256)
             if detector_output is not None:
-                stage_detector(expanded, team, architecture, detector_sha256, detector_output)
+                stage_detector(expanded, team, architecture, detector_sha256, detector_output,
+                               application_certificate_sha256)
     report = {
         "schemaVersion": 1,
         "scope": "macos-package-publisher",
@@ -176,6 +196,8 @@ def verify(directory, artifact_sha256, team, certificate_sha256, *,
     if architecture is not None:
         report["packagedApplicationDeveloperIDVerified"] = True
         report["packagedApplicationArchitecture"] = architecture
+    if application_certificate_sha256 is not None:
+        report["applicationCertificateSHA256"] = application_certificate_sha256
     if detector_output is not None:
         report["managedDetector"] = {
             "architecture": architecture, "sha256": detector_sha256,
@@ -190,6 +212,8 @@ def main():
     parser.add_argument("--artifact-sha256", required=True)
     parser.add_argument("--team-id", required=True)
     parser.add_argument("--publisher-certificate-sha256", required=True)
+    parser.add_argument("--application-certificate-sha256",
+                        help="approved Developer ID Application leaf DER SHA-256 for the app and any staged detector")
     parser.add_argument("--detector-output", type=Path, help="new accessweaver-installer path in a trusted directory")
     parser.add_argument("--detector-sha256", help="approved script-file:postinstall SHA-256")
     parser.add_argument("--architecture", choices=("amd64", "arm64"), help="verify the packaged application's Developer ID and this native architecture")
@@ -197,7 +221,7 @@ def main():
     try:
         result = verify(args.directory, args.artifact_sha256, args.team_id, args.publisher_certificate_sha256,
                         detector_output=args.detector_output, detector_sha256=args.detector_sha256,
-                        architecture=args.architecture)
+                        architecture=args.architecture, application_certificate_sha256=args.application_certificate_sha256)
     except (ValueError, OSError, subprocess.SubprocessError):
         print("macOS publisher verification failed. Check the approved digests, Developer ID, Gatekeeper and ticket.",
               file=sys.stderr)
