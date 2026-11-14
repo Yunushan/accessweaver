@@ -661,6 +661,17 @@ class ManagedDetectionEvidenceTests(unittest.TestCase):
         ):
             with self.subTest(cases=invalid[3:5]), self.assertRaises(ValueError):
                 validate_managed_detection({**latest, "managedDetectionCases": invalid})
+        with_license_refusal = [
+            *with_hard_link[:5],
+            {"phase": "redirected-licenses-refused", "detected": False, "inspectionRefused": True},
+            {"phase": "after-license-directory-restoration", "detected": True},
+            *with_hard_link[5:],
+        ]
+        latest = {**latest, "schemaVersion": 43}
+        self.assertEqual(validate_managed_detection({**latest, "managedDetectionCases": with_license_refusal}),
+                         {"managedDetectionChecksVerified": 20})
+        with self.assertRaises(ValueError):
+            validate_managed_detection({**latest, "managedDetectionCases": with_hard_link})
         self.assertEqual(validate_managed_detection({**upgraded, "schemaVersion": 21, "managedDetectionCases": with_denial}),
                          {"managedDetectionChecksVerified": 15})
         with self.assertRaises(ValueError):

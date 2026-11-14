@@ -37,8 +37,10 @@ $uninstaller=Join-Path $testRoot 'unins001.exe'
 $uninstallData=[IO.Path]::ChangeExtension($uninstaller,'.dat')
 $sbom=Join-Path $testRoot 'SBOM.cdx.json'
 $buildInfo=Join-Path $testRoot 'BUILD-INFO.json'
+$licenses=Join-Path $testRoot 'licenses'
 $buildInfoBytes=[Text.Encoding]::UTF8.GetBytes('{"version":"0.1.0-alpha"}')
 try {
+    [void][IO.Directory]::CreateDirectory($licenses)
     [IO.File]::WriteAllText($payload,'inert detection test data')
     $hash=(Get-FileHash -LiteralPath $payload -Algorithm SHA256).Hash
     [IO.File]::WriteAllText($uninstaller,'inert uninstaller fixture')
@@ -274,6 +276,14 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             throw 'Managed detection did not resume after lifecycle objects were released'
         }
 
+        [IO.Directory]::Delete($licenses,$false)
+        try {
+            Assert-DetectionRefusal 'a missing licenses directory'
+            [IO.File]::WriteAllText($licenses,'inert non-directory fixture')
+            try {Assert-DetectionRefusal 'a regular file replacing the licenses directory'}
+            finally {[IO.File]::Delete($licenses)}
+        } finally {[void][IO.Directory]::CreateDirectory($licenses)}
+
         # Exercise the detector's own native opens against ordinary paths and
         # junctions. The destination is fixture-owned and stays within the temp root.
         $nativeAccess=@($ast.EndBlock.Statements | Where-Object {
@@ -332,6 +342,7 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
     foreach($file in @($payload,$fixture,$uninstaller,$uninstallData,$sbom,$buildInfo)){
         if(Test-Path -LiteralPath $file){Remove-Item -LiteralPath $file -Force}
     }
+    if([IO.Directory]::Exists($licenses)){[IO.Directory]::Delete($licenses,$false)}
     $fixtureDirectory.Delete()
 }
-Write-Output ('Managed detection contracts passed: '+($cases.Count+14))
+Write-Output ('Managed detection contracts passed: '+($cases.Count+16))
