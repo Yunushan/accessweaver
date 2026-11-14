@@ -517,6 +517,43 @@ func exerciseOwnedRemovalHandoff(t *testing.T, f *ownedRemovalTargetFixture, rec
 		verifyOwnedRemovalHandoff(t, f, previous, record, oldJournal, oldPlan)
 		return
 	}
+	stageName := f.intent.fence.DisplacedRecord
+	preparation := filepath.Join(f.base, removalPreparationRoot)
+	stage := filepath.Join(preparation, stageName)
+	killOwnedRemovalHandoff(t, f, "removal-handoff-stage-record")
+	reopenOwnedRemovalFileIntent(t, f)
+	stagedRoot, e := os.Stat(stage)
+	if e != nil {
+		t.Fatal("interrupted handoff did not preserve its staging directory", e)
+	}
+	// Model a short write to the stage file. Unknown bytes must be preserved,
+	// and the exact canonical prefix must complete in the original directory.
+	stagedRecord := filepath.Join(stage, "state", deploymentRecord)
+	if e = os.Chmod(stagedRecord, 0600); e != nil {
+		t.Fatal(e)
+	}
+	invalid := []byte("unrecognized staging bytes")
+	if e = os.WriteFile(stagedRecord, invalid, 0600); e != nil {
+		t.Fatal(e)
+	}
+	if published, e := f.intent.finalizeRemovalUsing(ctx, f.resolve); e == nil || published {
+		t.Fatal("handoff accepted an invalid staging record", published, e)
+	}
+	if actual, e := os.ReadFile(stagedRecord); e != nil || !bytes.Equal(actual, invalid) {
+		t.Fatal("handoff changed an unrecognized staging record", e)
+	}
+	if e = os.WriteFile(stagedRecord, record[:len(record)/2], 0600); e != nil {
+		t.Fatal(e)
+	}
+	for i := 1; i < maxRemovalPreparations; i++ {
+		name, e := randomDeploymentName()
+		if e != nil {
+			t.Fatal(e)
+		}
+		if e = os.Mkdir(filepath.Join(preparation, ".record-"+name), 0700); e != nil {
+			t.Fatal(e)
+		}
+	}
 	phase := "removal-handoff-reserved"
 	interrupted := errors.New("interrupted authority handoff")
 	f.store.observe = func(p string) error {
@@ -531,8 +568,8 @@ func exerciseOwnedRemovalHandoff(t *testing.T, f *ownedRemovalTargetFixture, rec
 	}
 	{
 		staged, e := os.Stat(archive)
-		if e != nil || os.SameFile(previous, staged) {
-			t.Fatal("clean staged authority was not reserved", e)
+		if e != nil || !os.SameFile(stagedRoot, staged) {
+			t.Fatal("handoff did not reserve the resumed staging directory", e)
 		}
 		reopenOwnedRemovalFileIntent(t, f)
 		reservedRecord := filepath.Join(archive, "state", deploymentRecord)

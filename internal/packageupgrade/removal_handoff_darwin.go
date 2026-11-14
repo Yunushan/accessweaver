@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Yunushan/accessweaver/internal/darwintrust"
@@ -43,7 +44,7 @@ func (r *removalIntentStore) finalizeRemovalUsing(ctx context.Context, resolve r
 	name := removalArchiveName(r.fence)
 	root, e := deploymentDirectory(s.parent, name, 0, false)
 	if darwintrust.IsReadAbsent(e) {
-		root, e = s.stageRemovalHandoff(name, record)
+		root, e = s.stageRemovalHandoff(r.fence.DisplacedRecord, name, record)
 	}
 	if e != nil {
 		return false, e
@@ -94,8 +95,8 @@ func (r *removalIntentStore) finalizeRemovalUsing(ctx context.Context, resolve r
 	return true, sameDeploymentEntry(s.parent, deploymentRoot, root, 0)
 }
 
-func (s *deploymentStore) stageRemovalHandoff(name string, record []byte) (result *os.File, failure error) {
-	preparation, e := s.openRemovalPreparationDirectory()
+func (s *deploymentStore) stageRemovalHandoff(stagingName, name string, record []byte) (result *os.File, failure error) {
+	preparation, e := s.openRemovalPreparationDirectory(stagingName)
 	if e != nil {
 		return nil, e
 	}
@@ -106,12 +107,17 @@ func (s *deploymentStore) stageRemovalHandoff(name string, record []byte) (resul
 			result = nil
 		}
 	}()
-	nonce, e := randomDeploymentName()
-	if e != nil {
-		return nil, e
+	// The reserved history name locates this intent's staging directory.
+	// Repeated interruptions therefore consume at most one staging slot.
+	root, e := darwintrust.OpenDirectoryAt(preparation, stagingName, 0)
+	if darwintrust.IsReadAbsent(e) {
+		root, e = darwintrust.CreateDirectoryAt(preparation, stagingName, 0)
+		if e == nil {
+			if e = root.Chown(0, 0); e != nil {
+				return nil, errors.Join(e, root.Close())
+			}
+		}
 	}
-	stagingName := ".record-" + nonce
-	root, e := darwintrust.CreateDirectoryAt(preparation, stagingName, 0)
 	if e != nil {
 		return nil, e
 	}
@@ -120,25 +126,61 @@ func (s *deploymentStore) stageRemovalHandoff(name string, record []byte) (resul
 			failure = errors.Join(failure, root.Close())
 		}
 	}()
-	if e = root.Chown(0, 0); e != nil {
+	info, e := root.Stat()
+	if e != nil {
 		return nil, e
 	}
+	if info.Mode().Perm() != 0700 && info.Mode().Perm() != 0755 {
+		return nil, errors.New("removal handoff staging permissions differ")
+	}
+	if e = deploymentObject(root, true, 0, info.Mode().Perm()); e != nil {
+		return nil, e
+	}
+	entries, e := deploymentEntries(root, 0, 4)
+	if e != nil {
+		return nil, e
+	}
+	for _, entry := range entries {
+		switch entry.Name() {
+		case "state", "versions", deploymentLock, runtimeLeaseName:
+		default:
+			return nil, errors.New("unknown removal handoff staging entry")
+		}
+	}
 	for _, child := range []string{"state", "versions"} {
-		dir, e := deploymentDirectory(root, child, 0, true)
+		dir, e := openHandoffStageDirectory(root, child)
 		if e != nil {
 			return nil, e
 		}
 		if child == "state" {
-			e = writeHandoffFile(dir, deploymentRecord, 0644, record)
+			var entries []os.DirEntry
+			entries, e = deploymentEntries(dir, 0, 1)
+			if e == nil {
+				if len(entries) != 0 && entries[0].Name() != deploymentRecord {
+					e = errors.New("unknown removal handoff state entry")
+				} else {
+					e = completeHandoffFile(dir, deploymentRecord, 0644, record)
+				}
+			}
+		} else {
+			_, e = deploymentEntries(dir, 0, 0)
 		}
-		if e = errors.Join(e, fullDeploymentSync(dir), dir.Close()); e != nil {
+		if e == nil {
+			e = fullDeploymentSync(dir)
+		}
+		if e = errors.Join(e, dir.Close()); e != nil {
 			return nil, e
 		}
+		if child == "state" {
+			if e = s.phase("removal-handoff-stage-record"); e != nil {
+				return nil, e
+			}
+		}
 	}
-	if e = writeHandoffFile(root, deploymentLock, 0600, nil); e != nil {
+	if e = completeHandoffFile(root, deploymentLock, 0600, nil); e != nil {
 		return nil, e
 	}
-	if e = writeHandoffFile(root, runtimeLeaseName, 0644, nil); e != nil {
+	if e = completeHandoffFile(root, runtimeLeaseName, 0644, nil); e != nil {
 		return nil, e
 	}
 	if e = errors.Join(root.Chmod(0755), fullDeploymentSync(root), fullDeploymentSync(preparation)); e != nil {
@@ -153,23 +195,71 @@ func (s *deploymentStore) stageRemovalHandoff(name string, record []byte) (resul
 	if e = darwintrust.RenameEntryNoReplace(preparation, stagingName, s.parent, name); e != nil {
 		return nil, e
 	}
-	if e = fullDeploymentSync(preparation); e != nil {
+	if e = errors.Join(fullDeploymentSync(preparation), fullDeploymentSync(s.parent)); e != nil {
 		return nil, e
 	}
 	return root, nil
 }
 
-func writeHandoffFile(dir *os.File, name string, mode os.FileMode, data []byte) (result error) {
-	file, e := darwintrust.CreateRegularAt(dir, name, 0)
+// A crash can leave a new staging directory in its initial mode.
+func openHandoffStageDirectory(parent *os.File, name string) (*os.File, error) {
+	dir, e := darwintrust.OpenDirectoryAt(parent, name, 0)
+	if darwintrust.IsReadAbsent(e) {
+		dir, e = darwintrust.CreateDirectoryAt(parent, name, 0)
+	}
+	if e != nil {
+		return nil, e
+	}
+	info, e := dir.Stat()
+	if e == nil {
+		mode := info.Mode().Perm()
+		if mode != 0700 && mode != 0755 {
+			e = errors.New("removal handoff stage directory permissions differ")
+		} else if e = deploymentObject(dir, true, 0, mode); e == nil && mode == 0700 {
+			e = dir.Chmod(0755)
+		}
+	}
+	if e != nil {
+		return nil, errors.Join(e, dir.Close())
+	}
+	return dir, nil
+}
+
+// An interrupted write may leave an exact prefix at the named stage. Verify
+// the original inode and append only its missing bytes. Refuse any other data.
+func completeHandoffFile(dir *os.File, name string, mode os.FileMode, data []byte) (result error) {
+	prefix, before, e := readAt(dir, name, int64(len(data)))
+	var file *os.File
+	if darwintrust.IsReadAbsent(e) {
+		file, e = darwintrust.CreateRegularAt(dir, name, 0)
+	} else if e == nil {
+		permissions := os.FileMode(before.Mode & 07777)
+		if !bytes.HasPrefix(data, prefix) ||
+			permissions != 0600 && (permissions != mode || len(prefix) != len(data)) {
+			return errors.New("removal handoff stage file differs")
+		}
+		var fd int
+		fd, e = unix.Openat(int(dir.Fd()), name, unix.O_WRONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+		if e == nil {
+			file = os.NewFile(uintptr(fd), name)
+		}
+	}
 	if e != nil {
 		return e
 	}
 	defer func() { result = errors.Join(result, file.Close()) }()
-	if e = file.Chown(0, 0); e != nil {
+	actual, e := darwintrust.Check(file, false, 0)
+	if e != nil {
 		return e
 	}
-	if n, e := file.Write(data); e != nil || n != len(data) {
-		return errors.Join(e, io.ErrShortWrite)
+	st := *actual.Sys().(*syscall.Stat_t)
+	if st.Gid != 0 || before.Ino != 0 && !sameState(st, before) {
+		return errors.New("removal handoff stage file identity differs")
+	}
+	if len(prefix) != len(data) {
+		if n, e := file.WriteAt(data[len(prefix):], int64(len(prefix))); e != nil || n != len(data)-len(prefix) {
+			return errors.Join(e, io.ErrShortWrite)
+		}
 	}
 	return errors.Join(file.Chmod(mode), fullDeploymentSync(file))
 }

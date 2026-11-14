@@ -19,7 +19,7 @@ const maxRemovalPreparations = 32
 
 // Incomplete bundles live outside the authority history. They are bounded and
 // preserved, never guessed to be old state or recursively cleaned on retry.
-func (s *deploymentStore) openRemovalPreparationDirectory() (result *os.File, failure error) {
+func (s *deploymentStore) openRemovalPreparationDirectory(resumeName string) (*os.File, error) {
 	dir, e := darwintrust.CreateDirectoryAt(s.parent, removalPreparationRoot, s.owner)
 	created := e == nil
 	if errors.Is(e, unix.EEXIST) {
@@ -52,12 +52,14 @@ func (s *deploymentStore) openRemovalPreparationDirectory() (result *os.File, fa
 	if e != nil {
 		return fail(e)
 	}
+	resuming := false
 	for _, entry := range entries {
 		if !recordName.MatchString(entry.Name()) || !entry.IsDir() {
 			return fail(errors.New("unknown removal preparation object; preserve and inspect"))
 		}
+		resuming = resuming || entry.Name() == resumeName
 	}
-	if len(entries) >= maxRemovalPreparations {
+	if len(entries) >= maxRemovalPreparations && !resuming {
 		return fail(errors.New("removal preparation capacity exhausted; preserve and inspect"))
 	}
 	if created {

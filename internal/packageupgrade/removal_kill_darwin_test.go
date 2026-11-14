@@ -130,7 +130,7 @@ func TestDarwinRemovalFileKilledChild(t *testing.T) {
 	if !ownedRemovalKillHost() {
 		t.Fatal("killed child requires an opted-in disposable hosted root fixture")
 	}
-	known := phase == "removal-handoff-reserved" || phase == "removal-handoff-exchanged"
+	known := phase == "removal-handoff-stage-record" || phase == "removal-handoff-reserved" || phase == "removal-handoff-exchanged"
 	allowedPhases := append(append(append(append(append([]string{}, removalKillPhases...), removalDirectoryKillPhases...), removalQuarantineKillPhases...), removalAppFileKillPhases...), removalAppDirectoryKillPhases...)
 	for _, allowed := range allowedPhases {
 		if phase == allowed {

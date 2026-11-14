@@ -52,7 +52,7 @@ func (s *deploymentStore) publishRemovalFence(f removalFence, plan removalPlan) 
 	if count >= maxRetainedRecords {
 		return false, errors.New("removal barrier history capacity exhausted")
 	}
-	preparation, e := s.openRemovalPreparationDirectory()
+	preparation, e := s.openRemovalPreparationDirectory("")
 	if e != nil {
 		return false, e
 	}
