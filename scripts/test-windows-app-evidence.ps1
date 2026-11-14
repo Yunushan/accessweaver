@@ -41,6 +41,19 @@ $ptbClean=[array]::IndexOf($stages,'ptb-clean-install')
 if($stableRemove -lt 0 -or $stableInstall -ne ($stableRemove+1) -or $ptbClean -ne ($stableInstall+1)){
     throw 'Stable Discord removal and clean PTB do not run independently'
 }
+$splitCord='C:\Fixture\SplitCord\SplitCord-Turkey.exe'
+$main=[pscustomobject]@{Path=$splitCord;ProcessName='SplitCord-Turkey';SessionId=8;HasExited=$false}
+$helper=[pscustomobject]@{Path='C:\Fixture\SplitCord\crashpad_handler.exe';ProcessName='crashpad_handler';SessionId=8;HasExited=$false}
+$neighbor=[pscustomobject]@{Path='C:\Fixture\SplitCord-other\crashpad_handler.exe';ProcessName='crashpad_handler';SessionId=8;HasExited=$false}
+$hidden=[pscustomobject]@{Path=$null;ProcessName='crashpad_handler';SessionId=8;HasExited=$false}
+if((Test-FixtureAppProcess $splitCord 7 @($main) 'SplitCord-Turkey') -ne $false){throw 'Launch credited a different session'}
+if((Test-FixtureAppProcess $splitCord 7 @($main) 'SplitCord-Turkey' -AllSessions) -ne $true){throw 'Removal missed a live client in another session'}
+if((Test-FixtureAppProcess $splitCord 7 @($helper) 'SplitCord-Turkey' -AllSessions -IncludeCrashHandler) -ne $true){throw 'Removal missed a live SplitCord crash handler'}
+if((Test-FixtureAppProcess $splitCord 7 @($neighbor) 'SplitCord-Turkey' -AllSessions -IncludeCrashHandler) -ne $false){throw 'Removal included a neighboring application crash handler'}
+if($null -ne (Test-FixtureAppProcess $splitCord 7 @($hidden) 'SplitCord-Turkey' -AllSessions -IncludeCrashHandler)){throw 'Removal credited an unreadable crash handler as absent'}
+$helper.HasExited=$true
+if((Test-FixtureAppProcess $splitCord 7 @($helper,$neighbor) 'SplitCord-Turkey' -AllSessions -IncludeCrashHandler) -ne $false){throw 'Exited and unrelated crash handlers blocked removal evidence'}
+
 $script:observations=[Collections.Generic.Queue[object]]::new()
 function Find-FixtureLiveImage {
     if(-not $script:observations.Count){throw 'Fixture observation limit reached'}
@@ -136,8 +149,10 @@ foreach($alreadyRunning in @($true,'false',$null)){
         $trace.Add('remove')
         return @{application='discord';removed=$removalOutcome}
     }
-    function Assert-FixtureLiveImage([string]$Path,[bool]$Expected){
-        if($Expected -or $Path -cnotin @($image,$replacement)){throw 'Unexpected removal process check'}
+    function Assert-FixtureLiveImage([string]$Path,[bool]$Expected,[switch]$AllSessions,[switch]$IncludeCrashHandler){
+        if($Expected -or -not $AllSessions -or $IncludeCrashHandler -or $Path -cnotin @($image,$replacement)){
+            throw 'Unexpected removal process check'
+        }
         $trace.Add('process:'+ $Path)
     }
     function Test-Path {

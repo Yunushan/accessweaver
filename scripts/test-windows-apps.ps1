@@ -17,7 +17,9 @@ param(
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 
-function Test-FixtureAppProcess([string]$Path,[int]$Session,$Processes,[string]$ProcessName){
+function Test-FixtureAppProcess([string]$Path,[int]$Session,$Processes,[string]$ProcessName,
+        [switch]$AllSessions,[switch]$IncludeCrashHandler){
+    $directory=if($IncludeCrashHandler){[IO.Path]::GetDirectoryName($Path).TrimEnd([char]92)+[char]92}
     $seen=$false
     $complete=$true
     foreach($process in $Processes){
@@ -25,19 +27,26 @@ function Test-FixtureAppProcess([string]$Path,[int]$Session,$Processes,[string]$
             if($ProcessName){
                 $name=$process.ProcessName
                 if([string]::IsNullOrWhiteSpace($name)){$complete=$false;continue}
-                if($name -ine $ProcessName){continue}
+                if($name -ine $ProcessName -and (-not $IncludeCrashHandler -or $name -ine 'crashpad_handler')){continue}
             }
             $exited=$process.HasExited
             if($exited -isnot [bool]){$complete=$false;continue}
             if($exited){continue}
-            $observedSession=$process.SessionId
-            if($observedSession -isnot [int] -or $observedSession -lt 0){$complete=$false;continue}
-            if($observedSession -ne $Session){continue}
+            if(-not $AllSessions){
+                $observedSession=$process.SessionId
+                if($observedSession -isnot [int] -or $observedSession -lt 0){$complete=$false;continue}
+                if($observedSession -ne $Session){continue}
+            }
             $image=$process.Path
             if([string]::IsNullOrWhiteSpace($image)){$complete=$false;continue}
             $exited=$process.HasExited
             if($exited -isnot [bool]){$complete=$false;continue}
-            if(-not $exited -and $image -ieq $Path){$seen=$true}
+            if($exited){continue}
+            if($image -ieq $Path -or ($IncludeCrashHandler -and
+                [IO.Path]::GetFileName($image) -ieq 'crashpad_handler.exe' -and
+                [IO.Path]::GetFullPath($image).StartsWith($directory,[StringComparison]::OrdinalIgnoreCase))){
+                $seen=$true
+            }
         } catch {
             # An inaccessible live process cannot establish absence.
             $complete=$false
@@ -68,19 +77,20 @@ function Get-FixtureAppImage($Applications,[string]$Variant){
     return $path
 }
 
-function Find-FixtureLiveImage([string]$Path){
+function Find-FixtureLiveImage([string]$Path,[switch]$AllSessions,[switch]$IncludeCrashHandler){
     $name=[IO.Path]::GetFileNameWithoutExtension($Path)
     # Full enumeration distinguishes a genuinely empty match from a lookup error.
-    return (Test-FixtureAppProcess $Path $session @(Get-Process -ErrorAction Stop) $name)
+    return (Test-FixtureAppProcess $Path $session @(Get-Process -ErrorAction Stop) $name -AllSessions:$AllSessions -IncludeCrashHandler:$IncludeCrashHandler)
 }
 
-function Assert-FixtureLiveImage([string]$Path,[bool]$Expected){
+function Assert-FixtureLiveImage([string]$Path,[bool]$Expected,[switch]$AllSessions,[switch]$IncludeCrashHandler){
     $timer=[Diagnostics.Stopwatch]::StartNew()
     do {
-        $observed=Find-FixtureLiveImage $Path
+        $observed=Find-FixtureLiveImage $Path -AllSessions:$AllSessions -IncludeCrashHandler:$IncludeCrashHandler
         if($observed -is [bool] -and $observed -eq $Expected){return}
         Start-Sleep -Milliseconds 250
     } while($timer.Elapsed.TotalSeconds -lt 10)
+    if($AllSessions){throw 'Application process exit could not be confirmed across Windows sessions'}
     throw 'Application process state was not confirmed in this desktop session'
 }
 
@@ -162,7 +172,7 @@ function Remove-FixtureApp([string]$Variant,[switch]$Cleanup){
     $script:appEvidenceStage='removal-readback'
     if($remaining){throw 'Application remains discoverable after removal'}
     foreach($image in @($previous,$current) | Where-Object {$_} | Select-Object -Unique){
-        Assert-FixtureLiveImage $image $false
+        Assert-FixtureLiveImage $image $false -AllSessions -IncludeCrashHandler:($Variant -ceq 'splitcord')
         if(Test-Path -LiteralPath $image -ErrorAction Stop){throw 'Previously discovered executable remains after removal'}
     }
     if($Variant -ceq 'splitcord'){
