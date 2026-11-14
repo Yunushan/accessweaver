@@ -631,6 +631,7 @@ def hold_windows_staging_directory(directory):
     class AttributeTag(ctypes.Structure):
         _fields_ = [("attributes", wintypes.DWORD), ("tag", wintypes.DWORD)]
 
+    require(".." not in directory.parts, "Managed update staging path includes a parent traversal")
     chain = [*reversed(directory.parents), directory]
     with ExitStack() as handles:
         for component in chain:
@@ -792,12 +793,16 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
         installer_pin, application_pin = installer_pin.lower(), application_pin.lower()
     if stage_directory is not None:
         require(target is not None, "Managed update staging requires an installed version and target")
+        stage_directory = stage_directory.absolute()
         stage_directory_id = staging_directory_identity(stage_directory)
-        stage_directory = stage_directory.resolve(strict=True)
-        require(staging_directory_identity(stage_directory) == stage_directory_id,
+        resolved_staging = stage_directory.resolve(strict=True)
+        require(staging_directory_identity(resolved_staging) == stage_directory_id,
                 "Managed update staging directory changed during resolution")
-        require(not stage_directory.is_relative_to(directory.resolve()),
+        require(not resolved_staging.is_relative_to(directory.resolve()),
                 "Stage the installer outside the release input directory")
+        # Keep the caller's Windows path so staging can inspect and hold its original ancestors.
+        if os.name != "nt":
+            stage_directory = resolved_staging
     subjects = release_subjects(commit, ref)
     der = independently_pinned_file(directory, certificate, certificate_sha256)
     certificate_sha256 = certificate_sha256.lower()

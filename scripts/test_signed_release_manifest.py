@@ -1357,6 +1357,28 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
                                              size=(self.candidate / update["installer"]).stat().st_size,
                                              directory_identity=release.staging_directory_identity(staging))
             self.assertEqual(list(staging.iterdir()), [])
+
+            files = release.inventory(self.candidate, self.subjects)
+            (self.candidate / release.MANIFEST).write_bytes(release.encode_manifest(COMMIT, REF, files))
+            (self.candidate / release.SIGNATURE).write_bytes(b"mocked CMS signature")
+            certificate = self.root / "fixture.cer"
+            certificate.write_bytes(b"mocked approval certificate")
+            with patch.object(release, "authenticate"):
+                with self.assertRaisesRegex(ValueError, "reparse point"):
+                    self.verify(certificate, release.digest(certificate),
+                                current_version="1.2.2-rc.1", target="windows/arm64",
+                                stage_directory=junction / "staging")
+                self.assertEqual(list(staging.iterdir()), [])
+                with self.assertRaisesRegex(ValueError, "parent traversal"):
+                    self.verify(certificate, release.digest(certificate),
+                                current_version="1.2.2-rc.1", target="windows/arm64",
+                                stage_directory=staging / ".." / "staging")
+                self.assertEqual(list(staging.iterdir()), [])
+                accepted = self.verify(certificate, release.digest(certificate),
+                                       current_version="1.2.2-rc.1", target="windows/arm64",
+                                       stage_directory=staging)
+            self.assertIs(accepted["managedUpdate"]["installerStaged"], True)
+            self.assertEqual(release.digest(staging / update["installer"]), update["installerSHA256"])
         finally:
             junction.rmdir()
 
