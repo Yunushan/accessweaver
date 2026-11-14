@@ -2,6 +2,7 @@
 """Publish a verified portable build through a draft without replacing assets."""
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 from pathlib import Path
@@ -196,12 +197,9 @@ def verify_native_qualification(directory, package, manifest, commit, ref, expec
             raise ValueError("Packaged qualification does not match " + target)
 
 
-def publish(directory, commit, ref, *, rebuild_checksums_sha256=None, native_qualification=None):
+@contextmanager
+def verified_candidate(directory, commit, ref, rebuild_checksums_sha256, native_qualification):
     validate_identity(commit, ref)
-    prefix = "refs/tags/v"
-    if not ref.startswith(prefix) or "/" in ref[len(prefix):] or ref == prefix:
-        raise ValueError("Prerelease publication requires a version tag")
-    tag = ref.removeprefix("refs/tags/")
     with tempfile.TemporaryDirectory(prefix="accessweaver-publish-") as temporary:
         frozen = Path(temporary)
         names = snapshot(directory, frozen, 13)
@@ -213,6 +211,15 @@ def publish(directory, commit, ref, *, rebuild_checksums_sha256=None, native_qua
         if native_qualification is not None:
             manifest = json.loads((frozen / "BUILD-MANIFEST.json").read_bytes())
             verify_native_qualification(native_qualification, frozen, manifest, commit, ref, expected)
+        yield frozen, expected
+
+
+def publish(directory, commit, ref, *, rebuild_checksums_sha256=None, native_qualification=None):
+    prefix = "refs/tags/v"
+    if not ref.startswith(prefix) or "/" in ref[len(prefix):] or ref == prefix:
+        raise ValueError("Prerelease publication requires a version tag")
+    tag = ref.removeprefix("refs/tags/")
+    with verified_candidate(directory, commit, ref, rebuild_checksums_sha256, native_qualification) as (frozen, expected):
         publish_verified(frozen, tag, commit, expected)
 
 
@@ -297,15 +304,23 @@ def main():
                         help="SHA-256 of the authenticated checksum file from the successful rebuild comparison")
     parser.add_argument("--native-qualification", type=Path, required=True,
                         help="directory containing the ten successful packaged target receipts")
+    parser.add_argument("--verify-only", action="store_true",
+                        help="verify package, rebuild and qualification without accessing release state")
     args = parser.parse_args()
     try:
-        publish(args.directory.absolute(), args.source_commit, args.source_ref,
-                rebuild_checksums_sha256=args.rebuild_checksums_sha256, native_qualification=args.native_qualification)
+        if args.verify_only:
+            with verified_candidate(args.directory.absolute(), args.source_commit, args.source_ref,
+                                    args.rebuild_checksums_sha256, args.native_qualification):
+                print("Verified package, rebuild and native target receipts.")
+        else:
+            publish(args.directory.absolute(), args.source_commit, args.source_ref,
+                    rebuild_checksums_sha256=args.rebuild_checksums_sha256, native_qualification=args.native_qualification)
+            print("Verified prerelease assets are published.")
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile):
-        print("Prerelease verification or publication failed; inspect the draft and keep existing assets intact.",
-              file=sys.stderr)
+        message = ("Prerelease candidate verification failed." if args.verify_only else
+                   "Prerelease verification or publication failed; inspect the draft and keep existing assets intact.")
+        print(message, file=sys.stderr)
         return 1
-    print("Verified prerelease assets are published.")
     return 0
 
 

@@ -1,4 +1,6 @@
+import contextlib
 import hashlib
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -157,6 +159,36 @@ class PrereleasePublicationTests(unittest.TestCase):
                   patch.object(publisher, "publish_verified") as publish_verified):
                 with self.assertRaisesRegex(ValueError, "does not match openbsd/arm64"):
                     publisher.publish(self.directory, self.commit, self.ref, native_qualification=receipts)
+                publish_verified.assert_not_called()
+
+            preview_ref = "refs/heads/codex/dns-adapter-coverage"
+            for receipt_path in receipts.glob("*/candidate.json"):
+                receipt = json.loads(receipt_path.read_bytes())
+                receipt["sourceRef"] = preview_ref
+                if receipt["target"] == "openbsd/arm64":
+                    receipt["executionEnvironment"] = "disposable-openbsd-guest"
+                receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+            checksums = self.directory / "SHA256SUMS.txt"
+            (self.directory / names[10]).rename(checksums)
+            argv = ["publish_prerelease.py", str(self.directory), "--source-commit", self.commit,
+                    "--source-ref", preview_ref, "--native-qualification", str(receipts), "--verify-only",
+                    "--rebuild-checksums-sha256"]
+            with (patch.object(publisher, "verify") as verify,
+                  patch.object(publisher, "inspect_archive", side_effect=inspect_archive),
+                  patch.object(publisher, "publish_verified") as publish_verified,
+                  patch.object(publisher, "git_tag_commit") as tag,
+                  patch.object(publisher, "gh") as gh):
+                with (patch.object(sys, "argv", [*argv, publisher.digest(checksums)]),
+                      contextlib.redirect_stdout(io.StringIO()) as output):
+                    self.assertEqual(publisher.main(), 0)
+                    self.assertIn("Verified package, rebuild and native target receipts.", output.getvalue())
+                    verify.assert_called_once()
+                with (patch.object(sys, "argv", [*argv, "0" * 64]),
+                      contextlib.redirect_stderr(io.StringIO()) as errors):
+                    self.assertEqual(publisher.main(), 1)
+                    self.assertIn("candidate verification failed", errors.getvalue())
+                tag.assert_not_called()
+                gh.assert_not_called()
                 publish_verified.assert_not_called()
 
     def test_new_draft_uploads_and_verifies_before_publication(self):
