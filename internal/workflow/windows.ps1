@@ -3430,10 +3430,10 @@ function Get-SplitCordInstaller {
     if($hash -notmatch '\A[a-fA-F0-9]{64}\z'){throw 'SplitCord installer requires a published or explicitly supplied SHA-256'}
     return @{url=$url;hash=$hash}
 }
-function Wait-SplitCordService([string]$App,[int]$Seconds=20) {
+function Wait-SplitCordService([string]$App,[int]$Seconds=20,[switch]$AllowAbsentOrStopped) {
     $name='SplitCordDpiService'
     $binary=if($App){Join-Path (Split-Path -Parent $App) 'resources\service-installer\SplitCordService.exe'}
-    if($binary){
+    if($binary -and -not $AllowAbsentOrStopped){
         No-Reparse $binary
         if(-not (Test-Path -LiteralPath $binary -PathType Leaf -ErrorAction Stop)){throw 'SplitCord service executable is missing'}
     }
@@ -3444,17 +3444,24 @@ function Wait-SplitCordService([string]$App,[int]$Seconds=20) {
         $previousEffects=$script:externalEffectsPending
         try {$state=Invoke-ManagedServiceControl 'query' $name @(0,1060,1072)}
         finally {$script:externalEffectsPending=$previousEffects}
-        if(-not $binary -and $state -eq 1060){return}
+        if($state -eq 1060 -and (-not $binary -or $AllowAbsentOrStopped)){return}
         if($binary -and $state -eq 0){
             $service=Read-ManagedServiceRegistration $name
             if($service.PathName -ine $binary -and $service.PathName -ine ('"'+$binary+'"')){
                 throw 'SplitCord service registration differs from the installed application'
             }
-            if($service.State -ceq 'Running'){return}
+            if($AllowAbsentOrStopped){
+                No-Reparse $binary
+                if(-not (Test-Path -LiteralPath $binary -PathType Leaf -ErrorAction Stop)){
+                    throw 'SplitCord service executable is missing'
+                }
+                if($service.State -cin @('Running','Stopped')){return}
+            }elseif($service.State -ceq 'Running'){return}
         }
         if($deadline.Elapsed.TotalSeconds -ge $Seconds){break}
         Start-Sleep -Milliseconds 250
     } while($true)
+    if($AllowAbsentOrStopped){throw 'SplitCord service is not ready for maintenance'}
     if($binary){throw 'SplitCord service did not reach Running'}
     throw 'SplitCord service removal could not be verified'
 }
@@ -3523,6 +3530,7 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         if($Reinstall -and ((Find-App $variant) -or (Test-Path -LiteralPath $originalApp -ErrorAction Stop))){
             throw 'Stable Discord reappeared before replacement setup; review the current installation'
         }
+        if($variant -eq 'splitcord'){Wait-SplitCordService $existingApp 0 -AllowAbsentOrStopped}
         Save-ApplicationEffectBoundary
         if($Reinstall){
             Wait-AppProcessesExited $variant $originalApp 0
@@ -3539,6 +3547,10 @@ function Install-App([string]$variant,[switch]$Reinstall) {
                ($existingApp -and (Get-AppExecutableDigest $existingApp) -ine $ptbBeforeSetupDigest))){
                 throw 'Discord PTB changed before setup; stable Discord was preserved'
             }
+        }
+        if($variant -eq 'splitcord'){
+            if((Find-App $variant) -ine $existingApp){throw 'SplitCord installation changed before setup'}
+            Wait-SplitCordService $existingApp 0 -AllowAbsentOrStopped
         }
         No-Reparse $file
         [void](Native $file $installerArgs -Timeout 900 -StartGuard $lockedInstaller)
@@ -3623,6 +3635,7 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
     if($expectedAppDigest -and $appDigest -ine $expectedAppDigest){throw 'Application installation changed before removal'}
     $uninstaller=Get-AppUninstaller $variant $app
     $digest=Get-AppExecutableDigest $uninstaller.path
+    if($variant -eq 'splitcord'){Wait-SplitCordService $app 0 -AllowAbsentOrStopped}
     Stop-AppProcesses $variant $app
     if((Find-App $variant) -ine $app -or (Get-AppExecutableDigest $app) -ine $appDigest){
         throw 'Application installation changed before uninstall launch'
@@ -3654,6 +3667,7 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
         if(-not (Test-AppProcessesExited $base $app $names)){
             throw 'Application process exit could not be verified before uninstall; close the client and retry'
         }
+        if($variant -eq 'splitcord'){Wait-SplitCordService $app 0 -AllowAbsentOrStopped}
         [void](Native $confirmed.path $confirmed.arguments -Timeout $confirmed.timeout -StartGuard @($guard,$clientGuard))
     } finally {
         if($null -ne $clientGuard){$clientGuard.Dispose()}

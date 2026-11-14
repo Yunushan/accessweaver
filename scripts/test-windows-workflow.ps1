@@ -1796,6 +1796,22 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
     $queryFails=$false
     $serviceState=0;$serviceCommand='"'+$binary+'"';$serviceStatus='Running'
     Wait-SplitCordService $app 0
+    Wait-SplitCordService $app 0 -AllowAbsentOrStopped
+    $serviceStatus='Stopped'
+    Wait-SplitCordService $app 0 -AllowAbsentOrStopped
+    $serviceState=1060
+    Wait-SplitCordService $app 0 -AllowAbsentOrStopped
+    foreach($case in @(
+        @{app='';state=0;command=$serviceCommand;status='Running'},
+        @{app=$app;state=0;command=($serviceCommand+' --foreign');status='Stopped'},
+        @{app=$app;state=0;command=$serviceCommand;status='Stop Pending'},
+        @{app=$app;state=1072;command=$null;status=$null}
+    )){
+        $serviceState=$case.state;$serviceCommand=$case.command;$serviceStatus=$case.status
+        $refused=$false
+        try{Wait-SplitCordService $case.app 0 -AllowAbsentOrStopped}catch{$refused=$_.Exception.Message -like 'SplitCord service *'}
+        if(-not $refused){throw 'SplitCord accepted maintenance of an orphaned, replaced or transitional service'}
+    }
     foreach($case in @(
         @{state=0;command='"'+$binary+'" --different';status='Running';error='SplitCord service registration differs from the installed application'},
         @{state=0;command='"'+$binary+'"';status='Stopped';error='SplitCord service did not reach Running'},
@@ -1969,7 +1985,12 @@ try {
     }
     function Event {param($message);$script:appRemovalEvents.Add($message)}
     function Wait-SplitCordService {
-        param([string]$App,[int]$Seconds=20)
+        param([string]$App,[int]$Seconds=20,[switch]$AllowAbsentOrStopped)
+        if($AllowAbsentOrStopped){
+            if($App -ine $fixtureApp -or $Seconds -ne 0){throw 'Expected immediate service binding check for the selected installation'}
+            if($script:appForeignService){throw 'SplitCord service registration differs from the installed application'}
+            return
+        }
         if($App){throw 'Unexpected SplitCord install service probe'}
         if($script:appServiceRemains){throw 'SplitCord service removal could not be verified'}
         if($script:appReappearance -ceq 'absent-service-check'){$script:appRemovalMoved=$true}
@@ -2129,6 +2150,14 @@ try {
     }
     $script:appReappearance=$null
     $script:appRemovalInvoked=$false
+    $script:appForeignService=$true
+    $script:externalEffectsPending=$false
+    $rejected=$false
+    try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'SplitCord service registration differs from the installed application'}
+    if(-not $rejected -or $script:appRemovalInvoked -or $script:externalEffectsPending){
+        throw 'A foreign SplitCord service was not refused before removal effects'
+    }
+    $script:appForeignService=$false
     $script:appServiceRemains=$true
     $rejected=$false
     try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'SplitCord service removal could not be verified'}
@@ -2600,6 +2629,39 @@ try {
     $script:externalEffectsPending=$previousAppEffects
     $script:journalPath=$previousAppJournal
     $script:journalState=$previousAppJournalState
+}
+# Exercise the setup dispatch with inert bytes and a service that changes after journaling.
+& {
+    $r=[pscustomobject]@{action='app-install';engine='splitcord'}
+    $root=Join-Path $testRoot 'splitcord-install-fixture'
+    [void][IO.Directory]::CreateDirectory((Join-Path $root 'downloads'))
+    function Require-DesktopUser {}
+    function Find-App {param($Variant); if($Variant -cne 'splitcord'){throw 'Unexpected setup variant'}}
+    function Get-SplitCordInstaller {return @{url='unused';hash=''}}
+    function Download {
+        param($Url,$Hash,$Destination,[switch]$ReturnVerifiedHash)
+        [IO.File]::WriteAllText($Destination,'inert installer')
+        return (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash
+    }
+    $observed=@{probes=0;journalWrites=0;launched=$false}
+    function Wait-SplitCordService {
+        param($App,$Seconds,[switch]$AllowAbsentOrStopped)
+        if($App -or $Seconds -ne 0 -or -not $AllowAbsentOrStopped){throw 'Unexpected setup service probe'}
+        $observed.probes++
+        if($observed.probes -eq $foreignAt){throw 'Synthetic foreign service'}
+    }
+    function Save-ApplicationEffectBoundary {$observed.journalWrites++}
+    function Native {$observed.launched=$true;throw 'Unexpected vendor setup'}
+    foreach($foreignAt in @(1,2)){
+        $observed.probes=0
+        $observed.journalWrites=0
+        $failure=$null
+        try{Install-App 'splitcord'}catch{$failure=$_.Exception.Message}
+        if($failure -cne 'Synthetic foreign service' -or $observed.launched -or
+           $observed.probes -ne $foreignAt -or $observed.journalWrites -ne ($foreignAt-1)){
+            throw 'SplitCord setup did not refuse a foreign service at its execution boundary'
+        }
+    }
 }
 # Exercise official release selection with fixed metadata and no vendor execution.
 & {
