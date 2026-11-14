@@ -771,6 +771,38 @@ try {
         Assert $ambiguous 'SplitCord discovery refuses different executables across default folders'
         $splitCordLocations[$machineKey]=$splitCordFirst
         Assert ((Find-App 'splitcord') -ieq (Join-Path $splitCordFirst 'SplitCord-Turkey.exe')) 'SplitCord vendor registration takes precedence over fallback copies'
+        $registeredApp=Join-Path $splitCordFirst 'SplitCord-Turkey.exe'
+        [IO.File]::Delete($registeredApp)
+        [void][IO.Directory]::CreateDirectory($registeredApp)
+        $refused=$false
+        try{Find-App 'splitcord'}catch{$refused=$_.Exception.Message -ceq 'Registered SplitCord executable path is not a file'}
+        Assert $refused 'SplitCord discovery refuses a directory in place of a registered executable'
+        [IO.Directory]::Delete($registeredApp)
+        $splitCordLocations.Clear()
+        [IO.File]::Delete($userApp)
+        $nested=Join-Path $machineDirectory 'old-layout\client'
+        [void][IO.Directory]::CreateDirectory($nested)
+        $nestedApp=Join-Path $nested 'SplitCord-Turkey.exe'
+        [IO.File]::Move($machineApp,$nestedApp)
+        Assert ((Find-App 'splitcord') -ieq $nestedApp) 'SplitCord fallback discovers an executable in a nested legacy layout'
+        $junction=Join-Path $userDirectory 'redirected'
+        New-Item -ItemType Junction -Path $junction -Target $nested -ErrorAction Stop | Out-Null
+        try {
+            $refused=$false
+            try{Find-App 'splitcord'}catch{$refused=$_.Exception.Message -ceq 'SplitCord installation inventory contains a reparse point'}
+            Assert $refused 'SplitCord fallback refuses a redirected descendant before accepting discovery'
+        }finally{[IO.Directory]::Delete($junction)}
+        [void][IO.Directory]::CreateDirectory($userApp)
+        $refused=$false
+        try{Find-App 'splitcord'}catch{$refused=$_.Exception.Message -ceq 'SplitCord executable path is not a file'}
+        Assert $refused 'SplitCord fallback refuses a directory in place of a client executable'
+        [IO.Directory]::Delete($userApp)
+        [IO.Directory]::Delete($userDirectory)
+        [IO.File]::WriteAllText($userDirectory,'inert malformed installation root')
+        $refused=$false
+        try{Find-App 'splitcord'}catch{$refused=$_.Exception.Message -ceq 'SplitCord installation root is not a directory'}
+        Assert $refused 'SplitCord fallback refuses a file in place of an installation root'
+        [IO.File]::Delete($userDirectory)
     }finally{
         $env:LOCALAPPDATA=$savedLocal
         $env:ProgramFiles=$savedProgram

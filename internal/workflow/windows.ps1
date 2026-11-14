@@ -3326,7 +3326,12 @@ function Find-SplitCordApp {
             $location -cnotmatch '\A[A-Za-z]:\\[^:*?"<>|\x00-\x1f]+\z'){continue}
         $app=Join-Path ([IO.Path]::GetFullPath($location)) 'SplitCord-Turkey.exe'
         No-Reparse $app
-        if(Test-Path -LiteralPath $app -PathType Leaf -ErrorAction Stop){$app}
+        if(Test-Path -LiteralPath $app -ErrorAction Stop){
+            if(-not (Test-Path -LiteralPath $app -PathType Leaf -ErrorAction Stop)){
+                throw 'Registered SplitCord executable path is not a file'
+            }
+            $app
+        }
     })
     $registered=@($registered | Sort-Object -Unique)
     if($registered.Count -gt 1){throw 'Multiple registered SplitCord installations matched'}
@@ -3334,15 +3339,35 @@ function Find-SplitCordApp {
 
     $bases=@((Join-Path $env:LOCALAPPDATA 'Programs'),$env:ProgramFiles,${env:ProgramFiles(x86)})
     $fallback=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $pending=[Collections.Generic.Stack[string]]::new()
     foreach($base in @($bases | Where-Object {$_} | Select-Object -Unique)){
         $directory=Join-Path $base 'SplitCord-Turkey'
         No-Reparse $directory
-        if(Test-Path -LiteralPath $directory -PathType Container -ErrorAction Stop){
-            foreach($file in (Get-ChildItem -LiteralPath $directory -Recurse -Filter 'SplitCord-Turkey.exe' -File -ErrorAction Stop)){
-                No-Reparse $file.FullName
-                [void]$fallback.Add($file.FullName)
+        if(-not (Test-Path -LiteralPath $directory -ErrorAction Stop)){continue}
+        if(-not (Test-Path -LiteralPath $directory -PathType Container -ErrorAction Stop)){
+            throw 'SplitCord installation root is not a directory'
+        }
+        $pending.Push($directory)
+    }
+    $observed=0
+    while($pending.Count){
+        $directory=$pending.Pop()
+        No-Reparse $directory
+        foreach($path in [IO.Directory]::EnumerateFileSystemEntries($directory)){
+            $observed++
+            if($observed -gt 16384){throw 'SplitCord installation inventory exceeds its limit'}
+            $attributes=[IO.File]::GetAttributes($path)
+            if($attributes -band [IO.FileAttributes]::ReparsePoint){
+                throw 'SplitCord installation inventory contains a reparse point'
+            }
+            $isDirectory=[bool]($attributes -band [IO.FileAttributes]::Directory)
+            if([IO.Path]::GetFileName($path) -ieq 'SplitCord-Turkey.exe'){
+                if($isDirectory){throw 'SplitCord executable path is not a file'}
+                No-Reparse $path
+                [void]$fallback.Add($path)
                 if($fallback.Count -gt 1){throw 'Multiple SplitCord executables matched in the default installation directories'}
             }
+            if($isDirectory){$pending.Push($path)}
         }
     }
     if($fallback.Count -eq 1){return @($fallback)[0]}
