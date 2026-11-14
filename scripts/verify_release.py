@@ -230,6 +230,15 @@ def verify_go_metadata(binary, binary_name, info):
     require(all(settings.get(key) == value for key, value in expected.items()),
             "Packaged binary target or build settings differ")
 
+    vcs = {key: value for key, value in settings.items() if key == "vcs" or key.startswith("vcs.")}
+    if info["commit"] == "unknown" and info["sourceState"] == "unknown":
+        require(not vcs, "Unexpected version control metadata in a build without Git identity")
+    else:
+        require(info["sourceState"] in ("clean", "modified")
+                and vcs.get("vcs") == "git" and vcs.get("vcs.revision") == info["commit"]
+                and vcs.get("vcs.modified") == ("true" if info["sourceState"] == "modified" else "false"),
+                "Packaged binary Git revision or modification state differs")
+
 
 def verify(directory, execute_native=False, *, check_go_metadata=False):
     manifest_path = directory / "BUILD-MANIFEST.json"

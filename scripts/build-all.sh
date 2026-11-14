@@ -22,8 +22,10 @@ done
 
 commit="unknown"
 source_state="unknown"
+stamp_vcs=false
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   commit="$(git rev-parse HEAD)"
+  stamp_vcs=true
   source_state="clean"
   if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then source_state="modified"; fi
 fi
@@ -52,7 +54,7 @@ for target in "${targets[@]}"; do
   if [[ "$target_os" == windows ]]; then extension=".exe"; fi
   echo "Building $target"
   GOOS="$target_os" GOARCH="$target_arch" CGO_ENABLED=0 \
-    go build -mod=readonly -trimpath -buildvcs=false -ldflags="$link_flags" \
+    go build -mod=readonly -trimpath -buildvcs="$stamp_vcs" -ldflags="$link_flags" \
     -o "$output_dir/accessweaver-$target_os-$target_arch$extension" ./cmd/accessweaver
 done
 

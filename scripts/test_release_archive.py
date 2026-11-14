@@ -255,7 +255,8 @@ class ReleaseVerificationTests(unittest.TestCase):
                     arch = "386"
                 project = "github.com/Yunushan/accessweaver"
                 settings = {"GOOS": item["goos"], "GOARCH": arch, "CGO_ENABLED": "0",
-                            "-compiler": "gc", "-trimpath": "true"}
+                            "-compiler": "gc", "-trimpath": "true",
+                            "vcs": "git", "vcs.revision": manifest["sourceCommit"], "vcs.modified": "false"}
                 return json.dumps({"GoVersion": "go1.27.4", "Path": project + "/cmd/accessweaver",
                                    "Main": {"Path": project},
                                    "Settings": [{"Key": key, "Value": value} for key, value in settings.items()]})
@@ -269,6 +270,35 @@ class ReleaseVerificationTests(unittest.TestCase):
                 release.verify(directory, execute_native=True, check_go_metadata=True)
             self.assertEqual(metadata.call_count, 10)
             execute.assert_not_called()
+
+    def test_static_metadata_binds_git_revision_and_modification_state(self):
+        project = "github.com/Yunushan/accessweaver"
+        base_settings = {"GOOS": "windows", "GOARCH": "amd64", "CGO_ENABLED": "0",
+                         "-compiler": "gc", "-trimpath": "true"}
+        commit = "a" * 40
+        base_info = {"platform": "windows", "arch": "amd64", "goVersion": "go1.27.4", "commit": commit}
+        git_settings = {"vcs": "git", "vcs.revision": commit, "vcs.modified": "false"}
+        no_git = {**base_info, "commit": "unknown", "sourceState": "unknown"}
+        for info, vcs, error in (
+            ({**base_info, "sourceState": "clean"}, git_settings, None),
+            ({**base_info, "sourceState": "modified"}, {**git_settings, "vcs.modified": "true"}, None),
+            ({**base_info, "sourceState": "modified"}, git_settings, "modification state differs"),
+            ({**base_info, "sourceState": "clean"}, {**git_settings, "vcs.revision": "b" * 40}, "revision"),
+            ({**base_info, "sourceState": "clean"}, {}, "revision"),
+            (no_git, {}, None),
+            (no_git, git_settings, "Unexpected version control metadata"),
+        ):
+            settings = {**base_settings, **vcs}
+            metadata = {"GoVersion": "go1.27.4", "Path": project + "/cmd/accessweaver", "Main": {"Path": project},
+                        "Settings": [{"Key": key, "Value": value} for key, value in settings.items()]}
+            with self.subTest(info=info, vcs=vcs), patch.object(
+                release, "go_metadata_command", return_value=json.dumps(metadata),
+            ):
+                if error:
+                    with self.assertRaisesRegex(ValueError, error):
+                        release.verify_go_metadata(b"inert", "accessweaver.exe", info)
+                else:
+                    release.verify_go_metadata(b"inert", "accessweaver.exe", info)
 
     def test_native_version_comparison_must_match_packaged_version(self):
         info = {"version": "1.2.3-alpha", "commit": "a" * 40, "goVersion": "go1.27.4"}
