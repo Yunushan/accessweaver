@@ -703,6 +703,19 @@ class ManagedDetectionEvidenceTests(unittest.TestCase):
                          {"managedDetectionChecksVerified": 20})
         with self.assertRaises(ValueError):
             validate_managed_detection({**latest, "managedDetectionCases": with_hard_link})
+        documentation = [
+            {"phase": phase, "detected": False, "inspectionRefused": True}
+            for phase in ("redirected-docs-refused", "redirected-docs-assets-refused", "redirected-docs-qualification-refused")
+        ]
+        with_documentation = [
+            *with_license_refusal[:7], *documentation,
+            {"phase": "after-documentation-directory-restoration", "detected": True},
+            *with_license_refusal[7:],
+        ]
+        current = {**latest, "schemaVersion": 47, "managedDetectionCases": with_documentation}
+        self.assertEqual(validate_managed_detection(current), {"managedDetectionChecksVerified": 24})
+        with self.assertRaisesRegex(ValueError, "Incomplete managed detection coverage"):
+            validate_managed_detection({**current, "managedDetectionCases": with_license_refusal})
         self.assertEqual(validate_managed_detection({**upgraded, "schemaVersion": 21, "managedDetectionCases": with_denial}),
                          {"managedDetectionChecksVerified": 15})
         with self.assertRaises(ValueError):

@@ -322,7 +322,9 @@ function Test-AccessWeaverInstallation([string]$directory) {
             $current=[IO.Path]::Combine($current,$component)
             $parents.Add([AccessWeaver.InstallerFileAccess]::OpenDirectory($current))
         }
-        $parents.Add([AccessWeaver.InstallerFileAccess]::OpenDirectory((Join-Path $directory 'licenses')))
+        foreach($packageDirectory in @('licenses','docs','docs\assets','docs\qualification')){
+            $parents.Add([AccessWeaver.InstallerFileAccess]::OpenDirectory((Join-Path $directory $packageDirectory)))
+        }
         $payload=[AccessWeaver.InstallerFileAccess]::OpenFile((Join-Path $directory 'accessweaver.exe'),128MB,$true)
         if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $payload -Algorithm SHA256).Hash -ine $PayloadSHA256){return $false}
         if($PayloadSBOMSHA256){
