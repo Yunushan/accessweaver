@@ -10,8 +10,11 @@ import stat
 import subprocess
 import sys
 import tempfile
+from xml.etree.ElementTree import ParseError
 
+from macos_deployment import PACKAGE_ID
 from macos_installer import BUNDLE_ID, BUNDLE_NAME, macho_identity
+from macos_package_archive import xml
 from verify_release import publish_staged_file, require
 from verify_release_rebuild import digest, snapshot
 
@@ -64,10 +67,10 @@ def developer_application_requirement(team):
             f'and certificate leaf[subject.OU] = "{team}"')
 
 
-def read_expanded_executable(path, maximum, *, mode=None):
+def read_expanded_file(path, maximum, *, mode=None):
     before = path.lstat()
     require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
-            and 0 < before.st_size <= maximum, "Expected a bounded regular package executable")
+            and 0 < before.st_size <= maximum, "Expected a bounded regular package file")
     if mode is not None:
         require(stat.S_IMODE(before.st_mode) == mode, "Expected a detector with mode 0755")
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
@@ -77,15 +80,15 @@ def read_expanded_executable(path, maximum, *, mode=None):
             return entry.st_dev, entry.st_ino, entry.st_mode, entry.st_nlink, entry.st_size, entry.st_mtime_ns
 
         require(stat.S_ISREG(info.st_mode) and identity(info) == identity(before),
-                "Package executable changed before verification")
+                "Package file changed before verification")
         data = source.read(info.st_size + 1)
         require(len(data) == info.st_size and identity(os.fstat(source.fileno())) == identity(before)
-                and identity(path.lstat()) == identity(before), "Package executable changed during verification")
+                and identity(path.lstat()) == identity(before), "Package file changed during verification")
     return data
 
 
 def verify_detector_bytes(path, approved_sha256):
-    data = read_expanded_executable(path, 16 << 20, mode=0o755 if os.name == "posix" else None)
+    data = read_expanded_file(path, 16 << 20, mode=0o755 if os.name == "posix" else None)
     require(hashlib.sha256(data).hexdigest() == approved_sha256, "Package helper differs from the approved digest")
 
 
@@ -94,7 +97,7 @@ def check_application_certificate(path, approved_sha256):
     with tempfile.TemporaryDirectory(prefix="accessweaver-application-chain-") as temporary:
         directory = Path(temporary)
         tool(["/usr/bin/codesign", "--display", "--extract-certificates", path], cwd=directory)
-        leaf = read_expanded_executable(directory / "codesign0", 64 << 10)
+        leaf = read_expanded_file(directory / "codesign0", 64 << 10)
         require(hashlib.sha256(leaf).hexdigest() == approved_sha256,
                 "Developer ID Application leaf certificate differs from the approved fingerprint")
 
@@ -109,7 +112,7 @@ def verify_packaged_application(package, team, architecture, application_pin=Non
     for path in (expanded, payload, app, contents, executables):
         require(stat.S_ISDIR(path.lstat().st_mode), "Expected an ordinary expanded package directory")
 
-    core = read_expanded_executable(executables / "accessweaver", 64 << 20)
+    core = read_expanded_file(executables / "accessweaver", 64 << 20)
     macho_identity(core, architecture)
     requirement = developer_application_requirement(team)
     tool(["/usr/bin/codesign", "--verify", "--strict", "--all-architectures",
@@ -117,6 +120,41 @@ def verify_packaged_application(package, team, architecture, application_pin=Non
     if application_pin is not None:
         check_application_certificate(app, application_pin)
     return expanded
+
+
+def read_packaged_helper(expanded, architecture):
+    scripts = expanded / "Scripts"
+    require(stat.S_ISDIR(scripts.lstat().st_mode), "Expected an ordinary expanded package scripts directory")
+    data = read_expanded_file(scripts / "postinstall", 16 << 20)
+    require(read_expanded_file(scripts / "preinstall", 16 << 20) == data,
+            "Expanded package scripts do not use the same helper")
+    macho_identity(data, architecture)
+    return data
+
+
+def check_helper_publisher(helper, team, application_pin):
+    tool(["/usr/bin/codesign", "--verify", "--strict", "--all-architectures",
+          "-R=" + developer_application_requirement(team), helper])
+    if application_pin is not None:
+        check_application_certificate(helper, application_pin)
+
+
+def verify_packaged_deployment(package, team, architecture, application_pin):
+    expanded = verify_packaged_application(package, team, architecture, application_pin)
+    try:
+        metadata = xml(read_expanded_file(expanded / "PackageInfo", 256 << 10))
+    except ParseError as error:
+        raise ValueError("Invalid deployment package metadata") from error
+    sections = metadata.findall("scripts")
+    require(metadata.tag == "pkg-info" and metadata.get("identifier") == PACKAGE_ID and len(sections) == 1
+            and len(sections[0]) == 2 and {phase.tag: phase.get("file") for phase in sections[0]} == {
+                "preinstall": "./preinstall", "postinstall": "./postinstall",
+            }, "Deployment package phase entry points differ")
+
+    data = read_packaged_helper(expanded, architecture)
+    check_helper_publisher(expanded / "Scripts" / "postinstall", team, application_pin)
+    require(read_packaged_helper(expanded, architecture) == data,
+            "Expanded package helper changed during publisher verification")
 
 
 def stage_detector(expanded, team, architecture, approved_sha256, destination, parent_info, application_pin=None):
@@ -128,12 +166,7 @@ def stage_detector(expanded, team, architecture, approved_sha256, destination, p
                 "Detector output directory changed during verification")
 
     check_parent()
-    scripts = expanded / "Scripts"
-    require(stat.S_ISDIR(scripts.lstat().st_mode), "Expected an ordinary expanded package scripts directory")
-    data = read_expanded_executable(scripts / "postinstall", 16 << 20)
-    require(read_expanded_executable(scripts / "preinstall", 16 << 20) == data,
-            "Expanded package scripts do not use the same detector")
-    macho_identity(data, architecture)
+    data = read_packaged_helper(expanded, architecture)
 
     with tempfile.TemporaryDirectory(prefix=".accessweaver-detector-", dir=parent) as temporary:
         staged = Path(temporary) / destination.name
@@ -143,10 +176,7 @@ def stage_detector(expanded, team, architecture, approved_sha256, destination, p
             staged.chmod(0o755)
             os.fsync(stream.fileno())
         verify_detector_bytes(staged, approved_sha256)
-        tool(["/usr/bin/codesign", "--verify", "--strict", "--all-architectures",
-              "-R=" + developer_application_requirement(team), staged])
-        if application_pin is not None:
-            check_application_certificate(staged, application_pin)
+        check_helper_publisher(staged, team, application_pin)
         verify_detector_bytes(staged, approved_sha256)
         check_parent()
         try:

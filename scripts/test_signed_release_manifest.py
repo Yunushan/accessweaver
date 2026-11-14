@@ -555,32 +555,32 @@ class SignedReleaseManifestTests(unittest.TestCase):
                     self.verify(approved, pin, **{**macos_options, **overrides})
 
             with patch.object(release, "check_package_publisher") as package_check, \
-                    patch.object(release, "verify_packaged_application") as app_check:
+                    patch.object(release, "verify_packaged_deployment") as deployment_check:
                 for revoked in (installer_pin, application_pin):
                     revoked_pin = self.write_policy({**self.policy, "subjectSHA256": [revoked]})
                     with self.assertRaisesRegex(ValueError, "publisher certificate is revoked"):
                         self.verify(approved, pin, policy_pin=revoked_pin, **macos_options)
                     package_check.assert_not_called()
-                    app_check.assert_not_called()
+                    deployment_check.assert_not_called()
                     self.assertEqual(list(macos_staging.iterdir()), [])
                 self.write_policy(self.policy)
 
                 package_check.side_effect = subprocess.CalledProcessError(1, "spctl")
                 with self.assertRaises(subprocess.CalledProcessError):
                     self.verify(approved, pin, **macos_options)
-                app_check.assert_not_called()
+                deployment_check.assert_not_called()
                 self.assertEqual(list(macos_staging.iterdir()), [])
                 package_check.side_effect = None
 
-                app_check.side_effect = subprocess.CalledProcessError(1, "codesign")
+                deployment_check.side_effect = subprocess.CalledProcessError(1, "codesign")
                 with self.assertRaises(subprocess.CalledProcessError):
                     self.verify(approved, pin, **macos_options)
                 self.assertEqual(list(macos_staging.iterdir()), [])
-                app_check.side_effect = lambda package, *_: package.write_bytes(b"changed")
+                deployment_check.side_effect = lambda package, *_: package.write_bytes(b"changed")
                 with self.assertRaisesRegex(ValueError, "changed during publisher verification"):
                     self.verify(approved, pin, **macos_options)
                 self.assertEqual(list(macos_staging.iterdir()), [])
-                app_check.side_effect = None
+                deployment_check.side_effect = None
 
                 native_report = self.verify(approved, pin, **macos_options)
                 native_update = native_report["managedUpdate"]
@@ -589,14 +589,14 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 self.assertEqual(native_update["nativePublisherVerification"], {
                     "developerTeamID": team, "installerCertificateSHA256": installer_pin,
                     "applicationCertificateSHA256": application_pin, "gatekeeperAccepted": True,
-                    "stapledTicketValidated": True,
+                    "packagedInstallationHelperVerified": True, "stapledTicketValidated": True,
                 })
                 checked_path = package_check.call_args.args[0]
                 self.assertEqual(checked_path.name, pkg_name)
                 self.assertNotEqual(checked_path.parent, self.candidate)
                 self.assertNotEqual(checked_path.parent, macos_staging)
                 self.assertEqual(package_check.call_args.args, (checked_path, team, installer_pin))
-                self.assertEqual(app_check.call_args.args, (checked_path, team, "arm64", application_pin))
+                self.assertEqual(deployment_check.call_args.args, (checked_path, team, "arm64", application_pin))
                 self.assertEqual((macos_staging / pkg_name).read_bytes(), (self.candidate / pkg_name).read_bytes())
 
         real_stage = release.stage_managed_update

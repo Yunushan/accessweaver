@@ -16,7 +16,7 @@ import tempfile
 
 from macos_installer import parse_release_version, version_parts
 from sbom import WINDOWS_BUILD_INFO_PROPERTY, prop_map, validate_digest
-from verify_macos_installer_publisher import check_package_publisher, verify_packaged_application
+from verify_macos_installer_publisher import check_package_publisher, verify_packaged_deployment
 from verify_release import publish_staged_file as publish_staged_installer, release_file, require
 from verify_release_provenance import REPOSITORY, regular_file, validate_identity
 from verify_release_rebuild import MAX_FILE, digest, snapshot
@@ -811,12 +811,12 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             package = root / update["installer"]
             architecture = target.split("/")[1]
             check_package_publisher(package, team, installer_pin)
-            verify_packaged_application(package, team, architecture, application_pin)
+            verify_packaged_deployment(package, team, architecture, application_pin)
             require(digest(package) == update["installerSHA256"], "macOS package changed during publisher verification")
             update["nativePublisherVerification"] = {
                 "developerTeamID": team, "installerCertificateSHA256": installer_pin,
                 "applicationCertificateSHA256": application_pin, "gatekeeperAccepted": True,
-                "stapledTicketValidated": True,
+                "packagedInstallationHelperVerified": True, "stapledTicketValidated": True,
             }
             report["nativePublisherChecksPerformed"] = True
         if policy["schemaVersion"] == 2:

@@ -115,6 +115,80 @@ class PublisherTests(unittest.TestCase):
                             self.assertEqual(native.call_count, 4 if outcome == "wrong-architecture" else 5)
                     self.assertEqual(list(directory.iterdir()), [package])
 
+    def test_managed_deployment_checks_both_phase_entries_and_helper_publisher(self):
+        approved_certificate = b"approved Developer ID Application leaf"
+        application_pin = hashlib.sha256(approved_certificate).hexdigest()
+        helper = image("arm64")
+        phases = '<preinstall file="./preinstall"/><postinstall file="./postinstall"/>'
+        for scenario, error in (
+            ("approved", None),
+            ("redirected-phase", "phase entry points differ"),
+            ("duplicate-scripts", "phase entry points differ"),
+            ("different-helpers", "do not use the same helper"),
+            ("wrong-architecture", "matching thin native 64-bit executable"),
+            ("different-certificate", "leaf certificate differs"),
+            ("helper-changed", "helper changed during publisher verification"),
+        ):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                package = root / "approved.pkg"
+                expanded = root / "expanded"
+                app = expanded / "Payload" / publisher.BUNDLE_NAME
+                scripts = expanded / "Scripts"
+                signature_subjects = []
+                certificate_subjects = []
+
+                def tool(args, *, cwd=None):
+                    if args[1] == "--expand-full":
+                        core = app / "Contents" / "MacOS" / "accessweaver"
+                        core.parent.mkdir(parents=True)
+                        core.write_bytes(helper)
+                        scripts.mkdir()
+                        native = image("amd64") if scenario == "wrong-architecture" else helper
+                        (scripts / "postinstall").write_bytes(native)
+                        (scripts / "preinstall").write_bytes(
+                            native + b"changed" if scenario == "different-helpers" else native
+                        )
+                        entries = phases.replace("./postinstall", "./other") if scenario == "redirected-phase" else phases
+                        section = f"<scripts>{entries}</scripts>"
+                        if scenario == "duplicate-scripts":
+                            section += "<scripts/>"
+                        (expanded / "PackageInfo").write_text(
+                            f'<pkg-info identifier="{publisher.PACKAGE_ID}">{section}</pkg-info>',
+                            encoding="utf-8",
+                        )
+                    elif args[1] == "--verify":
+                        self.assertEqual(args[:4], ["/usr/bin/codesign", "--verify", "--strict", "--all-architectures"])
+                        self.assertIn(f'certificate leaf[subject.OU] = "{TEAM}"', args[-2])
+                        signature_subjects.append(args[-1])
+                    elif args[1] == "--display":
+                        self.assertEqual(args[:3], ["/usr/bin/codesign", "--display", "--extract-certificates"])
+                        subject = args[-1]
+                        certificate_subjects.append(subject)
+                        certificate = approved_certificate
+                        if subject == scripts / "postinstall":
+                            if scenario == "different-certificate":
+                                certificate = b"unapproved leaf"
+                            if scenario == "helper-changed":
+                                for phase in ("preinstall", "postinstall"):
+                                    (scripts / phase).write_bytes(helper + b"changed")
+                        (cwd / "codesign0").write_bytes(certificate)
+                    else:
+                        self.fail(f"Unexpected command: {args}")
+                    return ""
+
+                with patch.object(publisher, "tool", side_effect=tool):
+                    if error is None:
+                        publisher.verify_packaged_deployment(package, TEAM, "arm64", application_pin)
+                    else:
+                        with self.assertRaisesRegex(ValueError, error):
+                            publisher.verify_packaged_deployment(package, TEAM, "arm64", application_pin)
+                expected = [app]
+                if scenario in ("approved", "different-certificate", "helper-changed"):
+                    expected.append(scripts / "postinstall")
+                self.assertEqual(signature_subjects, expected)
+                self.assertEqual(certificate_subjects, expected)
+
     @unittest.skipUnless(sys.platform in ("darwin", "win32", "linux"), "requires native exclusive rename")
     def test_detector_publication_recovers_after_process_exit(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -297,7 +371,7 @@ with patch.object(publisher, "tool"), patch.object(publisher, "publish_staged_fi
                 mode = "output-hardlink"
                 alias = root / "alias"
                 os.link(destination, alias)
-                with self.assertRaisesRegex(ValueError, "bounded regular package executable"):
+                with self.assertRaisesRegex(ValueError, "bounded regular package file"):
                     verify()
                 self.assertEqual(alias.read_bytes(), helper_bytes)
                 alias.unlink()
