@@ -3219,6 +3219,11 @@ function Wait-RecordedServiceAbsent([string]$Name) {
     }while($clock.Elapsed.TotalSeconds -lt 5)
     throw 'Managed service removal is pending; release open service handles and retry'
 }
+function Assert-DNSCryptCanBeRemoved {
+    if(Test-DNSCryptListenerNeeded){
+        throw 'DNSCrypt service retained because adapter loopback DNS is configured or could not be ruled out'
+    }
+}
 function Remove-RecordedService([string]$Name,$Entry) {
     if($Name -notmatch '\AAccessWeaver-(byedpi|proxifyre|zapret|zapret2|goodbyedpi|dnscrypt)\z'){
         throw 'Recovery journal contains an unmanaged service'
@@ -3228,9 +3233,7 @@ function Remove-RecordedService([string]$Name,$Entry) {
     if($state -eq 1060){return}
     if($state -eq 0){
         if($Name -ieq 'AccessWeaver-dnscrypt'){
-            if(Test-DNSCryptListenerNeeded){
-                throw 'DNSCrypt service retained because adapter loopback DNS is configured or could not be ruled out'
-            }
+            Assert-DNSCryptCanBeRemoved
             # Inventory reads can outlast the service binding observed above.
             if((Assert-RecordedServiceBinding $Entry) -ne 0){return}
         }
@@ -3296,6 +3299,9 @@ function Remove-All {
     # have been restored and independently read back by Restore-DNS.
     $digest=Get-DNSRecoverySnapshotDigest
     if($digest){Restore-DNS $digest}
+    if(Assert-ManagedServiceOwnership 'AccessWeaver-dnscrypt'){
+        Assert-DNSCryptCanBeRemoved
+    }
     # ByeDPI cleanup restores Drover before removing either proxy service.
     foreach($engine in @('byedpi','zapret','zapret2','goodbyedpi','wiresock')){Remove-Method $engine}
     Remove-Method 'windivert' -OwnedOnly

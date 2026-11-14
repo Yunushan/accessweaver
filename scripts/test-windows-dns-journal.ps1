@@ -4,7 +4,7 @@ $path=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.ps
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'DNS journal source failed parsing'}
-foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-DNSRecoveryFileBytes','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Get-WorkflowFileHash','Copy-WorkflowFileToNewPath','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Publish-RecordedWorkflowFile','Backup-File','Restore-RecordedWorkflowFile','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Test-DNSCryptLoopbackAddress','Wait-DNSCryptListeners','Test-DNSIPv4Answer','Assert-DNSCryptConfiguration','Assert-DNSRecoverySnapshotUnchanged','Rollback','Remove-All','Get-ManagedFirewallRule','Remove-ManagedFirewallRule','Firewall','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Remove-RecordedService')){
+foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-DNSRecoveryFileBytes','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Get-WorkflowFileHash','Copy-WorkflowFileToNewPath','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Publish-RecordedWorkflowFile','Backup-File','Restore-RecordedWorkflowFile','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Test-DNSCryptLoopbackAddress','Wait-DNSCryptListeners','Test-DNSIPv4Answer','Assert-DNSCryptConfiguration','Assert-DNSRecoverySnapshotUnchanged','Rollback','Remove-All','Get-ManagedFirewallRule','Remove-ManagedFirewallRule','Firewall','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Assert-DNSCryptCanBeRemoved','Remove-RecordedService')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -97,7 +97,7 @@ $script:events=[Collections.Generic.List[string]]::new()
 try {
     & {
         $calls=[Collections.Generic.List[string]]::new()
-        $fixture=@{present=$true;restoreFails=$true;inspectionFails=$false;methodFails=$false}
+        $fixture=@{present=$true;restoreFails=$true;inspectionFails=$false;methodFails=$false;ownershipFault=$false;servicePresent=$false;listenerNeeded=$false}
         $digest='A'*64
         function Get-DNSRecoverySnapshotDigest {
             if($fixture.inspectionFails){throw 'Synthetic snapshot inspection failure'}
@@ -108,6 +108,15 @@ try {
             $calls.Add('restore')
             if($fixture.restoreFails){throw 'Synthetic DNS restoration failure'}
             $fixture.present=$false
+        }
+        function Assert-ManagedServiceOwnership([string]$Name) {
+            Require ($Name -ceq 'AccessWeaver-dnscrypt' -and -not $fixture.present) 'Remove-all checked the wrong service or checked before restoration'
+            if($fixture.ownershipFault){throw 'Synthetic managed DNSCrypt ownership failure'}
+            if($fixture.servicePresent){return @{name=$Name}}
+        }
+        function Test-DNSCryptListenerNeeded {
+            Require ($fixture.servicePresent) 'Remove-all inspected dependencies without a managed DNSCrypt service'
+            return $fixture.listenerNeeded
         }
         function Remove-Method {
             param($engine,[switch]$OwnedOnly)
@@ -123,11 +132,20 @@ try {
         $refused=$false
         try{Remove-All}catch{$refused=$_.Exception.Message -ceq 'Synthetic snapshot inspection failure'}
         Require ($refused -and $calls.Count -eq 0) 'Unreadable snapshot state allowed cleanup'
-        $fixture.inspectionFails=$false;$fixture.restoreFails=$false;$fixture.methodFails=$true
+        $fixture.inspectionFails=$false;$fixture.restoreFails=$false;$fixture.ownershipFault=$true
+        $refused=$false
+        try{Remove-All}catch{$refused=$_.Exception.Message -ceq 'Synthetic managed DNSCrypt ownership failure'}
+        Require ($refused -and -not $fixture.present -and ($calls -join ',') -ceq 'restore') 'Unverified DNSCrypt ownership allowed method cleanup'
+        $calls.Clear();$fixture.ownershipFault=$false;$fixture.servicePresent=$true
+        $fixture.present=$true;$fixture.listenerNeeded=$true
+        $refused=$false
+        try{Remove-All}catch{$refused=$_.Exception.Message -like 'DNSCrypt service retained because adapter loopback DNS*'}
+        Require ($refused -and -not $fixture.present -and ($calls -join ',') -ceq 'restore') 'DNSCrypt dependency after restoration allowed method cleanup'
+        $calls.Clear();$fixture.listenerNeeded=$false;$fixture.methodFails=$true
         $refused=$false
         try{Remove-All}catch{$refused=$_.Exception.Message -ceq 'Synthetic later cleanup failure'}
-        Require ($refused -and -not $fixture.present -and ($calls -join ',') -ceq 'restore,byedpi,zapret,zapret2,goodbyedpi,wiresock') 'Later cleanup failure did not preserve completed DNS restoration'
-        $calls.Clear();$fixture.methodFails=$false
+        Require ($refused -and -not $fixture.present -and ($calls -join ',') -ceq 'byedpi,zapret,zapret2,goodbyedpi,wiresock') 'Later cleanup failure did not preserve completed DNS restoration'
+        $calls.Clear();$fixture.methodFails=$false;$fixture.servicePresent=$false
         Remove-All
         Require (($calls -join ',') -ceq 'byedpi,zapret,zapret2,goodbyedpi,wiresock,windivert,dnscrypt') 'Remove-all retry repeated DNS restoration or changed cleanup order'
     }
