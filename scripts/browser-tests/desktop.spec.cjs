@@ -327,12 +327,16 @@ test('support export excludes private profile contents and leaves the runtime st
   await open(page,core);await create(page,'private-support-profile');
   await page.locator('.nav-item[data-view="settings"]').click();
   await expect(page.locator('#export-support')).toBeEnabled();
+  await expect(page.locator('#settings-build-version')).toHaveText(core.build.version);
+  await expect(page.locator('#settings-build-commit')).toHaveText(core.build.commit==='unknown'?'Unknown':core.build.commit);
+  const stateLabel={clean:'Clean',modified:'Modified',unknown:'Unknown'}[core.build.sourceState];
+  await expect(page.locator('#settings-build-source-state')).toHaveText(stateLabel);
   const downloading=page.waitForEvent('download');await page.locator('#export-support').click();
   const download=await downloading;
   expect(download.suggestedFilename()).toBe('accessweaver-support-summary.json');
   const text=await fs.readFile(await download.path(),'utf8'),report=JSON.parse(text);
   expect(report.scope).toBe('metadata-only');expect(report.runtime.state).toBe('stopped');
-  expect(report.profiles.total).toBeGreaterThan(0);expect(report.build.platform).toBeTruthy();
+  expect(report.profiles.total).toBeGreaterThan(0);expect(report.build).toEqual(core.build);
   expect(text).not.toContain('private-support-profile');expect(text).not.toContain('Browser fixture');
   expect(text).not.toContain('absent-browser-fixture-engine');expect(text).not.toContain(core.home);
   await fs.writeFile(core.profilePath('private-support-profile'),'{private-corrupt-fixture');

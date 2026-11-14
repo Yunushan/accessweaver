@@ -133,6 +133,24 @@ test('connected UI displays the core build version without interpreting HTML',as
   await env.run('readCore()');
   for(const node of versionNodes){assert.equal(node.textContent,'2.3.4-rc.1 <source>');assert.equal(node.innerHTML,'');}
 });
+test('Settings shows the authenticated build identity and hides it after disconnect',async()=>{
+  const env=environment();
+  env.run('state.token="fixture";state.loading=false;state.offline=false;renderAll=renderHero');
+  const commit='a'.repeat(40);
+  env.context.fetch=async path=>({ok:true,json:async()=>path==='/api/bootstrap'?
+    {platform:'windows',version:'2.3.4-rc.1',build:{version:'2.3.4-rc.1',commit,sourceState:'modified'}}:
+    path==='/api/v1/runtime'?{state:'stopped'}:[]});
+  await env.run('(async()=>{Object.assign(state,await readCore());renderHero()})()');
+  assert.equal(env.get('settings-build').hidden,false);
+  assert.equal(env.get('settings-build-version').textContent,'2.3.4-rc.1');
+  assert.equal(env.get('settings-build-commit').textContent,commit);
+  assert.equal(env.get('settings-build-source-state').textContent,'Modified');
+  env.run('changeLanguage("es")');
+  assert.equal(env.get('settings-build-source-state').textContent,'Con cambios');
+  env.run('state.disconnected=true;renderHero()');
+  assert.equal(env.get('settings-build').hidden,true);
+  assert.equal(env.get('settings-build-commit').textContent,'Desconocido');
+});
 test('shared API rejects nonlocal and normalized outside-API paths before issuing a request',async()=>{
  const env=environment();env.run('state.token="SYNTHETIC_PRIVATE_SESSION"');let calls=0;
  env.context.fetch=async()=>{calls++;throw new Error('Unexpected request')};
