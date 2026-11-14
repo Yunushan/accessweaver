@@ -1905,6 +1905,24 @@ try {
     Assert ((Test-AppImagePath $discordHelper $discordBase '') -and
             -not (Test-AppImagePath $otherDiscord $discordBase '')) 'Application removal scopes shared helper names to the selected installation'
 
+    $splitCordHelper=Join-Path $fixtureAppDirectory 'crashpad_handler.exe'
+    $splitCordNeighbor=Join-Path ($fixtureAppDirectory+'-neighbor') 'crashpad_handler.exe'
+    Assert ((Test-AppImagePath $splitCordHelper '' $fixtureApp) -and
+        -not (Test-AppImagePath $splitCordNeighbor '' $fixtureApp)) 'SplitCord scopes crash handlers to the selected installation'
+    $helper=[pscustomobject]@{ProcessName='crashpad_handler';Path=$splitCordHelper;SessionId=($fixtureSession+1);HasExited=$false}
+    $neighbor=[pscustomobject]@{ProcessName='crashpad_handler';Path=$splitCordNeighbor;SessionId=($fixtureSession+1);HasExited=$false}
+    $script:appRemovalProcesses=@($helper,$neighbor)
+    $refused=$false
+    try{Wait-AppProcessesExited 'splitcord' $fixtureApp 0}catch{$refused=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+    Assert $refused 'SplitCord removal refuses a live crash handler in its installation'
+    $helper.Path=$null
+    $refused=$false
+    try{Wait-AppProcessesExited 'splitcord' $fixtureApp 0}catch{$refused=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+    Assert $refused 'SplitCord removal refuses a live crash handler with unknown executable path'
+    $helper.HasExited=$true
+    Wait-AppProcessesExited 'splitcord' $fixtureApp 0
+    Assert $true 'SplitCord removal disregards exited crash handlers and live handlers in other installations'
+
     $newProcess.HasExited=$true
     $unrelated=[pscustomobject]@{Path=(Join-Path $fixtureAppDirectory 'Other.exe');SessionId=$fixtureSession;HasExited=$false}
     $script:appRemovalProcesses=@($newProcess,$unrelated)

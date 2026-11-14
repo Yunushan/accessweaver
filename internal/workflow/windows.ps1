@@ -3463,7 +3463,10 @@ function Test-AppImagePath([string]$path,[string]$base,[string]$app) {
     if($base){
         return (Under $path $base) -and ([IO.Path]::GetFileName($path) -in @('Discord.exe','DiscordPTB.exe','Update.exe','crashpad_handler.exe'))
     }
-    return [bool]($app -and $path -ieq $app)
+    if(-not $app){return $false}
+    if($path -ieq $app){return $true}
+    return ([IO.Path]::GetFileName($path) -ieq 'crashpad_handler.exe' -and
+        (Under $path ([IO.Path]::GetDirectoryName($app))))
 }
 function Get-AppProcessMatch($process,[string]$base,[string]$app,[string[]]$names) {
     $image=$null
@@ -3485,7 +3488,7 @@ function Get-AppProcessMatch($process,[string]$base,[string]$app,[string[]]$name
 }
 function Get-AppProcessNames([string]$base,[string]$app) {
     if($base){return @('Discord','DiscordPTB','Update','crashpad_handler')}
-    if($app){return [IO.Path]::GetFileNameWithoutExtension($app)}
+    if($app){return @([IO.Path]::GetFileNameWithoutExtension($app),'crashpad_handler')}
 }
 function Test-AppProcessesExited([string]$base,[string]$app,[string[]]$names) {
     $processes=@(Get-Process -ErrorAction Stop)
