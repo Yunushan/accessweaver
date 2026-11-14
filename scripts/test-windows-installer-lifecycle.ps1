@@ -711,6 +711,31 @@ end;
             (State-Snapshot) -ceq $machineBeforeUpgrade) 'Hard-linked upgrade changed installed or machine state'
         Assert-UserState
     }
+    $stage='read-only-payload-upgrade'
+    foreach($case in @(
+        @{file='accessweaver.exe';subject='executable'},
+        @{file='BUILD-INFO.json';subject='BUILD-INFO.json'},
+        @{file='SBOM.cdx.json';subject='SBOM.cdx.json'}
+    )){
+        $subject=Join-Path $install $case.file
+        $upgradeLog=Join-Path $capsule ('upgrade-read-only-'+$case.file+'.log')
+        $originalAttributes=[IO.File]::GetAttributes($subject)
+        Require (($originalAttributes -band [IO.FileAttributes]::ReadOnly) -eq 0) 'Installed release fixture is already read-only'
+        $readOnlyAttributes=$originalAttributes -bor [IO.FileAttributes]::ReadOnly
+        [IO.File]::SetAttributes($subject,$readOnlyAttributes)
+        try {
+            $null=Native-Record $second ($arguments+@('/LOG='+$upgradeLog)) @(7)
+            No-Reparse $upgradeLog
+            $size=(Get-Item -LiteralPath $upgradeLog -ErrorAction Stop).Length
+            Require ($size -gt 0 -and $size -le 1MB) 'Read-only upgrade log is missing or exceeds its bound'
+            Require ([IO.File]::ReadAllText($upgradeLog).Contains('The AccessWeaver '+$case.subject+' cannot be replaced.')) 'Read-only upgrade did not reach release-file preflight'
+            Require ([IO.File]::GetAttributes($subject) -eq $readOnlyAttributes -and
+                $null -eq (Get-PendingInstallFixtureValue)) 'Read-only upgrade changed file attributes or published a pending record'
+        } finally {[IO.File]::SetAttributes($subject,$originalAttributes)}
+        Require ((Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint) -ceq $registrationBefore -and
+            (State-Snapshot) -ceq $machineBeforeUpgrade) 'Read-only upgrade changed installed or machine state'
+        Assert-UserState
+    }
     $stage='upgrade'
     $baselineVersion=$builds[0].version
     $baselinePayload=Digest (Join-Path $install 'accessweaver.exe')

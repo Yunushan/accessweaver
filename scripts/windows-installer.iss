@@ -334,13 +334,15 @@ begin
     Result := (Code = 2) or (Code = 3);
     Exit;
   end;
-  if (Attributes and ($00000400 or $00000010)) <> 0 then Exit;
+  { Setup can prompt instead of replacing a read-only file. Refuse it before
+    recording a pending installation, even when DELETE access is granted. }
+  if (Attributes and ($00000400 or $00000010 or $00000001)) <> 0 then Exit;
   { Probe DELETE and FILE_READ_ATTRIBUTES without writing, truncating or deleting. }
   Handle := AWOpenReplaceProbe(Path, $00010080, $00000007, 0, 3, $00200000, 0);
   if Handle = $FFFFFFFF then Exit;
   try
     Result := (AWGetFileInfo(Handle, Info) <> 0) and
-      ((Info.Attributes and ($00000400 or $00000010)) = 0) and (Info.Links = 1);
+      ((Info.Attributes and ($00000400 or $00000010 or $00000001)) = 0) and (Info.Links = 1);
   finally
     if AWCloseNativeHandle(Handle) = 0 then Result := False;
   end;
@@ -350,11 +352,11 @@ function AWPayloadReplacementPreflight(const Destination: String): String;
 begin
   Result := '';
   if not AWCanReplaceInstalledFile(Destination + '\accessweaver.exe') then
-    Result := 'The AccessWeaver executable cannot be replaced. Close it and release any file locks before retrying setup.'
+    Result := 'The AccessWeaver executable cannot be replaced. Close it, release any file locks and check its file attributes before retrying setup.'
   else if not AWCanReplaceInstalledFile(Destination + '\BUILD-INFO.json') then
-    Result := 'The AccessWeaver BUILD-INFO.json cannot be replaced. Release any file locks before retrying setup.'
+    Result := 'The AccessWeaver BUILD-INFO.json cannot be replaced. Release any file locks and check its file attributes before retrying setup.'
   else if not AWCanReplaceInstalledFile(Destination + '\SBOM.cdx.json') then
-    Result := 'The AccessWeaver SBOM.cdx.json cannot be replaced. Release any file locks before retrying setup.';
+    Result := 'The AccessWeaver SBOM.cdx.json cannot be replaced. Release any file locks and check its file attributes before retrying setup.';
 end;
 
 function AWRegistrationPreflight(const Destination: String): String;
