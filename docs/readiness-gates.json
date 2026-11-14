@@ -382,7 +382,8 @@
           "evidence": [
             ".github/workflows/ci.yml",
             "internal/logfile/writer_test.go",
-            "scripts/test-unix-controller.py"
+            "scripts/test-unix-controller.py",
+            "docs/qualification/77a884e7c213-local-linux-core.json"
           ]
         },
         {

@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "77a884e7c213d7b5bde3cc2347acdffc2fa0e6d0",
+  "sourceTree": "f0a3a6010877b8370a4af5c33ae665c7ebe1474c",
+  "platform": "linux",
+  "architecture": "amd64",
+  "goVersion": "go1.27.4",
+  "host": "Ubuntu WSL",
+  "ordinaryUser": true,
+  "rawGoOutputRetained": false,
+  "dynamicTestNamesRetained": false,
+  "hostedQualification": false,
+  "compilerScratchFilesystem": "ext4",
+  "fixtureFilesystem": "ext4",
+  "results": [
+    {
+      "exitCode": 0,
+      "packageCount": 31,
+      "passed": true,
+      "mode": "vet",
+      "catalogSHA256": "a2e661321136ecc4482be11da0aba85eee27231951f8be7889f826262c3c7be7",
+      "elapsedMilliseconds": 12619
+    },
+    {
+      "exitCode": 0,
+      "streamValid": true,
+      "packageCount": 31,
+      "packageTerminalCount": 31,
+      "catalogedRoots": 850,
+      "passedRoots": 830,
+      "skippedRoots": 20,
+      "failedRoots": 0,
+      "unrunRoots": 0,
+      "failedSourceKnownRoots": [],
+      "failedOrUnreportedPackages": [],
+      "passed": true,
+      "mode": "unit",
+      "catalogSHA256": "a2e661321136ecc4482be11da0aba85eee27231951f8be7889f826262c3c7be7",
+      "elapsedMilliseconds": 86895
+    },
+    {
+      "exitCode": 0,
+      "streamValid": true,
+      "packageCount": 31,
+      "packageTerminalCount": 31,
+      "catalogedRoots": 850,
+      "passedRoots": 830,
+      "skippedRoots": 20,
+      "failedRoots": 0,
+      "unrunRoots": 0,
+      "failedSourceKnownRoots": [],
+      "failedOrUnreportedPackages": [],
+      "passed": true,
+      "mode": "race",
+      "catalogSHA256": "a2e661321136ecc4482be11da0aba85eee27231951f8be7889f826262c3c7be7",
+      "elapsedMilliseconds": 188638
+    }
+  ],
+  "productionQualificationComplete": false,
+  "scope": "Local Linux AMD64 core validation and integration of the reproduced Linux archive",
+  "goToolchainArchiveSHA256": "7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840",
+  "moduleCacheIntegrityVerified": true,
+  "sourceSHA256": {
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+    ".github/workflows/native-core.yml": "cdabe102370a8971a616cafb40a4d6b6a1f1566f6d5f1c348de6240fb9ff3345",
+    "scripts/core-test-catalog/main.go": "0aea23c470ee31523b199e2e6e68d0d42e519c064dae8771c84d30197a3c4d8a",
+    "scripts/core-test-evidence.cjs": "bcb4e6f2bc2d919dc65362f3337a63614fea8345159d444ab004a6752ea75685",
+    "scripts/core-test-evidence.test.cjs": "a1a27ca898f72d50e51c26b4142185cc73f9befc5aec01f5f25c43fbb6cf3c59",
+    "scripts/test-unix-controller.py": "acc0c864ca41019b690301839008b6e2b7de5d6c7d2fa03d68f840f58a1b38d5",
+    "scripts/test-linux-session.py": "00cff6ad309a4b3958cd1de6c023301ee595453d2864b2565b3661f94537e5c4",
+    "web/app.test.cjs": "a80793232baa86b46fe42c2b1660a2f09a3afaea31d2f684736801bfa8770f04"
+  },
+  "archivedController": {
+    "file": "accessweaver-preview-77a884e7c213-linux-amd64.tar.gz",
+    "archiveSHA256": "84af1fae6595f1461e424755de4a128019e79129785ded857aa84053dea29ed4",
+    "binarySHA256": "5233d889d4062c4a427565d0f935683b047ed083820bfa5e47d49fbc89e580c6",
+    "exitCode": 0,
+    "checksPassed": 11,
+    "passed": true,
+    "archivedControllerTested": true,
+    "realVendorExecuted": false,
+    "fixtureFilesystem": "ext4"
+  },
+  "sourceIdenticalWindowsNodeContracts": {
+    "nodeVersion": "v26.8.2",
+    "passedTests": 209,
+    "skippedTests": 4,
+    "failedTests": 0,
+    "totalTests": 213,
+    "realBrowserExecuted": false
+  },
+  "initialFixtureFailure": {
+    "compilerScratch": "Windows-mounted workspace drive",
+    "testFixtureFilesystem": "tmpfs",
+    "unitFailedRoots": 94,
+    "raceFailedRoots": 94,
+    "representativeStorageChecksPassedOnNativeScratchAndFixtures": true
+  }
+}
