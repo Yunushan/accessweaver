@@ -5,7 +5,8 @@ Uses the trusted GitHub CLI/Sigstore verifier. Never executes a release binary.
 Expected source commit/ref must come from a trusted channel, not this directory.
 """
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -87,7 +88,7 @@ def authenticate(path, bundle, commit, ref, gh, *, run_id=None):
 
 
 @contextmanager
-def authenticated_snapshot(directory, commit, ref, gh="gh", *, run_id=None):
+def authenticated_snapshot(directory, commit, ref, gh="gh", *, run_id=None, asset_sha256=None):
     """Keep the authenticated release files available to a trusted caller."""
     validate_identity(commit, ref)
     if run_id is not None:
@@ -95,12 +96,31 @@ def authenticated_snapshot(directory, commit, ref, gh="gh", *, run_id=None):
     with tempfile.TemporaryDirectory(prefix="accessweaver-provenance-") as temporary:
         private = Path(temporary)
         names = snapshot(directory, private, 13)
-        yield private, _verify_snapshot(private, names, commit, ref, gh, run_id=run_id)
+        if asset_sha256 is not None:
+            verify_expected_asset_digests(private, names, asset_sha256)
+        provenance = _verify_snapshot(private, names, commit, ref, gh, run_id=run_id)
+        if asset_sha256 is not None:
+            provenance["assetDigestsMatched"] = len(asset_sha256)
+        yield private, provenance
 
 
-def verify(directory, commit, ref, gh="gh", *, run_id=None):
-    with authenticated_snapshot(directory, commit, ref, gh, run_id=run_id) as (_, provenance):
+def verify(directory, commit, ref, gh="gh", *, run_id=None, asset_sha256=None):
+    with authenticated_snapshot(directory, commit, ref, gh, run_id=run_id,
+                                asset_sha256=asset_sha256) as (_, provenance):
         return provenance
+
+
+def verify_expected_asset_digests(directory, names, asset_sha256):
+    require(isinstance(asset_sha256, dict) and asset_sha256 and asset_sha256.keys() <= names,
+            "Expected asset digests must name files in the release snapshot")
+    for name, expected in asset_sha256.items():
+        require(isinstance(expected, str) and re.fullmatch(r"[a-f0-9]{64}", expected),
+                "Expected a lowercase asset SHA-256 digest")
+        actual = hashlib.sha256()
+        with (directory / name).open("rb") as stream:
+            for block in iter(lambda: stream.read(1 << 20), b""):
+                actual.update(block)
+        require(actual.hexdigest() == expected, "Release asset differs from its expected SHA-256: " + name)
 
 
 def _verify_snapshot(directory, names, commit, ref, gh, *, run_id=None):
@@ -142,9 +162,19 @@ def main():
     parser.add_argument("--source-ref", required=True)
     parser.add_argument("--workflow-run-id", help="require package attestations from this GitHub Actions run")
     parser.add_argument("--gh", default="gh", help="trusted GitHub CLI executable")
+    parser.add_argument("--expected-asset-sha256", action="append", nargs=2, metavar=("FILENAME", "SHA256"),
+                        help="compare a saved asset digest before authenticating the release; repeat for each file")
     args = parser.parse_args()
+    expected_assets = None
+    if args.expected_asset_sha256 is not None:
+        expected_assets = dict(args.expected_asset_sha256)
+        if len(expected_assets) != len(args.expected_asset_sha256):
+            parser.error("each expected asset filename must be supplied once")
     try:
-        print(json.dumps(verify(args.directory, args.source_commit, args.source_ref, args.gh, run_id=args.workflow_run_id)))
+        with redirect_stdout(sys.stderr):
+            result = verify(args.directory, args.source_commit, args.source_ref, args.gh,
+                            run_id=args.workflow_run_id, asset_sha256=expected_assets)
+        print(json.dumps(result))
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile) as error:
         print("Release provenance verification failed: " + str(error), file=sys.stderr)
         return 1

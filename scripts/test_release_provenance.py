@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -86,6 +87,30 @@ class ProvenanceTests(unittest.TestCase):
                 self.assertFalse(contents.call_args.args[0].exists())
                 self.assertEqual(result["subjectsVerified"], 12)
                 self.assertFalse(result["publisherSignatureVerified"])
+
+    def test_saved_windows_asset_digests_are_checked_on_the_authenticated_snapshot(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            names = (BUNDLE_NAME, "BUILD-MANIFEST.json", "SHA256SUMS.txt",
+                     "accessweaver-preview-windows-arm64.zip")
+            pins = {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in names}
+            with patch("verify_release_provenance.authenticate") as authenticate, patch(
+                "verify_release_provenance.verify_contents"
+            ) as contents:
+                for name in names:
+                    with self.subTest(name=name), self.assertRaisesRegex(ValueError, "expected SHA-256"):
+                        verify(root, COMMIT, REF, asset_sha256={**pins, name: "0" * 64})
+                with self.assertRaisesRegex(ValueError, "files in the release snapshot"):
+                    verify(root, COMMIT, REF, asset_sha256={**pins, "../external": "0" * 64})
+                with self.assertRaisesRegex(ValueError, "lowercase asset SHA-256"):
+                    verify(root, COMMIT, REF, asset_sha256={**pins, BUNDLE_NAME: "A" * 64})
+                authenticate.assert_not_called()
+                contents.assert_not_called()
+                result = verify(root, COMMIT, REF, asset_sha256=pins)
+                self.assertEqual(result["assetDigestsMatched"], 4)
+                self.assertEqual(authenticate.call_count, 12)
+                contents.assert_called_once()
 
     def test_every_subject_must_be_attested_by_the_expected_run(self):
         with tempfile.TemporaryDirectory() as folder:

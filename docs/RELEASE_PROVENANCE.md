@@ -14,6 +14,8 @@ Obtain the expected full source commit and complete ref from your independently 
 python scripts/verify_release_provenance.py DOWNLOADED_DIRECTORY --source-commit FULL_TRUSTED_COMMIT --source-ref refs/tags/APPROVED_VERSION_TAG
 ```
 
+If you retained `githubAssetSHA256` from Windows update discovery, pass `--expected-asset-sha256 FILENAME SHA256` for each of its four entries. The verifier compares those pins against the frozen download and reports `assetDigestsMatched`. The complete thirteen-file release and independently trusted commit and ref are still required.
+
 A manual preview uses its independently recorded commit and `refs/heads/main`. The verifier pins all of the following:
 
 - repository `Yunushan/accessweaver` and host `github.com`;
