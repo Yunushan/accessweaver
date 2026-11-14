@@ -236,6 +236,11 @@ def validate_bound_reboot_report(report, mode):
         fields.add(WINDOWS_SETUP_BASELINE)
         require(report.get(WINDOWS_SETUP_BASELINE) is (mode == "upgrade"),
                 "Windows reboot evidence does not match the Setup baseline requirement")
+    if report["schemaVersion"] >= 13:
+        field = "setupWrongBaselineRefusedWithStatePreserved"
+        fields.add(field)
+        require(report.get(field) is (mode == "upgrade"),
+                "Windows reboot evidence does not match the incorrect Setup baseline refusal requirement")
     require(report.keys() == fields, "Windows reboot evidence differs from the current report schema")
     run_id = report["runID"]
     require(isinstance(run_id, str) and re.fullmatch(r"[a-f0-9]{32}", run_id)
@@ -259,7 +264,7 @@ def load_detection_evidence(directory, evidence, subjects, version):
         content = independently_pinned_file(directory, path, fingerprint, maximum=8192)
         report = decode_json(content)
         require(isinstance(report, dict) and type(report.get("schemaVersion")) is int
-                and report["schemaVersion"] in (5, 6, 7, 8, 9, 10, 11, 12) and report.get("stage") == "complete"
+                and report["schemaVersion"] in (5, 6, 7, 8, 9, 10, 11, 12, 13) and report.get("stage") == "complete"
                 and all(report.get(field) is True for field in REBOOT_CHECKS),
                 "Windows reboot qualification is incomplete")
         architecture = report.get("architecture")

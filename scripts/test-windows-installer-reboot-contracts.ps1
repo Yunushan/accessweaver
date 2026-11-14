@@ -4,7 +4,7 @@ $source=Join-Path $PSScriptRoot 'test-windows-installer-reboot.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Reboot fixture failed parsing'}
-foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootDowngradeLog','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Read-RebootEvidence','Assert-RebootPath','Assert-RebootPublisher','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootProfileReadable','Assert-RebootInstalledState','Assert-RebootPackageRemoved','Assert-InstalledDetection','Assert-InstalledPublisher')){
+foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootSetupLog','Get-RebootUpgradeArguments','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Read-RebootEvidence','Assert-RebootPath','Assert-RebootPublisher','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootProfileReadable','Assert-RebootInstalledState','Assert-RebootPackageRemoved','Assert-InstalledDetection','Assert-InstalledPublisher')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -27,8 +27,14 @@ Assert-Refused {Assert-LaterGuestBoot '639303000000000000' '639303000000000000'}
 Assert-Refused {Assert-LaterGuestBoot '639303000000000001' '639303000000000000'}
 Assert-Refused {Assert-LaterGuestBoot 'missing' '639303000000000000'}
 $pin='a'*64
+$pins=@('1.2.3',$pin,('b'*64),('c'*64))
+$arguments=@(Get-RebootUpgradeArguments $pins 'C:\Fixture with spaces\setup.log')
+if($arguments.Count -ne 2 -or $arguments[0] -cne ('/AWUpgradeFrom='+($pins -join ',')) -or
+   $arguments[1] -cne '/LOG="C:\Fixture with spaces\setup.log"'){
+    throw 'Setup requires separate baseline and quoted log arguments'
+}
 $expected=@{
-    schemaVersion=12;runID=('b'*32);setupUpgradeBaselineVerified=$false;architecture='amd64';version='1.0.0';
+    schemaVersion=13;runID=('b'*32);setupUpgradeBaselineVerified=$false;setupWrongBaselineRefusedWithStatePreserved=$false;architecture='amd64';version='1.0.0';
     installMode='clean';previousVersion='';previousPayloadSHA256='';previousSetupSHA256='';previousPublisherSHA256='';userProfilePreservedThroughUpgrade=$false;
     previousPayloadSBOMSHA256='';previousPayloadPublisherSHA256='';previousPayloadTrustVerified=$false;previousBuildInfoSHA256='';
     setupSHA256=$pin;payloadSHA256=$pin;payloadSBOMSHA256=('f'*64);buildInfoSHA256=('7'*64);publisherSHA256=$pin;payloadPublisherSHA256=('e'*64);userSID='synthetic-user';guestID='10000000-2000-3000-4000-000000000005';
@@ -46,7 +52,7 @@ foreach($key in $saved.Keys){
     $changed[$key]='changed'
     Assert-Refused {Assert-RebootIdentity $changed $expected}
 }
-$oldSchema=$saved.Clone();$oldSchema.schemaVersion=11
+$oldSchema=$saved.Clone();$oldSchema.schemaVersion=12
 Assert-Refused {Assert-RebootIdentity $oldSchema $expected}
 $falseClaim=$saved.Clone();$falseClaim.setupUpgradeBaselineVerified=$true
 Assert-Refused {Assert-RebootIdentity $falseClaim $expected}
@@ -133,7 +139,7 @@ $upgradeExpected=$expected.Clone()
 $upgradeExpected.installMode='upgrade';$upgradeExpected.previousVersion='0.9.0';$upgradeExpected.previousPayloadSHA256=$priorDigest
 $upgradeExpected.previousPayloadSBOMSHA256=$priorSBOM;$upgradeExpected.previousPayloadPublisherSHA256=$priorPublisher
 $upgraded=$saved.Clone()
-$upgraded.installMode='upgrade';$upgraded.setupUpgradeBaselineVerified=$true;$upgraded.previousVersion='0.9.0';$upgraded.previousPayloadSHA256=$priorDigest
+$upgraded.installMode='upgrade';$upgraded.setupUpgradeBaselineVerified=$true;$upgraded.setupWrongBaselineRefusedWithStatePreserved=$true;$upgraded.previousVersion='0.9.0';$upgraded.previousPayloadSHA256=$priorDigest
 $upgraded.previousPayloadSBOMSHA256=$priorSBOM;$upgraded.previousPayloadPublisherSHA256=$priorPublisher
 $upgraded.userProfilePreservedThroughUpgrade=$true
 Assert-Refused {Assert-RebootIdentity $upgraded $upgradeExpected}
@@ -154,6 +160,10 @@ $upgradeExpected.previousPublisherSHA256=$pin
 Assert-RebootIdentity $upgraded $upgradeExpected
 $unverifiedBaseline=$upgraded.Clone();$unverifiedBaseline.setupUpgradeBaselineVerified=$false
 Assert-Refused {Assert-RebootIdentity $unverifiedBaseline $upgradeExpected}
+foreach($invalid in @($false,1,'true')){
+    $wrongBaseline=$upgraded.Clone();$wrongBaseline.setupWrongBaselineRefusedWithStatePreserved=$invalid
+    Assert-Refused {Assert-RebootIdentity $wrongBaseline $upgradeExpected}
+}
 Assert-Refused {Assert-RebootIdentity $upgraded $expected}
 $upgraded.userProfilePreservedThroughUpgrade=$false
 Assert-Refused {Assert-RebootIdentity $upgraded $upgradeExpected}
@@ -237,10 +247,27 @@ try {
     Assert-RebootPackageRemoved $tree
     $policy='A newer AccessWeaver version is installed. Use a current or newer installer. This installer will not downgrade it.'
     [IO.File]::WriteAllText($log,"2026-11-13 12:34:56.789   $policy")
-    Assert-RebootDowngradeLog $log
+    Assert-RebootSetupLog $log @($policy) 1MB
     foreach($invalid in @('', 'An unrelated installer initialization failed.', ('prefix '+$policy), ('x'*1MB+$policy))){
         [IO.File]::WriteAllText($log,$invalid)
-        Assert-Refused {Assert-RebootDowngradeLog $log}
+        Assert-Refused {Assert-RebootSetupLog $log @($policy) 1MB}
+    }
+    $refusal='PrepareToInstall failed: The installed AccessWeaver release differs from the approved upgrade baseline.'
+    [IO.File]::WriteAllLines($log,@("2026-11-13 12:34:56.789   $refusal",'Need to restart Windows? No'))
+    Assert-RebootSetupLog $log @($refusal)
+    $verified='AccessWeaver approved upgrade baseline verified.'
+    $completed='AccessWeaver installed payload and registration verified. Pending installation record retired.'
+    $stageMarkers=@($verified,$verified,$completed)
+    [IO.File]::WriteAllLines($log,@("2026-11-13 12:34:56.789   $verified",$verified,$completed))
+    Assert-RebootSetupLog $log $stageMarkers
+    foreach($invalid in @(
+        @{lines=@($verified,$completed)},
+        @{lines=@($completed,$verified,$verified)},
+        @{lines=@($verified,$verified)},
+        @{lines=@($verified,('prefix '+$verified),$completed)}
+    )){
+        [IO.File]::WriteAllLines($log,[string[]]$invalid.lines)
+        Assert-Refused {Assert-RebootSetupLog $log $stageMarkers}
     }
     [void][IO.Directory]::CreateDirectory($sub)
     [IO.File]::WriteAllText($payload,'synthetic payload')

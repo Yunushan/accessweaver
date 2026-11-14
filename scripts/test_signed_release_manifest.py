@@ -141,6 +141,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
             report["previousBuildInfoSHA256"] = "5" * 64 if overrides.get("installMode") == "upgrade" else ""
         if overrides.get("schemaVersion", 5) >= 12:
             report["setupUpgradeBaselineVerified"] = overrides.get("installMode") == "upgrade"
+        if overrides.get("schemaVersion", 5) >= 13:
+            report["setupWrongBaselineRefusedWithStatePreserved"] = overrides.get("installMode") == "upgrade"
         evidence = self.root / filename
         evidence.write_text(json.dumps({**report, **overrides}), encoding="utf-8")
         return evidence, release.digest(evidence)
@@ -167,6 +169,28 @@ class SignedReleaseManifestTests(unittest.TestCase):
         for claim in (False, 1, "true"):
             with self.subTest(signed_claim=claim), self.assertRaisesRegex(ValueError, "Malformed"):
                 release.validate_detection([{**entry, "setupUpgradeBaselineVerified": claim}], files, VERSION)
+
+    def test_schema_13_binds_the_wrong_baseline_refusal_to_upgrade_evidence(self):
+        files = release.inventory(self.candidate, self.subjects)
+        field = "setupWrongBaselineRefusedWithStatePreserved"
+        upgrade = {
+            "installMode": "upgrade", "previousVersion": "1.2.2-rc.1", "previousPayloadSHA256": "d" * 64,
+            "userProfilePreservedThroughUpgrade": True,
+        }
+        for inputs, claim, accepted in (
+            ({}, False, True), (upgrade, True, True), ({}, True, False),
+            (upgrade, False, False), (upgrade, 1, False), (upgrade, None, False),
+        ):
+            with self.subTest(mode=inputs.get("installMode", "clean"), claim=claim):
+                evidence = self.write_reboot_report(
+                    "baseline-refusal.json", schemaVersion=13, **inputs, **{field: claim},
+                )
+                if accepted:
+                    entry, = release.load_detection_evidence(self.candidate, [evidence], files, VERSION)
+                    self.assertEqual(entry["rebootEvidenceSHA256"], evidence[1])
+                else:
+                    with self.assertRaisesRegex(ValueError, "incorrect Setup baseline refusal"):
+                        release.load_detection_evidence(self.candidate, [evidence], files, VERSION)
 
     def test_windows_publisher_requires_exact_bounded_native_report(self):
         artifact = self.root / "inert.exe"

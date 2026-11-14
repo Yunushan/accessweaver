@@ -91,7 +91,7 @@ function Assert-RebootUpgradeOrder($Comparison,[string]$PreviousVersion,[string]
     }
 }
 function Assert-RebootIdentity($Record,$Expected){
-    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 12 -or
+    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 13 -or
        $Record.runID -cne $Expected.runID -or $Record.architecture -cne $Expected.architecture -or
        $Record.installMode -cne $Expected.installMode -or $Record.previousVersion -cne $Expected.previousVersion -or
        $Record.previousPayloadSHA256 -cne $Expected.previousPayloadSHA256 -or
@@ -103,6 +103,8 @@ function Assert-RebootIdentity($Record,$Expected){
        ($Expected.installMode -ceq 'clean' -and $Record.previousBuildInfoSHA256 -cne '') -or
        $Record.setupUpgradeBaselineVerified -isnot [bool] -or
        $Record.setupUpgradeBaselineVerified -ne ($Expected.installMode -ceq 'upgrade') -or
+       $Record.setupWrongBaselineRefusedWithStatePreserved -isnot [bool] -or
+       $Record.setupWrongBaselineRefusedWithStatePreserved -ne ($Expected.installMode -ceq 'upgrade') -or
        $Record.previousPayloadTrustVerified -isnot [bool] -or
        $Record.previousPayloadTrustVerified -ne ($Expected.installMode -ceq 'upgrade') -or
        $Record.previousSetupSHA256 -cne $Expected.previousSetupSHA256 -or
@@ -284,20 +286,31 @@ function Invoke-ApprovedInstaller([string]$Path,[string[]]$Arguments,[switch]$Al
         return $code
     } finally {$process.Dispose()}
 }
-function Assert-RebootDowngradeLog([string]$Path){
+function Get-RebootUpgradeArguments([string[]]$Pins,[string]$Log) {
+    return @(('/AWUpgradeFrom='+($Pins -join ',')),('/LOG="'+$Log+'"'))
+}
+function Assert-RebootSetupLog([string]$Path,[string[]]$ExpectedMarkers,[long]$Maximum=4MB){
     Assert-RebootPath $Path
     $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
     try {
-        if($stream.Length -le 0 -or $stream.Length -gt 1MB){throw 'Downgrade log exceeds fixture bounds'}
+        if($stream.Length -le 0 -or $stream.Length -gt $Maximum){throw 'Installer log exceeds fixture bounds'}
+        $length=$stream.Length
+        $markerIndex=0
         $reader=[IO.StreamReader]::new($stream,[Text.Encoding]::UTF8,$true,4096,$true)
         try {
-            $marker='A newer AccessWeaver version is installed. Use a current or newer installer. This installer will not downgrade it.'
             while($null -ne ($line=$reader.ReadLine())){
-                if($line -cmatch ('\A(?:[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{3})?[ \t]+)?'+[regex]::Escape($marker)+'\s*\z')){return}
+                $message=$line -creplace '\A[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{3})?[ \t]+',''
+                $message=$message.TrimEnd()
+                if($markerIndex -lt $ExpectedMarkers.Count -and $message -ceq $ExpectedMarkers[$markerIndex]){
+                    $markerIndex++
+                }elseif($message -cin $ExpectedMarkers){
+                    throw 'Installer log markers are out of order or repeated'
+                }
             }
+            if($stream.Length -ne $length){throw 'Installer log changed during inspection'}
+            if($markerIndex -ne $ExpectedMarkers.Count){throw 'Installer log did not confirm the expected lifecycle checks'}
         } finally {$reader.Dispose()}
     } finally {$stream.Dispose()}
-    throw 'The older installer did not report the version-policy refusal'
 }
 function Save-RebootFixtureProfile([string]$Controller,[string]$UserStore,[string]$InputPath,[string]$ProfileID,
     [string]$ControllerSHA256,[string]$ControllerPublisherSHA256){
@@ -413,10 +426,10 @@ $capsule=Join-Path $programFiles ('AccessWeaver reboot fixture '+$RunID)
 $baseline=Join-Path $capsule 'prepared.json'
 $report=Join-Path $capsule 'result.json'
 if(-not $PayloadPublisherCertificateSHA256){$PayloadPublisherCertificateSHA256=$PublisherCertificateSHA256}
-$expected=[ordered]@{schemaVersion=12;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
+$expected=[ordered]@{schemaVersion=13;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
     previousVersion=$PreviousVersion;previousPayloadSHA256=$PreviousPayloadSHA256.ToLowerInvariant();
     previousPayloadSBOMSHA256=$PreviousPayloadSBOMSHA256.ToLowerInvariant();
-    setupUpgradeBaselineVerified=$false;previousBuildInfoSHA256=$PreviousBuildInfoSHA256.ToLowerInvariant();
+    setupUpgradeBaselineVerified=$false;setupWrongBaselineRefusedWithStatePreserved=$false;previousBuildInfoSHA256=$PreviousBuildInfoSHA256.ToLowerInvariant();
     previousPayloadPublisherSHA256=$PreviousPayloadPublisherCertificateSHA256.ToLowerInvariant();previousPayloadTrustVerified=$false;
     previousSetupSHA256=$PreviousSetupSHA256.ToLowerInvariant();previousPublisherSHA256=$PreviousPublisherCertificateSHA256.ToLowerInvariant();
     userProfilePreservedThroughUpgrade=$false;
@@ -467,26 +480,36 @@ if($Phase -ceq 'Prepare'){
         $setupGuard=[IO.File]::Open($setup,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
         try {
             Assert-RebootPublisher $setup $SetupSHA256 $PublisherCertificateSHA256
-            $stage='install'
             $setupArguments=@('/SP-','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/RESTARTEXITCODE=3010','/NOICONS')
+            $setupLog=Join-Path $capsule 'setup.log'
+            $approvedArguments=$setupArguments+@('/LOG="'+$setupLog+'"')
+            $completionMarker='AccessWeaver installed payload and registration verified. Pending installation record retired.'
+            $expectedMarkers=@($completionMarker)
             if($installMode -ceq 'upgrade'){
-                $upgradeLog=Join-Path $capsule 'approved-upgrade.log'
+                $stage='upgrade-baseline-refusal'
+                $before=@{installedTreeSHA256=(Get-RebootInstalledTreeDigest $install);registrationSHA256=(Get-RebootRegistrationDigest)}
                 $pins=@($PreviousVersion,$PreviousPayloadSHA256.ToLowerInvariant(),
                     $PreviousPayloadSBOMSHA256.ToLowerInvariant(),$PreviousBuildInfoSHA256.ToLowerInvariant())
-                $setupArguments+=@(('/AWUpgradeFrom='+($pins -join ',')),('/LOG="'+$upgradeLog+'"'))
-            }
-            $expected.setupExitCode=Invoke-ApprovedInstaller $setup $setupArguments -AllowRestartRequired
-            if($installMode -ceq 'upgrade'){
-                Assert-RebootPath $upgradeLog
-                $completion=Get-Item -LiteralPath $upgradeLog -Force -ErrorAction Stop
-                if($completion.PSIsContainer -or $completion.Length -le 0 -or $completion.Length -gt 4MB){
-                    throw 'Approved Setup upgrade log exceeded its inspection bound'
-                }
+                $wrongPins=$pins.Clone()
+                $wrongPins[3]=if($pins[3][0] -ceq '0'){'1'+$pins[3].Substring(1)}else{'0'+$pins[3].Substring(1)}
+                $refusalLog=Join-Path $capsule 'rejected-upgrade.log'
+                $refusalArguments=$setupArguments+(Get-RebootUpgradeArguments $wrongPins $refusalLog)
+                [void](Invoke-ApprovedInstaller $setup $refusalArguments -ExpectedExitCode 7)
+                Assert-RebootSetupLog $refusalLog @('PrepareToInstall failed: The installed AccessWeaver release differs from the approved upgrade baseline.')
+                $stage='upgrade-baseline-refusal-readback'
+                Assert-RebootInstalledState $before (Get-RebootInstalledTreeDigest $install) (Get-RebootRegistrationDigest)
+                Assert-InstalledDetection $true $PreviousVersion $PreviousPayloadSHA256 -CandidateSBOMSHA256 $PreviousPayloadSBOMSHA256 -CandidateBuildInfoSHA256 $PreviousBuildInfoSHA256
+                Assert-RebootUserProfile $userProfile $expected.userProfileSHA256
+                $expected.setupWrongBaselineRefusedWithStatePreserved=$true
+
+                $approvedArguments=$setupArguments+(Get-RebootUpgradeArguments $pins $setupLog)
                 $baselineMarker='AccessWeaver approved upgrade baseline verified.'
-                $verifiedChecks=[regex]::Matches([IO.File]::ReadAllText($upgradeLog),[regex]::Escape($baselineMarker)).Count
-                if($verifiedChecks -lt 2){throw 'Approved Setup did not confirm the installed upgrade baseline before copying'}
-                $expected.setupUpgradeBaselineVerified=$true
+                $expectedMarkers=@($baselineMarker,$baselineMarker,$completionMarker)
             }
+            $stage='install'
+            $expected.setupExitCode=Invoke-ApprovedInstaller $setup $approvedArguments -AllowRestartRequired
+            Assert-RebootSetupLog $setupLog $expectedMarkers
+            $expected.setupUpgradeBaselineVerified=$installMode -ceq 'upgrade'
         } finally {$setupGuard.Dispose()}
         $stage='installed-before-reboot'
         Assert-InstalledDetection $true
@@ -508,7 +531,7 @@ if($Phase -ceq 'Prepare'){
         }
         Write-NewRebootEvidence $baseline $expected
     } catch {
-        Write-NewRebootEvidence $report @{schemaVersion=12;runID=$RunID;stage=$stage;passed=$false}
+        Write-NewRebootEvidence $report @{schemaVersion=13;runID=$RunID;stage=$stage;passed=$false}
         throw 'Windows installer reboot preparation failed. Retain the disposable guest for review.'
     }
     Write-Output 'Prepared the approved installation. Reboot the disposable guest before verification.'
@@ -519,11 +542,12 @@ if(Test-Path -LiteralPath $report -ErrorAction Stop){throw 'The prepared run is 
 $saved=Read-RebootEvidence $baseline
 Assert-RebootIdentity $saved $expected
 Assert-LaterGuestBoot $saved.boot $boot
-Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=12;runID=$RunID}
-$result=[ordered]@{schemaVersion=12;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
+Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=13;runID=$RunID}
+$result=[ordered]@{schemaVersion=13;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
     previousVersion=$expected.previousVersion;previousPayloadSHA256=$expected.previousPayloadSHA256;
     previousPayloadSBOMSHA256=$expected.previousPayloadSBOMSHA256;previousPayloadPublisherSHA256=$expected.previousPayloadPublisherSHA256;
     previousBuildInfoSHA256=$expected.previousBuildInfoSHA256;setupUpgradeBaselineVerified=$saved.setupUpgradeBaselineVerified;
+    setupWrongBaselineRefusedWithStatePreserved=$saved.setupWrongBaselineRefusedWithStatePreserved;
     previousPayloadTrustVerified=$saved.previousPayloadTrustVerified;
     previousSetupSHA256=$expected.previousSetupSHA256;previousPublisherSHA256=$expected.previousPublisherSHA256;
     downgradeRequested=$testDowngrade;downgradeRefused=$false;downgradeStatePreserved=$false;
@@ -570,7 +594,7 @@ try {
             $result.stage='downgrade-refusal'
             [void](Invoke-ApprovedInstaller $olderSetup @('/SP-','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/NOICONS',('/LOG="'+$downgradeLog+'"')) -ExpectedExitCode 1)
         } finally {$olderGuard.Dispose()}
-        Assert-RebootDowngradeLog $downgradeLog
+        Assert-RebootSetupLog $downgradeLog @('A newer AccessWeaver version is installed. Use a current or newer installer. This installer will not downgrade it.') 1MB
         $result.downgradeRefused=$true
         $result.stage='downgrade-readback'
         Assert-InstalledDetection $true -UninstallerDigest $saved.uninstallerSHA256
