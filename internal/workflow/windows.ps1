@@ -2490,17 +2490,24 @@ function Assert-DNSCryptConfiguration([string]$Path,[string]$ExpectedSHA256) {
         throw 'DNSCrypt configuration changed after publication; retain the recovery snapshot'
     }
 }
-function Restore-DNSCryptAfterActivationFailure($Resolver,[string]$Config,[string]$OriginalSHA256,[string]$SnapshotSHA256,[switch]$DNSRestored) {
+function Get-DNSCryptReloadFile($Resolver,$Journal) {
+    $records=@($Journal | Where-Object {$_.kind -ceq 'file' -and $_.path -ieq $Resolver.path})
+    if($Resolver.name -cne 'AccessWeaver-dnscrypt' -or $Resolver.path -isnot [string] -or
+        $Resolver.path -ine (Join-Path $root 'components\dnscrypt\dnscrypt-proxy.toml') -or
+        $records.Count -ne 1 -or $Resolver.originalHash -isnot [string] -or
+        $Resolver.originalHash -notmatch '\A[a-fA-F0-9]{64}\z' -or $records[0].originalHash -ine $Resolver.originalHash){
+        throw 'Original DNSCrypt file recovery is unverified'
+    }
+    return $records[0]
+}
+function Restore-DNSCryptAfterActivationFailure($Resolver,[string]$SnapshotSHA256,[switch]$DNSRestored) {
     try {
-        $records=@($script:undo | Where-Object {$_.kind -ceq 'file' -and $_.path -ieq $Config})
-        if($records.Count -ne 1 -or $records[0].originalHash -ine $OriginalSHA256){
-            throw 'Original DNSCrypt file recovery is unverified'
-        }
+        $record=Get-DNSCryptReloadFile $Resolver $script:undo
         if($DNSRestored){Assert-DNSRecoverySnapshotUnchanged ''}
         else{Assert-DNSRecoverySnapshotUnchanged $SnapshotSHA256}
         if((Assert-RecordedServiceBinding $Resolver) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
-        Restore-RecordedWorkflowFile $records[0]
-        Assert-DNSCryptConfiguration $Config $OriginalSHA256
+        Restore-RecordedWorkflowFile $record
+        Assert-DNSCryptConfiguration $record.path $record.originalHash
         if((Assert-RecordedServiceBinding $Resolver) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
         $service=Get-Service -Name $Resolver.name -ErrorAction Stop
         try {
@@ -2511,7 +2518,8 @@ function Restore-DNSCryptAfterActivationFailure($Resolver,[string]$Config,[strin
             }
             $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
         }finally {if($service -is [IDisposable]){$service.Dispose()}}
-        Assert-DNSCryptConfiguration $Config $OriginalSHA256
+        Assert-DNSCryptConfiguration $record.path $record.originalHash
+        if((Assert-RecordedServiceBinding $Resolver) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
     }catch{
         throw 'DNSCrypt activation failed and the original service could not be recovered; inspect the retained recovery journal'
     }
@@ -2633,7 +2641,7 @@ function Configure-DNS([string]$method) {
     $dnsUndo.snapshotActive=$true
     Save-Journal
     Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
-    $changedConfigurationActivationAttempted=$false
+    $resolverReload=$null
     $adapterMutationAttempted=$false
     $restoredAfterResolverFailure=$false
     try {
@@ -2679,11 +2687,23 @@ function Configure-DNS([string]$method) {
                 Assert-DNSCryptConfiguration $config $publishedConfigSHA256
                 $service=Get-Service -Name $serviceName -ErrorAction Stop
                 try {
+                    if($configChanged -and $configBefore){
+                        $reload=@{kind='dnscrypt-reload';name=$existingResolver.name;commandSHA256=$existingResolver.commandSHA256;
+                            path=$config;originalHash=$configBefore}
+                        [void](Get-DNSCryptReloadFile $reload $script:undo)
+                        $script:undo.Add($reload)
+                        try {Save-Journal}catch{
+                            [void]$script:undo.Remove($reload)
+                            throw
+                        }
+                        $resolverReload=$reload
+                        Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+                        Assert-DNSCryptConfiguration $config $publishedConfigSHA256
+                        if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before startup'}
+                    }
                     if($service.Status -eq 'Stopped'){
-                        $changedConfigurationActivationAttempted=$configChanged
                         Start-Service -InputObject $service -ErrorAction Stop
                     }elseif($configChanged){
-                        $changedConfigurationActivationAttempted=$true
                         Restart-Service -InputObject $service -ErrorAction Stop
                     }
                     $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
@@ -2805,13 +2825,14 @@ function Configure-DNS([string]$method) {
         Event ('Encrypted DNS configured: '+$method)
         $script:dnsConfigured=$true
     } catch {
-        if($changedConfigurationActivationAttempted -and $configBefore){
+        if($resolverReload){
             if($adapterMutationAttempted -and -not $restoredAfterResolverFailure){
                 # Keep the replacement resolver available until the original adapter settings are back.
                 Restore-DNS $snapshotSHA256
                 $restoredAfterResolverFailure=$true
             }
-            Restore-DNSCryptAfterActivationFailure $existingResolver $config $configBefore $snapshotSHA256 -DNSRestored:$restoredAfterResolverFailure
+            Restore-DNSCryptAfterActivationFailure $resolverReload $snapshotSHA256 -DNSRestored:$restoredAfterResolverFailure
+            [void]$script:undo.Remove($resolverReload)
         }
         throw
     }
@@ -4491,6 +4512,15 @@ function Restore-RecordedWorkflowFile($item) {
     }
 }
 function Rollback([string]$OwnerlessWireSockProfile) {
+    $reloads=@($script:undo | Where-Object {$_.kind -ceq 'dnscrypt-reload'})
+    if($reloads.Count -gt 1){return 'Recovery journal contains duplicate DNSCrypt reload entries'}
+    $resolverReload=$reloads | Select-Object -First 1
+    if($resolverReload){
+        try {
+            [void](Get-DNSCryptReloadFile $resolverReload $script:undo)
+            if((Assert-RecordedServiceBinding $resolverReload) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
+        } catch {return $_.Exception.Message}
+    }
     foreach($entry in $script:undo){
         if($entry.kind -in @('service','started-service')){
             try {[void](Assert-RecordedServiceBinding $entry)}catch{return $_.Exception.Message}
@@ -4500,9 +4530,15 @@ function Rollback([string]$OwnerlessWireSockProfile) {
     # with other managed engines. Keep all recorded resources until DNS is safe.
     $dnsEntries=@($script:undo | Where-Object {$_.kind -ceq 'dns'})
     if($dnsEntries.Count -gt 1){return 'DNS recovery journal contains duplicate DNS entries'}
+    if($resolverReload -and ($dnsEntries.Count -ne 1 -or $dnsEntries[0].snapshotActive -isnot [bool] -or
+        -not $dnsEntries[0].snapshotActive -or $dnsEntries[0].snapshotSHA256 -isnot [string] -or
+        $dnsEntries[0].snapshotSHA256 -notmatch '\A[a-fA-F0-9]{64}\z')){
+        return 'DNSCrypt reload requires an active or restored DNS snapshot'
+    }
     if($dnsEntries.Count -eq 1){
         try {
             if(Confirm-DNSRecoveryEntry $dnsEntries[0]){Restore-DNS $dnsEntries[0].snapshotSHA256}
+            if($resolverReload){Restore-DNSCryptAfterActivationFailure $resolverReload $dnsEntries[0].snapshotSHA256 -DNSRestored}
         } catch {return $_.Exception.Message}
     }
     # Drover can still route Discord through the recorded proxy. Restore its
@@ -4533,6 +4569,7 @@ function Rollback([string]$OwnerlessWireSockProfile) {
             Remove-WireSockRefreshTask
         }
         'dns' {continue}
+        'dnscrypt-reload' {continue}
         'wiresock' {
             if($item.legacy){
                 Stop-Service 'wiresock-client-service' -ErrorAction SilentlyContinue
@@ -4547,7 +4584,9 @@ function Rollback([string]$OwnerlessWireSockProfile) {
         'drover' {continue}
         'cache' {if(-not (Under $item.path $env:APPDATA) -or -not (Under $item.backup (Join-Path $root 'backups'))){throw 'Invalid cache recovery path'};No-Reparse $item.path;No-Reparse $item.backup;if(Test-Path -LiteralPath $item.backup){if(Test-Path -LiteralPath $item.path){throw 'Discord created new cache; original cache backup retained for manual review'};Move-Item -LiteralPath $item.backup -Destination $item.path}}
         'file' {
-            if($item.path -ieq (Join-Path $root 'profiles\dns-original.json') -or ($ownershipFile -and $item.path -ieq $ownershipPath)){continue}
+            if($item.path -ieq (Join-Path $root 'profiles\dns-original.json') -or
+                ($resolverReload -and $item.path -ieq $resolverReload.path) -or
+                ($ownershipFile -and $item.path -ieq $ownershipPath)){continue}
             Restore-RecordedWorkflowFile $item
         }
     }}catch{
@@ -4710,6 +4749,10 @@ function Recover-Operation {
             'firewall' {[void](Get-ManagedFirewallRule $entry.name $entry.instance -Journal)}
             'task' {if($entry.name -ne 'AccessWeaver-WireSock-Refresh'){throw 'Recovery journal contains an unmanaged task'}}
             'dns' {[void](Confirm-DNSRecoveryEntry $entry)}
+            'dnscrypt-reload' {
+                [void](Get-DNSCryptReloadFile $entry $saved.undo)
+                if((Assert-RecordedServiceBinding $entry) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
+            }
             'wiresock' {
                 if($entry.cli -ne (WireSock-CLI) -or (-not $entry.legacy -and $entry.profile -notmatch '^AccessWeaver-[a-f0-9]{32}$')){
                     throw 'Recovery journal contains an unmanaged WireSock profile'

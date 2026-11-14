@@ -4,7 +4,7 @@ $path=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.ps
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'DNS journal source failed parsing'}
-foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-DNSRecoveryFileBytes','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Get-WorkflowFileHash','Copy-WorkflowFileToNewPath','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Publish-RecordedWorkflowFile','Backup-File','Restore-RecordedWorkflowFile','Rollback','Remove-All','Get-ManagedFirewallRule','Remove-ManagedFirewallRule','Firewall','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Remove-RecordedService')){
+foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-DNSRecoveryFileBytes','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Get-WorkflowFileHash','Copy-WorkflowFileToNewPath','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Publish-RecordedWorkflowFile','Backup-File','Restore-RecordedWorkflowFile','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Assert-DNSCryptConfiguration','Assert-DNSRecoverySnapshotUnchanged','Rollback','Remove-All','Get-ManagedFirewallRule','Remove-ManagedFirewallRule','Firewall','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Remove-RecordedService')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -543,7 +543,63 @@ try {
     $script:resolverInUse=$false
     Remove-RecordedService 'AccessWeaver-dnscrypt' -Entry $entry
     Require ($script:serviceState -ceq 'absent') 'Verified explicit removal did not retire the service'
+
+    # Replay an interrupted DNSCrypt activation with actual protected-file rollback.
+    $componentDir=Join-Path $root 'components\dnscrypt'
+    $reloadPath=Join-Path $componentDir 'dnscrypt-proxy.toml'
+    $reloadBackup=Join-Path $root 'backups\reload-original'
+    [void][IO.Directory]::CreateDirectory($componentDir)
+    [void][IO.Directory]::CreateDirectory((Split-Path -Parent $reloadBackup))
+    $originalBytes=[Text.Encoding]::UTF8.GetBytes('original resolver configuration')
+    $replacementBytes=[Text.Encoding]::UTF8.GetBytes('replacement resolver configuration')
+    [IO.File]::WriteAllBytes($reloadBackup,$originalBytes)
+    $originalHash=Get-WorkflowBytesSHA256 $originalBytes
+    $reloadFile=@{kind='file';path=$reloadPath;backup=$reloadBackup;originalHash=$originalHash;expectedHash=(Get-WorkflowBytesSHA256 $replacementBytes)}
+    $reloadEntry=@{kind='dnscrypt-reload';name='AccessWeaver-dnscrypt';commandSHA256=(Get-ManagedServiceCommandDigest $script:serviceCommand);
+        path=$reloadPath;originalHash=$originalHash}
+    $dnsUndo.snapshotSHA256=$next
+    $script:serviceState='running';$script:serviceFault=''
+    $script:reloadCount=0;$script:failReload=$true
+    function Get-Service {
+        [CmdletBinding()]param($Name)
+        Require ($Name -ceq 'AccessWeaver-dnscrypt') 'Unexpected resolver service name'
+        $service=[pscustomobject]@{Status='Running'}
+        $service | Add-Member ScriptMethod WaitForStatus {param($State,$Timeout);if($State -cne 'Running'){throw 'Unexpected wait'}}
+        return $service
+    }
+    function Restart-Service {
+        [CmdletBinding()]param($InputObject)
+        Require (-not [IO.File]::Exists($snapshot) -and (Get-WorkflowFileHash $reloadPath) -ceq $originalHash) 'Resolver reloaded before original files and adapter DNS were restored'
+        $script:reloadCount++
+        if($script:failReload){throw 'Synthetic reload failure'}
+    }
+    [IO.File]::WriteAllBytes($snapshot,$secondBytes)
+    [IO.File]::WriteAllBytes($reloadPath,$replacementBytes)
+    $script:saved=@($dnsUndo,$reloadFile,$reloadEntry)
+    $script:order.Clear()
+    $refused=$false
+    try{Recover-Operation}catch{$refused=$_.Exception.Message -match '^DNSCrypt activation failed'}
+    Require ($refused -and $script:reloadCount -eq 1 -and -not [IO.File]::Exists($snapshot) -and
+        $script:order.Contains('restore')) 'Failed reload did not leave journal recovery resumable'
+    $script:failReload=$false
+    $script:order.Clear()
+    Recover-Operation
+    Require ($script:reloadCount -eq 2 -and -not $script:order.Contains('restore') -and
+        (Get-WorkflowFileHash $reloadPath) -ceq $originalHash) 'Retry after file restoration did not reload the original resolver'
+    $invalid=@{kind='dnscrypt-reload';name='AccessWeaver-dnscrypt';commandSHA256=$reloadEntry.commandSHA256;
+        path=$serviceConfig;originalHash=$originalHash}
+    $script:saved=@($dnsUndo,$reloadFile,$invalid)
+    $refused=$false
+    try{Recover-Operation}catch{$refused=$_.Exception.Message -ceq 'Original DNSCrypt file recovery is unverified'}
+    Require ($refused -and $script:reloadCount -eq 2) 'A foreign file reached resolver reload'
 } finally {
+    if($reloadPath){[IO.File]::Delete($reloadPath)}
+    if($reloadBackup){[IO.File]::Delete($reloadBackup)}
+    if($componentDir){
+        [IO.Directory]::Delete($componentDir)
+        [IO.Directory]::Delete((Split-Path -Parent $componentDir))
+        [IO.Directory]::Delete((Split-Path -Parent $reloadBackup))
+    }
     foreach($path in @($registration,$config,$hostPath)){if($path){[IO.File]::Delete($path)}}
     if($services){[IO.Directory]::Delete($services)}
     $env:SystemRoot=$originalSystemRoot
