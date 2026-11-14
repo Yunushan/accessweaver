@@ -2995,7 +2995,7 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         $previouslyInstalled=[bool]$existingApp
         if($Reinstall){
             if($existingApp -ine $originalApp){throw 'Stable Discord changed before reinstall; review the current installation'}
-            Remove-App $variant $originalApp $originalAppDigest
+            [void](Remove-App $variant $originalApp $originalAppDigest)
         }
         if($cleanPTB){
             $stableBeforeSetup=Find-App 'discord'
@@ -3012,7 +3012,7 @@ function Install-App([string]$variant,[switch]$Reinstall) {
     if($cleanPTB){
         # Preserve stable Discord until PTB setup and executable readback succeed.
         $installedDigest=Get-AppExecutableDigest $installedApp
-        if($stableBeforeSetup){Remove-App 'discord' $stableBeforeSetup $stableBeforeSetupDigest}
+        if($stableBeforeSetup){[void](Remove-App 'discord' $stableBeforeSetup $stableBeforeSetupDigest)}
         elseif(Find-App 'discord'){throw 'Stable Discord appeared during PTB setup; review the current installation'}
         $confirmedApp=Wait-App $variant $true 30
         if($confirmedApp -ine $installedApp -or (Get-AppExecutableDigest $confirmedApp) -ine $installedDigest){
@@ -3061,7 +3061,7 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
     Require-DesktopUser
     $app=Find-App $variant
     if($expectedApp -and $app -ine $expectedApp){throw 'Application installation changed before removal'}
-    if(-not $app){return}
+    if(-not $app){return $false}
     $appDigest=Get-AppExecutableDigest $app
     if($expectedAppDigest -and $appDigest -ine $expectedAppDigest){throw 'Application installation changed before removal'}
     $uninstaller=Get-AppUninstaller $variant $app
@@ -3092,6 +3092,7 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
         throw 'Application installation reappeared during uninstall verification'
     }
     Event ('Application uninstalled: '+$variant)
+    return $true
 }
 function Get-AppProcessBase([string]$variant) {
     if($variant -in @('discord','discord-ptb')){
@@ -4182,9 +4183,9 @@ try {
         'remove-all' {Remove-All}
         'app-install' {Install-App $r.engine}
         'app-reinstall' {Install-App $r.engine -Reinstall}
-        'app-remove' {Remove-App $r.engine}
+        'app-remove' {@{application=$r.engine;removed=(Remove-App $r.engine)}}
         'app-start' {Start-App $r.engine}
-        'app-repair' {Stop-AppProcesses 'discord';Restore-Drover;Remove-App 'discord';Preserve-DiscordCache;Start-RepairProxy;Install-App 'discord';Install-Drover;@{repaired='discord';proxy='127.0.0.1:1080'}}
+        'app-repair' {Stop-AppProcesses 'discord';Restore-Drover;[void](Remove-App 'discord');Preserve-DiscordCache;Start-RepairProxy;Install-App 'discord';Install-Drover;@{repaired='discord';proxy='127.0.0.1:1080'}}
         'uninstall' {Invoke-WorkflowUninstall}
         'recover' {Recover-Operation}
         default {throw 'Unknown action'}

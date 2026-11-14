@@ -109,6 +109,30 @@ function Test-FixtureAppChecks([object[]]$Checks,[string[]]$Expected) {
     return $remaining.Count -eq 0
 }
 
+function Remove-FixtureApp([string]$Variant,[switch]$Cleanup){
+    $current=Get-FixtureAppImage (Inspect-Apps) $Variant
+    $previous=$installedImages[$Variant]
+    $script:appEvidenceStage='removal-baseline'
+    if(-not $Cleanup){
+        if(-not $previous -or -not $current -or $current -ine $previous -or
+            -not (Test-Path -LiteralPath $current -PathType Leaf -ErrorAction Stop)){
+            throw 'Recorded application installation could not be verified before removal'
+        }
+    }
+    if($current){
+        $data=Invoke-AppWorkflow @{action='app-remove';engine=$Variant}
+        if($data.application -cne $Variant -or $data.removed -isnot [bool] -or (-not $Cleanup -and -not $data.removed)){
+            throw 'Application workflow did not verify the requested removal'
+        }
+    }
+    $remaining=Get-FixtureAppImage (Inspect-Apps) $Variant
+    $script:appEvidenceStage='removal-readback'
+    if($remaining){throw 'Application remains discoverable after removal'}
+    foreach($image in @($previous,$current) | Where-Object {$_} | Select-Object -Unique){
+        Assert-FixtureLiveImage $image $false
+        if(Test-Path -LiteralPath $image -ErrorAction Stop){throw 'Previously discovered executable remains after removal'}
+    }
+}
 function Start-FixtureApp([string]$Variant){
     if(-not $installedImages.ContainsKey($Variant)){throw 'Application install prerequisite failed'}
     $image=$installedImages[$Variant]
@@ -178,7 +202,7 @@ try {
     $checks=[Collections.Generic.List[object]]::new()
     $script:appEvidenceStage='baseline'
     $report=[ordered]@{
-        schemaVersion=6;runID=$runID;controllerSHA256=$digest;approvedDigestMatched=[bool]$ExpectedSHA256;
+        schemaVersion=7;runID=$runID;controllerSHA256=$digest;approvedDigestMatched=[bool]$ExpectedSHA256;
         fixtureSHA256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant();
         architecture=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant();
         checks=$null;baselineClear=$false;splitCordIncluded=(-not $SkipSplitCord);
@@ -244,19 +268,6 @@ try {
             throw 'New application installation could not be verified'
         }
     }
-    function Remove-FixtureApp([string]$Variant){
-        $current=Get-FixtureAppImage (Inspect-Apps) $Variant
-        if($current){$installedImages[$Variant]=$current}
-        if($current){[void](Invoke-AppWorkflow @{action='app-remove';engine=$Variant})}
-        $remaining=Get-FixtureAppImage (Inspect-Apps) $Variant
-        $script:appEvidenceStage='removal-readback'
-        if($remaining){throw 'Application remains discoverable after removal'}
-        if($installedImages.ContainsKey($Variant)){
-            $image=$installedImages[$Variant]
-            Assert-FixtureLiveImage $image $false
-            if(Test-Path -LiteralPath $image){throw 'Previously discovered executable remains after removal'}
-        }
-    }
     function Check-FixtureCommunications([string]$Variant){
         if(-not $InteractiveCommunications){return}
         foreach($kind in @('text','voice')){
@@ -315,11 +326,7 @@ try {
         }
         Check 'discord-start-after-reinstall' {Start-FixtureApp 'discord'}
         Check-FixtureCommunications 'discord'
-        Check 'discord-remove' {
-            if(-not $installedImages.ContainsKey('discord') -or
-                -not (Get-FixtureAppImage (Inspect-Apps) 'discord')){throw 'Stable Discord install prerequisite failed'}
-            Remove-FixtureApp 'discord'
-        }
+        Check 'discord-remove' {Remove-FixtureApp 'discord'}
         Check 'discord-install-for-ptb-clean' {
             if(Get-FixtureAppImage (Inspect-Apps) 'discord'){throw 'Stable Discord removal prerequisite failed'}
             Install-FixtureApp 'discord'
@@ -338,22 +345,16 @@ try {
         }
         Check 'ptb-start' {Start-FixtureApp 'discord-ptb'}
         Check-FixtureCommunications 'discord-ptb'
-        Check 'ptb-remove' {
-            if(-not $installedImages.ContainsKey('discord-ptb')){throw 'PTB install prerequisite failed'}
-            Remove-FixtureApp 'discord-ptb'
-        }
+        Check 'ptb-remove' {Remove-FixtureApp 'discord-ptb'}
         if(-not $SkipSplitCord){
             Check 'splitcord-install' {Install-FixtureApp 'splitcord'}
             Check 'splitcord-start' {Start-FixtureApp 'splitcord'}
             Check-FixtureCommunications 'splitcord'
-            Check 'splitcord-remove' {
-                if(-not $installedImages.ContainsKey('splitcord')){throw 'SplitCord install prerequisite failed'}
-                Remove-FixtureApp 'splitcord'
-            }
+            Check 'splitcord-remove' {Remove-FixtureApp 'splitcord'}
         }
     } finally {
         foreach($variant in $attempted){
-            Check ('cleanup-'+$variant) {Remove-FixtureApp $variant}
+            Check ('cleanup-'+$variant) {Remove-FixtureApp $variant -Cleanup}
         }
         $report.checks=@($checks.ToArray())
         if($InteractiveCommunications){

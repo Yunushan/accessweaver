@@ -1647,8 +1647,9 @@ try {
     }
     $script:appReappearance=$null
     $script:appRemovalInvoked=$false
-    Remove-App 'splitcord'
-    Assert ($script:appRemovalEvents.Count -eq 1 -and -not (Test-Path -LiteralPath $fixtureApp)) 'Application removal confirms both executable and process readback before success'
+    $removed=Remove-App 'splitcord'
+    Assert ($removed -ceq $true -and $script:appRemovalEvents.Count -eq 1 -and -not (Test-Path -LiteralPath $fixtureApp)) 'Application removal confirms both executable and process readback before success'
+    Assert ((Remove-App 'splitcord') -ceq $false -and $script:appRemovalEvents.Count -eq 1) 'Application removal identifies an already absent client without a vendor launch'
 } finally {
     Remove-Item Function:Get-Process
     foreach($name in $appRemovalSaved.Keys){Set-Item ('Function:'+$name) $appRemovalSaved[$name]}

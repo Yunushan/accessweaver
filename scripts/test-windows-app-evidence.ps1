@@ -4,7 +4,7 @@ $fixture=Join-Path $PSScriptRoot 'test-windows-apps.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($fixture,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Interactive Windows app fixture failed parsing'}
-foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Test-FixtureCommunication','Test-FixtureAppChecks','Start-FixtureApp')){
+foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Test-FixtureCommunication','Test-FixtureAppChecks','Start-FixtureApp','Remove-FixtureApp')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -123,6 +123,63 @@ foreach($alreadyRunning in @($true,'false',$null)){
     $refused=$false
     try{Start-FixtureApp 'discord'}catch{$refused=$_.Exception.Message -ceq 'The application workflow did not confirm a fresh start'}
     if(-not $refused -or $script:observations.Count){throw 'Existing or untyped process evidence was credited as a new start'}
+}
+& {
+    $replacement='C:\Fixture\Updated\Discord.exe'
+    function Inspect-Apps {
+        $trace.Add('discovery')
+        if(-not $observed.Count){throw 'Unexpected removal inventory read'}
+        return [pscustomobject]@{discord=$observed.Dequeue()}
+    }
+    function Invoke-AppWorkflow([hashtable]$Request){
+        if($Request.action -cne 'app-remove' -or $Request.engine -cne 'discord'){throw 'Unexpected removal request'}
+        $trace.Add('remove')
+        return @{application='discord';removed=$removalOutcome}
+    }
+    function Assert-FixtureLiveImage([string]$Path,[bool]$Expected){
+        if($Expected -or $Path -cnotin @($image,$replacement)){throw 'Unexpected removal process check'}
+        $trace.Add('process:'+ $Path)
+    }
+    function Test-Path {
+        [CmdletBinding()]param($LiteralPath,$PathType)
+        if($ErrorActionPreference -ne 'Stop' -or $LiteralPath -cnotin @($image,$replacement)){throw 'Unexpected removal file check'}
+        if($PathType -eq 'Leaf'){return $baselineHasFile}
+        return $LiteralPath -ceq $remainingFile
+    }
+    foreach($case in @(
+        @{name='missing';before=$null;previous=$image;file=$false;launch=$false;success=$false},
+        @{name='unrecorded';before=$image;previous=$null;file=$true;launch=$false;success=$false},
+        @{name='changed';before=$replacement;previous=$image;file=$true;launch=$false;success=$false},
+        @{name='no-file';before=$image;previous=$image;file=$false;launch=$false;success=$false},
+        @{name='ordinary';before=$image;previous=$image;file=$true;launch=$true;success=$true},
+        @{name='workflow-no-op';before=$image;previous=$image;file=$true;result=$false;launch=$true;success=$false},
+        @{name='workflow-invalid-result';before=$image;previous=$image;file=$true;result='true';launch=$true;success=$false},
+        @{name='remains-discoverable';before=$image;previous=$image;file=$true;after=$image;launch=$true;success=$false},
+        @{name='remains-on-disk';before=$image;previous=$image;file=$true;remaining=$image;launch=$true;success=$false},
+        @{name='clean-guest';before=$null;previous=$image;cleanup=$true;launch=$false;success=$true},
+        @{name='cleanup-newly-discovered';before=$replacement;previous=$image;cleanup=$true;launch=$true;success=$true},
+        @{name='cleanup-must-check-previous';before=$replacement;previous=$image;cleanup=$true;remaining=$image;launch=$true;success=$false}
+    )){
+        $installedImages=@{discord=$case.previous}
+        $removalOutcome=if($case.ContainsKey('result')){$case.result}else{$true}
+        $baselineHasFile=$case.file
+        $remainingFile=$case.remaining
+        $trace=[Collections.Generic.List[string]]::new()
+        $observed=[Collections.Generic.Queue[object]]::new()
+        $observed.Enqueue($case.before)
+        $observed.Enqueue($case.after)
+        $passed=$false
+        try{Remove-FixtureApp 'discord' -Cleanup:([bool]$case.cleanup);$passed=$true}catch{}
+        if($passed -ne $case.success -or $trace.Contains('remove') -ne $case.launch){
+            throw ('Unexpected removal result: '+$case.name)
+        }
+        if($passed -and $case.previous -and -not $trace.Contains('process:'+$case.previous)){
+            throw ('Removal omitted the previous image: '+$case.name)
+        }
+        if($passed -and $case.before -and -not $trace.Contains('process:'+$case.before)){
+            throw ('Removal omitted the discovered image: '+$case.name)
+        }
+    }
 }
 $communicationCalls=@($ast.FindAll({param($node)
     $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -ceq 'Check-FixtureCommunications'
