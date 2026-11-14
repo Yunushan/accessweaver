@@ -574,8 +574,21 @@ try {
         if($script:failReload){throw 'Synthetic reload failure'}
     }
     [IO.File]::WriteAllBytes($snapshot,$secondBytes)
-    [IO.File]::WriteAllBytes($reloadPath,$replacementBytes)
     $script:saved=@($dnsUndo,$reloadFile,$reloadEntry)
+    foreach($state in @('missing','changed')){
+        if($state -ceq 'changed'){[IO.File]::WriteAllText($reloadPath,'independent resolver configuration')}
+        $script:order.Clear()
+        $refused=$false
+        try{Recover-Operation}catch{$refused=$_.Exception.Message -match '^DNSCrypt configuration differs from the recorded activation'}
+        Require ($refused -and $script:reloadCount -eq 0 -and $script:order.Count -eq 0 -and
+            (Get-DNSRecoverySnapshotDigest) -ceq $next) 'Stale resolver journal changed adapter DNS'
+        if($state -ceq 'changed'){
+            Require ([IO.File]::ReadAllText($reloadPath) -ceq 'independent resolver configuration') 'Stale resolver journal changed the config'
+        }else{
+            Require (-not [IO.File]::Exists($reloadPath)) 'Stale resolver journal recreated a missing config'
+        }
+    }
+    [IO.File]::WriteAllBytes($reloadPath,$replacementBytes)
     $script:order.Clear()
     $refused=$false
     try{Recover-Operation}catch{$refused=$_.Exception.Message -match '^DNSCrypt activation failed'}

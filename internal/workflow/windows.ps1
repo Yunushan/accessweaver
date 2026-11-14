@@ -2498,7 +2498,12 @@ function Get-DNSCryptReloadFile($Resolver,$Journal) {
         $Resolver.originalHash -notmatch '\A[a-fA-F0-9]{64}\z' -or $records[0].originalHash -ine $Resolver.originalHash){
         throw 'Original DNSCrypt file recovery is unverified'
     }
-    return $records[0]
+    $record=$records[0]
+    $current=Get-WorkflowFileHash $record.path
+    if(-not $current -or ($current -ine $record.originalHash -and $current -ine $record.expectedHash)){
+        throw 'DNSCrypt configuration differs from the recorded activation; preserve the current settings'
+    }
+    return $record
 }
 function Restore-DNSCryptAfterActivationFailure($Resolver,[string]$SnapshotSHA256,[switch]$DNSRestored) {
     try {
