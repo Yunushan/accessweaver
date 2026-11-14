@@ -2406,6 +2406,7 @@ function Configure-DNS([string]$method) {
     if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'DNS recovery snapshot could not be published'}
     $dnsUndo.snapshotActive=$true
     Save-Journal
+    Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
     if($method -eq 'dnscrypt') {
         if($existingResolver -and (Assert-RecordedServiceBinding $existingResolver) -ne 0){
             throw 'Existing DNSCrypt service disappeared before reconfiguration'
@@ -2414,6 +2415,7 @@ function Configure-DNS([string]$method) {
         if(-not (Test-Path -LiteralPath $config)){$example=Join-Path (Split-Path -Parent $binary) 'example-dnscrypt-proxy.toml';if(Test-Path -LiteralPath $example){Copy-Checked $example $config}else{throw 'Official DNSCrypt resolver configuration is missing'}}
         $text=Get-Content -LiteralPath $config -Raw;if($text -notmatch '(?m)^listen_addresses\s*='){throw 'DNSCrypt configuration is missing its top-level listen_addresses setting'};$text=[regex]::Replace($text,'(?m)^listen_addresses\s*=.*$',"listen_addresses = ['127.0.0.1:53', '[::1]:53']")
         if($text -notmatch '(?m)^server_names\s*='){$text="server_names = ['google', 'cloudflare', 'quad9-dnscrypt-ip4-nofilter-pri']`r`n"+$text}
+        Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
         Write-Atomic $config $text
         if($existingResolver){
             if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before restart'}
@@ -2444,6 +2446,7 @@ function Configure-DNS([string]$method) {
                 throw 'DoH policy changed during configuration; review current policy and retain the recovery snapshot'
             }
             if(Test-DNSDohEntriesEqual $current @($provider)){continue}
+            Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
             $script:externalEffectsPending=$true
             if($current.Count -eq 1){
                 Set-DnsClientDohServerAddress -ServerAddress $address -DohTemplate $provider.DohTemplate -AllowFallbackToUdp $false -AutoUpgrade $true -ErrorAction Stop
@@ -2461,6 +2464,7 @@ function Configure-DNS([string]$method) {
             if(-not $bounds['bound'+$number]){continue}
             $familyServers=@($servers | Where-Object {($_.Contains(':')) -eq ($number -eq '6')})
             $dns=Get-DNSClientMutationRow $record.guid ('IPv'+$number) -RequireUp
+            Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
             $script:externalEffectsPending=$true
             $dns | Set-DnsClientServerAddress -ServerAddresses $familyServers -ErrorAction Stop
         }
@@ -2499,9 +2503,11 @@ function Configure-DNS([string]$method) {
         # Keep the old listener available until the new adapter DNS is usable
         # and there is no remaining observed dependency on the loopback listener.
         if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared during DoH configuration'}
+        Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
         Stop-Service -Name $serviceName -ErrorAction Stop
         Set-Service -Name $serviceName -StartupType Manual -ErrorAction Stop
     }
+    Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
     Event ('Encrypted DNS configured: '+$method)
     $script:dnsConfigured=$true
 }
@@ -2602,6 +2608,7 @@ function Restore-DNS([string]$ExpectedSHA256) {
         foreach($number in @('4','6')){
             if(-not $plan.bounds['bound'+$number]){continue}
             $dns=Get-DNSClientMutationRow $record.guid ('IPv'+$number)
+            Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
             $script:externalEffectsPending=$true
             if($record.('dhcp'+$number)){
                 $dns | Set-DnsClientServerAddress -ResetServerAddresses -ErrorAction Stop
@@ -2618,6 +2625,7 @@ function Restore-DNS([string]$ExpectedSHA256) {
             throw 'DoH policy changed during restoration; review current policy and retain the recovery snapshot'
         }
         if(Test-DNSDohEntriesEqual $current $plan.old){continue}
+        Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
         if($plan.old.Count -eq 1){
             $old=$plan.old[0]
             if($current.Count -eq 1){Set-DnsClientDohServerAddress -ServerAddress $plan.address -DohTemplate $old.DohTemplate -AllowFallbackToUdp $old.AllowFallbackToUdp -AutoUpgrade $old.AutoUpgrade -ErrorAction Stop}

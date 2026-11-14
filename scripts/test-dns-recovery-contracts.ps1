@@ -60,6 +60,7 @@ function New-DNSCase {
     $script:appliedDNS=@{};$script:readbackFault='';$script:readbackFaultArmed=$false;$script:silentDohFault='';$script:registryReads=[Collections.Generic.List[string]]::new();$script:dnsValues=@{};$script:renumberDuringDoh=$false;$script:reuseIndexDuringDoh=$false;$script:disappearDuringDoh=$false;$script:dnsReadCount=0;$script:dnsInterfaceReads=0
     $script:replaceSnapshotOnAdapterRead=$false;$script:replaceSnapshotOnJournalSave=$false
     $script:replaceSnapshotOnReceiptSave=$false
+    $script:replaceSnapshotOnActivation=$false;$script:replaceSnapshotOnInterfaceRead=0
     $script:failAction='';$script:failAddress='';$script:failDelete=$false;$script:failSnapshotWrite=$false;$script:failJournalWrite=$false;$script:corruptSnapshotWrite=$false;$script:failActivationWrite=$false;$script:failReceiptWrite=$false
     $script:configureDohReadFault='';$script:postConfigureDohReadFault='';$script:configureDohFaultAddress='';$script:resolverQueries=0;$script:configurationLag=0;$script:readbackWaits=0
     $script:resolverServicePresent=$false;$script:resolverOwnershipFault=$false;$script:resolverBindingFailureRead=0;$script:resolverBindingReads=0;$script:serviceRestarts=0;$script:dnscryptConfigReads=0;$script:dnscryptConfigWrites=0;$script:stageDNSCrypt=$false;$script:serviceStops=0;$script:serviceStartupChanges=0
@@ -149,6 +150,9 @@ function Get-DnsClientServerAddress {
             $row
             if($script:duplicateInventory -and $null -eq $InterfaceIndex){$row}
         }
+    }
+    if($null -ne $InterfaceIndex -and $script:dnsInterfaceReads -eq $script:replaceSnapshotOnInterfaceRead){
+        [IO.File]::AppendAllText($snapshot,' ')
     }
     if($null -ne $InterfaceIndex -and $script:dnsRowFault -eq 'status'){$script:adapters[0].Status='Disconnected'}
     if($null -ne $InterfaceIndex -and $script:reuseBeforeDNSSetter){
@@ -279,6 +283,7 @@ function Save-Journal {
     if($script:undo[0].snapshotActive -and $script:failActivationWrite){throw 'Fixture activation write failed'}
     $script:journalDigest=$script:undo[0].snapshotSHA256
     $script:journalActive=($script:undo[0].snapshotActive -eq $true)
+    if($script:journalActive -and $script:replaceSnapshotOnActivation){[IO.File]::AppendAllText($snapshot,' ')}
     if($script:journalActive -and $script:changeDohOnActivation){
         if($script:changeDohOnActivation -ceq 'remove'){
             $script:currentDoh.Remove('8.8.8.8')
@@ -1064,6 +1069,25 @@ try {
         }
         Assert-DNS ([IO.File]::Exists($snapshot) -and (Snapshot-Hash) -cne $hash -and
             (Mutation-Count) -eq 0 -and -not $script:receiptDigest) 'snapshot-preflight-change-refused'
+    }
+
+    foreach($method in @('doh','dnscrypt')){
+        New-DNSCase;$script:replaceSnapshotOnActivation=$true
+        Reject-DNS {Configure-DNS $method} 'Original DNS snapshot changed'
+        Assert-DNS ((Snapshot-Hash) -cne $script:journalDigest -and (Mutation-Count) -eq 0 -and
+            $script:dnscryptConfigWrites -eq 0 -and $script:serviceRestarts -eq 0) 'snapshot-preflight-change-refused'
+    }
+    foreach($mode in @('restore','configure')){
+        New-DNSCase;$script:replaceSnapshotOnInterfaceRead=2
+        if($mode -ceq 'restore'){
+            Write-DNSFixture (Original-DNSFixture);$hash=Snapshot-Hash
+            Reject-DNS {Restore-DNS $hash} 'Original DNS snapshot changed'
+        }else{
+            Reject-DNS {Configure-DNS 'doh'} 'Original DNS snapshot changed'
+            $hash=$script:journalDigest
+        }
+        Assert-DNS ((Snapshot-Hash) -cne $hash -and $script:unverifiedDNSWrites -eq 1 -and
+            $script:resolverQueries -eq 0 -and -not $script:receiptDigest) 'snapshot-preflight-change-refused'
     }
 
     New-DNSCase;Configure-DNS 'doh';$firstDigest=$script:undo[0].snapshotSHA256
