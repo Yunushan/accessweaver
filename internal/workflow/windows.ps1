@@ -2571,7 +2571,7 @@ function Configure-DNS([string]$method) {
                 }
             }
         })
-        $restartAttempted=$false
+        $changedConfigurationActivationAttempted=$false
         try {
             if($existingResolver){
                 if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before startup'}
@@ -2580,9 +2580,10 @@ function Configure-DNS([string]$method) {
                 $service=Get-Service -Name $serviceName -ErrorAction Stop
                 try {
                     if($service.Status -eq 'Stopped'){
+                        $changedConfigurationActivationAttempted=$configChanged
                         Start-Service -InputObject $service -ErrorAction Stop
                     }elseif($configChanged){
-                        $restartAttempted=$true
+                        $changedConfigurationActivationAttempted=$true
                         Restart-Service -InputObject $service -ErrorAction Stop
                     }
                     $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
@@ -2601,7 +2602,7 @@ function Configure-DNS([string]$method) {
             Set-Service -Name $serviceName -StartupType Automatic -ErrorAction Stop
             Assert-DNSCryptServiceState $resolver
         } catch {
-            if($restartAttempted -and $configBefore){
+            if($changedConfigurationActivationAttempted -and $configBefore){
                 Restore-DNSCryptAfterActivationFailure $existingResolver $config $configBefore $snapshotSHA256
             }
             throw
