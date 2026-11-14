@@ -2114,6 +2114,13 @@ function Read-ObservedDNSFamily([object]$Adapter,[string]$Family,[object]$Row) {
     }
     return @{dhcp=($stored.Count -eq 0);values=@($values)}
 }
+function Test-DNSFamilyMatchesOriginal([object]$Record,[string]$Number,[object]$Observed) {
+    if($Observed.dhcp -ne $Record.('dhcp'+$Number)){return $false}
+    # Lease addresses can change without changing the DNS settings we restore.
+    if($Observed.dhcp){return $true}
+    $original=@(Get-StaticDNSServers @($Record.('ipv'+$Number)) ('IPv'+$Number) $Record.index)
+    return ($Observed.values -join ',') -ceq ($original -join ',')
+}
 function Read-OriginalDNSAdapter([object]$Adapter,[object[]]$Clients) {
     $record=@{guid=[string]$Adapter.InterfaceGuid;index=$Adapter.ifIndex;ipv4=@();ipv6=@();dhcp4=$false;dhcp6=$false;bound4=$false;bound6=$false}
     foreach($number in @('4','6')){
@@ -2329,7 +2336,7 @@ function Configure-DNS([string]$method) {
             }
         }
     }
-    $newOriginals=@()
+    $newOriginals=@{}
     # Extend adapter/family coverage before effects. Preserve every first original
     # and the first global DoH metadata, including across family activation.
     foreach($adapter in $adapters){
@@ -2338,7 +2345,7 @@ function Configure-DNS([string]$method) {
         if(-not $known.Contains($guid)){
             $record=Read-OriginalDNSAdapter $adapter $clients
             $records+=@($record);[void]$known.Add($guid)
-            $newOriginals+=@(@{adapter=$adapter;record=$record;bounds=(Get-OriginalDNSBounds $record)})
+            $newOriginals[$guid]=@{adapter=$adapter;record=$record;bounds=(Get-OriginalDNSBounds $record)}
         } else {
             $record=@($records | Where-Object {$_.guid -eq $guid})[0];$bounds=Get-OriginalDNSBounds $record
             $added=@{bound4=$false;bound6=$false}
@@ -2349,7 +2356,7 @@ function Configure-DNS([string]$method) {
                     $added['bound'+$number]=$true
                 }
             }
-            if($added.bound4 -or $added.bound6){$newOriginals+=@(@{adapter=$adapter;record=$record;bounds=$added})}
+            if($added.bound4 -or $added.bound6){$newOriginals[$guid]=@{adapter=$adapter;record=$record;bounds=$added}}
         }
     }
     if($method -eq 'doh'){
@@ -2374,14 +2381,12 @@ function Configure-DNS([string]$method) {
     }
     if($newOriginals.Count){
         $freshClients=@(Read-DNSClientInventory)
-        foreach($originals in $newOriginals){
+        foreach($originals in $newOriginals.Values){
             foreach($number in @('4','6')){
                 if(-not $originals.bounds['bound'+$number]){continue}
                 $record=$originals.record
                 $current=Read-OriginalDNSFamily $originals.adapter ('IPv'+$number) $freshClients
-                # DHCP lease addresses can change. Restoration applies the DHCP mode.
-                if($current.dhcp -ne $record.('dhcp'+$number) -or
-                   (-not $current.dhcp -and ($current.values -join ',') -cne ($record.('ipv'+$number) -join ','))){
+                if(-not (Test-DNSFamilyMatchesOriginal $record $number $current)){
                     throw 'Original DNS settings changed during capture; no new DNS configuration was applied'
                 }
             }
@@ -2467,7 +2472,15 @@ function Configure-DNS([string]$method) {
         foreach($number in @('4','6')){
             if(-not $bounds['bound'+$number]){continue}
             $familyServers=@($servers | Where-Object {($_.Contains(':')) -eq ($number -eq '6')})
-            $dns=Get-DNSClientMutationRow $record.guid ('IPv'+$number) -RequireUp
+            $family='IPv'+$number
+            $dns=Get-DNSClientMutationRow $record.guid $family -RequireUp
+            if($newOriginals.ContainsKey($record.guid) -and $newOriginals[$record.guid].bounds['bound'+$number]){
+                $currentAdapter=@{InterfaceGuid=$record.guid;ifIndex=$dns.InterfaceIndex}
+                $observed=Read-ObservedDNSFamily $currentAdapter $family $dns
+                if(-not (Test-DNSFamilyMatchesOriginal $record $number $observed)){
+                    throw 'Original DNS settings changed before the adapter update; review current settings and retain the recovery snapshot'
+                }
+            }
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
             $script:externalEffectsPending=$true
             $dns | Set-DnsClientServerAddress -ServerAddresses $familyServers -ErrorAction Stop
@@ -2565,14 +2578,9 @@ function Assert-RestoredDNSState([object[]]$Plans,[object[]]$DohPlans,[bool]$Doh
 function Test-DNSFamilyNeedsRollback([object]$Record,[string]$Number,[object]$Adapter,[object]$Row) {
     $family='IPv'+$Number
     $observed=Read-ObservedDNSFamily $Adapter $family $Row
-    if($observed.dhcp){
-        if($Record.('dhcp'+$Number)){return $false}
-    }else{
+    if(Test-DNSFamilyMatchesOriginal $Record $Number $observed){return $false}
+    if(-not $observed.dhcp){
         $current=$observed.values -join ','
-        if(-not $Record.('dhcp'+$Number)){
-            $original=@(Get-StaticDNSServers @($Record.('ipv'+$Number)) $family $Record.index)
-            if($current -ceq ($original -join ',')){return $false}
-        }
         $loopback=if($Number -ceq '4'){'127.0.0.1'}else{'::1'}
         $providers=@(Get-DNSDohProviders | Where-Object {($_.ServerAddress.Contains(':')) -eq ($Number -ceq '6')})
         if($current -ceq $loopback -or $current -ceq ($providers.ServerAddress -join ',')){return $true}
