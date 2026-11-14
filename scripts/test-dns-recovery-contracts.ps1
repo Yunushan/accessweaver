@@ -82,6 +82,7 @@ function New-DNSCase {
     $script:externalEffectsPending=$false
     $script:currentDoh=@{};$script:calls=[Collections.Generic.List[object]]::new();$script:events=[Collections.Generic.List[string]]::new()
     $script:undo=[Collections.Generic.List[object]]::new();$script:dnsConfigured=$false;$script:journals=0;$script:journalDigest=$null;$script:journalActive=$false;$script:receiptDigest=$null
+    $script:cacheFlushFault='';$script:cacheFlushes=0
 }
 function Original-DNSFixture {
     return @{adapters=@(@{guid='{00000000-0000-0000-0000-000000000001}';index=77;ipv4=@('192.0.2.53');ipv6=@('2001:db8::53');dhcp4=$false;dhcp6=$true});doh=@()}
@@ -286,7 +287,7 @@ function Get-DnsClientDohServerAddress {
         if($script:adapterDriftDuringFinalDohRead -ceq 'renumber'){$script:adapters[0].ifIndex=101}
         else{$script:adapters[0].InterfaceGuid='{00000000-0000-0000-0000-000000000003}'}
     }
-    if($script:dohReads -eq 7 -and $script:receiptDigest){
+    if($script:receiptDigest -and $script:clientDriftDuringReceiptReadback){
         $guid=[string]$script:adapters[0].InterfaceGuid
         switch($script:clientDriftDuringReceiptReadback){
             'static-address' {$script:appliedDNS[$guid+'/IPv4'].values=@('198.51.100.99')}
@@ -458,7 +459,15 @@ function Get-Service {
         return $service
     }
 }
-function Clear-DnsClientCache {[CmdletBinding()]param()}
+function Clear-DnsClientCache {
+    [CmdletBinding()]param()
+    $script:cacheFlushes++
+    if($script:cacheFlushFault -ceq 'unavailable'){Write-Error 'source-dns-cache-flush-failed'}
+    if($script:cacheFlushFault -ceq 'adapter-drift'){
+        $key=([string]$script:adapters[0].InterfaceGuid)+'/IPv4'
+        $script:appliedDNS[$key]=@{dhcp=$false;values=@('198.51.100.53')}
+    }
+}
 function Resolve-DnsName {
     [CmdletBinding()]param($Name,$Server,$Type,[switch]$DnsOnly,[switch]$NoHostsFile,[switch]$QuickTimeout)
     if(-not $Server){
@@ -1338,6 +1347,23 @@ try {
         }
         Restore-DNS
         Assert-DNS (-not [IO.File]::Exists($snapshot)) 'recovery-retry-completes-after-confirmed-inspection'
+    }
+
+    foreach($fault in @('unavailable','adapter-drift')){
+        New-DNSCase
+        Configure-DNS 'doh'
+        $hash=Snapshot-Hash
+        $queries=$script:resolverQueries
+        $flushes=$script:cacheFlushes
+        $script:cacheFlushFault=$fault
+        Reject-DNS {Restore-DNS $hash}
+        Assert-SnapshotRetained $hash
+        Assert-DNS (-not $script:receiptDigest -and $script:cacheFlushes -eq ($flushes+1) -and
+            $script:resolverQueries -eq $queries) ('restore-cache-flush-retains-snapshot-'+$fault)
+        $script:cacheFlushFault=''
+        Restore-DNS
+        Assert-DNS (-not [IO.File]::Exists($snapshot) -and $script:receiptDigest -ceq $hash -and
+            $script:cacheFlushes -eq ($flushes+2) -and $script:resolverQueries -eq $queries) 'restore-cache-flush-retry'
     }
 
     # The original adapter state already matches, so only the DoH setter can

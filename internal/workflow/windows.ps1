@@ -3066,6 +3066,11 @@ function Restore-DNS([string]$ExpectedSHA256) {
         }
     }
     if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'Original DNS snapshot disappeared during restoration'}
+    # Expire cached answers from the managed resolver without requiring the
+    # original network to be online before it can be restored.
+    Clear-DnsClientCache -ErrorAction Stop
+    Assert-RestoredDNSState $plans $dohPlans $dohAvailable
+    Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
     Save-DNSRecoveryReceipt $snapshotSHA256
     # Receipt publication may overlap an adapter or policy change. The active
     # snapshot takes precedence over a receipt until retirement succeeds.
