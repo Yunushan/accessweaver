@@ -1858,8 +1858,7 @@ function Install-Drover {
     }
     $payload=[Text.UTF8Encoding]::new($false).GetBytes((ConvertTo-Json -InputObject $records -Depth 5))
     if($payload.Length -gt 1MB){throw 'Drover ownership record exceeds its size limit'}
-    $sha256=[Security.Cryptography.SHA256]::Create()
-    try {$digest=[BitConverter]::ToString($sha256.ComputeHash($payload)).Replace('-','')} finally {$sha256.Dispose()}
+    $digest=Get-WorkflowBytesSHA256 $payload
     $script:undo.Add(@{kind='drover';manifestSHA256=$digest})
     Save-Journal
     $staged=Join-Path (Split-Path -Parent $manifest) ([guid]::NewGuid().ToString('N')+'.tmp')
@@ -1871,14 +1870,16 @@ function Install-Drover {
         if([IO.File]::Exists($staged)){[IO.File]::Delete($staged)}
     }
 
+    Assert-DroverManifestUnchanged $manifest $digest
     Stop-AppProcesses 'discord'
     foreach($item in $records){
         $name=Split-Path -Leaf $item.path
-        Set-DroverFile $sources[$name] $item.path $item.originalHash $item.installedHash $item.applicationSHA256
+        Set-DroverFile $sources[$name] $item.path $item.originalHash $item.installedHash $item.applicationSHA256 $manifest $digest
     }
     foreach($item in @(Get-DroverRestorePlan $records)){
         if(-not $item.directoryExists -or $item.current -ine $item.installedHash){throw 'Installed Drover file could not be verified'}
     }
+    Assert-DroverManifestUnchanged $manifest $digest
     Event 'Discord drover files installed with original-file backups'
 }
 function Assert-DroverApplication([string]$directory,[string]$expected) {
@@ -1886,7 +1887,8 @@ function Assert-DroverApplication([string]$directory,[string]$expected) {
         throw 'The Discord executable changed; retain Drover recovery for administrator review'
     }
 }
-function Set-DroverFile([string]$source,[string]$target,[string]$before,[string]$expected,[string]$applicationSHA256) {
+function Set-DroverFile([string]$source,[string]$target,[string]$before,[string]$expected,
+        [string]$applicationSHA256,[string]$manifest,[string]$manifestSHA256) {
     if((Get-DroverFileHash $source) -ine $expected){throw 'Drover source changed before publication'}
     $directory=Split-Path -Parent $target
     No-Reparse $target
@@ -1898,6 +1900,7 @@ function Set-DroverFile([string]$source,[string]$target,[string]$before,[string]
         $current=Get-DroverFileHash $target
         if(($before -and $current -ine $before) -or (-not $before -and $current)){throw 'Drover file changed before publication'}
         Assert-DroverApplication $directory $applicationSHA256
+        Assert-DroverManifestUnchanged $manifest $manifestSHA256
         $script:externalEffectsPending=$true
         if($before){[IO.File]::Replace($staged,$target,[NullString]::Value)}
         else{[IO.File]::Move($staged,$target)}
@@ -1979,7 +1982,7 @@ function Read-DroverManifest([string]$Path) {
 }
 function Assert-DroverManifestUnchanged([string]$Path,[string]$ExpectedSHA256) {
     $bytes=Read-DroverManifest $Path
-    if((Get-WorkflowBytesSHA256 $bytes) -cne $ExpectedSHA256){throw 'Drover ownership record changed during restoration'}
+    if((Get-WorkflowBytesSHA256 $bytes) -cne $ExpectedSHA256){throw 'Drover ownership record changed during the operation'}
 }
 function Restore-Drover([string]$ExpectedManifestSHA256) {
     $manifest=Join-Path $root 'profiles\drover-owned.json'
@@ -2007,12 +2010,12 @@ function Restore-Drover([string]$ExpectedManifestSHA256) {
         Assert-DroverApplication (Split-Path -Parent $item.path) $item.applicationSHA256
         if((Get-DroverFileHash $item.path) -ine $item.current){throw 'Drover file changed during restoration'}
         if($item.current -ine $item.original){
-            Assert-DroverManifestUnchanged $manifest $manifestHash
-            $script:externalEffectsPending=$true
             if($item.backup){
                 if((Get-DroverFileHash $item.backup) -ine $item.original){throw 'Original Drover backup changed during restoration'}
-                Set-DroverFile $item.backup $item.path $item.current $item.original $item.applicationSHA256
+                Set-DroverFile $item.backup $item.path $item.current $item.original $item.applicationSHA256 $manifest $manifestHash
             }else{
+                Assert-DroverManifestUnchanged $manifest $manifestHash
+                $script:externalEffectsPending=$true
                 Remove-Item -LiteralPath $item.path -ErrorAction Stop
             }
         }

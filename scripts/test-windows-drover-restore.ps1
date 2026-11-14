@@ -140,6 +140,21 @@ try {
     [IO.File]::WriteAllText($dll,'new DLL')
     [IO.File]::WriteAllText($ini,'new INI')
     $script:undo=[Collections.Generic.List[object]]::new()
+    $script:externalEffectsPending=$false
+    $script:changeOnStop=$true
+    $refused=$false
+    try{Install-Drover}catch{$refused=$_.Exception.Message -ceq 'Drover ownership record changed during the operation'}
+    $changedHash=Get-DroverFileHash $manifest
+    Require ($refused -and $script:undo.Count -eq 1 -and
+        $changedHash -cne $script:undo[0].manifestSHA256 -and
+        -not ([IO.File]::Exists($first) -or [IO.File]::Exists($second)) -and
+        -not $script:externalEffectsPending) 'An ownership record edit allowed Drover file publication'
+    $rollback=@(Rollback)
+    Require ($rollback.Count -eq 1 -and (Get-DroverFileHash $manifest) -ceq $changedHash) 'Rollback did not preserve the intervening ownership record'
+    [IO.File]::Delete($manifest)
+    $script:undo.Clear()
+    $script:changeOnStop=$false
+
     $script:verifyPrepared=$true
     $script:breakInstall=$true
     $script:journaled=$false
