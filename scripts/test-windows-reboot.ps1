@@ -12,7 +12,9 @@ $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 
 function Assert-DNSRebootAdmission($Saved,$Current) {
-    if($Saved.schemaVersion -ne 7 -or $Saved.method -cnotin @('doh','dnscrypt') -or
+    if($Saved.schemaVersion -ne 7 -or $Saved.method -isnot [string] -or
+       $Saved.method -cnotin @('doh','dnscrypt') -or $Saved.method -cne $Current.method -or
+       $Saved.requiredOriginalMode -isnot [string] -or $Saved.requiredOriginalMode -cne $Current.requiredOriginalMode -or
        $Saved.qualificationID -isnot [string] -or $Saved.qualificationID -cnotmatch '\A[a-f0-9]{32}\z' -or
        $Saved.qualificationID -cne $Current.qualificationID -or
        $Saved.guestID -cne $Current.guestID -or $Saved.binarySHA256 -cne $Current.binarySHA256 -or
@@ -143,8 +145,10 @@ if(@($guest).Count -ne 1 -or -not [guid]::TryParseExact([string]$guest.UUID,'D',
 }
 $os=Get-CimInstance Win32_OperatingSystem
 if(@($os).Count -ne 1 -or $os.LastBootUpTime -isnot [DateTime]){throw 'Cannot identify guest boot'}
+$DNS=$DNS.ToLowerInvariant()
+if($DNS -ceq 'auto'){$DNS=if(Get-Command Get-DnsClientDohServerAddress -ErrorAction SilentlyContinue){'doh'}else{'dnscrypt'}}
 $current=@{
-    schemaVersion=7;guestID=$guestID.ToString('D');qualificationID=$QualificationID;
+    schemaVersion=7;method=$DNS;requiredOriginalMode=$RequiredOriginalMode.ToLowerInvariant();guestID=$guestID.ToString('D');qualificationID=$QualificationID;
     binarySHA256=$ExecutableSHA256.ToUpperInvariant();oracleSHA256=(Get-DNSRebootDigest $oracle 1MB);
     fixtureSHA256=(Get-DNSRebootDigest $PSCommandPath 1MB);
     boot=$os.LastBootUpTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
@@ -312,10 +316,8 @@ try {
             throw 'A fresh guest checkpoint and results directory are required'
         }
         $before=Read-DNSAcceptanceState
-        $RequiredOriginalMode=$RequiredOriginalMode.ToLowerInvariant()
-        $coverage=Get-DNSRebootCoverage $before $RequiredOriginalMode
+        $coverage=Get-DNSRebootCoverage $before $current.requiredOriginalMode
         Assert-RebootResolver
-        if($DNS -eq 'auto'){$DNS=if(Get-Command Get-DnsClientDohServerAddress -ErrorAction SilentlyContinue){'doh'}else{'dnscrypt'}}
         [void][IO.Directory]::CreateDirectory($private)
         $security=[Security.AccessControl.DirectorySecurity]::new()
         $security.SetAccessRuleProtection($true,$false)
@@ -333,8 +335,6 @@ try {
             Assert-DNSRebootConfigured $before (Read-DNSAcceptanceState) $DNS
             Assert-DNSRebootActiveResolver $coverage $DNS
             Assert-DNSRebootConfigured $before (Read-DNSAcceptanceState) $DNS
-            $current.method=$DNS
-            $current.requiredOriginalMode=$RequiredOriginalMode
             $current.dns=$before
             $current.snapshotSHA256=Get-DNSRebootDigest $snapshot 8MB
             $current.journalId=Get-DNSRebootJournalID $applied.journal $logDirectory

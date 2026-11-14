@@ -3,7 +3,9 @@
 param(
     [Parameter(Mandatory)][string]$ExecutableName,
     [Parameter(Mandatory)][ValidatePattern('\A[A-Fa-f0-9]{64}\z')][string]$ExecutableSHA256,
-    [Parameter(Mandatory)][ValidateScript({$_ -cmatch '\A[0-9a-f]{32}\z'})][string]$QualificationID
+    [Parameter(Mandatory)][ValidateScript({$_ -cmatch '\A[0-9a-f]{32}\z'})][string]$QualificationID,
+    [Parameter(Mandatory)][ValidateSet('doh','dnscrypt')][string]$DNS,
+    [Parameter(Mandatory)][ValidateSet('any','dhcp-ipv4','static-ipv4','dhcp-ipv6','static-ipv6')][string]$RequiredOriginalMode
 )
 $ErrorActionPreference='Stop'
 
@@ -26,7 +28,8 @@ function Read-DNSRebootReport([string]$Path) {
         return ,$data
     } finally {$stream.Dispose()}
 }
-function Assert-DNSRebootPublicReport([byte[]]$Data,[string]$ApprovedSHA256,[string]$ExpectedQualificationID) {
+function Assert-DNSRebootPublicReport([byte[]]$Data,[string]$ApprovedSHA256,[string]$ExpectedQualificationID,
+    [string]$ExpectedMethod,[string]$ExpectedOriginalMode) {
     $record=[Text.UTF8Encoding]::new($false,$true).GetString($Data) | ConvertFrom-Json -ErrorAction Stop
     $flags=@('rebootVerified','servicesVerified','configuredStateVerified','resolverVerified','journalBindingVerified',
         'journalRecoveryAccepted','originalStateRestored','originalResolverVerified','snapshotRetired','servicesRemoved','passed')
@@ -75,6 +78,9 @@ function Assert-DNSRebootPublicReport([byte[]]$Data,[string]$ApprovedSHA256,[str
         ($record.passed -and @($flags | Where-Object {-not $record.$_}).Count -ne 0)){
         throw 'DNS reboot report outcome is inconsistent'
     }
+    if($record.method -cne $ExpectedMethod -or $record.requiredOriginalMode -cne $ExpectedOriginalMode){
+        throw 'DNS reboot report does not match the scheduled method or original mode'
+    }
     return $record.passed
 }
 function Publish-DNSRebootPublicReport([string]$Destination,[byte[]]$Data) {
@@ -92,7 +98,8 @@ function Publish-DNSRebootPublicReport([string]$Destination,[byte[]]$Data) {
         [IO.File]::Move($staged,$Destination)
     } finally {[IO.File]::Delete($staged)}
 }
-function Complete-DNSRebootStartup([string]$Report,[string]$ResultsDirectory,[scriptblock]$Verify,[scriptblock]$Retire,[string]$ApprovedSHA256,[string]$ExpectedQualificationID) {
+function Complete-DNSRebootStartup([string]$Report,[string]$ResultsDirectory,[scriptblock]$Verify,[scriptblock]$Retire,[string]$ApprovedSHA256,[string]$ExpectedQualificationID,
+    [string]$ExpectedMethod,[string]$ExpectedOriginalMode) {
     if(-not [IO.File]::Exists($Report)){
         try{[void](& $Verify)}catch{
             # A failed acceptance can still have a complete fixed report.
@@ -100,7 +107,7 @@ function Complete-DNSRebootStartup([string]$Report,[string]$ResultsDirectory,[sc
         }
     }
     $data=Read-DNSRebootReport $Report
-    $passed=Assert-DNSRebootPublicReport $data $ApprovedSHA256 $ExpectedQualificationID
+    $passed=Assert-DNSRebootPublicReport $data $ApprovedSHA256 $ExpectedQualificationID $ExpectedMethod $ExpectedOriginalMode
     $destination=Join-Path $ResultsDirectory ('reboot-results-'+$ExpectedQualificationID+'.json')
     Publish-DNSRebootPublicReport $destination $data
     [void](& $Retire)
@@ -119,8 +126,8 @@ $report=Join-Path $private 'reboot-results.json'
 $resultsDirectory='\\vmware-host\Shared Folders\AccessWeaver-Results'
 $binary=Join-Path 'C:\AccessWeaver-Test' $ExecutableName
 $passed=Complete-DNSRebootStartup $report $resultsDirectory {
-    & C:\AccessWeaver-Test\test-windows-reboot.ps1 -Phase Verify -Executable $binary -ExecutableSHA256 $ExecutableSHA256 -QualificationID $QualificationID
+    & C:\AccessWeaver-Test\test-windows-reboot.ps1 -Phase Verify -Executable $binary -ExecutableSHA256 $ExecutableSHA256 -QualificationID $QualificationID -DNS $DNS -RequiredOriginalMode $RequiredOriginalMode
 } {
     Unregister-ScheduledTask -TaskName 'AccessWeaver-Parity-Reboot-Verify' -Confirm:$false -ErrorAction Stop
-} $ExecutableSHA256 $QualificationID
+} $ExecutableSHA256 $QualificationID ($DNS.ToLowerInvariant()) ($RequiredOriginalMode.ToLowerInvariant())
 if(-not $passed){throw 'DNS reboot acceptance failed; fixed evidence published'}

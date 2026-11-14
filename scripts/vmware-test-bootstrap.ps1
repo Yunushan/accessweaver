@@ -75,9 +75,14 @@ try{
                     }
                     $method=if($request.dns){[string]$request.dns}else{'auto'}
                     if($method -cnotin @('auto','doh','dnscrypt')){throw 'Unknown DNS reboot method'}
-                    $originalMode=if($null -eq $request.dnsOriginalMode){'any'}else{[string]$request.dnsOriginalMode}
+                    if($method -ceq 'auto'){$method=if(Get-Command Get-DnsClientDohServerAddress -ErrorAction SilentlyContinue){'doh'}else{'dnscrypt'}}
+                    $originalMode=if($null -eq $request.dnsOriginalMode){'any'}else{$request.dnsOriginalMode}
+                    if($originalMode -isnot [string] -or $originalMode -notin @('any','dhcp-ipv4','static-ipv4','dhcp-ipv6','static-ipv6')){
+                        throw 'Unknown DNS reboot original adapter mode'
+                    }
+                    $originalMode=$originalMode.ToLowerInvariant()
                     $qualificationID=[guid]::NewGuid().ToString('N')
-                    $arguments='-NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\AccessWeaver-Test\vmware-reboot-resume.ps1 -ExecutableName '+$executable+' -ExecutableSHA256 '+$digest+' -QualificationID '+$qualificationID
+                    $arguments='-NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\AccessWeaver-Test\vmware-reboot-resume.ps1 -ExecutableName '+$executable+' -ExecutableSHA256 '+$digest+' -QualificationID '+$qualificationID+' -DNS '+$method+' -RequiredOriginalMode '+$originalMode
                     $action=New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Argument $arguments
                     $trigger=New-ScheduledTaskTrigger -AtStartup;$trigger.Delay='PT30S'
                     $settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -RestartCount 3 -RestartInterval ([TimeSpan]::FromMinutes(1))
