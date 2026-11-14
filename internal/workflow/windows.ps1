@@ -2229,7 +2229,8 @@ function Test-DNSIPv4Answer([object[]]$Answers,[string]$Name) {
     }
     return $false
 }
-function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds=30) {
+function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds=30,
+        [string]$FailureMessage='DNSCrypt loopback readiness could not be verified before adapter configuration') {
     $pending=@($Servers)
     $timer=[Diagnostics.Stopwatch]::StartNew()
     do {
@@ -2246,7 +2247,7 @@ function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds=30) {
         if($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds){break}
         Start-Sleep -Milliseconds 500
     } while($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds)
-    throw 'DNSCrypt loopback readiness could not be verified before adapter configuration'
+    throw $FailureMessage
 }
 function Get-DNSClientMutationRow([string]$Guid,[string]$Family,[switch]$RequireUp) {
     $adapters=@(Get-NetAdapter -ErrorAction Stop)
@@ -2678,6 +2679,11 @@ function Configure-DNS([string]$method) {
         if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'DNS recovery snapshot disappeared during verification'}
         Restore-DNS $snapshotSHA256
         throw 'Resolver verification failed; original DNS settings restored: the ordinary resolver did not return the expected DNS answer'
+    }
+    if($method -ceq 'dnscrypt'){
+        # The ordinary resolver can succeed through one family even when a
+        # different family now points at a failed listener.
+        Wait-DNSCryptListeners $listeners -TimeoutSeconds 5 -FailureMessage 'DNSCrypt loopback readiness could not be verified after adapter configuration'
     }
     # A DNS answer could have come through settings that changed during the probe.
     Assert-ConfiguredDNSServers $adapters $records $servers
