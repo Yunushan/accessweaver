@@ -2562,20 +2562,20 @@ function Assert-RestoredDNSState([object[]]$Plans,[object[]]$DohPlans,[bool]$Doh
         }
     }
 }
-function Assert-DNSRollbackOwnsFamily([object]$Record,[string]$Number,[object]$Adapter,[object]$Row) {
+function Test-DNSFamilyNeedsRollback([object]$Record,[string]$Number,[object]$Adapter,[object]$Row) {
     $family='IPv'+$Number
     $observed=Read-ObservedDNSFamily $Adapter $family $Row
     if($observed.dhcp){
-        if($Record.('dhcp'+$Number)){return}
+        if($Record.('dhcp'+$Number)){return $false}
     }else{
         $current=$observed.values -join ','
         if(-not $Record.('dhcp'+$Number)){
             $original=@(Get-StaticDNSServers @($Record.('ipv'+$Number)) $family $Record.index)
-            if($current -ceq ($original -join ',')){return}
+            if($current -ceq ($original -join ',')){return $false}
         }
         $loopback=if($Number -ceq '4'){'127.0.0.1'}else{'::1'}
         $providers=@(Get-DNSDohProviders | Where-Object {($_.ServerAddress.Contains(':')) -eq ($Number -ceq '6')})
-        if($current -ceq $loopback -or $current -ceq ($providers.ServerAddress -join ',')){return}
+        if($current -ceq $loopback -or $current -ceq ($providers.ServerAddress -join ',')){return $true}
     }
     throw 'Adapter DNS settings changed independently; review current settings before running dns-restore'
 }
@@ -2613,7 +2613,7 @@ function Restore-DNS([string]$ExpectedSHA256) {
             if(-not $plan.bounds['bound'+$number]){continue}
             $rows=@(Get-DNSClientRows $clients $plan.adapter.ifIndex ('IPv'+$number))
             if($rows.Count -ne 1){throw 'An owned DNS family cannot be inspected; retain the recovery snapshot'}
-            if($guardAdapters){Assert-DNSRollbackOwnsFamily $plan.record $number $plan.adapter $rows[0]}
+            if($guardAdapters){[void](Test-DNSFamilyNeedsRollback $plan.record $number $plan.adapter $rows[0])}
         }
     }
     $ownsDoh=Test-DNSRecoveryOwnsDoh $saved
@@ -2643,7 +2643,7 @@ function Restore-DNS([string]$ExpectedSHA256) {
             $dns=Get-DNSClientMutationRow $record.guid ('IPv'+$number)
             if($guardAdapters){
                 $adapter=@{InterfaceGuid=$record.guid;ifIndex=$dns.InterfaceIndex}
-                Assert-DNSRollbackOwnsFamily $record $number $adapter $dns
+                if(-not (Test-DNSFamilyNeedsRollback $record $number $adapter $dns)){continue}
             }
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
             $script:externalEffectsPending=$true
