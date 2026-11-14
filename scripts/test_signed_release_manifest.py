@@ -1060,8 +1060,12 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 self.verify(approved, pin, stage_directory=staging, require_windows_setup_baseline=True, **missing_pins)
         self.assertEqual(list(staging.iterdir()), [])
 
+        launch_detector = self.root / "detect-windows-installer.ps1"
+        detector_bytes = b"inert qualified detector"
+        launch_detector.write_bytes(detector_bytes)
         evidence = self.write_reboot_report(
             "upgrade-baseline-enforced.json", schemaVersion=12, installMode="upgrade",
+            detectorSHA256=release.digest(launch_detector),
             previousVersion="1.2.2-rc.1", previousPayloadSHA256="d" * 64,
             userProfilePreservedThroughUpgrade=True, uninstallerSHA256="e" * 64,
         )
@@ -1140,6 +1144,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
                               "minimum_revocation_sequence": 4, "launch_staged_windows_setup": True}
             native_launch = release.launch_windows_setup
             with patch.object(release, "require_native_windows_setup_host") as host, \
+                    patch.object(release, "__file__", str(self.root / "signed_release_manifest.py")), \
                     patch.object(release, "check_windows_publisher") as publisher, \
                     patch.object(release, "launch_windows_setup", return_value=3010) as launch, \
                     patch.object(release, "detect_windows_upgrade", return_value="detected") as detect:
@@ -1152,7 +1157,29 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 launch.assert_not_called()
                 self.assertEqual(list(staging.iterdir()), [])
 
+                for contents in (None, b"different detector"):
+                    if contents is None:
+                        launch_detector.unlink()
+                    else:
+                        launch_detector.write_bytes(contents)
+                    with self.subTest(detector=contents), self.assertRaisesRegex(ValueError, "unavailable before Setup launch"):
+                        self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
+                                    windows_upgrade_attempt_id="a" * 32)
+                    launch.assert_not_called()
+                    detect.assert_not_called()
+                    publisher.assert_not_called()
+                    self.assertEqual(list(staging.iterdir()), [])
+                launch_detector.write_bytes(detector_bytes)
+                host.reset_mock()
+
+                def restart_required(*args, **kwargs):
+                    with self.assertRaises(PermissionError):
+                        launch_detector.write_bytes(b"changed during Setup")
+                    return 3010
+
+                launch.side_effect = restart_required
                 result = self.verify(approved, pin, policy_pin=launch_pin, **launch_options)["managedUpdate"]
+                launch.side_effect = None
                 self.assertEqual(result["setupExitCode"], 3010)
                 self.assertEqual(result["installedDetection"], "restart-required")
                 detect.assert_not_called()

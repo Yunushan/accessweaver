@@ -766,18 +766,24 @@ def launch_windows_setup(directory, update, policy, *, size, directory_identity,
             return process.wait(timeout=wait_seconds)
 
 
+@contextmanager
+def hold_qualified_windows_detector(qualification):
+    script = Path(__file__).absolute().with_name("detect-windows-installer.ps1")
+    expected = qualification.get(WINDOWS_DETECTOR)
+    if expected is None:
+        yield script
+        return
+    with hold_windows_staging_directory(script.parent), hold_windows_setup(script):
+        info = release_file(script, 1 << 20)
+        verify_staged_update(script, info.st_size, expected)
+        yield script
+
+
 def detect_windows_upgrade(qualification, publisher_pin):
     shell = windows_system_directory() / "WindowsPowerShell" / "v1.0" / "powershell.exe"
-    script = Path(__file__).absolute().with_name("detect-windows-installer.ps1")
     with tempfile.TemporaryFile() as output:
         try:
-            with ExitStack() as held:
-                expected = qualification.get(WINDOWS_DETECTOR)
-                if expected is not None:
-                    held.enter_context(hold_windows_staging_directory(script.parent))
-                    held.enter_context(hold_windows_setup(script))
-                    info = release_file(script, 1 << 20)
-                    verify_staged_update(script, info.st_size, expected)
+            with hold_qualified_windows_detector(qualification) as script:
                 result = subprocess.run(
                     [shell, "-NoProfile", "-NonInteractive", "-File", script, "-UseRegisteredDirectory",
                      "-Version", qualification["version"], "-Architecture", qualification["target"].split("/")[1],
@@ -1007,7 +1013,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
     require(commit not in policy["sourceCommits"] and ref not in policy["sourceRefs"]
             and certificate_sha256 not in policy["approvalCertificateSHA256"],
             "Release source or approval signer is revoked")
-    with tempfile.TemporaryDirectory(prefix="accessweaver-signed-release-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="accessweaver-signed-release-") as temporary, ExitStack() as held:
         root = Path(temporary)
         names = snapshot(directory, root, len(subjects) + 2)
         require(names == subjects.keys() | {MANIFEST, SIGNATURE}, "Unexpected signed release inventory")
@@ -1091,6 +1097,11 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                         or argument == resume_windows_upgrade_baseline_argument,
                         "Windows Setup baseline argument differs from the original approved upgrade")
                 update["windowsSetupBaselineArgument"] = argument
+            if launch_staged_windows_setup:
+                try:
+                    held.enter_context(hold_qualified_windows_detector(baseline))
+                except (OSError, ValueError) as error:
+                    raise ValueError("Qualified Windows detector unavailable before Setup launch") from error
         if windows_publisher is not None:
             update = report["managedUpdate"]
             require(update["updateAvailable"], "Candidate is not an eligible managed upgrade")
