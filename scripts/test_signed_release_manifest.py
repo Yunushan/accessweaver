@@ -1188,6 +1188,40 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 self.assertEqual(host.call_args.kwargs, {"elevated": False})
                 launch.assert_not_called()
                 self.assertEqual(list(staging.iterdir()), [])
+
+                start_file = self.root / (attempt_id + ".started.json")
+                receipt_options = {**detect_options, "resume_windows_upgrade_setup_sha256": None,
+                                   "resume_windows_upgrade_baseline_argument": None}
+                for change, message in (
+                    ({"manifestSHA256": "0" * 64}, "differs from the saved start receipt"),
+                    ({"target": "windows/amd64" if observed["target"] == "windows/arm64" else "windows/arm64"},
+                     "differs from the saved start receipt"),
+                    ({"revocationListSHA256": "0" * 64}, "original revocation policy or a newer sequence"),
+                    ({"revocationPolicySequence": True}, "Malformed Windows upgrade start receipt"),
+                    ({"revocationPolicySequence": 5}, "original revocation policy or a newer sequence"),
+                    ({"setupExitCode": 0}, "Malformed Windows upgrade start receipt"),
+                ):
+                    start_file.write_text(json.dumps({**attempt, **change}), encoding="utf-8")
+                    detect.reset_mock()
+                    with self.subTest(start_receipt=change), self.assertRaisesRegex(ValueError, message):
+                        self.verify(approved, pin, policy_pin=launch_pin, **receipt_options,
+                                    windows_upgrade_start_receipt=(start_file, release.digest(start_file)))
+                    detect.assert_not_called()
+
+                start_file.write_text(json.dumps(attempt), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "independently approved fingerprint"):
+                    self.verify(approved, pin, policy_pin=launch_pin, **receipt_options,
+                                windows_upgrade_start_receipt=(start_file, "0" * 64))
+                newer_policy = {**launch_policy, "sequence": 5}
+                newer_pin = self.write_policy(newer_policy)
+                receipt = (start_file, release.digest(start_file))
+                recovered = self.verify(approved, pin, policy_pin=newer_pin, **receipt_options,
+                                        windows_upgrade_start_receipt=receipt)["managedUpdate"]
+                self.assertEqual(recovered["attemptID"], attempt_id)
+                self.assertEqual(recovered["installedDetection"], "detected")
+                detect.assert_called_once()
+                launch.assert_not_called()
+                self.assertEqual(list(staging.iterdir()), [])
             self.write_policy(self.policy)
         strict_args = [*retry_cli, "--require-windows-setup-wrong-baseline-refusal"]
         refused = subprocess.run(strict_args, capture_output=True, text=True, timeout=30)
@@ -1437,7 +1471,8 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
         argv = ["signed_release_manifest.py", "verify", str(self.candidate),
                 "--source-commit", COMMIT, "--source-ref", REF, "--approval-certificate", "approval.cer",
                 "--approval-certificate-sha256", "b" * 64, "--revocation-list", "revocation.json",
-                "--revocation-list-sha256", self.policy_pin, "--detect-installed-windows-upgrade"]
+                "--revocation-list-sha256", self.policy_pin, "--detect-installed-windows-upgrade",
+                "--windows-upgrade-start-receipt", "start.json", "c" * 64]
         for detection, code in (("detected", 0), ("unverified", 1)):
             report = {"managedUpdate": {"installedDetection": detection}}
             with self.subTest(code=code), patch.object(sys, "argv", argv), \
@@ -1445,6 +1480,7 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
                 self.assertEqual(release.main(), code)
                 self.assertEqual(json.loads(output.getvalue()), report)
                 self.assertIs(verify.call_args.kwargs["detect_installed_windows_upgrade"], True)
+                self.assertEqual(verify.call_args.kwargs["windows_upgrade_start_receipt"], (Path("start.json"), "c" * 64))
                 self.assertIs(verify.call_args.kwargs["launch_staged_windows_setup"], False)
 
     def test_windows_staging_detector_requires_exact_success_and_uses_signed_pins(self):
