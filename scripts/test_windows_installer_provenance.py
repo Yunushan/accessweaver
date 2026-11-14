@@ -11,6 +11,7 @@ from verify_windows_installer_provenance import (
     validate_installation_path_refusals, validate_setup_completion_refusal, validate_uninstall_registration_refusal,
     validate_post_restoration_refusal, validate_restoration_controller_refusals, validate_setup_marker_replacement,
     validate_setup_uninstall_registration_refusal, validate_setup_upgrade_baseline, validate_uninstall_license_refusal,
+    validate_native_documentation_refusals,
 )
 from verify_windows_installer_provenance import BUNDLE_NAME,DEFAULT_VERSIONS,WORKFLOW,check_rejections,stage,subject_names,validate_build,verification_command,verify
 
@@ -380,6 +381,15 @@ class UninstallLicenseRefusalTests(unittest.TestCase):
             "profilePreserved": True, "machineStateUnchanged": True,
         }
         self.assertEqual(validate_uninstall_license_refusal(observation), {"uninstallLicenseDirectoryRefusalVerified": True})
+        documentation = [{**observation, "phase": phase} for phase in (
+            "redirected-docs-refused", "redirected-docs-assets-refused", "redirected-docs-qualification-refused",
+        )]
+        self.assertEqual(validate_native_documentation_refusals(documentation),
+                         {"nativeUninstallDocumentationDirectoryRefusalsVerified": 3})
+        for invalid in (documentation[:-1], documentation[::-1],
+                        [*documentation[:2], {**documentation[-1], "targetPreserved": False}]):
+            with self.assertRaises(ValueError):
+                validate_native_documentation_refusals(invalid)
         self.assertEqual(validate_uninstall_license_refusal({**observation, "controllerBindingRefused": True},
                                                           check_controller_binding=True),
                          {"uninstallLicenseDirectoryRefusalVerified": True})

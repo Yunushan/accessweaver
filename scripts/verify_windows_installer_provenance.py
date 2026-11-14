@@ -405,8 +405,18 @@ def validate_uninstall_license_refusal(value, *, check_controller_binding=False)
             and type(value["exitCode"]) is int and value["exitCode"] == 1
             and type(value["deadlineMilliseconds"]) is int and value["deadlineMilliseconds"] == 180000
             and type(value["elapsedMilliseconds"]) is int and 0 <= value["elapsedMilliseconds"] < 180000
-            and all(value[key] is True for key in flags), "Uninstall license directory refusal was not verified")
+            and all(value[key] is True for key in flags), "Uninstall package directory refusal was not verified")
     return {"uninstallLicenseDirectoryRefusalVerified": True}
+
+
+def validate_native_documentation_refusals(cases):
+    phases = ("redirected-docs-refused", "redirected-docs-assets-refused", "redirected-docs-qualification-refused")
+    require(isinstance(cases, list) and len(cases) == len(phases), "Incomplete native uninstall documentation coverage")
+    for case, phase in zip(cases, phases):
+        require(isinstance(case, dict) and case.get("phase") == phase, "Unexpected native uninstall documentation phase")
+        observation = {key: value for key, value in case.items() if key != "phase"}
+        validate_uninstall_license_refusal(observation)
+    return {"nativeUninstallDocumentationDirectoryRefusalsVerified": len(phases)}
 
 
 def validate_fixed_restoration(refused, removed):
@@ -428,7 +438,7 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
     if report_schema is not None:
         require(type(report.get("schemaVersion")) is int and report["schemaVersion"] == report_schema,
                 "Native lifecycle report schema differs from the approved schema")
-    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in range(11, 49) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in range(11, 50) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -536,6 +546,8 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
             "redirected-docs-refused", "redirected-docs-assets-refused", "redirected-docs-qualification-refused",
         ], "Controller uninstall documentation-directory refusals were not verified")
         restoration["uninstallDocumentationDirectoryRefusalsVerified"] = 3
+    if report["schemaVersion"] >= 49:
+        restoration.update(validate_native_documentation_refusals(report.get("nativeDocumentationRefusals")))
     if report["schemaVersion"] >= 15:
         require(operations[-2].get("registeredUninstallerBindingVerified") is True,
                 "Registered workflow uninstaller binding was not verified")
@@ -621,7 +633,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("directory",type=Path)
     parser.add_argument("--source-commit",required=True);parser.add_argument("--source-ref",required=True);parser.add_argument("--architecture",required=True)
     parser.add_argument("--versions",nargs=2,default=DEFAULT_VERSIONS);parser.add_argument("--gh",default="gh");parser.add_argument("--check-rejections",action="store_true");parser.add_argument("--stage-build-root",type=Path);parser.add_argument("--run-id",required=True)
-    parser.add_argument("--report-schema", type=int, choices=range(11, 49),
+    parser.add_argument("--report-schema", type=int, choices=range(11, 50),
                         help="require the report schema approved for this invocation")
     parser.add_argument("--run-attempt", help="require the approved GitHub Actions attempt on every subject")
     args=parser.parse_args()
