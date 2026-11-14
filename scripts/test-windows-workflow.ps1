@@ -1449,6 +1449,8 @@ try {
         $result | Add-Member -NotePropertyName build -NotePropertyValue $comparisonBuild
         return @{stdout=(ConvertTo-Json -InputObject $result -Depth 3 -Compress);outputComplete=$outputComplete}
     }
+    $metadata[-1].assets[-1].digest='sha256:'+('b'*64)
+    $metadata[-1].assets+=@{name='private-fixture.txt';state='uploaded';digest=('sha256:'+('c'*64))}
     $outputComplete=$true
     $comparison='{"version":"v1.9.0+build.3","currentVersion":"1.8.0","updateAvailable":true}'
     $result=Check-AccessWeaverUpdates
@@ -1456,11 +1458,16 @@ try {
         $result.url -ceq 'https://github.com/Yunushan/accessweaver/releases/tag/v1.9.0%2Bbuild.3' -and
         $result.updateAvailable -eq $true -and $result.publishedAt -ceq $published -and
         $result.build.commit -ceq $controllerBuild.commit -and $result.build.sourceState -ceq 'clean') 'Update discovery filters release metadata and returns the official tag link'
+    Assert ($result.githubAssetSHA256.Count -eq 4 -and
+        $result.githubAssetSHA256['accessweaver-v1.9.0+build.3-windows-amd64.zip'] -ceq ('b'*64) -and
+        $result.githubAssetSHA256['BUILD-MANIFEST.json'] -ceq ('a'*64) -and
+        $result.githubAssetSHA256['SHA256SUMS.txt'] -ceq ('a'*64) -and
+        $result.githubAssetSHA256['BUILD-PROVENANCE.sigstore.json'] -ceq ('a'*64)) 'Update discovery returns only the selected GitHub asset digests'
     $metadata=@($metadata | Where-Object {$_.tag_name -ceq 'v2.0.0-rc.1'})
     $comparison='{"version":"","currentVersion":"1.8.0","updateAvailable":false}'
     $result=Check-AccessWeaverUpdates
     Assert ($calls.Count -eq 2 -and $result.currentVersion -ceq '1.8.0' -and $result.updateAvailable -eq $false -and
-        $null -eq $result.url -and $null -eq $result.publishedAt) 'Update discovery preserves a no-compatible-release result'
+        $null -eq $result.url -and $null -eq $result.publishedAt -and $null -eq $result.githubAssetSHA256) 'Update discovery preserves a no-compatible-release result'
     $comparison='{"version":"v3.0.0","currentVersion":"1.8.0","updateAvailable":true}'
     $refused=$false
     try{Check-AccessWeaverUpdates | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Selected AccessWeaver release was not in the reviewed metadata'}

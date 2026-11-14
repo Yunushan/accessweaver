@@ -471,38 +471,42 @@ function Read-RemoteJSON([string]$Uri,[hashtable]$Headers) {
         return ,$envelope.value
     }finally {$memory.Dispose()}
 }
-function Test-AccessWeaverReleaseAssets($release,[string]$architecture) {
+function Get-AccessWeaverReleaseAssets($release,[string]$architecture) {
     $assets=$release.assets
-    if($assets -isnot [array] -or $assets.Count -gt 100){return $false}
+    if($assets -isnot [array] -or $assets.Count -gt 100){return}
     $archive='accessweaver-'+$release.tag_name+'-windows-'+$architecture+'.zip'
     $required=@($archive,'BUILD-MANIFEST.json','SHA256SUMS.txt','BUILD-PROVENANCE.sigstore.json')
-    $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $digests=@{}
     foreach($asset in $assets){
         if($asset.name -isnot [string] -or $asset.name -cnotin $required){continue}
-        if(-not $seen.Add($asset.name) -or $asset.state -cne 'uploaded' -or
+        if($digests.ContainsKey($asset.name) -or $asset.state -cne 'uploaded' -or
             $asset.digest -isnot [string] -or $asset.digest -cnotmatch '\Asha256:[0-9a-f]{64}\z'){
-            return $false
+            return
         }
+        $digests[$asset.name]=$asset.digest.Substring(7)
     }
-    return $seen.Count -eq $required.Count
+    if($digests.Count -eq $required.Count){return $digests}
 }
 function Check-AccessWeaverUpdates {
     $architecture=[string]$inputData.nativeArchitecture
     if($architecture -cnotin @('amd64','arm64')){throw 'Native Windows architecture is unavailable or unsupported for release discovery'}
     $allReleases=Read-RemoteJSON -Headers @{'User-Agent'='AccessWeaver'} -Uri 'https://api.github.com/repos/Yunushan/accessweaver/releases?per_page=30'
     if($allReleases -isnot [array] -or $allReleases.Count -gt 30){throw 'AccessWeaver release metadata did not contain a valid release list'}
-    $releases=@($allReleases | Where-Object {
-        $_.draft -is [bool] -and -not $_.draft -and $_.prerelease -is [bool] -and $_.tag_name -is [string] -and $_.tag_name.Length -le 256 -and
-        $_.tag_name -cmatch '\Av?[0-9][0-9A-Za-z.+-]*\z' -and
-        ($_.prerelease -eq ($_.tag_name -cmatch '^[^+]+-[^+]+')) -and
-        (Test-AccessWeaverReleaseAssets $_ $architecture)
+    $releases=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+    $tags=@(foreach($release in $allReleases){
+        if($release.draft -isnot [bool] -or $release.draft -or $release.prerelease -isnot [bool] -or
+            $release.tag_name -isnot [string] -or $release.tag_name.Length -gt 256 -or
+            $release.tag_name -cnotmatch '\Av?[0-9][0-9A-Za-z.+-]*\z' -or
+            $release.prerelease -ne ($release.tag_name -cmatch '^[^+]+-[^+]+')){continue}
+        $digests=Get-AccessWeaverReleaseAssets $release $architecture
+        if(-not $digests){continue}
+        $tag=$release.tag_name
+        if($releases.ContainsKey($tag)){throw 'AccessWeaver release metadata contains a duplicate eligible tag'}
+        $releases.Add($tag,@{publishedAt=$release.published_at;githubAssetSHA256=$digests})
+        $tag
     })
-    if(-not $releases.Count){throw 'No published AccessWeaver releases include a Windows archive and verification files for this architecture'}
-    $tags=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-    foreach($release in $releases){
-        if(-not $tags.Add($release.tag_name)){throw 'AccessWeaver release metadata contains a duplicate eligible tag'}
-    }
-    $comparison=Native $inputData.controller (@('system','check-version','--build-identity','--follow-channel')+@($releases|ForEach-Object {$_.tag_name})) -Secret
+    if(-not $tags.Count){throw 'No published AccessWeaver releases include a Windows archive and verification files for this architecture'}
+    $comparison=Native $inputData.controller (@('system','check-version','--build-identity','--follow-channel')+$tags) -Secret
     $invalidComparison='AccessWeaver release comparison returned an invalid result'
     if($comparison.outputComplete -ne $true -or $comparison.stdout -isnot [string] -or $comparison.stdout.Length -gt 4096){throw $invalidComparison}
     try {$check=ConvertFrom-Json -InputObject $comparison.stdout -ErrorAction Stop}catch{throw $invalidComparison}
@@ -520,12 +524,12 @@ function Check-AccessWeaverUpdates {
         $build[$field]=$value
     }
     if($check.version -ceq '' -and $check.updateAvailable -eq $false){
-        return @{version='';currentVersion=$check.currentVersion;build=$build;updateAvailable=$false;url=$null;publishedAt=$null}
+        return @{version='';currentVersion=$check.currentVersion;build=$build;updateAvailable=$false;url=$null;publishedAt=$null;githubAssetSHA256=$null}
     }
-    $release=$releases|Where-Object {$_.tag_name -ceq $check.version}|Select-Object -First 1
+    $release=$releases[$check.version]
     if(-not $release){throw 'Selected AccessWeaver release was not in the reviewed metadata'}
     $url='https://github.com/Yunushan/accessweaver/releases/tag/'+[uri]::EscapeDataString($check.version)
-    @{version=$check.version;currentVersion=$check.currentVersion;build=$build;updateAvailable=$check.updateAvailable;url=$url;publishedAt=$release.published_at}
+    @{version=$check.version;currentVersion=$check.currentVersion;build=$build;updateAvailable=$check.updateAvailable;url=$url;publishedAt=$release.publishedAt;githubAssetSHA256=$release.githubAssetSHA256}
 }
 function Allowed-Download([string]$url) {
     $uri=[uri]$url
