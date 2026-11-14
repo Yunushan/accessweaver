@@ -604,7 +604,7 @@ jobs:
       - name: Authenticate snapshot and stage native candidate (no execution)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/stage_packaged_native.py --download-root build/release-candidate --into build/packaged-native
+        run: python3 scripts/stage_packaged_native.py --workflow-run-id ${{ github.run_id }} --download-root build/release-candidate --into build/packaged-native
       - name: Execute candidate and compare authenticated build identity
         run: |
           node scripts/check-native-environment.cjs --binary ./build/packaged-native/accessweaver${{ runner.os == 'Windows' && '.exe' || '' }} --check-update-build
@@ -722,7 +722,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: >-
           python3 scripts/stage_packaged_native.py --freebsd-guest --target freebsd/${{ matrix.arch }}
-          --download-root build/release-candidate --into build/packaged-bsd
+          --workflow-run-id ${{ github.run_id }} --download-root build/release-candidate --into build/packaged-bsd
       - name: Execute archived candidate and core regressions inside the pinned guest
         env:
           ACCESSWEAVER_DISPOSABLE_BSD_GUEST_TEST: '1'
@@ -816,7 +816,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: >-
           python3 scripts/stage_packaged_native.py --openbsd-guest --target openbsd/${{ matrix.arch }}
-          --download-root build/release-candidate --into build/packaged-openbsd
+          --workflow-run-id ${{ github.run_id }} --download-root build/release-candidate --into build/packaged-openbsd
       - name: Execute archived candidate and core regressions inside the pinned guest
         env:
           ACCESSWEAVER_DISPOSABLE_BSD_GUEST_TEST: '1'

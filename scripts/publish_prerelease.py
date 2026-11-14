@@ -267,7 +267,7 @@ def verified_candidate(directory, commit, ref, rebuild_checksums_sha256, native_
     with tempfile.TemporaryDirectory(prefix="accessweaver-publish-") as temporary:
         frozen = Path(temporary)
         names = snapshot(directory, frozen, 13)
-        verify(frozen, commit, ref)
+        verify(frozen, commit, ref, run_id=run_id)
         expected = {name: "sha256:" + digest(frozen / name) for name in names}
         if (rebuild_checksums_sha256 is not None
                 and expected.get("SHA256SUMS.txt") != "sha256:" + rebuild_checksums_sha256):
@@ -393,7 +393,7 @@ def main():
                         help="verify package, rebuild and qualification without accessing release state")
     parser.add_argument("--expected-qualification-sha256",
                         help="digest of target evidence and attestation files from the read-only verification job")
-    parser.add_argument("--workflow-run-id", required=True, help="expected GitHub Actions run ID for the target attestations")
+    parser.add_argument("--workflow-run-id", required=True, help="expected GitHub Actions run ID for the archive and target attestations")
     args = parser.parse_args()
     if not re.fullmatch(r"[1-9][0-9]{0,19}", args.workflow_run_id):
         parser.error("expected a numeric GitHub Actions run ID")

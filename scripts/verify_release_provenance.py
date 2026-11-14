@@ -65,9 +65,13 @@ def verification_command(path, bundle, commit, ref, gh="gh"):
             "--predicate-type", PREDICATE, "--deny-self-hosted-runners", "--format", "json"]
 
 
-def authenticate(path, bundle, commit, ref, gh):
+def authenticate(path, bundle, commit, ref, gh, *, run_id=None):
+    command = verification_command(path, bundle, commit, ref, gh)
+    if run_id is not None:
+        authenticate_run(command, run_id)
+        return
     try:
-        subprocess.run(verification_command(path, bundle, commit, ref, gh), check=True,
+        subprocess.run(command, check=True,
                        capture_output=True, text=True, timeout=120)
     except subprocess.CalledProcessError as error:
         # Do not echo a child process's entire response/environment into logs.
@@ -75,21 +79,23 @@ def authenticate(path, bundle, commit, ref, gh):
 
 
 @contextmanager
-def authenticated_snapshot(directory, commit, ref, gh="gh"):
+def authenticated_snapshot(directory, commit, ref, gh="gh", *, run_id=None):
     """Keep the authenticated release files available to a trusted caller."""
     validate_identity(commit, ref)
+    if run_id is not None:
+        validate_run_id(run_id)
     with tempfile.TemporaryDirectory(prefix="accessweaver-provenance-") as temporary:
         private = Path(temporary)
         names = snapshot(directory, private, 13)
-        yield private, _verify_snapshot(private, names, commit, ref, gh)
+        yield private, _verify_snapshot(private, names, commit, ref, gh, run_id=run_id)
 
 
-def verify(directory, commit, ref, gh="gh"):
-    with authenticated_snapshot(directory, commit, ref, gh) as (_, provenance):
+def verify(directory, commit, ref, gh="gh", *, run_id=None):
+    with authenticated_snapshot(directory, commit, ref, gh, run_id=run_id) as (_, provenance):
         return provenance
 
 
-def _verify_snapshot(directory, names, commit, ref, gh):
+def _verify_snapshot(directory, names, commit, ref, gh, *, run_id=None):
     require({BUNDLE_NAME, "BUILD-MANIFEST.json", "SHA256SUMS.txt"} <= names,
             "Expected ten archives, manifest, checksums and provenance bundle")
     bundle = directory / BUNDLE_NAME
@@ -98,7 +104,7 @@ def _verify_snapshot(directory, names, commit, ref, gh):
     regular_file(manifest_path, 1 << 20)
     regular_file(directory / "SHA256SUMS.txt", 64 << 10)
     # Authenticate metadata BEFORE interpreting it as the artifact selection.
-    authenticate(manifest_path, bundle, commit, ref, gh)
+    authenticate(manifest_path, bundle, commit, ref, gh, run_id=run_id)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     require(manifest.get("sourceCommit") == commit and manifest.get("sourceState") == "clean",
             "Authenticated manifest does not describe the expected clean source")
@@ -112,7 +118,7 @@ def _verify_snapshot(directory, names, commit, ref, gh):
             "Unattested or omitted release input")
     subjects = [directory / "SHA256SUMS.txt"] + [directory / name for name in sorted(archives)]
     for subject in subjects:
-        authenticate(subject, bundle, commit, ref, gh)
+        authenticate(subject, bundle, commit, ref, gh, run_id=run_id)
     # Existing content checks validate all archive paths, notices, checksums and
     # embedded identities. No --execute-native path is enabled by this verifier.
     verify_contents(directory, execute_native=False)
@@ -126,10 +132,11 @@ def main():
     parser.add_argument("directory", type=Path)
     parser.add_argument("--source-commit", required=True)
     parser.add_argument("--source-ref", required=True)
+    parser.add_argument("--workflow-run-id", help="require package attestations from this GitHub Actions run")
     parser.add_argument("--gh", default="gh", help="trusted GitHub CLI executable")
     args = parser.parse_args()
     try:
-        print(json.dumps(verify(args.directory, args.source_commit, args.source_ref, args.gh)))
+        print(json.dumps(verify(args.directory, args.source_commit, args.source_ref, args.gh, run_id=args.workflow_run_id)))
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile) as error:
         print("Release provenance verification failed: " + str(error), file=sys.stderr)
         return 1

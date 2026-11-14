@@ -87,6 +87,38 @@ class ProvenanceTests(unittest.TestCase):
                 self.assertEqual(result["subjectsVerified"], 12)
                 self.assertFalse(result["publisherSignatureVerified"])
 
+    def test_every_subject_must_be_attested_by_the_expected_run(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            for substituted_subject in (None, "BUILD-MANIFEST.json", "SHA256SUMS.txt",
+                                        "accessweaver-preview-windows-arm64.zip"):
+                seen = []
+
+                def gh_result(command, **_):
+                    subject = Path(command[3]).name
+                    seen.append(subject)
+                    self.assertEqual(command[-2:], [
+                        "--jq", ".[] | .verificationResult.signature.certificate.runInvocationURI",
+                    ])
+                    run_id = "67890" if subject == substituted_subject else "12345"
+                    return subprocess.CompletedProcess(
+                        command, 0, f"https://github.com/{REPOSITORY}/actions/runs/{run_id}/attempts/2\n", "",
+                    )
+
+                with self.subTest(subject=substituted_subject), patch(
+                    "verify_release_provenance.subprocess.run", side_effect=gh_result,
+                ), patch("verify_release_provenance.verify_contents") as contents:
+                    if substituted_subject is None:
+                        self.assertEqual(verify(root, COMMIT, REF, run_id="12345")["subjectsVerified"], 12)
+                        self.assertEqual(len(seen), 12)
+                        contents.assert_called_once()
+                    else:
+                        with self.assertRaisesRegex(ValueError, "expected GitHub Actions run"):
+                            verify(root, COMMIT, REF, run_id="12345")
+                        self.assertEqual(seen[-1], substituted_subject)
+                        contents.assert_not_called()
+
     def test_tag_must_match_authenticated_manifest_version_and_release_label(self):
         for label, version, accepted in (
             ("v1.2.3-alpha", "1.2.3-alpha", True),

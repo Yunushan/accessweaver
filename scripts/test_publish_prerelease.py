@@ -293,6 +293,7 @@ class PrereleasePublicationTests(unittest.TestCase):
                     self.assertEqual(preview_digest, hashlib.sha256(canonical).hexdigest())
                     self.assertNotIn(str(self.directory), output.getvalue())
                     verify.assert_called_once()
+                    self.assertEqual(verify.call_args.kwargs, {"run_id": "123456"})
                     self.assertEqual(authenticate.call_count, 20)
                     self.assertTrue(all(call.args[4] == "123456" for call in authenticate.call_args_list))
                 with (patch.object(sys, "argv", [*argv, "0" * 64]),
@@ -416,7 +417,7 @@ class PrereleasePublicationTests(unittest.TestCase):
     def test_publication_uses_the_verified_copy_when_source_changes(self):
         changed = self.directory / "fixture-12.zip"
 
-        def verify_snapshot(frozen, _commit, _ref):
+        def verify_snapshot(frozen, _commit, _ref, **_):
             self.assertEqual((frozen / changed.name).read_bytes(), changed.name.encode())
             changed.write_bytes(b"changed original")
 
@@ -551,7 +552,7 @@ class PrereleasePublicationTests(unittest.TestCase):
                 releases = [existing] if published else [existing, self.release(True), self.release(False)]
                 seen = []
 
-                def verify(directory, commit, ref):
+                def verify(directory, commit, ref, *, run_id=None):
                     self.assertEqual((commit, ref), (self.commit, self.ref))
                     seen.append((directory / bundle_name).read_bytes())
                     self.assertEqual((directory / "fixture-12.zip").read_bytes(), b"fixture-12.zip")
@@ -588,7 +589,7 @@ class PrereleasePublicationTests(unittest.TestCase):
         }
         for payload, trusted in ((b"x" * len(good), True), (good, False)):
             with self.subTest(trusted=trusted):
-                def verify(directory, _commit, _ref):
+                def verify(directory, _commit, _ref, *, run_id=None):
                     if (directory / bundle_name).read_bytes() == good and not trusted:
                         raise ValueError("Synthetic authentication failure")
 

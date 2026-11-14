@@ -46,7 +46,7 @@ class StagingTests(unittest.TestCase):
             root = Path(tmp)
             source, info = self.fixture(root)
             authenticated = []
-            def authenticate(snapshot, names, commit, ref, gh):
+            def authenticate(snapshot, names, commit, ref, gh, *, run_id=None):
                 self.assertNotEqual(snapshot, source)
                 self.assertEqual(names, {path.name for path in snapshot.iterdir()})
                 authenticated.append(snapshot)
