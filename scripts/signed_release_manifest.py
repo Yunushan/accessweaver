@@ -35,6 +35,7 @@ WINDOWS_DETECTION_FIELDS = (
 )
 WINDOWS_PAYLOAD_PUBLISHER = "payloadPublisherCertificateSHA256"
 WINDOWS_BUILD_INFO = "buildInfoSHA256"
+WINDOWS_DETECTOR = "detectorSHA256"
 WINDOWS_PREVIOUS_BUILD_INFO = "previousBuildInfoSHA256"
 WINDOWS_SETUP_BASELINE = "setupUpgradeBaselineVerified"
 WINDOWS_SETUP_BASELINE_PREFIX = "/AWUpgradeFrom="
@@ -190,6 +191,9 @@ def validate_detection(entries, subjects, version):
         publisher_fields = {WINDOWS_PAYLOAD_PUBLISHER}.intersection(entry)
         downgrade_fields = set(WINDOWS_DOWNGRADE_FIELDS).intersection(entry)
         build_info_fields = {WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO}.intersection(entry)
+        detector_fields = {WINDOWS_DETECTOR}.intersection(entry)
+        require(not detector_fields or WINDOWS_BUILD_INFO in build_info_fields,
+                "Windows detector evidence requires installed build metadata")
         if WINDOWS_PREVIOUS_BUILD_INFO in build_info_fields:
             require(WINDOWS_BUILD_INFO in build_info_fields and entry.get("installMode") == "upgrade"
                     and trust_fields == set(WINDOWS_PREVIOUS_TRUST_FIELDS),
@@ -200,14 +204,14 @@ def validate_detection(entries, subjects, version):
         require(not baseline_fields or WINDOWS_PREVIOUS_BUILD_INFO in build_info_fields,
                 "Windows Setup baseline evidence requires the approved prior build pins")
         require(entry.keys() == set(WINDOWS_DETECTION_FIELDS) | trust_fields | publisher_fields
-                | downgrade_fields | build_info_fields | baseline_fields
+                | downgrade_fields | build_info_fields | baseline_fields | detector_fields
                 and (not trust_fields or trust_fields == set(WINDOWS_PREVIOUS_TRUST_FIELDS)
                      and entry["installMode"] == "upgrade"), "Malformed Windows detection entry")
         if downgrade_fields:
             require(downgrade_fields == set(WINDOWS_DOWNGRADE_FIELDS) and entry["installMode"] == "upgrade"
                     and all(re.fullmatch(SHA256, entry[field]) for field in downgrade_fields),
                     "Malformed Windows downgrade evidence digests")
-        for field in trust_fields | publisher_fields | build_info_fields:
+        for field in trust_fields | publisher_fields | build_info_fields | detector_fields:
             require(re.fullmatch(SHA256, entry[field]), "Malformed Windows payload trust digest")
         target = entry["target"]
         require((target, "installer") in targets and entry["installMode"] in ("clean", "upgrade"),
@@ -329,6 +333,7 @@ def load_detection_evidence(directory, evidence, subjects, version):
             entry[WINDOWS_BUILD_INFO] = report.get(WINDOWS_BUILD_INFO)
         if report["schemaVersion"] >= 11:
             validate_bound_reboot_report(report, mode)
+            entry[WINDOWS_DETECTOR] = report[WINDOWS_DETECTOR]
             prior_build_info = report.get(WINDOWS_PREVIOUS_BUILD_INFO)
             if mode == "upgrade":
                 entry[WINDOWS_PREVIOUS_BUILD_INFO] = prior_build_info
@@ -365,6 +370,8 @@ def encode_manifest(commit, ref, subjects, windows_detection=()):
         schema = 8
     if any(WINDOWS_SETUP_WRONG_BASELINE in entry for entry in windows_detection):
         schema = 9
+    if any(WINDOWS_DETECTOR in entry for entry in windows_detection):
+        schema = 10
     manifest = {
         "schemaVersion": schema,
         "scope": "accessweaver-signed-desktop-release",
@@ -378,7 +385,7 @@ def encode_manifest(commit, ref, subjects, windows_detection=()):
             {field: entry[field] for field in WINDOWS_DETECTION_FIELDS + WINDOWS_PREVIOUS_TRUST_FIELDS
              + (WINDOWS_PAYLOAD_PUBLISHER,) + WINDOWS_DOWNGRADE_FIELDS
              + (WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO, WINDOWS_SETUP_BASELINE,
-                WINDOWS_SETUP_WRONG_BASELINE) if field in entry}
+                WINDOWS_SETUP_WRONG_BASELINE, WINDOWS_DETECTOR) if field in entry}
             for entry in sorted(windows_detection, key=detection_key)
         ]
     return (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
@@ -683,7 +690,7 @@ def hold_windows_staging_directory(directory):
 
 @contextmanager
 def hold_windows_setup(path):
-    """Keep Setup readable and deny writes, renames and deletion through launch."""
+    """Keep a Windows executable or script readable while denying writes and deletion."""
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     open_file = kernel.CreateFileW
     open_file.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
@@ -761,18 +768,25 @@ def launch_windows_setup(directory, update, policy, *, size, directory_identity,
 
 def detect_windows_upgrade(qualification, publisher_pin):
     shell = windows_system_directory() / "WindowsPowerShell" / "v1.0" / "powershell.exe"
-    script = Path(__file__).resolve().with_name("detect-windows-installer.ps1")
+    script = Path(__file__).absolute().with_name("detect-windows-installer.ps1")
     with tempfile.TemporaryFile() as output:
         try:
-            result = subprocess.run(
-                [shell, "-NoProfile", "-NonInteractive", "-File", script, "-UseRegisteredDirectory",
-                 "-Version", qualification["version"], "-Architecture", qualification["target"].split("/")[1],
-                 "-PayloadSHA256", qualification["payloadSHA256"], "-PayloadSBOMSHA256", qualification["payloadSBOMSHA256"],
-                 "-BuildInfoSHA256", qualification[WINDOWS_BUILD_INFO], "-UninstallerSHA256", qualification["uninstallerSHA256"],
-                 "-PayloadPublisherSHA256", publisher_pin],
-                stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.DEVNULL, timeout=90,
-            )
-        except (OSError, subprocess.TimeoutExpired):
+            with ExitStack() as held:
+                expected = qualification.get(WINDOWS_DETECTOR)
+                if expected is not None:
+                    held.enter_context(hold_windows_staging_directory(script.parent))
+                    held.enter_context(hold_windows_setup(script))
+                    info = release_file(script, 1 << 20)
+                    verify_staged_update(script, info.st_size, expected)
+                result = subprocess.run(
+                    [shell, "-NoProfile", "-NonInteractive", "-File", script, "-UseRegisteredDirectory",
+                     "-Version", qualification["version"], "-Architecture", qualification["target"].split("/")[1],
+                     "-PayloadSHA256", qualification["payloadSHA256"], "-PayloadSBOMSHA256", qualification["payloadSBOMSHA256"],
+                     "-BuildInfoSHA256", qualification[WINDOWS_BUILD_INFO], "-UninstallerSHA256", qualification["uninstallerSHA256"],
+                     "-PayloadPublisherSHA256", publisher_pin],
+                    stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.DEVNULL, timeout=90,
+                )
+        except (ValueError, OSError, subprocess.TimeoutExpired):
             return "unverified"
         output.seek(0)
         content = output.read(4097)
@@ -1017,7 +1031,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     entry[field] for field in ("uninstallerSHA256", "rebootEvidenceSHA256",
                                                "previousPayloadSHA256", "publisherCertificateSHA256")
                     + WINDOWS_PREVIOUS_TRUST_FIELDS + (WINDOWS_PAYLOAD_PUBLISHER,)
-                    + WINDOWS_DOWNGRADE_FIELDS + (WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO) if field in entry
+                    + WINDOWS_DOWNGRADE_FIELDS + (WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO, WINDOWS_DETECTOR) if field in entry
                 ) for entry in entries),
                 "Release subject or Windows detection evidence is revoked")
         sboms_verified, macos_detectors, windows_build_info = validate_release_sboms(root, files, commit, version, entries)

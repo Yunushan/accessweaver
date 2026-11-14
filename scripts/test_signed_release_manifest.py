@@ -196,7 +196,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
                     self.assertEqual(entry["rebootEvidenceSHA256"], evidence[1])
                     self.assertEqual(entry.get(field), True if claim else None)
                     manifest = json.loads(release.encode_manifest(COMMIT, REF, files, [entry]))
-                    self.assertEqual(manifest["schemaVersion"], 9 if claim else 6)
+                    self.assertEqual(manifest["schemaVersion"], 10)
                     self.assertEqual(manifest["windowsDetection"], [entry])
                     if claim:
                         incomplete = {key: value for key, value in entry.items() if key != "setupUpgradeBaselineVerified"}
@@ -316,6 +316,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 release.prepare(self.candidate, output, COMMIT, REF, windows_reboot_evidence=[evidence])
                 entry, = json.loads(output.read_bytes())["windowsDetection"]
                 self.assertEqual(entry["buildInfoSHA256"], pin)
+                self.assertEqual(entry["detectorSHA256"], "1" * 64)
 
         self.set_windows_build_info_pin("arm64", 1)
         with self.assertRaisesRegex(ValueError, "Malformed Windows installer SBOM build metadata"):
@@ -1040,7 +1041,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
             self.verify(approved, pin, stage_directory=staging, **trusted)
         self.assertEqual(list(staging.iterdir()), [])
         selected = self.verify(approved, pin, stage_directory=staging, **inventory_options)
-        self.assertEqual(selected["schemaVersion"], 7)
+        self.assertEqual(selected["schemaVersion"], 10)
         self.assertTrue(selected["managedUpdate"]["installerStaged"])
         self.assertEqual(selected["managedUpdate"]["windowsUpgradeDetection"]["previousBuildInfoSHA256"], "5" * 64)
         self.assertNotIn("windowsSetupBaselineArgument", selected["managedUpdate"])
@@ -1070,7 +1071,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
         sign_manifest()
         selected = self.verify(approved, pin, stage_directory=staging, require_windows_setup_baseline=True,
                                **inventory_options)
-        self.assertEqual(selected["schemaVersion"], 8)
+        self.assertEqual(selected["schemaVersion"], 10)
         self.assertTrue(selected["managedUpdate"]["installerStaged"])
         self.assertEqual(selected["managedUpdate"]["windowsSetupBaselineArgument"], "/AWUpgradeFrom=" + ",".join((
             qualified_entry["previousVersion"], qualified_entry["previousPayloadSHA256"],
@@ -1367,12 +1368,18 @@ class SignedReleaseManifestTests(unittest.TestCase):
         sign_manifest()
         completed = subprocess.run(strict_args, check=True, capture_output=True, text=True, timeout=30)
         report = json.loads(completed.stdout)
-        self.assertEqual(report["schemaVersion"], 9)
+        self.assertEqual(report["schemaVersion"], 10)
         update = report["managedUpdate"]
+        self.assertEqual(update["windowsUpgradeDetection"]["detectorSHA256"], "1" * 64)
         self.assertIs(update["windowsUpgradeDetection"]["setupWrongBaselineRefusedWithStatePreserved"], True)
         self.assertEqual(update["windowsSetupBaselineArgument"], selected["managedUpdate"]["windowsSetupBaselineArgument"])
         self.assertTrue(update["installerStaged"])
         staged_path.unlink()
+        revoked_detector = self.write_policy({**self.policy, "subjectSHA256": [latest_entry["detectorSHA256"]]})
+        with self.assertRaisesRegex(ValueError, "revoked"):
+            self.verify(approved, pin, policy_pin=revoked_detector, stage_directory=staging, **inventory_options)
+        self.assertEqual(list(staging.iterdir()), [])
+        self.write_policy(self.policy)
         manifest.write_bytes(release.encode_manifest(COMMIT, REF, files, entries))
         sign_manifest()
         self.verify(approved, pin, current_build_info_sha256="5" * 64, **trusted)
@@ -1647,6 +1654,33 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
         with patch.object(release.subprocess, "run", side_effect=subprocess.TimeoutExpired("detector", 90)), \
                 patch.object(release, "windows_system_directory", return_value=self.root):
             self.assertEqual(release.detect_windows_upgrade(qualification, publisher), "unverified")
+
+    @unittest.skipUnless(os.name == "nt", "requires native Windows file sharing")
+    def test_windows_staging_detector_pins_script_through_execution(self):
+        script = self.root / "detect-windows-installer.ps1"
+        script.write_bytes(b"inert reviewed detector")
+        qualification = {
+            "target": "windows/amd64", "version": VERSION, "payloadSHA256": "a" * 64,
+            "payloadSBOMSHA256": "b" * 64, "buildInfoSHA256": "c" * 64, "uninstallerSHA256": "d" * 64,
+            "detectorSHA256": release.digest(script),
+        }
+
+        def run(argv, *, stdout, **options):
+            self.assertEqual(argv[4], script)
+            with self.assertRaises(PermissionError):
+                script.write_bytes(b"different detector")
+            stdout.write(b"AccessWeaver detected\r\n")
+            return subprocess.CompletedProcess(argv, 0)
+
+        with patch.object(release, "__file__", str(self.root / "signed_release_manifest.py")), \
+                patch.object(release, "windows_system_directory", return_value=self.root), \
+                patch.object(release.subprocess, "run", side_effect=run) as call:
+            self.assertEqual(release.detect_windows_upgrade(qualification, "e" * 64), "detected")
+            call.assert_called_once()
+            call.reset_mock()
+            script.write_bytes(b"different detector")
+            self.assertEqual(release.detect_windows_upgrade(qualification, "e" * 64), "unverified")
+            call.assert_not_called()
 
     @unittest.skipUnless(os.name == "nt", "requires native Windows file sharing")
     def test_windows_staging_holds_approved_setup_and_parents_through_launch(self):
