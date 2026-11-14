@@ -12,10 +12,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/Yunushan/accessweaver/internal/darwintrust"
+	"golang.org/x/sys/unix"
 )
 
 func requireHostedReceiptFixture(t *testing.T) {
@@ -297,10 +299,23 @@ func exerciseNativeReceiptForgetWindow(t *testing.T, command func(context.Contex
 
 func TestDarwinRemovalReceiptRecovery(t *testing.T) {
 	requireHostedReceiptFixture(t)
+	capsule, e := os.MkdirTemp("/private/tmp", "accessweaver-deployment-")
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() {
+		if e := os.RemoveAll(capsule); e != nil {
+			t.Error(e)
+		}
+	})
+	fixtures := filepath.Join(capsule, "schema2-bridge")
+	if e = os.Mkdir(fixtures, 0755); e != nil {
+		t.Fatal(e)
+	}
 	for _, scenario := range []string{"partial-forget", "after-forget", "missing", "extra", "replaced"} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx := context.Background()
-			f := newOwnedRemovalTargetFixture(t, t.TempDir(), true, true)
+			f := newOwnedRemovalTargetFixture(t, fixtures, true, true)
 			if e := os.Chmod(f.base, 0755); e != nil {
 				t.Fatal(e)
 			}
@@ -471,6 +486,9 @@ func TestDarwinRemovalReceiptRecovery(t *testing.T) {
 			if e != nil || len(entries) != 1 || entries[0].Name() != "unrelated-private.plist" {
 				t.Fatal("receipt retirement changed unrelated inventory", e)
 			}
+			if e = os.Chmod(f.base, 0700); e != nil {
+				t.Fatal(e)
+			}
 			exerciseOwnedRemovalHandoff(t, f, record, scenario == "after-forget")
 		})
 	}
@@ -494,42 +512,24 @@ func exerciseOwnedRemovalHandoff(t *testing.T, f *ownedRemovalTargetFixture, rec
 	if e != nil {
 		t.Fatal(e)
 	}
-	phase := "removal-handoff-reserved"
 	if interruptAfterExchange {
-		phase = "removal-handoff-exchanged"
+		killOwnedRemovalHandoff(t, f, "removal-handoff-exchanged")
+		verifyOwnedRemovalHandoff(t, f, previous, record, oldJournal, oldPlan)
+		return
 	}
+	phase := "removal-handoff-reserved"
 	interrupted := errors.New("interrupted authority handoff")
 	f.store.observe = func(p string) error {
 		if p == phase {
-			// A new writer must be refused at the canonical path both
-			// before and after the swap while the handoff holds its leases.
-			parent, openErr := os.Open(f.base)
-			if openErr != nil {
-				t.Fatal(openErr)
-			}
-			if other, openErr := beginDeploymentMode(parent, 0, nil, false); openErr == nil {
-				other.Close()
-				t.Fatal("concurrent writer entered removal handoff")
-			}
-			current, openErr := os.Open(root)
-			if openErr != nil {
-				t.Fatal(openErr)
-			}
-			defer current.Close()
-			if reader, openErr := acquireRuntimeReader(current); openErr == nil {
-				reader.Close()
-				t.Fatal("concurrent runtime reader entered removal handoff")
-			}
 			return interrupted
 		}
 		return nil
 	}
 	published, e := f.intent.finalizeRemovalUsing(ctx, f.resolve)
-	if !errors.Is(e, interrupted) || published != interruptAfterExchange {
+	if !errors.Is(e, interrupted) || published {
 		t.Fatal("unexpected handoff publication boundary", published, e)
 	}
-	identity := f.intent.fence.Target.Identity
-	if !published {
+	{
 		staged, e := os.Stat(archive)
 		if e != nil || os.SameFile(previous, staged) {
 			t.Fatal("clean staged authority was not reserved", e)
@@ -548,6 +548,8 @@ func exerciseOwnedRemovalHandoff(t *testing.T, f *ownedRemovalTargetFixture, rec
 		if e = os.WriteFile(reservedRecord, record, 0644); e != nil {
 			t.Fatal(e)
 		}
+		killOwnedRemovalHandoff(t, f, phase)
+		reopenOwnedRemovalFileIntent(t, f)
 		if published, e = f.intent.finalizeRemovalUsing(ctx, f.resolve); e != nil || !published {
 			t.Fatal("handoff retry did not publish", published, e)
 		}
@@ -556,9 +558,74 @@ func exerciseOwnedRemovalHandoff(t *testing.T, f *ownedRemovalTargetFixture, rec
 			t.Fatal("handoff retry did not reuse the staged authority", e)
 		}
 	}
-	if e = f.intent.Close(); e != nil {
+	verifyOwnedRemovalHandoff(t, f, previous, record, oldJournal, oldPlan)
+}
+
+func requireOwnedRemovalHandoffLeases(t *testing.T, base string) {
+	t.Helper()
+	root, e := os.Open(filepath.Join(base, deploymentRoot))
+	if e != nil {
 		t.Fatal(e)
 	}
+	defer root.Close()
+	lock, e := darwintrust.OpenRegularAt(root, deploymentLock, 0)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer lock.Close()
+	if e = unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); !errors.Is(e, unix.EWOULDBLOCK) {
+		t.Fatal("canonical writer lease was not held during handoff", e)
+	}
+	lease, e := runtimeFileAt(root, 0)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer lease.Close()
+	if e = unix.Flock(int(lease.Fd()), unix.LOCK_SH|unix.LOCK_NB); !errors.Is(e, unix.EWOULDBLOCK) {
+		t.Fatal("canonical runtime lease was not held during handoff", e)
+	}
+}
+
+func killOwnedRemovalHandoff(t *testing.T, f *ownedRemovalTargetFixture, phase string) {
+	t.Helper()
+	if e := f.intent.Close(); e != nil {
+		t.Fatal(e)
+	}
+	executable, e := os.Executable()
+	if e != nil {
+		t.Fatal(e)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, executable, "-test.run=^TestDarwinRemovalFileKilledChild$", "-test.v", "-test.timeout=32s")
+	command.Env = []string{
+		"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "LANG=C", "LC_ALL=C", "TZ=UTC",
+		"GITHUB_ACTIONS=true", "RUNNER_ENVIRONMENT=github-hosted", "RUNNER_OS=macOS",
+		"ACCESSWEAVER_DISPOSABLE_DARWIN_DEPLOYMENT_TEST=1",
+		removalKillBaseEnv + "=" + f.base, removalKillPhaseEnv + "=" + phase,
+	}
+	output := &ownedRemovalKillOutput{}
+	command.Stdout, command.Stderr = output, output
+	e = command.Run()
+	var exit *exec.ExitError
+	if ctx.Err() != nil || !errors.As(e, &exit) {
+		t.Fatal("handoff child did not terminate at the boundary", e)
+	}
+	status, ok := exit.Sys().(syscall.WaitStatus)
+	if !ok || !status.Signaled() || status.Signal() != syscall.SIGKILL ||
+		bytes.Count(output.data, []byte("OWNED-REMOVAL-SIGKILL "+phase+"\n")) != 1 {
+		t.Fatal("handoff child signal or boundary marker differs")
+	}
+}
+
+func verifyOwnedRemovalHandoff(t *testing.T, f *ownedRemovalTargetFixture, previous os.FileInfo, record, oldJournal, oldPlan []byte) {
+	t.Helper()
+	if e := f.intent.Close(); e != nil {
+		t.Fatal(e)
+	}
+	identity := f.intent.fence.Target.Identity
+	archive := filepath.Join(f.base, removalArchiveName(f.intent.fence))
+	root := filepath.Join(f.base, deploymentRoot)
 	archived, e := os.Stat(archive)
 	if e != nil || !os.SameFile(previous, archived) {
 		t.Fatal("handoff did not archive the original authority", e)

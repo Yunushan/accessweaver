@@ -130,7 +130,7 @@ func TestDarwinRemovalFileKilledChild(t *testing.T) {
 	if !ownedRemovalKillHost() {
 		t.Fatal("killed child requires an opted-in disposable hosted root fixture")
 	}
-	known := false
+	known := phase == "removal-handoff-reserved" || phase == "removal-handoff-exchanged"
 	allowedPhases := append(append(append(append(append([]string{}, removalKillPhases...), removalDirectoryKillPhases...), removalQuarantineKillPhases...), removalAppFileKillPhases...), removalAppDirectoryKillPhases...)
 	for _, allowed := range allowedPhases {
 		if phase == allowed {
@@ -161,11 +161,22 @@ func TestDarwinRemovalFileKilledChild(t *testing.T) {
 	}
 	defer intent.Close()
 	fixture := &ownedRemovalTargetFixture{base: base, store: intent.store, intent: intent}
-	intent.store.observe = ownedRemovalKillObserver(phase)
+	kill := ownedRemovalKillObserver(phase)
+	intent.store.observe = kill
+	if strings.HasPrefix(phase, "removal-handoff-") {
+		intent.store.observe = func(actual string) error {
+			if actual == phase {
+				requireOwnedRemovalHandoffLeases(t, base)
+			}
+			return kill(actual)
+		}
+	}
 	if strings.HasPrefix(phase, "removal-app-") {
 		_, e = intent.removeNextQuarantinedAppObjectUsing(context.Background(), fixture.resolve)
 	} else if strings.HasPrefix(phase, "removal-quarantine-") {
 		e = intent.quarantinePublicAppUsing(context.Background(), fixture.resolve)
+	} else if strings.HasPrefix(phase, "removal-handoff-") {
+		_, e = intent.finalizeRemovalUsing(context.Background(), fixture.resolve)
 	} else if strings.HasPrefix(phase, "removal-directory-") {
 		_, e = intent.removeNextProtectedObjectUsing(context.Background(), fixture.resolve, false)
 	} else {
