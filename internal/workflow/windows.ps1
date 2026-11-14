@@ -2868,17 +2868,29 @@ function Configure-DNS([string]$method) {
             if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared during DoH configuration'}
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
             Stop-Service -Name $serviceName -ErrorAction Stop
-            if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before disabling automatic startup'}
+            $listenerNeeded=Test-DNSCryptListenerNeeded $records
+            if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared after stopping it'}
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
-            Set-Service -Name $serviceName -StartupType Manual -ErrorAction Stop
-            Assert-DNSCryptServiceState $existingResolver -ManualStopped
-            # The earlier query may have succeeded through the old listener.
-            if(-not (Wait-OrdinaryDNSResolver 10)){
-                throw 'DoH resolver verification failed after stopping DNSCrypt; retain the original DNS snapshot'
+            if($listenerNeeded){
+                # A new or unverified dependency must keep the original service available.
+                $service=Get-Service -Name $serviceName -ErrorAction Stop
+                try {
+                    if($service.Status -eq 'Stopped'){Start-Service -InputObject $service -ErrorAction Stop}
+                    $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
+                } finally {if($service -is [IDisposable]){$service.Dispose()}}
+                Assert-EffectiveDNSCryptListeners
+                if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared during listener recovery'}
+            }else{
+                Set-Service -Name $serviceName -StartupType Manual -ErrorAction Stop
+                Assert-DNSCryptServiceState $existingResolver -ManualStopped
+                # The earlier query may have succeeded through the old listener.
+                if(-not (Wait-OrdinaryDNSResolver 10)){
+                    throw 'DoH resolver verification failed after stopping DNSCrypt; retain the original DNS snapshot'
+                }
             }
             Assert-ConfiguredDNSServers $adapters $records $servers
             Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy changed after stopping DNSCrypt; retain the original DNS snapshot'
-            Assert-DNSCryptServiceState $existingResolver -ManualStopped
+            if(-not $listenerNeeded){Assert-DNSCryptServiceState $existingResolver -ManualStopped}
         }
         if($method -ceq 'dnscrypt'){Assert-DNSCryptServiceState $resolver}
         Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
