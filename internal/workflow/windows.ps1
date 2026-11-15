@@ -4251,6 +4251,7 @@ function Confirm-AppRemoval([string]$variant,[string]$app) {
     }else{
         Assert-DiscordUpdaterAbsent $variant
     }
+    Wait-AppProcessesExited $variant $app 0
     Event ('Application uninstalled: '+$variant)
     return $true
 }
@@ -4269,6 +4270,7 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
             Assert-DiscordUpdaterAbsent $variant
         }
         if(Find-App $variant){throw 'Application installation reappeared during uninstall verification'}
+        Wait-AppProcessesExited $variant '' 0
         return $false
     }
     $appDigest=Get-AppExecutableDigest $app
@@ -4486,6 +4488,18 @@ function Test-AppProcessInSession([string]$path,[int]$sessionId,$processes,[date
     if($complete){return $false}
     return $null
 }
+function Test-AppRunningBeforeLaunch([string]$variant,[string]$app,[int]$sessionId) {
+    $running=Test-AppProcessInSession $app $sessionId @(Get-Process -ErrorAction Stop)
+    if($running -isnot [bool]){throw 'Application process state could not be inspected before launch'}
+    if((Find-App $variant) -ine $app){throw 'Application installation changed before launch'}
+    No-Reparse $app
+    if($running){
+        # Discovery can outlast an existing process. Confirm its liveness before reusing it.
+        $running=Test-AppProcessInSession $app $sessionId @(Get-Process -ErrorAction Stop)
+        if($running -isnot [bool]){throw 'Application process state could not be inspected before launch'}
+    }
+    return $running
+}
 function Start-App([string]$variant) {
     Require-DesktopUser
     $app=Find-App $variant;if(-not $app){throw 'Application is not installed'};No-Reparse $app
@@ -4495,11 +4509,7 @@ function Start-App([string]$variant) {
         $current=[Diagnostics.Process]::GetCurrentProcess()
         try {$sessionId=$current.SessionId} finally {$current.Dispose()}
         if($sessionId -eq 0){throw 'Start user applications from the signed-in Windows desktop, not the SYSTEM session'}
-        $baseline=Test-AppProcessInSession $app $sessionId @(Get-Process -ErrorAction Stop)
-        if($baseline -isnot [bool]){throw 'Application process state could not be inspected before launch'}
-        if((Find-App $variant) -ine $app){throw 'Application installation changed before launch'}
-        No-Reparse $app
-        if($baseline){
+        if(Test-AppRunningBeforeLaunch $variant $app $sessionId){
             Event 'Application was already running in the desktop session'
             return @{application=$variant;alreadyRunning=$true}
         }
@@ -4507,11 +4517,7 @@ function Start-App([string]$variant) {
         # Keep the selected executable open until process observation finishes.
         Save-ApplicationEffectBoundary
         # Journal publication can overlap an updater or another desktop launch.
-        $running=Test-AppProcessInSession $app $sessionId @(Get-Process -ErrorAction Stop)
-        if($running -isnot [bool]){throw 'Application process state could not be inspected before launch'}
-        if((Find-App $variant) -ine $app){throw 'Application installation changed before launch'}
-        No-Reparse $app
-        if($running){
+        if(Test-AppRunningBeforeLaunch $variant $app $sessionId){
             Event 'Application was already running in the desktop session'
             return @{application=$variant;alreadyRunning=$true}
         }

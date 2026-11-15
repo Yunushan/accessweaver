@@ -2010,6 +2010,10 @@ try {
     function Assert-SplitCordMaintenancePaths {}
     function Read-SplitCordMachineUninstallCommand {
         if($script:appRemovalForeignCommand){return ('"'+$secondUninstaller+'" /allusers')}
+        if($script:appRemovalInvoked -and $script:appReappearance -ceq 'process-during-registration'){
+            $newProcess.HasExited=$false
+            $script:appRemovalProcesses=@($newProcess)
+        }
         if((-not $script:appRemovalInvoked -and -not $script:appRemovalMoved) -or $script:appRemovalOrphanedCommand){
             return ('"'+$fixtureUninstaller+'" /allusers')
         }
@@ -2247,6 +2251,22 @@ try {
     Assert ($rejected -and $script:appRemovalInvoked -and $script:appServiceRemains -and
         $script:appRemovalEvents.Count -eq 0) 'SplitCord removal detects service reappearance during process verification'
     $script:appServiceRemains=$false
+    $script:appReappearance=$null
+    [IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
+    $script:appRemovalInvoked=$false
+    $script:appReappearance='process-during-registration'
+    $script:externalEffectsPending=$false
+    $rejected=$false
+    try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+    Assert ($rejected -and $script:appRemovalInvoked -and $script:externalEffectsPending -and
+        $script:appRemovalEvents.Count -eq 0) 'Application removal refuses a client process that reappears during final registration readback'
+    $script:appRemovalProcesses=@()
+    $script:externalEffectsPending=$false
+    $rejected=$false
+    try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+    Assert ($rejected -and -not $script:externalEffectsPending -and
+        $script:appRemovalEvents.Count -eq 0) 'Application removal refuses an absent-client result when a process reappears during registration readback'
+    $script:appRemovalProcesses=@()
     $script:appReappearance=$null
     [IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
     $script:appRemovalInvoked=$false
@@ -3123,6 +3143,7 @@ try{
         $fixtureProcessUnreadable=$false
         $fixtureInventoryFails=$false
         $fixtureProcessTimes=[Collections.Generic.List[datetime]]::new()
+        $fixtureProcessObservations=[Collections.Generic.Queue[string]]::new()
         [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($launchPath))
         [IO.File]::WriteAllText($launchPath,'Inert application image')
         $fixturePathChanged=$false
@@ -3170,6 +3191,15 @@ try{
             if($fixtureInventoryFails){throw 'Inert process inventory failure'}
             if($fixtureProcessUnreadable -or $script:fixtureLaunchProcessAfterJournal -ceq 'unreadable'){return [pscustomobject]@{ProcessName='Discord';Path=$null;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false}}
             Assert-LaunchFileHeld
+            if($fixtureProcessObservations.Count){
+                $observation=$fixtureProcessObservations.Dequeue()
+                if($observation -ceq 'absent'){return}
+                if($observation -ceq 'unknown'){
+                    return [pscustomobject]@{ProcessName='Discord';Path=$null;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false}
+                }
+                if($observation -cne 'running'){throw 'Unknown fixture process observation'}
+                return [pscustomobject]@{ProcessName='Discord';Path=$launchPath;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false}
+            }
             if($fixtureProcessRunning -or $script:fixtureLaunchProcessAfterJournal -ceq 'running' -or $trace.Count -ge $fixtureObservedLaunchCount){
                 if($fixtureExitsDuringVerification -and $findCalls.Count -ge 4){return}
                 $created=if($trace.Count){$fixtureProcessTimes[$trace.Count-1]}else{[DateTime]::UtcNow.AddSeconds(-1)}
@@ -3250,6 +3280,23 @@ try{
                 $trace.Count -eq 4) 'Application launch observes a matching process after its journaled handoff'
             $writer=[IO.File]::OpenWrite($launchPath);$writer.Dispose()
             Assert $true 'Application launch releases its executable after process verification'
+            $fixtureObservedLaunchCount=1
+            foreach($phase in @('before journaling','after journaling')){
+                $trace.Clear();$fixtureProcessTimes.Clear();$findCalls.Clear()
+                $script:externalEffectsPending=$false
+                $observations=if($phase -ceq 'before journaling'){@('running','absent','absent')}else{@('absent','running','absent')}
+                foreach($observation in $observations){$fixtureProcessObservations.Enqueue($observation)}
+                $started=Start-App 'discord'
+                Assert ($started.alreadyRunning -eq $false -and $trace.Count -eq 1 -and
+                    $fixtureProcessObservations.Count -eq 0) ('Application launch replaces a client that exits during confirmation '+$phase)
+            }
+            $trace.Clear();$fixtureProcessTimes.Clear()
+            $script:externalEffectsPending=$false
+            $fixtureProcessObservations.Enqueue('running')
+            $fixtureProcessObservations.Enqueue('unknown')
+            $rejected=$false
+            try{Start-App 'discord'}catch{$rejected=$_.Exception.Message -ceq 'Application process state could not be inspected before launch'}
+            Assert ($rejected -and $trace.Count -eq 0 -and -not $script:externalEffectsPending) 'Application launch refuses a client that becomes unreadable during confirmation'
         } finally {
             $script:externalEffectsPending=$previousEffects
             $script:journalState=$previousState
