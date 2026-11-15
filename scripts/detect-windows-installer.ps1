@@ -284,11 +284,76 @@ namespace AccessWeaver
     }
 }
 
-function Assert-NoPendingAccessWeaverInstallation {
+function Test-AccessWeaverManagedUpgradePending([string]$directory) {
+    try {
+        if(-not ('AccessWeaver.InstallerPendingRecord' -as [type])){
+            Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+
+namespace AccessWeaver
+{
+    public static class InstallerPendingRecord
+    {
+        private static readonly IntPtr LocalMachine = new IntPtr(unchecked((int)0x80000002));
+        private const uint QueryFlags = 0x10010002; // RRF_NOEXPAND | RRF_SUBKEY_WOW6464KEY | RRF_RT_REG_SZ
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern int RegGetValueW(IntPtr key, string subKey, string value,
+            uint flags, out uint type, [Out] byte[] data, ref uint size);
+
+        public static string ReadValue()
+        {
+            // Match Setup's bound for the version, directory, approval pin and terminator.
+            byte[] buffer = new byte[1166];
+            uint size = (uint)buffer.Length;
+            uint type;
+            int status = RegGetValueW(LocalMachine, @"SOFTWARE\AccessWeaver\Installer", "PendingInstall",
+                QueryFlags, out type, buffer, ref size);
+            if (status != 0 || type != 1 || size < 4 || size > buffer.Length || size % 2 != 0)
+                return null;
+
+            int contentBytes = (int)size - 2;
+            if (buffer[contentBytes] != 0 || buffer[contentBytes + 1] != 0)
+                return null;
+
+            string value = new UnicodeEncoding(false, false, true).GetString(buffer, 0, contentBytes);
+            return value.IndexOf('\0') < 0 ? value : null;
+        }
+    }
+}
+'@
+        }
+        $record=[AccessWeaver.InstallerPendingRecord]::ReadValue()
+        if(-not $record){return $false}
+
+        $fields=$record.Split('|')
+        if($fields.Count -ne 3 -or -not [string]::Equals($fields[0],$Version,[StringComparison]::Ordinal) -or
+           $fields[2] -cnotmatch '\A[0-9a-f]{64}\z'){return $false}
+
+        $registration=Read-AccessWeaverRegistration Registry64
+        if($null -eq $registration -or $null -ne (Read-AccessWeaverRegistration Registry32)){return $false}
+        $registeredDirectory=Get-AccessWeaverLocalDirectory $registration.location
+        if(-not [string]::Equals($registeredDirectory,$fields[1],[StringComparison]::OrdinalIgnoreCase) -or
+           (-not $UseRegisteredDirectory -and
+            -not [string]::Equals($registeredDirectory,$directory,[StringComparison]::OrdinalIgnoreCase))){
+            return $false
+        }
+        return [string]::Equals($record,[AccessWeaver.InstallerPendingRecord]::ReadValue(),[StringComparison]::Ordinal)
+    } catch {
+        return $false
+    }
+}
+
+function Assert-NoPendingAccessWeaverInstallation([string]$directory) {
     $state=Get-AccessWeaverInstallerRecoveryState
     if($state -ceq 'pending'){
         $pending=[InvalidOperationException]::new('An AccessWeaver installation is incomplete')
         $pending.Data['AccessWeaverPendingInstall']=$true
+        if($env:ACCESSWEAVER_REPORT_INSTALLER_RECOVERY -ceq '1'){
+            $pending.Data['AccessWeaverManagedUpgradePending']=Test-AccessWeaverManagedUpgradePending $directory
+        }
         throw $pending
     }
     if($state -cne 'clear'){throw 'AccessWeaver Setup recovery state could not be read'}
@@ -349,7 +414,7 @@ function Read-AccessWeaverPayloadNotices([IO.Stream]$SBOM) {
 
 function Test-AccessWeaverInstallation([string]$directory) {
     Assert-NoAccessWeaverSetup
-    Assert-NoPendingAccessWeaverInstallation
+    Assert-NoPendingAccessWeaverInstallation $directory
     $registration=Read-AccessWeaverRegistration Registry64
     if($null -ne (Read-AccessWeaverRegistration Registry32)){throw 'Unexpected alternate machine registration'}
     if($null -eq $registration -or $registration.version -cne $Version){return $false}
@@ -406,7 +471,7 @@ function Test-AccessWeaverInstallation([string]$directory) {
             $confirmed.QuietUninstallString -cne $registration.QuietUninstallString -or $null -ne (Read-AccessWeaverRegistration Registry32)){
             throw 'Installation registration changed during detection'
         }
-        Assert-NoPendingAccessWeaverInstallation
+        Assert-NoPendingAccessWeaverInstallation $directory
         Assert-NoAccessWeaverSetup
     } finally {
         try {
@@ -477,9 +542,13 @@ try {
     exit 0
 } catch {
     # Endpoint management uses stdout to determine detection. The release
-    # verifier explicitly opts into one fixed non-success status.
+    # verifier explicitly opts into fixed non-success statuses.
     if($env:ACCESSWEAVER_REPORT_INSTALLER_RECOVERY -ceq '1' -and $_.Exception.Data['AccessWeaverPendingInstall'] -eq $true){
-        Microsoft.PowerShell.Utility\Write-Output 'AccessWeaver installation pending'
+        if($_.Exception.Data['AccessWeaverManagedUpgradePending'] -eq $true){
+            Microsoft.PowerShell.Utility\Write-Output 'AccessWeaver managed upgrade pending'
+        } else {
+            Microsoft.PowerShell.Utility\Write-Output 'AccessWeaver installation pending'
+        }
     }
     exit 1
 }

@@ -67,8 +67,8 @@ try {
     $mock=@'
 $script:mockReads=0
 function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
-    if($View -eq [Microsoft.Win32.RegistryView]::Registry32 -and $env:AW_DETECTION_FIXTURE -cne 'alternate'){return $null}
-    if($env:AW_DETECTION_FIXTURE -ceq 'absent'){return $null}
+    if($View -eq [Microsoft.Win32.RegistryView]::Registry32 -and $env:AW_DETECTION_FIXTURE -cnotin @('alternate','managed-pending-alternate')){return $null}
+    if($env:AW_DETECTION_FIXTURE -cin @('absent','managed-pending-unregistered')){return $null}
     $script:mockReads++
     if($env:AW_DETECTION_FIXTURE -ceq 'setup-starts-during-inspection' -and $script:mockReads -eq 1){
         # Retain the fixture-only object until the isolated child process exits.
@@ -116,6 +116,7 @@ function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
     $fixtureStatus=@'
 $(switch -CaseSensitive ($env:AW_DETECTION_FIXTURE){
     'pending' {0}
+    {$_ -clike 'managed-pending-*'} {0}
     'marker-becomes-pending' {if($script:mockReads -eq 0){2}else{0}}
     'marker-path-absent' {3}
     'marker-access-denied' {5}
@@ -127,6 +128,22 @@ $(switch -CaseSensitive ($env:AW_DETECTION_FIXTURE){
     $probe=$probes[0].Extent.Text
     if(-not $probe.Contains($nativeCall)){throw 'Missing fixed native recovery query'}
     $mocked=$mocked.Replace($probe,$probe.Replace($nativeCall,$fixtureStatus))
+    $nativeRecord='[AccessWeaver.InstallerPendingRecord]::ReadValue()'
+    $fixtureRecord=@'
+$(switch -CaseSensitive ($env:AW_DETECTION_FIXTURE){
+    'managed-pending-wrong-version' {'0.1.1-alpha|'+$PSScriptRoot+'|'+('a'*64)}
+    'managed-pending-wrong-path' {$Version+'|'+$PSScriptRoot+'-other|'+('a'*64)}
+    'managed-pending-unmanaged' {$Version+'|'+$PSScriptRoot}
+    'managed-pending-invalid-pin' {$Version+'|'+$PSScriptRoot+'|'+('z'*64)}
+    'managed-pending-changed' {
+        $pin=if($script:mockReads -eq 0){'a'*64}else{'b'*64}
+        $Version+'|'+$PSScriptRoot+'|'+$pin
+    }
+    {$_ -clike 'managed-pending-*'} {$Version+'|'+$PSScriptRoot+'|'+('a'*64)}
+})
+'@
+    if(([regex]::Matches($mocked,[regex]::Escape($nativeRecord))).Count -ne 2){throw 'Missing bounded registry marker probes'}
+    $mocked=$mocked.Replace($nativeRecord,$fixtureRecord)
     $signatureCall='Microsoft.PowerShell.Security\Get-AuthenticodeSignature -LiteralPath $Path -ErrorAction Stop'
     if(-not $mocked.Contains($signatureCall)){throw 'Missing installed publisher verification boundary'}
     $fixtureSignature=@'
@@ -151,6 +168,17 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
         $cases=@(
             @{mode='pending';code=1;count=0;hash=$hash},
             @{mode='pending';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
+            @{mode='managed-pending-match';code=1;count=0;hash=$hash},
+            @{mode='managed-pending-match';code=1;count=1;hash=$hash;reportRecovery=$true;matchingPendingStatus=$true},
+            @{mode='managed-pending-match';code=1;count=1;hash=$hash;reportRecovery=$true;matchingPendingStatus=$true;registered=$true},
+            @{mode='managed-pending-wrong-version';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
+            @{mode='managed-pending-wrong-path';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
+            @{mode='managed-pending-unmanaged';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
+            @{mode='managed-pending-invalid-pin';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
+            @{mode='managed-pending-unregistered';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true;registered=$true},
+            @{mode='managed-pending-alternate';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true;registered=$true},
+            @{mode='managed-pending-changed';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
+            @{mode='managed-pending-match';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true;otherDirectory=$true},
             @{mode='marker-becomes-pending';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
             @{mode='marker-access-denied';code=1;count=0;hash=$hash;reportRecovery=$true},
             @{mode='marker-query-failed';code=1;count=0;hash=$hash;reportRecovery=$true},
@@ -233,7 +261,10 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             else{[IO.File]::WriteAllBytes($buildInfo,$buildInfoBytes)}
             $env:AW_DETECTION_FIXTURE=$case.mode
             $env:ACCESSWEAVER_REPORT_INSTALLER_RECOVERY=if($case.reportRecovery){'1'}
-            $arguments=@('-NoProfile','-NonInteractive','-File',$fixture,'-Version','0.1.0-alpha','-Architecture',$arch,'-PayloadSHA256',$case.hash,'-InstallDirectory',$testRoot)
+            $arguments=@('-NoProfile','-NonInteractive','-File',$fixture,'-Version','0.1.0-alpha','-Architecture',$arch,'-PayloadSHA256',$case.hash)
+            if($case.registered){$arguments+='-UseRegisteredDirectory'}
+            elseif($case.otherDirectory){$arguments+=@('-InstallDirectory',($testRoot+'-other'))}
+            else{$arguments+=@('-InstallDirectory',$testRoot)}
             if($case.uninstaller){$arguments+=@('-UninstallerSHA256',$case.uninstaller)}
             if($case.sbom){$arguments+=@('-PayloadSBOMSHA256',$case.sbom)}
             if($case.buildInfo){$arguments+=@('-BuildInfoSHA256',$case.buildInfo)}
@@ -245,7 +276,9 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
                 throw ('Unexpected managed detection fixture result: '+$label)
             }
             if($case.count -eq 1){
-                if($case.pendingStatus){
+                if($case.matchingPendingStatus){
+                    if($output[0] -cne 'AccessWeaver managed upgrade pending'){throw 'Unexpected matching recovery status'}
+                }elseif($case.pendingStatus){
                     if($output[0] -cne 'AccessWeaver installation pending'){throw 'Unexpected opt-in recovery status'}
                 }elseif($case.inventory){
                     $record=$output[0] | ConvertFrom-Json

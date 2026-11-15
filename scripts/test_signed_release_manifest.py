@@ -2100,7 +2100,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
                         self.verify(approved, pin, policy_pin=newer_pin, **reboot_retry)
                     detect.assert_not_called()
                     for observation in (("detected", None), ("unverified", "detector-inspection-failed"),
-                                        ("unverified", "approved-installation-not-detected")):
+                                        ("unverified", "approved-installation-not-detected"),
+                                        ("unverified", "installer-recovery-pending")):
                         boot.side_effect = [later_boot]
                         detect.side_effect = [observation]
                         try:
@@ -2113,7 +2114,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
                     stage.assert_not_called()
                 launch.assert_not_called()
 
-                pending_status = ("unverified", "installer-recovery-pending")
+                pending_status = ("unverified", "installer-managed-upgrade-pending")
                 reboot_boot = {**later_boot, "endpointSHA256": "d" * 64}
                 boot.side_effect = [later_boot, reboot_boot]
                 detect.side_effect = [pending_status, ("detected", None)]
@@ -2463,6 +2464,10 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
             (1, b"", "detector-inspection-failed"),
             (1, b"AccessWeaver installation pending\r\n", "installer-recovery-pending"),
             (1, b"AccessWeaver installation pending\n", "installer-recovery-pending"),
+            (1, b"AccessWeaver managed upgrade pending\r\n", "installer-managed-upgrade-pending"),
+            (1, b"AccessWeaver managed upgrade pending\n", "installer-managed-upgrade-pending"),
+            (0, b"AccessWeaver managed upgrade pending\n", "detector-result-invalid"),
+            (1, b"AccessWeaver managed upgrade pending\nextra\n", "detector-result-invalid"),
             (0, b"AccessWeaver installation pending\n", "detector-result-invalid"),
             (1, b"AccessWeaver installation pending\nextra\n", "detector-result-invalid"),
             (0, b"AccessWeaver detected\nextra\n", "detector-result-invalid"),

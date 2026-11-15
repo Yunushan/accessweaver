@@ -901,6 +901,15 @@ class ManagedDetectionEvidenceTests(unittest.TestCase):
         self.assertEqual(validate_managed_detection(latest_status), {"managedDetectionChecksVerified": 31})
         with self.assertRaisesRegex(ValueError, "Unexpected managed detection result"):
             validate_managed_detection({**latest_status, "managedDetectionCases": partial_cases})
+        matching_status = [*partial_cases[:managed_index], dict(partial, matchingPendingStatusReported=True),
+                           *partial_cases[managed_index + 1:]]
+        latest_matching_status = {**latest_partial, "schemaVersion": 61, "managedDetectionCases": matching_status}
+        self.assertEqual(validate_managed_detection(latest_matching_status), {"managedDetectionChecksVerified": 31})
+        with self.assertRaisesRegex(ValueError, "Unexpected managed detection result"):
+            validate_managed_detection({**latest_matching_status, "managedDetectionCases": reported_status})
+        matching_status[managed_index]["matchingPendingStatusReported"] = 1
+        with self.assertRaisesRegex(ValueError, "Unexpected managed detection result"):
+            validate_managed_detection(latest_matching_status)
         reported_status[managed_index]["pendingStatusReported"] = 1
         with self.assertRaisesRegex(ValueError, "Unexpected managed detection result"):
             validate_managed_detection(latest_status)

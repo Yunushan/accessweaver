@@ -30,7 +30,8 @@ PARTIAL_COPY_UPGRADE_REPORT_SCHEMA = 57
 TEMP_UNINSTALLER_RECOVERY_REPORT_SCHEMA = 58
 LOCKED_TEMP_UNINSTALLER_REPORT_SCHEMA = 59
 PENDING_STATUS_REPORT_SCHEMA = 60
-REPORT_SCHEMAS = range(11, PENDING_STATUS_REPORT_SCHEMA + 1)
+MATCHING_PENDING_STATUS_REPORT_SCHEMA = 61
+REPORT_SCHEMAS = range(11, MATCHING_PENDING_STATUS_REPORT_SCHEMA + 1)
 PHASES=["baseline","after-install","after-upgrade","after-reinstall","after-active-setup-uninstall","after-lifecycle-locks","after-refused-downgrade","after-version-policy","after-registry-read-boundaries","after-registry-view-policy","after-registry-access-policy","after-restoration-launch-failures","after-restoration-ownership-contracts","before-uninstall","after-uninstall"]
 
 def require(ok,message):
@@ -165,7 +166,9 @@ def validate_managed_detection(report):
         expected_case = {"phase": phase, "detected": detected}
         if phase in refusals:
             expected_case["inspectionRefused"] = True
-        if phase == partial_copy_phase and report.get("schemaVersion", 0) >= PENDING_STATUS_REPORT_SCHEMA:
+        if phase == partial_copy_phase and report.get("schemaVersion", 0) >= MATCHING_PENDING_STATUS_REPORT_SCHEMA:
+            expected_case["matchingPendingStatusReported"] = True
+        elif phase == partial_copy_phase and report.get("schemaVersion", 0) >= PENDING_STATUS_REPORT_SCHEMA:
             expected_case["pendingStatusReported"] = True
         require(isinstance(case, dict) and case.keys() == expected_case.keys()
                 and all(type(case[key]) is type(value) and case[key] == value for key, value in expected_case.items()),

@@ -40,6 +40,7 @@ WINDOWS_DETECTION_FAILURE_REASONS = (
     "detector-timeout",
     "detector-unavailable",
     "installer-recovery-pending",
+    "installer-managed-upgrade-pending",
     "revocation-policy-expired",
 )
 WINDOWS_PAYLOAD_PUBLISHER = "payloadPublisherCertificateSHA256"
@@ -1101,6 +1102,8 @@ def detect_windows_upgrade(qualification, publisher_pin):
     if result.returncode == 1:
         if content in (b"AccessWeaver installation pending\r\n", b"AccessWeaver installation pending\n"):
             return "unverified", "installer-recovery-pending"
+        if content in (b"AccessWeaver managed upgrade pending\r\n", b"AccessWeaver managed upgrade pending\n"):
+            return "unverified", "installer-managed-upgrade-pending"
         if not content:
             return "unverified", "detector-inspection-failed"
     return "unverified", "detector-result-invalid"
@@ -1112,8 +1115,8 @@ def require_pending_windows_upgrade(update, publisher_pin, policy):
     require_current_revocation_policy(policy)
     observation = detect_windows_upgrade(qualification, publisher_pin)
     require_current_revocation_policy(policy)
-    require(observation == ("unverified", "installer-recovery-pending"),
-            "Windows retry after reboot requires a verified pending installation marker")
+    require(observation == ("unverified", "installer-managed-upgrade-pending"),
+            "Windows retry after reboot requires a verified pending installation marker for the requested release and directory")
 
 
 def check_windows_upgrade_policy(report, policy):
