@@ -81,12 +81,13 @@ func execute(args []string) (failure error) {
 	if args[0] == "audit" {
 		return auditCommand(args[1:])
 	}
-	root, err := profile.DefaultRoot()
-	if err != nil {
-		return err
-	}
-	if env := os.Getenv("ACCESSWEAVER_HOME"); env != "" {
-		root = env
+	root := os.Getenv("ACCESSWEAVER_HOME")
+	var err error
+	if root == "" {
+		root, err = profile.DefaultRoot()
+		if err != nil {
+			return err
+		}
 	}
 	if args[0] == "backup" {
 		return backupCommand(args[1:], root)

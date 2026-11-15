@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -20,6 +21,26 @@ func TestMetadataCommandsDoNotCreateUserState(t *testing.T) {
 	}
 	if err := execute([]string{"version", "unexpected"}); err == nil {
 		t.Fatal("unknown version option accepted")
+	}
+}
+
+func TestMetadataCommandHonorsExplicitStateDirectory(t *testing.T) {
+	const worker = "ACCESSWEAVER_TEST_EXPLICIT_METADATA_STATE"
+	if os.Getenv(worker) == "1" {
+		if err := execute([]string{"system", "check-version", "--build-identity", "v0.1.0-alpha"}); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+
+	root := filepath.Join(t.TempDir(), "not-created")
+	child := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestMetadataCommandHonorsExplicitStateDirectory$")
+	child.Env = []string{worker + "=1", "ACCESSWEAVER_HOME=" + root}
+	if output, err := child.CombinedOutput(); err != nil {
+		t.Fatalf("metadata command with an explicit directory and no default user config: %v\\n%s", err, output)
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Fatalf("metadata command wrote user state: %v", err)
 	}
 }
 
