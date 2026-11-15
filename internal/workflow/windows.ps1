@@ -5565,19 +5565,21 @@ function Save-DNSRecoveryReceipt([string]$SHA256) {
     $path=Get-DNSRecoveryReceiptPath $SHA256
     Publish-WorkflowFile $path ([Text.Encoding]::ASCII.GetBytes($SHA256.ToUpperInvariant()))
 }
+function Confirm-ActiveDNSRecovery($ExpectedSHA256) {
+    if(Confirm-DNSRecoverySnapshot $ExpectedSHA256){return $true}
+    $copy=Read-DNSRecoveryCopy
+    if(-not $copy){return $false}
+    if(-not $ExpectedSHA256 -or $copy.sha256 -ine $ExpectedSHA256){
+        throw 'DNS recovery journal does not match the protected recovery copy; review dns-restore'
+    }
+    return $true
+}
 function Confirm-DNSRecoveryEntry($Entry) {
     if($null -ne $Entry.snapshotActive -and $Entry.snapshotActive -isnot [bool]){
         throw 'DNS recovery journal contains an invalid snapshot phase'
     }
     $digest=$Entry.snapshotSHA256
-    if(Confirm-DNSRecoverySnapshot $digest){return $true}
-    $copy=Read-DNSRecoveryCopy
-    if($copy){
-        if(-not $digest -or $copy.sha256 -ine $digest){
-            throw 'DNS recovery journal does not match the protected recovery copy; review dns-restore'
-        }
-        return $true
-    }
+    if(Confirm-ActiveDNSRecovery $digest){return $true}
     # Legacy entries lack a digest and continue to require explicit dns-restore
     # whenever an active snapshot exists. Bound entries require their receipt.
     if(-not $digest -or ($Entry.snapshotActive -is [bool] -and -not $Entry.snapshotActive)){return $false}
@@ -5588,11 +5590,11 @@ function Confirm-DNSRecoveryEntry($Entry) {
        [Text.Encoding]::ASCII.GetString($bytes) -cne $digest.ToUpperInvariant()){
         throw 'DNS recovery snapshot is missing without a verified restoration receipt'
     }
-    # Receipt inspection may overlap a snapshot publication. If an active
-    # snapshot now exists it must pass the journal binding before cleanup.
-    if(Confirm-DNSRecoverySnapshot $digest){return $true}
+    # A primary snapshot or its protected copy can reappear during inspection.
+    # Either active record takes precedence over the receipt.
+    if(Confirm-ActiveDNSRecovery $digest){return $true}
     Assert-DNSDohPlaintextRuleOwnership ''
-    return $false
+    return (Confirm-ActiveDNSRecovery $digest)
 }
 function Recover-Operation {
     if($r.journalId -notmatch '^workflow-[a-fA-F0-9]{32}\.json$'){throw 'Invalid recovery journal name'}

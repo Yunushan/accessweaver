@@ -4,7 +4,7 @@ $path=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.ps
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'DNS journal source failed parsing'}
-foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-DNSRecoveryFileBytes','Get-DNSRecoveryCopyPath','Read-DNSRecoveryCopy','Remove-VerifiedDNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Get-WorkflowFileHash','Copy-WorkflowFileToNewPath','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Publish-RecordedWorkflowFile','Backup-File','Restore-RecordedWorkflowFile','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Test-DNSCryptLoopbackAddress','Wait-DNSCryptListeners','Get-EffectiveDNSCryptListeners','Assert-EffectiveDNSCryptListeners','Test-DNSAddressAnswer','Assert-DNSCryptConfiguration','Assert-DNSRecoverySnapshotUnchanged','Rollback','Remove-All','Get-ManagedFirewallRule','Remove-ManagedFirewallRule','Firewall','Get-WorkflowRecoveryJournalLimit','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Assert-DNSCryptCanBeRemoved','Remove-RecordedService')){
+foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-DNSRecoveryFileBytes','Get-DNSRecoveryCopyPath','Read-DNSRecoveryCopy','Remove-VerifiedDNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-ActiveDNSRecovery','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Get-WorkflowFileHash','Copy-WorkflowFileToNewPath','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Publish-RecordedWorkflowFile','Backup-File','Restore-RecordedWorkflowFile','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Test-DNSCryptLoopbackAddress','Wait-DNSCryptListeners','Get-EffectiveDNSCryptListeners','Assert-EffectiveDNSCryptListeners','Test-DNSAddressAnswer','Assert-DNSCryptConfiguration','Assert-DNSRecoverySnapshotUnchanged','Rollback','Remove-All','Get-ManagedFirewallRule','Remove-ManagedFirewallRule','Firewall','Get-WorkflowRecoveryJournalLimit','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Assert-DNSCryptCanBeRemoved','Remove-RecordedService')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -503,6 +503,36 @@ try {
         Require (Confirm-DNSRecoveryEntry $dnsUndo) 'Receipt bypassed restoration of the newly active matching snapshot'
         [IO.File]::Delete($snapshot)
     }
+    foreach($timing in @('receipt','firewall')){
+        & {
+            $readRecoveryFile=(Get-Command Read-DNSRecoveryFileBytes).ScriptBlock
+            $assertRuleOwnership=(Get-Command Assert-DNSDohPlaintextRuleOwnership).ScriptBlock
+            function Read-DNSRecoveryFileBytes([string]$Path,[int]$Maximum){
+                $frame=& $readRecoveryFile $Path $Maximum
+                if($timing -ceq 'receipt' -and $Path -ceq $receipt){[IO.File]::WriteAllBytes($copyPath,$reappearingCopy)}
+                if($null -ne $frame){return ,$frame}
+            }
+            function Assert-DNSDohPlaintextRuleOwnership([string]$ID){
+                & $assertRuleOwnership $ID
+                if($timing -ceq 'firewall'){[IO.File]::WriteAllBytes($copyPath,$reappearingCopy)}
+            }
+            $reappearingCopy=$copyFrame
+            Require (Confirm-DNSRecoveryEntry $dnsUndo) ('Matching protected copy was ignored during '+$timing+' inspection')
+            Require ([IO.File]::Exists($copyPath) -and -not [IO.File]::Exists($snapshot)) 'Receipt check changed active recovery files'
+            [IO.File]::Delete($copyPath)
+            $olderDigest=Get-WorkflowBytesSHA256 $firstBytes
+            $reappearingCopy=[Text.Encoding]::ASCII.GetBytes($olderDigest.ToUpperInvariant()+[char]10)+$firstBytes
+            $refused=$false
+            try{Recover-Operation}catch{$refused=$_.Exception.Message -match 'does not match the protected recovery copy'}
+            Require ($refused -and $script:order.Count -eq 0 -and [IO.File]::Exists($copyPath)) ('Stale protected copy allowed teardown during '+$timing+' inspection')
+            [IO.File]::Delete($copyPath)
+            $reappearingCopy=[byte[]]@(0)
+            $refused=$false
+            try{Recover-Operation}catch{$refused=$_.Exception.Message -match 'Original DNS recovery copy could not be verified'}
+            Require ($refused -and $script:order.Count -eq 0 -and [IO.File]::Exists($copyPath)) ('Corrupt protected copy allowed teardown during '+$timing+' inspection')
+            [IO.File]::Delete($copyPath)
+        }
+    }
     [IO.File]::Delete($receipt)
 
     $dnsUndo.snapshotActive=$false
@@ -793,6 +823,7 @@ try {
     $env:SystemRoot=$originalSystemRoot
     [IO.File]::Delete($serviceConfig)
     [IO.File]::Delete($snapshot)
+    [IO.File]::Delete((Get-DNSRecoveryCopyPath))
     [IO.File]::Delete($script:journalPath)
     foreach($digest in @($current,$next)){
         if($digest){[IO.File]::Delete((Get-DNSRecoveryReceiptPath $digest))}

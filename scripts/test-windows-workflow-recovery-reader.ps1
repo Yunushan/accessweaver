@@ -15,7 +15,7 @@ $recoverySHA=(Get-FileHash -LiteralPath $recoverySource -Algorithm SHA256).Hash.
 $recoveryTokens=$null;$recoveryErrors=$null
 $recoveryAst=[Management.Automation.Language.Parser]::ParseFile($recoverySource,[ref]$recoveryTokens,[ref]$recoveryErrors)
 if($recoveryErrors.Count){throw 'Recovery source did not parse'}
-$recoveryNames=@('Get-WorkflowRecoveryJournalLimit','Save-Journal','Publish-WorkflowFile','Get-WorkflowFileHash','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-WorkflowRecoveryJournalStream','Read-WorkflowRecoveryJournal','Confirm-DNSRecoverySnapshot','Get-WorkflowBytesSHA256','Read-DNSRecoveryFileBytes','Get-DNSRecoverySnapshotDigest','Confirm-DNSRecoveryEntry','Assert-RecordedServiceBinding','Recover-Operation','Under','No-Reparse')
+$recoveryNames=@('Get-WorkflowRecoveryJournalLimit','Save-Journal','Publish-WorkflowFile','Get-WorkflowFileHash','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-WorkflowRecoveryJournalStream','Read-WorkflowRecoveryJournal','Confirm-DNSRecoverySnapshot','Get-WorkflowBytesSHA256','Read-DNSRecoveryFileBytes','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryCopyPath','Read-DNSRecoveryCopy','Confirm-ActiveDNSRecovery','Confirm-DNSRecoveryEntry','Assert-RecordedServiceBinding','Recover-Operation','Under','No-Reparse')
 foreach($name in $recoveryNames){
     $nodes=@($recoveryAst.EndBlock.Statements|Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
     if($nodes.Count -ne 1){throw 'Required recovery source function unavailable'}
