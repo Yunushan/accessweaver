@@ -100,6 +100,9 @@ dpkg, apt = (json.loads(reports[name]) for name in ("dpkg.json", "apt.json"))
 if any(item["endpointArchitecture"] != arch or item["productionQualificationComplete"] is not False
        for item in (dpkg, apt)):
     raise SystemExit("Package evidence does not match the native fixture scope")
+if (dpkg["managedRevisionsObserved"] != [1, 2] or apt["managedRevisionsObserved"] != [1, 2]
+        or dpkg["managedFixtureSHA256"] != apt["managedFixtureSHA256"]):
+    raise SystemExit("Package probes did not verify the same managed lifecycle fixture")
 binary_by_version = {}
 for package in dpkg["packages"]:
     name = f'accessweaver_{package["version"]}_{package["arch"]}.deb'

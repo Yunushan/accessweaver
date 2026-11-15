@@ -65,7 +65,7 @@ Stop active AccessWeaver controllers and verify recovery of any active engine or
 
 ## Scope of current verification
 
-The [direct package probe](../scripts/test-linux-deb-lifecycle.py) inspects both package architectures and exercises install, upgrade, reinstall, downgrade refusal, explicit rollback and purge on the host's native architecture. It verifies the installed CLI as an ordinary user and checks an independent `dpkg` database. Synthetic policy and profile files are checked across every transition.
+The [direct package probe](../scripts/test-linux-deb-lifecycle.py) inspects both package architectures and exercises install, upgrade, reinstall, downgrade refusal, explicit rollback and purge on the host's native architecture. It verifies the installed CLI as an ordinary user and checks an independent `dpkg` database. The first installed controller imports an ordinary user's profile and enrolls a signed policy in the private package root. The upgraded controller advances the policy from revision 1 to 2. Reinstall, package rollback and a purge followed by reinstall must preserve the accepted revision, protection and profile. The rolled-back controller must reject a replay of revision 1.
 
 ```sh
 sudo python3 -B scripts/test-linux-deb-lifecycle.py --arch amd64 \
@@ -74,18 +74,18 @@ sudo python3 -B scripts/test-linux-deb-lifecycle.py --arch amd64 \
   --other ARM64_ARCHIVE --other-sha256 ARM64_SHA256
 ```
 
-On ARM64, pass `--arch arm64`, two ARM64 archives and one AMD64 archive. The probe requires the kernel and `dpkg` architectures to match the selected endpoint. The [Ubuntu 26.04 WSL AMD64 evidence](qualification/16632c4b2a7f-linux-deb-lifecycle.json) records the earlier package-assembly and AMD64 endpoint results.
+On ARM64, pass `--arch arm64`, two ARM64 archives and one AMD64 archive. The probe requires the kernel and `dpkg` architectures to match the selected endpoint. Run it on qualified persistent storage under `/var/tmp` with OpenSSL and `chroot` available. The [Ubuntu 26.04 WSL AMD64 evidence](qualification/16632c4b2a7f-linux-deb-lifecycle.json) records the earlier package-assembly and AMD64 endpoint results.
 
-The [signed APT probe](../scripts/test-linux-apt-repository.py) uses disposable Ed25519 keys, a loopback HTTP repository and private APT and dpkg state. It requires two approved versions for each architecture and a SHA-256 pin for each `.deb`. It checks by-hash retrieval, ordinary-user execution, installation, upgrade and purge. APT must refuse the wrong scoped key, expired metadata, and altered signatures, indexes or package bytes. [Ubuntu WSL APT evidence](qualification/4caa86d5b6d0-linux-apt-repository.json).
+The [signed APT probe](../scripts/test-linux-apt-repository.py) uses disposable Ed25519 keys, a loopback HTTP repository and private APT and dpkg state. It requires two approved versions for each architecture and a SHA-256 pin for each `.deb`. It checks by-hash retrieval, ordinary-user execution, installation, upgrade, purge and reinstall. Both probes read the same real imported profile through the installed controller and require it to refuse unapproved profile writes and engine starts. The fixture uses an inert engine file and temporary policy keys. APT must refuse the wrong scoped key, expired metadata, and altered signatures, indexes or package bytes. [Ubuntu WSL APT evidence](qualification/4caa86d5b6d0-linux-apt-repository.json).
 
 The [native lifecycle workflow](../.github/workflows/linux-package-lifecycle.yml) runs the two probes on separate GitHub-hosted Ubuntu 24.04 AMD64 and ARM64 jobs. It builds two fixture versions from the exact source under test. It verifies that both probes consumed the same package bytes and installed the same native binaries. Each successful job uploads a source-bound digest summary and the two probe reports. Check both results for the candidate commit. [GitHub-hosted runner labels](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 
-On a disposable supported Linux host with the repository's Go toolchain, Python 3.11 or later, Debian package and GnuPG tools, and administrator access for the isolated probes, run the same entry point from the clean candidate checkout.
+On a disposable supported Linux host with the repository's Go toolchain, Python 3.11 or later, Debian package tools, GnuPG, OpenSSL and administrator access for the isolated probes, run the same entry point from the clean candidate checkout.
 
 ```sh
 bash scripts/test-linux-package-candidate.sh amd64 "$(git rev-parse HEAD)" /var/tmp/accessweaver-package-report
 ```
 
-The [exact-source AMD64 rehearsal](qualification/227b43d8500e-linux-package-candidate.json) ran this entry point on Ubuntu 26.04 WSL. Both package routes installed the same executable bytes for the two fixture versions and preserved synthetic policy and profile files. The architecture check refused an ARM64 report on that AMD64 host.
+The [exact-source AMD64 rehearsal](qualification/227b43d8500e-linux-package-candidate.json) ran this entry point on Ubuntu 26.04 WSL. Both package routes installed the same executable bytes for the two fixture versions and preserved synthetic policy and profile files. The architecture check refused an ARM64 report on that AMD64 host. The [packaged managed-state evidence](qualification/16632c4b2a7f-linux-packaged-managed-policy.json) verifies both package routes on Ubuntu 26.04 WSL AMD64 with two versions built from distinct source commits.
 
 Production rollout still requires results for the approved release packages and native endpoint architectures. It also requires organization signing and hosting, reboot and active-engine checks, and validation through the organization's endpoint-management tools.

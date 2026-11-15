@@ -13,6 +13,7 @@ import sys
 import tarfile
 import tempfile
 
+from linux_package_managed_fixture import ManagedPackageFixture
 from verify_release import require
 
 BUILDER = Path(__file__).with_name("build-linux-deb.py")
@@ -126,40 +127,43 @@ def exercise(work, arch, old, old_pin, new, new_pin, other, other_pin):
     for name in ("info", "updates"):
         (database / name).mkdir()
     (database / "status").touch()
-    preserved = {root / "etc/accessweaver/installation.json": b'{"fixture":"protected-installation"}\n',
-                 root / "etc/accessweaver/acceptance.json": b'{"fixture":"protected-acceptance"}\n',
-                 root / "home/fixture/.config/accessweaver/profiles/fixture.json": b'{"fixture":"user-profile"}\n'}
-    for path, data in preserved.items():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
-        path.chmod(0o600)
-        if path.is_relative_to(root / "home"):
-            os.chown(path, 65534, 65534)
-
-    def preserved_state():
-        return {path: (path.read_bytes(), stat.S_IMODE(path.stat().st_mode),
-                       path.stat().st_uid, path.stat().st_gid, path.stat().st_ino)
-                for path in preserved}
-
-    expected = preserved_state()
     dpkg = ("/usr/bin/dpkg", f"--root={root}", f"--admindir={database}")
-    for path, version, payload, downgrade in (
-            (before, before_version, before_payload, "--refuse-downgrade"),
-            (after, after_version, after_payload, "--refuse-downgrade"),
-            (after, after_version, after_payload, "--refuse-downgrade"),
-            (before, after_version, after_payload, "--refuse-downgrade"),
-            (before, before_version, before_payload, "--force-downgrade")):
+
+    def install(path, version, payload, downgrade="--refuse-downgrade"):
         run(*dpkg, downgrade, "--install", path)
         install_state(root, version, payload)
         require(not run(*dpkg, "--verify", "accessweaver"), "dpkg failed installed file verification")
-        require(preserved_state() == expected, "Install or rollback changed policy or profile state")
 
-    run(*dpkg, "--purge", "accessweaver")
-    require(not (root / "usr/bin/accessweaver").exists()
-            and not (root / "usr/share/doc/accessweaver").exists()
-            and "Package: accessweaver" not in (database / "status").read_text(encoding="utf-8")
-            and not run(*dpkg, "--audit"), "Uninstall left package registration, payload or an incomplete transaction")
-    require(preserved_state() == expected, "Uninstall changed policy or profile state")
+    install(before, before_version, before_payload)
+    managed = ManagedPackageFixture(root)
+    managed.verify()
+
+    def transition(path, version, payload, downgrade="--refuse-downgrade"):
+        prior = managed.state()
+        install(path, version, payload, downgrade)
+        managed.verify()
+        require(managed.state() == prior, "Package transition changed enrolled policy or profile")
+
+    transition(after, after_version, after_payload)
+    managed.advance()
+    managed.verify()
+    transition(after, after_version, after_payload)
+    transition(before, after_version, after_payload)
+    transition(before, before_version, before_payload, "--force-downgrade")
+    managed.refuse_replay()
+
+    def purge():
+        prior = managed.state()
+        run(*dpkg, "--purge", "accessweaver")
+        require(not (root / "usr/bin/accessweaver").exists()
+                and not (root / "usr/share/doc/accessweaver").exists()
+                and "Package: accessweaver" not in (database / "status").read_text(encoding="utf-8")
+                and not run(*dpkg, "--audit"), "Uninstall left package registration, payload or an incomplete transaction")
+        require(managed.state() == prior, "Uninstall changed enrolled policy or profile")
+
+    purge()
+    transition(after, after_version, after_payload)
+    purge()
     return {"schemaVersion": 1, "scope": "Isolated unsigned Debian package construction and native Linux dpkg lifecycle",
             "endpointArchitecture": arch,
             "dpkgVersion": run("/usr/bin/dpkg", "--version").splitlines()[0].decode("ascii"),
@@ -170,6 +174,8 @@ def exercise(work, arch, old, old_pin, new, new_pin, other, other_pin):
                              (arch, before_version, old_pin, before, before_payload),
                              (arch, after_version, new_pin, after, after_payload),
                              (other_arch, cross_version, other_pin, cross_package, cross_payload))],
+            "managedRevisionsObserved": [1, managed.revision],
+            "managedFixtureSHA256": sha(Path(__file__).with_name("linux_package_managed_fixture.py")),
             "checks": ["mismatched-source-digest-refused-without-output",
                        "amd64-and-arm64-control-and-payload-inspected",
                        "reproducible-package-and-exclusive-publication",
@@ -178,7 +184,10 @@ def exercise(work, arch, old, old_pin, new, new_pin, other, other_pin):
                        "dpkg-verify-after-each-change",
                        "guarded-downgrade-refusal-and-explicit-rollback",
                        "purge-and-package-registration-removal",
-                       "synthetic-policy-and-profile-bytes-owner-mode-and-inode-preserved"],
+                       "enrollment-and-profile-created-with-first-installed-controller",
+                       "new-controller-advanced-policy-and-older-rollback-refused-replay",
+                       "ordinary-mutation-and-engine-launch-denied-through-installed-controllers",
+                       "enrolled-policy-and-profile-preserved-through-purge-and-reinstall"],
             "amd64Execution": arch == "amd64", "arm64Execution": arch == "arm64",
             "productionQualificationComplete": False}
 
@@ -197,7 +206,7 @@ def main():
     require(arch is not None and args.arch in (None, arch)
             and run("/usr/bin/dpkg", "--print-architecture").strip() == arch.encode("ascii"),
             "Kernel and dpkg must match the requested native architecture")
-    with tempfile.TemporaryDirectory(prefix="accessweaver-deb-acceptance-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="accessweaver-deb-acceptance-", dir="/var/tmp") as temporary:
         work = Path(temporary)
         work.chmod(0o755)
         result = exercise(work, arch, args.old, args.old_sha256, args.new, args.new_sha256,

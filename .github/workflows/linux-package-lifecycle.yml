@@ -70,9 +70,9 @@ jobs:
           cache: false
       - name: Ensure native package and signing tools are available
         run: |
-          if ! command -v dpkg-scanpackages || ! command -v gpg || ! command -v gpgv || ! command -v ip; then
+          if ! command -v dpkg-scanpackages || ! command -v gpg || ! command -v gpgv || ! command -v ip || ! command -v openssl; then
             sudo apt-get -o APT::Update::Error-Mode=any update
-            sudo apt-get install --no-install-recommends -y dpkg-dev gnupg gpgv iproute2
+            sudo apt-get install --no-install-recommends -y dpkg-dev gnupg gpgv iproute2 openssl
           fi
       - name: Build the exact source and exercise native dpkg and APT lifecycles
         run: |

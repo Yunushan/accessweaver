@@ -15,6 +15,7 @@ import sys
 import tempfile
 from threading import Thread
 
+from linux_package_managed_fixture import ManagedPackageFixture
 from verify_release import require
 
 BUILDER = Path(__file__).with_name("build-linux-apt-repository.py")
@@ -107,35 +108,38 @@ def installed_version(root, version):
 
 def install_and_upgrade(work, url, keyring, trusted, arch, served, first, upgrade, older, newer):
     apt, root = apt_client(work / "client", url, keyring, trusted, arch)
-    policy = root / "etc/accessweaver/installation.json"
-    profile = root / "home/fixture/.config/accessweaver/profiles/fixture.json"
-    for path, data in ((policy, b'{"fixture":"policy"}\n'), (profile, b'{"fixture":"profile"}\n')):
-        path.parent.mkdir(parents=True)
-        path.write_bytes(data)
-        path.chmod(0o600)
-    os.chown(profile, 65534, 65534)
-
-    def state():
-        result = []
-        for path in (policy, profile):
-            info = path.stat()
-            result.append((digest(path), info.st_mode, info.st_uid, info.st_gid, info.st_ino))
-        return result
-
-    expected = state()
     served[0] = first
     apt("update")
     apt("-y", "install", "accessweaver")
     previous = installed_version(root, older)
-    require(state() == expected, "APT installation modified machine policy or user profile")
+    managed = ManagedPackageFixture(root)
+    managed.verify()
+    expected = managed.state()
     served[0] = upgrade
     apt("update")
     apt("-y", "install", "--only-upgrade", "accessweaver")
     current = installed_version(root, newer)
-    require(previous != current and state() == expected, "APT upgrade did not preserve policy and profile")
-    apt("-y", "purge", "accessweaver")
-    require(not (root / "usr/bin/accessweaver").exists() and state() == expected,
-            "APT purge did not remove the binary and preserve policy/profile")
+    managed.verify()
+    require(previous != current and managed.state() == expected,
+            "APT upgrade did not preserve enrolled policy and profile")
+    managed.advance()
+    managed.verify()
+    expected = managed.state()
+
+    def purge():
+        apt("-y", "purge", "accessweaver")
+        database = root / "var/lib/dpkg/status"
+        require(not (root / "usr/bin/accessweaver").exists()
+                and "Package: accessweaver" not in database.read_text(encoding="utf-8")
+                and managed.state() == expected,
+                "APT purge did not remove the package and preserve enrollment/profile")
+
+    purge()
+    apt("-y", "install", "accessweaver")
+    require(installed_version(root, newer) == current, "APT reinstall selected a different package")
+    managed.verify()
+    require(managed.state() == expected, "APT reinstall changed enrolled policy or profile")
+    purge()
     return previous, current
 
 
@@ -265,6 +269,8 @@ def exercise(work, packages, pins, arch, older, newer):
         "schemaVersion": 1, "scope": "Loopback signed APT publication and isolated native Linux install lifecycle",
         "endpointArchitecture": arch,
         "builderSHA256": digest(BUILDER), "probeSHA256": digest(Path(__file__)),
+        "managedFixtureSHA256": digest(Path(__file__).with_name("linux_package_managed_fixture.py")),
+        "managedRevisionsObserved": [1, 2],
         "aptVersion": command("/usr/bin/apt-get", "--version").splitlines()[0].decode("ascii"),
         "packageSHA256": dict(sorted(pins.items())), "olderBinarySHA256": old_binary,
         "newerBinarySHA256": new_binary, "suiteArchitectures": ["amd64", "arm64"],
@@ -272,7 +278,8 @@ def exercise(work, packages, pins, arch, older, newer):
                    "package-pin-and-untrusted-verification-key-rejected-without-publication",
                    "exclusive-publication-preserved-existing-snapshot",
                    "native-apt-fetched-index-by-signed-hash",
-                   "signed-install-upgrade-and-purge-preserved-policy-and-profile",
+                   "signed-install-upgrade-purge-and-reinstall-preserved-enrolled-policy-and-profile",
+                   "installed-controller-advanced-policy-and-denied-ordinary-mutation-and-launch",
                    "ordinary-user-installed-cli-matched-package-build-identity",
                    "wrong-scoped-key-tampered-signature-and-expired-metadata-rejected",
                    "tampered-index-and-payload-rejected-before-installation"],
