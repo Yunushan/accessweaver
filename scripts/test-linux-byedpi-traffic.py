@@ -5,11 +5,13 @@ The private fixture directory contains accessweaver, ciadpi, and prep.json.
 The prep record pins the controller and engine SHA-256 digests and identifies
 the source, toolchain and engine release. The runner publishes traffic-report.json
 without replacing an existing report. The optional --dns-rules mode also needs
-the documented private resolver setup and writes dns-rule-report.json. Launch
-with an ordinary user without capabilities in a disposable loopback-only
-network namespace.
+the documented private resolver setup and writes dns-rule-report.json. The
+--browser mode adds the prepared Chrome for Testing binary and writes
+browser-report.json. Launch with an ordinary user without capabilities in a
+disposable loopback-only network namespace.
 """
 
+import base64
 import concurrent.futures
 import hashlib
 import ipaddress
@@ -32,9 +34,10 @@ def require(ok, label):
         raise RuntimeError(label)
 
 
-if len(sys.argv) not in (2, 3) or (len(sys.argv) == 3 and sys.argv[2] != "--dns-rules"):
-    raise SystemExit("usage: test-linux-byedpi-traffic.py PRIVATE_FIXTURE_DIRECTORY [--dns-rules]")
+if len(sys.argv) not in (2, 3) or (len(sys.argv) == 3 and sys.argv[2] not in ("--dns-rules", "--browser")):
+    raise SystemExit("usage: test-linux-byedpi-traffic.py PRIVATE_FIXTURE_DIRECTORY [--dns-rules|--browser]")
 DNS_RULES = len(sys.argv) == 3
+BROWSER = DNS_RULES and sys.argv[2] == "--browser"
 ROOT = Path(sys.argv[1]).resolve(strict=True)
 require(ROOT.is_dir() and ROOT.stat().st_uid == os.geteuid() and ROOT.stat().st_mode & 0o077 == 0,
         "fixture-directory-not-private")
@@ -62,6 +65,13 @@ IPV6 = "v6.included.aw-fixture.test"
 DNS_TARGETS = {INCLUDE: loopback, EXCLUDE: loopback, UNLISTED: loopback, IPV6: "::1"}
 if DNS_RULES:
     require(Path("/etc/resolv.conf").read_text() == RESOLVER_CONFIG, "expected-private-fixture-resolver")
+if BROWSER:
+    browser_root = ROOT / "browser"
+    browser = browser_root / "chrome-headless-shell-linux64" / "chrome-headless-shell"
+    browser_prep = json.loads((browser_root / "browser-prep.json").read_bytes())
+    with browser.open("rb") as executable:
+        require(hashlib.file_digest(executable, "sha256").hexdigest() == browser_prep["browserExecutableSHA256"],
+                "browser-digest-mismatch")
 
 
 def trial(label, action):
@@ -314,14 +324,22 @@ with tempfile.TemporaryDirectory(prefix="run-", dir=ROOT) as temporary:
     env = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "HOME": str(home),
            "ACCESSWEAVER_HOME": str(work / "state")}
     cert, key = work / "local-cert.pem", work / "local-key.pem"
-    subprocess.run(["/usr/bin/openssl", "req", "-x509", "-newkey", "ed25519", "-nodes",
-                    "-subj", "/CN=localhost", "-days", "1", "-addext", "subjectAltName=DNS:localhost",
+    names = ",".join("DNS:" + name for name in ("localhost", *DNS_TARGETS)) if BROWSER else "DNS:localhost"
+    key_options = ["ec", "-pkeyopt", "ec_paramgen_curve:P-256"] if BROWSER else ["ed25519"]
+    subprocess.run(["/usr/bin/openssl", "req", "-x509", "-newkey", *key_options, "-nodes",
+                    "-subj", "/CN=localhost", "-days", "1", "-addext", "subjectAltName=" + names,
                     "-keyout", key, "-out", cert], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                    check=True, timeout=10)
     server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     server_context.load_cert_chain(cert, key)
     client_context = ssl.create_default_context(cafile=cert)
     client_context.minimum_version = ssl.TLSVersion.TLSv1_2
+    if BROWSER:
+        public_key = subprocess.check_output(["/usr/bin/openssl", "x509", "-in", cert, "-pubkey", "-noout"], timeout=10)
+        spki = subprocess.check_output(["/usr/bin/openssl", "pkey", "-pubin", "-outform", "DER"],
+                                       input=public_key, timeout=10)
+        spki_pin = base64.b64encode(hashlib.sha256(spki).digest()).decode("ascii")
+        browser_env = {**env, "LD_LIBRARY_PATH": str(browser_root / "dependencies/usr/lib/x86_64-linux-gnu")}
 
     def cli(*args):
         return subprocess.run([CORE, *args], env=env, cwd=work, capture_output=True, text=True, timeout=12)
@@ -399,6 +417,94 @@ with tempfile.TemporaryDirectory(prefix="run-", dir=ROOT) as temporary:
                 "changed-engine-digest-not-refused")
 
 
+
+    def navigate_browser(url, *, proxy, tls):
+        with tempfile.TemporaryDirectory(prefix="chrome-profile-", dir=work) as profile:
+            args = [str(browser), "--dump-dom", "--disable-gpu", "--disable-dev-shm-usage",
+                    "--disable-background-networking", "--disable-component-update", "--no-first-run",
+                    "--disable-sync", "--host-resolver-rules=MAP *.aw-fixture.test ~NOTFOUND",
+                    "--user-data-dir=" + profile]
+            args.append(f"--proxy-server=socks5://127.0.0.1:{port}" if proxy else "--no-proxy-server")
+            if tls:
+                args.append("--ignore-certificate-errors-spki-list=" + spki_pin)
+            result = subprocess.run([*args, url], cwd=work, env=browser_env, stdin=subprocess.DEVNULL,
+                                    capture_output=True, timeout=20)
+        errors = result.stderr
+        require(b"No usable sandbox" not in errors and b"Operation not permitted" not in errors,
+                "chromium-sandbox-unavailable")
+        return result
+
+    def browser_origin(name, *, proxy, expected_header=None, expected_error=None, tls=False):
+        target = DNS_TARGETS.get(name, name)
+        family = socket.AF_INET6 if ":" in target else socket.AF_INET
+        with socket.socket(family, socket.SOCK_STREAM) as listener:
+            listener.bind((target, 0))
+            listener.listen(1)
+            listener.settimeout(6)
+            destination = listener.getsockname()[1]
+            protocol = "https" if tls else "http"
+            url = f"{protocol}://{name}:{destination}/fixture"
+            marker = b"accessweaver-browser-origin-observed"
+            body = b"<!doctype html><html><head><link rel='icon' href='data:,'></head><body>" + marker + b"</body></html>"
+            response = (b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\nContent-Length: "
+                        + str(len(body)).encode("ascii") + b"\r\n\r\n" + body)
+
+            def observe():
+                accepted, _ = listener.accept()
+                with accepted:
+                    accepted.settimeout(4)
+                    stream = server_context.wrap_socket(accepted, server_side=True) if tls else accepted
+                    with stream:
+                        request = bytearray()
+                        while b"\r\n\r\n" not in request and len(request) < 16 << 10:
+                            request.extend(recv_exact(stream, 1))
+                        require(b"\r\n\r\n" in request, "chromium-origin-request-incomplete")
+                        stream.sendall(response)
+                return bytes(request)
+
+            if expected_error is not None:
+                result = navigate_browser(url, proxy=proxy, tls=tls)
+                require(not select.select([listener], [], [], 0.2)[0] and marker not in result.stdout,
+                        "chromium-unexpected-origin-connection")
+                require(expected_error in result.stderr or expected_error in result.stdout, "chromium-expected-error-unobserved")
+                return
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as task:
+                arrived = task.submit(observe)
+                result = navigate_browser(url, proxy=proxy, tls=tls)
+                request = arrived.result(timeout=8)
+            require(result.returncode == 0 and marker in result.stdout, "chromium-origin-document-unobserved")
+            headers = request.split(b"\r\n")
+            expected_host = expected_header + f"{name}:{destination}".encode("ascii")
+            require(expected_host in headers, "chromium-origin-host-header-mismatch")
+            identity = ("HeadlessChrome/" + browser_prep["browserVersion"].split(".")[0]).encode("ascii")
+            require(any(line.lower().startswith(b"user-agent:") and identity in line for line in headers),
+                    "chromium-origin-user-agent-unobserved")
+
+    def check_browser_paths(observations):
+        def inspect(name, header, *, tls=False):
+            observations.clear()
+            browser_origin(name, proxy=True, expected_header=header, tls=tls)
+            query_type = 28 if DNS_TARGETS[name] == "::1" else 1
+            require((name, query_type) in observations, "chromium-proxy-dns-query-unobserved")
+
+        def direct_numeric():
+            observations.clear()
+            browser_origin(loopback, proxy=False, expected_header=b"Host: ")
+            require(not observations, "chromium-direct-numeric-unexpected-dns")
+
+        def direct_named():
+            observations.clear()
+            browser_origin(INCLUDE, proxy=False, expected_error=b"ERR_NAME_NOT_RESOLVED")
+            require(not observations, "chromium-direct-blocked-unexpected-dns")
+
+        trial("chromium-direct-numeric-http-control", direct_numeric)
+        trial("chromium-direct-name-lookup-blocked", direct_named)
+        trial("chromium-proxied-included-http", lambda: inspect(INCLUDE, b"hOsT: "))
+        trial("chromium-proxied-nested-exclusion-http", lambda: inspect(EXCLUDE, b"Host: "))
+        trial("chromium-proxied-unlisted-http", lambda: inspect(UNLISTED, b"Host: "))
+        trial("chromium-proxied-ipv6-https", lambda: inspect(IPV6, b"Host: ", tls=True))
+
     def check_dns_rules(guided):
         profile = "dns-guided" if guided else "dns-unguided"
         import_profile(profile, PREP["engineSHA256"],
@@ -434,12 +540,20 @@ with tempfile.TemporaryDirectory(prefix="run-", dir=ROOT) as temporary:
                     trial("guided-nested-excluded-http-host-unmodified", lambda: inspect(EXCLUDE, b"Host: "))
                     trial("guided-unlisted-http-host-unmodified", lambda: inspect(UNLISTED, b"Host: "))
                     trial("guided-included-ipv6-http-host-modified", lambda: inspect(IPV6, b"hOsT: "))
+                    if BROWSER:
+                        check_browser_paths(observations)
                 else:
                     inspect(UNLISTED, b"hOsT: ")
 
                 p.send_signal(signal.SIGTERM)
                 require(p.wait(timeout=9) == 0 and bool(select.select([fd], [], [], 2)[0]) and is_closed(),
                         "dns-rule-proxy-cleanup-failed")
+                if guided and BROWSER:
+                    def proxy_loss():
+                        observations.clear()
+                        browser_origin(INCLUDE, proxy=True, expected_error=b"ERR_PROXY_CONNECTION_FAILED")
+                        require(not observations, "chromium-proxy-loss-followed-direct-dns")
+                    trial("chromium-proxy-loss-refuses-direct-fallback", proxy_loss)
             finally:
                 stop.set()
                 if p is not None and p.poll() is None:
@@ -472,7 +586,12 @@ report = {**PREP, "schemaVersion": 1, "scope": "Linux AMD64 real ByeDPI local tr
           "syntheticDNSRulesRequested": DNS_RULES,
           "tests": results, "allChecksPassed": all(record["passed"] for record in results),
           "productionQualificationComplete": False}
-report_name = "dns-rule-report.json" if DNS_RULES else "traffic-report.json"
+report_name = "browser-report.json" if BROWSER else "dns-rule-report.json" if DNS_RULES else "traffic-report.json"
+if BROWSER:
+    report["browser"] = browser_prep
+    report["browserSandboxDisabled"] = False
+    report["browserTLSFixtureSPKIPinned"] = True
+    report["browserTLSFixtureKey"] = "ECDSA P-256"
 with (ROOT / report_name).open("x", encoding="utf-8") as stream:
     json.dump(report, stream, indent=2)
 sys.exit(0 if report["allChecksPassed"] else 1)

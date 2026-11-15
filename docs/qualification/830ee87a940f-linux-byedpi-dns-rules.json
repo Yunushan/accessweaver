@@ -98,5 +98,6 @@
   "productionQualificationComplete": false,
   "host": "Ubuntu WSL",
   "probeSource": "scripts/test-linux-byedpi-traffic.py",
-  "hostResolverAndPortSettingDigestsPreserved": true
+  "hostResolverAndPortSettingDigestsPreserved": true,
+  "probeSourceCommit": "60a6672187018a15244d98f57e26a3771f60a6f5"
 }

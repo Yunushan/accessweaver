@@ -155,7 +155,11 @@ nameserver 127.0.0.53
 options timeout:1 attempts:1
 ```
 
-External or encrypted DNS transport, browser and Discord traffic, ISP behavior, vendor network recovery, and other platforms still require their own tests.
+With `--browser`, the fixture also launches Chrome for Testing with a fresh profile for each navigation. Stage the official Linux AMD64 headless-shell archive under `browser/chrome-headless-shell-linux64/` in the private fixture directory. Prepare `browser/browser-prep.json` using the browser identity fields in the [browser receipt](qualification/830ee87a940f-linux-byedpi-browser.json). If the host lacks required libraries, extract verified distribution packages into `browser/dependencies/`. The fixture starts the browser with its sandbox enabled and writes `browser-report.json`. [Chrome for Testing](https://googlechromelabs.github.io/chrome-for-testing/).
+
+The browser checks block its direct lookup of the synthetic DNS names, then verify that the same names reach the origin and trigger the proxy's DNS queries. The origin checks the HTTP rule bytes, receives the IPv6 HTTPS navigation using a pinned ephemeral ECDSA key, and verifies a direct numeric control. After the proxy stops, the fixture checks that the browser reports the proxy connection failure, with no new DNS query or origin connection. The namespaces contain only loopback interfaces and synthetic content. [Chromium proxy behavior](https://chromium.googlesource.com/chromium/src/+/HEAD/net/docs/proxy.md).
+
+External or encrypted DNS transport, Discord traffic, ISP behavior, vendor network recovery, and other platforms still require their own tests.
 
 ## Release packaging
 

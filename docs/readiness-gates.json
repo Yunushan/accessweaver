@@ -34,6 +34,7 @@
             "scripts/test-windows-wiresock-evidence.ps1",
             "docs/qualification/830ee87a940f-linux-byedpi-traffic.json",
             "docs/qualification/830ee87a940f-linux-byedpi-dns-rules.json",
+            "docs/qualification/830ee87a940f-linux-byedpi-browser.json",
             "scripts/test-linux-byedpi-traffic.py",
             "docs/qualification/f283f4a449a9-wiresock-uninstall-registration-readback-contracts.json",
             "scripts/test-windows-wiresock.ps1",
