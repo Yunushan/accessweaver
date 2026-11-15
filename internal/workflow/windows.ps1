@@ -2848,6 +2848,70 @@ function Restore-DNSCryptAfterActivationFailure($Resolver,[string]$SnapshotSHA25
         throw 'DNSCrypt activation failed and the original service could not be recovered; inspect the retained recovery journal'
     }
 }
+function New-DNSCryptRetirementRecord($Resolver) {
+    if((Assert-RecordedServiceBinding $Resolver) -ne 0){throw 'Existing DNSCrypt service disappeared during DoH configuration'}
+    $service=Get-Service -Name $Resolver.name -ErrorAction Stop
+    try {
+        if($service.Status -eq 'Stopped'){return}
+        $startup=[string]$service.StartType
+        if($service.Status -ne 'Running' -or $startup -cnotin @('Manual','Automatic')){
+            throw 'Existing DNSCrypt service state is unsupported for DoH configuration'
+        }
+    } finally {if($service -is [IDisposable]){$service.Dispose()}}
+    $config=Join-Path $root 'components\dnscrypt\dnscrypt-proxy.toml'
+    $bytes=Read-DNSRecoveryFileBytes $config 1MB
+    if($null -eq $bytes){throw 'DNSCrypt configuration could not be recorded before stopping its service'}
+    return @{name=$Resolver.name;commandSHA256=$Resolver.commandSHA256;startup=$startup;
+        configSHA256=(Get-WorkflowBytesSHA256 $bytes)}
+}
+function Read-DNSCryptRetirementState($Record) {
+    if($Record.name -isnot [string] -or $Record.name -cne 'AccessWeaver-dnscrypt' -or
+        $Record.commandSHA256 -isnot [string] -or $Record.commandSHA256 -cnotmatch '\A[A-F0-9]{64}\z' -or
+        $Record.startup -isnot [string] -or $Record.startup -cnotin @('Manual','Automatic') -or
+        $Record.configSHA256 -isnot [string] -or $Record.configSHA256 -cnotmatch '\A[A-F0-9]{64}\z'){
+        throw 'Invalid DNSCrypt service recovery record'
+    }
+    $config=Join-Path $root 'components\dnscrypt\dnscrypt-proxy.toml'
+    Assert-DNSCryptConfiguration $config $Record.configSHA256
+    if((Assert-RecordedServiceBinding $Record) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
+    $service=Get-Service -Name $Record.name -ErrorAction Stop
+    try {
+        $status=[string]$service.Status
+        $startup=[string]$service.StartType
+        if($startup -cnotin @($Record.startup,'Manual') -or $status -cnotin @('Running','Stopped')){
+            throw 'DNSCrypt service state changed independently; retain the recovery journal'
+        }
+        return @{status=$status;startup=$startup}
+    } finally {if($service -is [IDisposable]){$service.Dispose()}}
+}
+function Restore-DNSCryptRetirement($DNSEntry) {
+    if($DNSEntry.snapshotActive -isnot [bool] -or -not $DNSEntry.snapshotActive -or
+        $DNSEntry.snapshotSHA256 -isnot [string] -or $DNSEntry.snapshotSHA256 -notmatch '\A[a-fA-F0-9]{64}\z'){
+        throw 'DNSCrypt service recovery requires an active or restored DNS snapshot'
+    }
+    $record=$DNSEntry.dnscryptRetirement
+    [void](Confirm-DNSRecoveryEntry $DNSEntry)
+    $current=Read-DNSCryptRetirementState $record
+    if($current.startup -cne $record.startup){
+        Set-Service -Name $record.name -StartupType $record.startup -ErrorAction Stop
+    }
+    if($current.status -ceq 'Stopped'){
+        [void](Confirm-DNSRecoveryEntry $DNSEntry)
+        [void](Read-DNSCryptRetirementState $record)
+        $service=Get-Service -Name $record.name -ErrorAction Stop
+        try {
+            if($service.StartType -ne $record.startup){throw 'DNSCrypt startup policy could not be restored'}
+            if($service.Status -eq 'Stopped'){Start-Service -InputObject $service -ErrorAction Stop}
+            $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
+        } finally {if($service -is [IDisposable]){$service.Dispose()}}
+    }
+    Assert-EffectiveDNSCryptListeners
+    $current=Read-DNSCryptRetirementState $record
+    if($current.startup -cne $record.startup -or $current.status -cne 'Running'){
+        throw 'Original DNSCrypt service state could not be verified'
+    }
+    [void](Confirm-DNSRecoveryEntry $DNSEntry)
+}
 function Configure-DNS([string]$method) {
     if($method -notin @('doh','dnscrypt')){throw 'Choose doh or dnscrypt'}
     if($method -eq 'doh'){foreach($command in @('Get-DnsClientDohServerAddress','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress')){if(-not (Get-Command $command -ErrorAction SilentlyContinue)){throw 'This Windows version does not expose native DoH management; choose DNSCrypt instead'}}}
@@ -3144,11 +3208,22 @@ function Configure-DNS([string]$method) {
         if($method -ceq 'doh'){
             Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy changed during resolver verification; retain the original DNS snapshot'
         }
+        $retirement=$null
         if($method -ceq 'doh' -and $existingResolver -and -not (Test-DNSCryptListenerNeeded $records)){
-            # Keep the old listener available until the new adapter DNS is usable
-            # and there is no remaining observed dependency on the loopback listener.
-            if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared during DoH configuration'}
+            $retirement=New-DNSCryptRetirementRecord $existingResolver
+        }
+        if($retirement){
+            # Recovery must be able to restart this service even after a reboot.
+            $dnsUndo.dnscryptRetirement=$retirement
+            try {Save-Journal}catch{
+                $dnsUndo.Remove('dnscryptRetirement')
+                throw
+            }
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+            $serviceState=Read-DNSCryptRetirementState $retirement
+            if($serviceState.status -cne 'Running' -or $serviceState.startup -cne $retirement.startup){
+                throw 'DNSCrypt service changed before DoH configuration could stop it'
+            }
             Stop-Service -Name $serviceName -ErrorAction Stop
             $listenerNeeded=Test-DNSCryptListenerNeeded $records
             $dohVerified=$true
@@ -3169,16 +3244,21 @@ function Configure-DNS([string]$method) {
                 } finally {if($service -is [IDisposable]){$service.Dispose()}}
                 Assert-EffectiveDNSCryptListeners
                 if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared during listener recovery'}
-            }else{
-                Set-Service -Name $serviceName -StartupType Manual -ErrorAction Stop
-                Assert-DNSCryptServiceState $existingResolver -ManualStopped
             }
             if(-not $dohVerified){
                 throw 'DoH resolver verification failed after stopping DNSCrypt; retain the original DNS snapshot'
             }
             Assert-ConfiguredDNSServers $adapters $records $servers
             Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy changed after stopping DNSCrypt; retain the original DNS snapshot'
-            if(-not $listenerNeeded){Assert-DNSCryptServiceState $existingResolver -ManualStopped}
+            if(-not $listenerNeeded){
+                Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+                $serviceState=Read-DNSCryptRetirementState $retirement
+                if($serviceState.status -cne 'Stopped' -or $serviceState.startup -cne $retirement.startup){
+                    throw 'DNSCrypt service changed before DoH configuration could change its startup policy'
+                }
+                if($retirement.startup -cne 'Manual'){Set-Service -Name $serviceName -StartupType Manual -ErrorAction Stop}
+                Assert-DNSCryptServiceState $existingResolver -ManualStopped
+            }
         }
         if($method -ceq 'dnscrypt'){
             Assert-DNSCryptServiceState $resolver
@@ -5273,7 +5353,13 @@ function Rollback([string]$OwnerlessWireSockProfile) {
     }
     if($dnsEntries.Count -eq 1){
         try {
-            if(Confirm-DNSRecoveryEntry $dnsEntries[0]){
+            $hasSnapshot=Confirm-DNSRecoveryEntry $dnsEntries[0]
+            if($null -ne $dnsEntries[0].dnscryptRetirement){
+                if($resolverReload){throw 'DNSCrypt recovery journal contains conflicting service changes'}
+                Restore-DNSCryptRetirement $dnsEntries[0]
+                $hasSnapshot=Confirm-DNSRecoveryEntry $dnsEntries[0]
+            }
+            if($hasSnapshot){
                 Restore-DNS $dnsEntries[0].snapshotSHA256 -ResolverReload $resolverReload
             }elseif($resolverReload){
                 # A previous release may already have retired the adapter snapshot.
