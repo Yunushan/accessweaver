@@ -18,6 +18,7 @@ from verify_release import MAX_FILE, inspect_archive, publish_staged_file, relea
 PACKAGE = "accessweaver"
 BINARY = Path("usr/bin/accessweaver")
 DOCS = Path("usr/share/doc/accessweaver")
+DATA = Path("usr/share/accessweaver")
 ELF_MACHINE = {"amd64": 62, "arm64": 183}
 ROOT_FILES = {"BUILD-INFO.json", "SBOM.cdx.json", "LICENSE", "README.md", "README.tr.md",
               "THIRD_PARTY.md", "SECURITY.md"}
@@ -71,7 +72,12 @@ def stage_payload(archive, root, payload):
             else:
                 require(str(relative) in ROOT_FILES or relative.parts[0] in ("licenses", "docs")
                         and len(relative.parts) > 1, "Unexpected portable archive payload")
-                location = DOCS / ("copyright" if relative == Path("LICENSE") else relative)
+                if relative == Path("LICENSE"):
+                    location = DOCS / "copyright"
+                elif relative.as_posix() in ("BUILD-INFO.json", "SBOM.cdx.json", "THIRD_PARTY.md") or relative.parts[0] == "licenses":
+                    location = DATA / relative
+                else:
+                    location = DOCS / relative
             destination = payload / location
             destination.parent.mkdir(parents=True, exist_ok=True)
             with tar.extractfile(member) as source, destination.open("xb") as output:

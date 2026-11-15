@@ -65,9 +65,10 @@ def inspect(package, arch):
                 name = PurePosixPath(item.name)
                 binary = name == PurePosixPath("usr/bin/accessweaver")
                 docs = name.is_relative_to("usr/share/doc/accessweaver")
+                data = name.is_relative_to("usr/share/accessweaver")
                 parents = {".", "usr", "usr/bin", "usr/share", "usr/share/doc"}
                 require(item.uid == item.gid == 0 and not name.is_absolute()
-                        and ".." not in name.parts and (binary or docs or str(name) in parents and item.isdir()),
+                        and ".." not in name.parts and (binary or docs or data or str(name) in parents and item.isdir()),
                         "Package payload extends beyond the controller and documentation")
                 if item.isdir():
                     require(item.mode == 0o755, "Unexpected package directory mode")
@@ -79,9 +80,9 @@ def inspect(package, arch):
                         recorded[str(name)] = hashlib.file_digest(stream, "sha256").hexdigest()
         require(process.wait(timeout=30) == 0, "Failed to inspect native payload")
     expected = {"usr/bin/accessweaver"}
-    expected.update("usr/share/doc/accessweaver/" + name for name in (
-        "BUILD-INFO.json", "SBOM.cdx.json", "copyright", "THIRD_PARTY.md",
-        "SECURITY.md", "licenses/Go-runtime-LICENSE"))
+    expected.update({"usr/share/doc/accessweaver/copyright", "usr/share/doc/accessweaver/SECURITY.md"})
+    expected.update("usr/share/accessweaver/" + name for name in (
+        "BUILD-INFO.json", "SBOM.cdx.json", "THIRD_PARTY.md", "licenses/Go-runtime-LICENSE"))
     require(expected <= recorded.keys(), "Package is missing the controller, metadata or notices")
     return info["Version"], recorded
 
@@ -90,7 +91,7 @@ def install_state(root, package_version, payload):
     status = run("/usr/bin/dpkg-query", f"--root={root}", "--showformat=${Status}\t${Version}", "--show", "accessweaver")
     require(status.decode() == f"install ok installed\t{package_version}", "Unexpected installed package status/version")
     installed = root / "usr/bin/accessweaver"
-    metadata = root / "usr/share/doc/accessweaver/BUILD-INFO.json"
+    metadata = root / "usr/share/accessweaver/BUILD-INFO.json"
     actual = run(installed, "version", "--json", user=65534, group=65534, extra_groups=[])
     require(json.loads(actual) == json.loads(metadata.read_bytes()), "Installed ordinary-user CLI reports a different identity")
     for name, digest in payload.items():
@@ -169,6 +170,7 @@ def exercise(work, arch, old, old_pin, new, new_pin, other, other_pin, byedpi=No
         run(*dpkg, "--purge", "accessweaver")
         require(not (root / "usr/bin/accessweaver").exists()
                 and not (root / "usr/share/doc/accessweaver").exists()
+                and not (root / "usr/share/accessweaver").exists()
                 and "Package: accessweaver" not in (database / "status").read_text(encoding="utf-8")
                 and not run(*dpkg, "--audit"), "Uninstall left package registration, payload or an incomplete transaction")
         require(managed.state() == prior, "Uninstall changed enrolled policy or profile")

@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "scope": "Offline Ubuntu Linux AMD64 QEMU guest kernel restart and Debian lifecycle",
+  "guestArchitecture": "amd64",
+  "emulation": "kvm",
+  "imageSHA256": "406630c08b5e545fcc7209854b129d47e3af822db128c9f19336593b5a2d3fe0",
+  "firmwareSHA256": {
+    "code": "874f15a7c9110e78a89db159f0f68fc97e9076b74777520de1c235426f758aa7",
+    "initialVariables": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e"
+  },
+  "packagesSHA256": {
+    "older.deb": "f0885660eb7a415cbb83e0187156bce266c5119de3d96c3c868760caf6d7dd40",
+    "newer.deb": "67af3300bd19a5c4a2749c2282b77a2e5a327e2fea471d1a4b9ab1c4e3a62c81"
+  },
+  "driverSHA256": "465decebef3bd2de7d46e9f16f4b8f825096f5d7c99576f528457455a8e4feec",
+  "guestProbeSHA256": "c35e1fc170acccffdbf069d3fea15f38d70642d6509d27fc224f0222846733a0",
+  "qemuVersion": "QEMU emulator version 10.2.1 (Debian 1:10.2.1+ds-1ubuntu3.3)",
+  "guestExternalNetworkDisabled": true,
+  "firstBoot": {
+    "phase": "before-reboot",
+    "bootSHA256": "b6159a862c71e283a42c6a3a7aba54ec4e58c88ef56b8b12018c37cd9f6dee29",
+    "installedVersion": "0.1.0~alpha.1",
+    "acceptedRevision": 2,
+    "controllerSHA256": "b1768f66147a9bdeadcd1daa178bd32cd62db99ffba86f5ee635e61b0d6f1142"
+  },
+  "secondBoot": {
+    "phase": "after-reboot",
+    "bootSHA256": "17a89ad379dab98e5b794c9300091063b2c8d8040e1122045416dd1f073cff4a",
+    "installedVersion": "0.1.0~alpha.1",
+    "acceptedRevision": 2,
+    "controllerSHA256": "b1768f66147a9bdeadcd1daa178bd32cd62db99ffba86f5ee635e61b0d6f1142",
+    "rollbackVersion": "0.1.0~alpha",
+    "rollbackKeptCurrentPolicy": true,
+    "replayRefused": true,
+    "purgePreservedState": true
+  },
+  "productionQualificationComplete": false,
+  "sourceCommit": "16632c4b2a7f14c300b2eae4e9cdf33325c7edf1",
+  "payloadSourceCommits": {
+    "0.1.0~alpha": "77a884e7c213d7b5bde3cc2347acdffc2fa0e6d0",
+    "0.1.0~alpha.1": "16632c4b2a7f14c300b2eae4e9cdf33325c7edf1"
+  },
+  "host": "Ubuntu 26.04 WSL AMD64",
+  "guest": "Ubuntu Minimal 24.04.5 LTS AMD64",
+  "guestImageSource": "https://cloud-images.ubuntu.com/minimal/releases/noble/release/",
+  "guestImageSigningFingerprint": "D2EB44626FDDC30B513D5BB71A5D6C4C7DB87C81",
+  "guestImageSignatureVerified": true,
+  "guestImageWrongDigestRefused": true,
+  "guestWorkspaceCleanupVerified": true,
+  "documentationFilterRetained": true,
+  "legacyLayoutVerificationIssuesOnMinimal": 486,
+  "temporaryPolicySigningKeys": true,
+  "rebootWithActiveVendorEngine": false,
+  "packageLayoutRegression": {
+    "builderSHA256": "c32262e9314bf3ae844082dca4b2e65e02ba0ee94ef7cb2c57aa2e3dcb01a0fb",
+    "managedByedpiProbeSHA256": "d336e7f86701a17db552cc769071eb51b058cebb63d837920ada76e78398ac29",
+    "aptProbeSHA256": "f5358ebd8d62b079e92c42ad23db3ade61d7775ef57395a4b61fbf3f80e72226",
+    "approvedPackagesSHA256": {
+      "accessweaver_0.1.0~alpha.1_amd64.deb": "67af3300bd19a5c4a2749c2282b77a2e5a327e2fea471d1a4b9ab1c4e3a62c81",
+      "accessweaver_0.1.0~alpha.1_arm64.deb": "a792607f270c9c78633e25f9594a73db18c391c189d85e4811e121f9df1d4935",
+      "accessweaver_0.1.0~alpha_amd64.deb": "f0885660eb7a415cbb83e0187156bce266c5119de3d96c3c868760caf6d7dd40",
+      "accessweaver_0.1.0~alpha_arm64.deb": "5ff1f425961461c210933d2ef387de33f62eadd42a2a70a1ce0eccc062b361d8"
+    },
+    "legacyToCurrentAptPackagesSHA256": {
+      "accessweaver_0.1.0~alpha.1_amd64.deb": "67af3300bd19a5c4a2749c2282b77a2e5a327e2fea471d1a4b9ab1c4e3a62c81",
+      "accessweaver_0.1.0~alpha.1_arm64.deb": "a792607f270c9c78633e25f9594a73db18c391c189d85e4811e121f9df1d4935",
+      "accessweaver_0.1.0~alpha_amd64.deb": "fec8360f344e2aa85aaa97621993fdf3e5853b44205f8d0f50e250523acb39ca",
+      "accessweaver_0.1.0~alpha_arm64.deb": "6f93360a44148573a42178b011dc9567cb90a237ff894d216662070ef35ed509"
+    },
+    "managedByedpiStages": [
+      "before-upgrade",
+      "after-upgrade",
+      "after-rollback",
+      "after-purge-and-reinstall"
+    ]
+  }
+}

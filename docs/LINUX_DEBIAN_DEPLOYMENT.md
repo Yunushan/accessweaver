@@ -1,6 +1,6 @@
 # Debian package deployment
 
-Build an AccessWeaver `.deb` for Debian-compatible Linux amd64 or arm64 using Python 3.11 or later and `dpkg-deb` 1.21.9 or later. The package installs the controller in `/usr/bin/accessweaver` and its build identity, SBOM, copyright, notices and documentation in `/usr/share/doc/accessweaver`. It contains no dependency bootstrap, maintainer scripts, service units or machine policy. The output directory must be private to the build operator. Package construction uses root ownership metadata and works without elevated privileges. [dpkg-deb manual](https://manpages.debian.org/trixie/dpkg/dpkg-deb.1.en.html).
+Build an AccessWeaver `.deb` for Debian-compatible Linux amd64 or arm64 using Python 3.11 or later and `dpkg-deb` 1.21.9 or later. The package installs the controller in `/usr/bin/accessweaver` and its build identity, SBOM and linked license evidence in `/usr/share/accessweaver`. Debian copyright and optional manuals are under `/usr/share/doc/accessweaver`. It contains no dependency bootstrap, maintainer scripts, service units or machine policy. The output directory must be private to the build operator. Package construction uses root ownership metadata and works without elevated privileges. [dpkg-deb manual](https://manpages.debian.org/trixie/dpkg/dpkg-deb.1.en.html).
 
 ## Build from an approved input
 
@@ -57,11 +57,11 @@ sudo dpkg --verify accessweaver
 /usr/bin/accessweaver version --json
 ```
 
-For detection, require `install ok installed`, the approved Debian version and architecture, and no output from `dpkg --verify`. Compare the CLI identity with the approved deployment record and `/usr/share/doc/accessweaver/BUILD-INFO.json`. `--refuse-downgrade` can leave an existing newer package in place, so verify the installed version even when the command succeeds.
+For detection, require `install ok installed`, the approved Debian version and architecture, and a clean `dpkg --verify` for the executable and operational metadata. On installations with an explicit package documentation filter, verify that any reported omissions are limited to the configured optional files under `/usr/share/doc/accessweaver`. Compare the CLI identity with the approved deployment record and `/usr/share/accessweaver/BUILD-INFO.json`. The metadata and SBOM remain available on hosts that omit optional docs. [Debian documentation policy](https://www.debian.org/doc/debian-policy/ch-docs.html#additional-documentation). `--refuse-downgrade` can leave an existing newer package in place, so verify the installed version even when the command succeeds.
 
 Upgrades use the same install command with a newer approved package. For an authorized software rollback, verify the previous archive and its compatibility with the current policy and profile formats, then use `dpkg --force-downgrade --install` with the previous approved `.deb`. Verify the installed version and protected policy status afterward. Package rollback leaves the current policy revision and trust records in place. Use the [separate managed policy recovery procedure](MANAGED_CONFIGURATION.md#protected-linux-source-and-update-behavior) when policy recovery is required.
 
-Stop active AccessWeaver controllers and verify recovery of any active engine or network workflow before changing or removing the package. To remove the package, run `sudo dpkg --purge accessweaver` and verify that its executable, documentation and registration are gone. The package leaves `/etc/accessweaver` and users' profiles in place. Manage these separately under the endpoint's retention policy. The package never launches, stops or reconfigures a vendor engine and does not request a reboot.
+Stop active AccessWeaver controllers and verify recovery of any active engine or network workflow before changing or removing the package. To remove the package, run `sudo dpkg --purge accessweaver` and verify that its executable, operational metadata, documentation and registration are gone. The package leaves `/etc/accessweaver` and users' profiles in place. Manage these separately under the endpoint's retention policy. The package never launches, stops or reconfigures a vendor engine and does not request a reboot.
 
 ## Scope of current verification
 
@@ -99,5 +99,22 @@ The direct package probe accepts a separately approved static native `ciadpi` ex
 The probe creates a private loopback network and PID namespace. It uses a signed managed launch approval and independent SOCKS5 traffic to a loopback origin. At each stage it stops the installed controller before any package change, then checks that its exact vendor child exited, the listener closed and a connected client disconnected. Stages cover the older package, the upgrade, explicit rollback and reinstall after purge.
 
 On Ubuntu 26.04 WSL AMD64, all four stages passed with [ByeDPI v0.17.3](https://github.com/hufrea/byedpi/releases/tag/v0.17.3) and two AccessWeaver releases built from distinct source commits. The supported maintenance sequence stops the controller before touching the package. [Live package test evidence](qualification/16632c4b2a7f-linux-packaged-byedpi.json).
+
+### Reboot validation
+
+The [offline QEMU reboot probe](../scripts/test-linux-package-reboot.py) takes an authenticated Ubuntu Minimal AMD64 QCOW2 image, trusted OVMF firmware, and two approved AccessWeaver AMD64 `.deb` files from increasing versions. Verify the image with Canonical’s signing key and authenticated SHA-256 before running the probe. The guest uses a private copy-on-write disk and a restricted virtual link with no default route. Install QEMU, `qemu-img`, `genisoimage` and Debian package tools on the test host. [Canonical image verification](https://ubuntu.com/docs/public-images/public-images-how-to/verify-image-checksum/).
+
+```sh
+python3 -B scripts/test-linux-package-reboot.py \
+  --image APPROVED_UBUNTU_QCOW2 --image-sha256 APPROVED_IMAGE_SHA256 \
+  --old PREVIOUS_AMD64_DEB --old-sha256 PREVIOUS_SHA256 \
+  --new NEW_AMD64_DEB --new-sha256 NEW_SHA256 \
+  --firmware-code /usr/share/OVMF/OVMF_CODE_4M.fd \
+  --firmware-vars /usr/share/OVMF/OVMF_VARS_4M.fd
+```
+
+The first boot installs and upgrades the controller, creates a real ordinary-user profile, installs a signed machine policy and advances it to revision 2. The guest requests a reboot. The driver verifies a second kernel boot on the same disk and checks that the installed controller, signed revision, policy protection and profile are intact. The second boot also rolls back the controller, rejects an older policy replay and purges the package while retaining user and policy state.
+
+A hardware-assisted Ubuntu Minimal 24.04 AMD64 guest passed both boots with its document filters in place. The test used two historical controller builds repackaged with the corrected metadata paths. It verified the SBOM against the installed executable and exercised rollback and purge after reboot. [Reboot and package-layout evidence](qualification/16632c4b2a7f-linux-package-reboot.json).
 
 Production rollout still requires results for the approved release packages and native endpoint architectures. It also requires organization signing and hosting, reboot and active-engine checks, and validation through the organization's endpoint-management tools.

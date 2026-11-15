@@ -100,7 +100,9 @@ def installed_version(root, version):
             "APT-installed package failed dpkg verification")
     binary = root / "usr/bin/accessweaver"
     identity = command(binary, "version", "--json", user=65534, group=65534, extra_groups=[])
-    archived = root / "usr/share/doc/accessweaver/BUILD-INFO.json"
+    archived = root / "usr/share/accessweaver/BUILD-INFO.json"
+    if not archived.exists():
+        archived = root / "usr/share/doc/accessweaver/BUILD-INFO.json"
     require(json.loads(identity) == json.loads(archived.read_bytes()),
             "APT-installed ordinary-user CLI differs from its build identity")
     return digest(binary)
