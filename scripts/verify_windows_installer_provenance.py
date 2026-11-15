@@ -26,7 +26,8 @@ ROLLBACK_REPORT_SCHEMA = 53
 DOCUMENTATION_COMPLETION_REPORT_SCHEMA = 54
 RETIREMENT_FLUSH_REPORT_SCHEMA = 55
 FULL_PAYLOAD_UPGRADE_REPORT_SCHEMA = 56
-REPORT_SCHEMAS = range(11, FULL_PAYLOAD_UPGRADE_REPORT_SCHEMA + 1)
+PARTIAL_COPY_UPGRADE_REPORT_SCHEMA = 57
+REPORT_SCHEMAS = range(11, PARTIAL_COPY_UPGRADE_REPORT_SCHEMA + 1)
 PHASES=["baseline","after-install","after-upgrade","after-reinstall","after-active-setup-uninstall","after-lifecycle-locks","after-refused-downgrade","after-version-policy","after-registry-read-boundaries","after-registry-view-policy","after-registry-access-policy","after-restoration-launch-failures","after-restoration-ownership-contracts","before-uninstall","after-uninstall"]
 
 def require(ok,message):
@@ -148,6 +149,10 @@ def validate_managed_detection(report):
     if report.get("schemaVersion", 0) >= ROLLBACK_REPORT_SCHEMA:
         expected += [("after-rollback", True), ("newer-version-after-rollback", False),
                      ("after-rollback-uninstall", False)]
+    if report.get("schemaVersion", 0) >= PARTIAL_COPY_UPGRADE_REPORT_SCHEMA:
+        phase = "managed-upgrade-partial-copy-pending"
+        refusals.add(phase)
+        expected.insert(expected.index(("managed-upgrade-pending", False)), (phase, False))
     source = Path(__file__).with_name("detect-windows-installer.ps1")
     require(report.get("managedDetectionSourceSHA256") == digest(source.read_bytes()),
             "Managed detection differs from the approved source")
@@ -196,15 +201,19 @@ def validate_setup_completion_refusal(value, *, documentation=False):
 
 
 def validate_setup_upgrade_baseline(value, *, check_recovery=False, check_abrupt_termination=False,
-                                    check_payload_binding=False):
+                                    check_payload_binding=False, check_partial_copy=False):
     flags = {"installedStatePreserved", "profilePreserved", "pendingMarkerAbsent", "matchingUpgradeAccepted"}
     if check_recovery:
         flags.update({"copyCompletedBeforeRecovery", "changedRetryRefused", "matchingRetryRetiredMarker"})
     if check_payload_binding:
         flags.add("changedDocumentationRetryRefused")
+    if check_partial_copy:
+        flags.update({"partialCopyMixedSubjectsVerified", "partialCopyRetryVerified"})
     fields = flags | {"refusalExitCode", "refusalElapsedMilliseconds", "deadlineMilliseconds"}
     if check_abrupt_termination:
         fields.add("abruptTerminationExitCode")
+    if check_partial_copy:
+        fields.update({"partialCopyExitCode", "partialCopyTemporaryFilesRetained"})
     require(type(value) is dict and set(value) == fields, "Incomplete managed Setup upgrade baseline evidence")
     require(type(value["refusalExitCode"]) is int and value["refusalExitCode"] == 7
             and type(value["deadlineMilliseconds"]) is int and value["deadlineMilliseconds"] == 180000
@@ -220,6 +229,13 @@ def validate_setup_upgrade_baseline(value, *, check_recovery=False, check_abrupt
         verified["setupUpgradeAbruptTerminationVerified"] = True
     if check_payload_binding:
         verified["setupUpgradeFullPayloadBindingVerified"] = True
+    if check_partial_copy:
+        require(type(value["partialCopyExitCode"]) is int and value["partialCopyExitCode"] == 198,
+                "Managed Setup partial-copy interruption was not observed")
+        require(type(value["partialCopyTemporaryFilesRetained"]) is int
+                and value["partialCopyTemporaryFilesRetained"] == 0,
+                "Managed Setup partial-copy retry retained temporary installation files")
+        verified["setupUpgradePartialCopyRecoveryVerified"] = True
     return verified
 
 
@@ -557,7 +573,8 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
         setup_readback.update(validate_setup_upgrade_baseline(
             report.get("setupUpgradeBaseline"), check_recovery=report["schemaVersion"] >= 36,
             check_abrupt_termination=report["schemaVersion"] >= 37,
-            check_payload_binding=report["schemaVersion"] >= FULL_PAYLOAD_UPGRADE_REPORT_SCHEMA))
+            check_payload_binding=report["schemaVersion"] >= FULL_PAYLOAD_UPGRADE_REPORT_SCHEMA,
+            check_partial_copy=report["schemaVersion"] >= PARTIAL_COPY_UPGRADE_REPORT_SCHEMA))
     if report["schemaVersion"] >= 38:
         require(report.get("uninstallDataRecoveryVerified") is True,
                 "Missing uninstall data refusal and recovery were not verified")

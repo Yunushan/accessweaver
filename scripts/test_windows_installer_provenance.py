@@ -141,6 +141,21 @@ class SetupCompletionRefusalTests(unittest.TestCase):
         verified = validate_setup_upgrade_baseline(
             {**complete_recovery, "changedDocumentationRetryRefused": True}, **options)
         self.assertIs(verified["setupUpgradeFullPayloadBindingVerified"], True)
+        options["check_partial_copy"] = True
+        partial = {**complete_recovery, "changedDocumentationRetryRefused": True,
+                   "partialCopyMixedSubjectsVerified": True, "partialCopyRetryVerified": True,
+                   "partialCopyExitCode": 198, "partialCopyTemporaryFilesRetained": 0}
+        for changes in ({"partialCopyExitCode": 197}, {"partialCopyExitCode": "198"},
+                        {"partialCopyMixedSubjectsVerified": False}, {"partialCopyRetryVerified": 1},
+                        {"partialCopyTemporaryFilesRetained": 1}, {"partialCopyTemporaryFilesRetained": False}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                validate_setup_upgrade_baseline({**partial, **changes}, **options)
+        for dropped in ("partialCopyExitCode", "partialCopyMixedSubjectsVerified", "partialCopyRetryVerified",
+                        "partialCopyTemporaryFilesRetained"):
+            with self.subTest(dropped=dropped), self.assertRaises(ValueError):
+                validate_setup_upgrade_baseline({key: value for key, value in partial.items() if key != dropped}, **options)
+        verified = validate_setup_upgrade_baseline(partial, **options)
+        self.assertIs(verified["setupUpgradePartialCopyRecoveryVerified"], True)
 
     def test_rejects_unproven_uninstall_registration_repair(self):
         record = {
@@ -856,6 +871,17 @@ class ManagedDetectionEvidenceTests(unittest.TestCase):
         self.assertEqual(validate_managed_detection(latest_rollback), {"managedDetectionChecksVerified": 30})
         with self.assertRaisesRegex(ValueError, "Incomplete managed detection coverage"):
             validate_managed_detection({**latest_rollback, "managedDetectionCases": with_notice_readback})
+        managed_index = next(i for i, case in enumerate(rollback) if case["phase"] == "managed-upgrade-pending")
+        partial = {"phase": "managed-upgrade-partial-copy-pending", "detected": False, "inspectionRefused": True}
+        partial_cases = [*rollback[:managed_index], partial, *rollback[managed_index:]]
+        latest_partial = {**latest_rollback, "schemaVersion": 57, "managedDetectionCases": partial_cases}
+        self.assertEqual(validate_managed_detection(latest_partial), {"managedDetectionChecksVerified": 31})
+        for invalid in (rollback,
+                        [*rollback[:managed_index + 1], partial, *rollback[managed_index + 1:]],
+                        [*partial_cases[:managed_index], dict(partial, inspectionRefused=False),
+                         *partial_cases[managed_index + 1:]]):
+            with self.subTest(partial_coverage=invalid), self.assertRaises(ValueError):
+                validate_managed_detection({**latest_partial, "managedDetectionCases": invalid})
         incorrectly_detected = [*rollback[:-2], dict(rollback[-2], detected=True), rollback[-1]]
         with self.assertRaisesRegex(ValueError, "Unexpected managed detection result"):
             validate_managed_detection({**latest_rollback, "managedDetectionCases": incorrectly_detected})
