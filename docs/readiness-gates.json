@@ -156,7 +156,9 @@
             "docs/SPLITWIRE_IMPLEMENTATION.md",
             "scripts/test-windows-installer-reboot.ps1",
             "scripts/test-windows-installer-reboot-contracts.ps1",
-            "docs/qualification/56924863f63e-installer-lifecycle.json"
+            "docs/qualification/56924863f63e-installer-lifecycle.json",
+            "docs/qualification/16632c4b2a7f-linux-deb-lifecycle.json",
+            "docs/LINUX_DEBIAN_DEPLOYMENT.md"
           ]
         }
       ]
@@ -579,7 +581,9 @@
             "scripts/windows-installer.iss",
             "scripts/test-windows-integration.ps1",
             "scripts/test-windows-installer.ps1",
-            ".github/workflows/ci.yml"
+            ".github/workflows/ci.yml",
+            "docs/qualification/16632c4b2a7f-linux-deb-lifecycle.json",
+            "docs/LINUX_DEBIAN_DEPLOYMENT.md"
           ]
         },
         {
@@ -609,7 +613,9 @@
             "docs/WINDOWS_WORKFLOWS.md",
             "cmd/accessweaver-installer/main.go",
             "scripts/test-macos-deployment-package.py",
-            "docs/MACOS_MANAGED_POLICY.md"
+            "docs/MACOS_MANAGED_POLICY.md",
+            "docs/qualification/16632c4b2a7f-linux-deb-lifecycle.json",
+            "docs/LINUX_DEBIAN_DEPLOYMENT.md"
           ]
         }
       ]

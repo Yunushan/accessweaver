@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "scope": "Isolated unsigned Debian package construction and Linux AMD64 dpkg lifecycle",
+  "dpkgVersion": "Debian 'dpkg' package management program version 1.23.7 (amd64).",
+  "builderSHA256": "fa3ecd71a603e020872cf4845818392f0bc3ce2ab0cbd6cfe00e7cb03ab30a68",
+  "probeSHA256": "434c54ab3c5d6367009cda2e0dbec37f7c360d2105c69c1ce74bab709a8dbb1f",
+  "packages": [
+    {
+      "arch": "amd64",
+      "version": "0.1.0~alpha",
+      "archiveSHA256": "84af1fae6595f1461e424755de4a128019e79129785ded857aa84053dea29ed4",
+      "debSHA256": "fec8360f344e2aa85aaa97621993fdf3e5853b44205f8d0f50e250523acb39ca",
+      "binarySHA256": "5233d889d4062c4a427565d0f935683b047ed083820bfa5e47d49fbc89e580c6",
+      "payloadFiles": 488,
+      "payloadSourceCommit": "77a884e7c213d7b5bde3cc2347acdffc2fa0e6d0"
+    },
+    {
+      "arch": "amd64",
+      "version": "0.1.0~alpha.1",
+      "archiveSHA256": "eb94c79ad9d8b043905cb7ef3db4d893530d5220e90e8872b5e751615b047208",
+      "debSHA256": "19ad5eedce0cc1baba25d1ae1db675a38e8f7c5b3c8861574e34bf1a5d8bf889",
+      "binarySHA256": "b1768f66147a9bdeadcd1daa178bd32cd62db99ffba86f5ee635e61b0d6f1142",
+      "payloadFiles": 494,
+      "payloadSourceCommit": "16632c4b2a7f14c300b2eae4e9cdf33325c7edf1"
+    },
+    {
+      "arch": "arm64",
+      "version": "0.1.0~alpha.1",
+      "archiveSHA256": "4a3ac231f926ee8321529a95abbd5b1e6bc21f057f18bfa9bb8da6eeed410c4c",
+      "debSHA256": "e92f78843fbb5ed81183680e6db12771cb065e05a24fe5a2fca2bc97e59f2933",
+      "binarySHA256": "8ffe472a972e8ef04b8bd57c62b261314747715f9826462e8beea62f1e7537c0",
+      "payloadFiles": 494,
+      "payloadSourceCommit": "16632c4b2a7f14c300b2eae4e9cdf33325c7edf1"
+    }
+  ],
+  "checks": [
+    "mismatched-source-digest-refused-without-output",
+    "amd64-and-arm64-control-and-payload-inspected",
+    "reproducible-package-and-exclusive-publication",
+    "clean-install-upgrade-and-same-version-reinstall",
+    "ordinary-user-installed-cli-identity-after-each-change",
+    "dpkg-verify-after-each-change",
+    "guarded-downgrade-refusal-and-explicit-rollback",
+    "purge-and-package-registration-removal",
+    "synthetic-policy-and-profile-bytes-owner-mode-and-inode-preserved"
+  ],
+  "amd64Execution": true,
+  "arm64Execution": false,
+  "productionQualificationComplete": false,
+  "host": "Ubuntu 26.04 WSL AMD64",
+  "sourceCommit": "16632c4b2a7f14c300b2eae4e9cdf33325c7edf1",
+  "builderSource": "scripts/build-linux-deb.py",
+  "probeSource": "scripts/test-linux-deb-lifecycle.py",
+  "verifiedCompletePortableSets": 2,
+  "signedRepositoryVerified": false,
+  "activeEngineOrRebootTested": false,
+  "unprivilegedBuildMatchedSHA256": "fec8360f344e2aa85aaa97621993fdf3e5853b44205f8d0f50e250523acb39ca"
+}
