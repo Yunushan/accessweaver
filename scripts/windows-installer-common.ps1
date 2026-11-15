@@ -243,6 +243,22 @@ function Get-InstallerSigningLayout([IO.BinaryReader]$Reader) {
     }
 }
 
+function Assert-InstallerSigningDigest([string]$Path,[string]$ExpectedSHA256) {
+    $file=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if((Get-FileHash -InputStream $file -Algorithm SHA256).Hash -ine $ExpectedSHA256){
+            throw 'Installer artifact changed during the signing handoff'
+        }
+    } finally {$file.Dispose()}
+}
+
+function Complete-InstallerSigning([string]$Original,[string]$OriginalSHA256,[string]$Signed,[string]$SignedSHA256) {
+    Assert-InstallerSigningDigest $Signed $SignedSHA256
+    Assert-InstallerSigningDigest $Original $OriginalSHA256
+    [IO.File]::Replace($Signed,$Original,[NullString]::Value)
+    Assert-InstallerSigningDigest $Original $SignedSHA256
+}
+
 function Assert-InstallerSigningOnlyChange([string]$Original,[string]$Signed) {
     $before=[IO.BinaryReader]::new([IO.File]::Open($Original,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
     try {

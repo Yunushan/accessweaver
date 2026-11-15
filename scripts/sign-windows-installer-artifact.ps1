@@ -26,8 +26,10 @@ try {
             $signature=Microsoft.PowerShell.Security\Get-AuthenticodeSignature -LiteralPath $candidate
             Assert-WindowsPublisherSignature $signature $publisher
             Assert-InstallerSigningOnlyChange $absolute $candidate
+            $originalSHA256=(Get-FileHash -InputStream $original -Algorithm SHA256).Hash
+            $signedSHA256=(Get-FileHash -InputStream $signed -Algorithm SHA256).Hash
         } finally {$signed.Dispose()}
         $original.Dispose()
-        [IO.File]::Replace($candidate,$absolute,[NullString]::Value)
+        Complete-InstallerSigning $absolute $originalSHA256 $candidate $signedSHA256
     } finally {[IO.File]::Delete($candidate)}
 } finally {$original.Dispose()}

@@ -360,6 +360,47 @@ try {
         [IO.File]::WriteAllBytes($signed,[byte[]]($signedBytes+@(1)))
         Reject {Assert-InstallerSigningOnlyChange $original $signed} 'Trailing bytes outside the certificate table were accepted'
     }
+    $handoffOriginal=Join-Path $fixture 'handoff-original.exe'
+    $handoffSigned=Join-Path $fixture 'handoff-signed.exe'
+    [IO.File]::WriteAllText($handoffOriginal,'fixture unsigned')
+    [IO.File]::WriteAllText($handoffSigned,'fixture approved signed')
+    $originalDigest=(Get-FileHash -LiteralPath $handoffOriginal -Algorithm SHA256).Hash
+    $signedDigest=(Get-FileHash -LiteralPath $handoffSigned -Algorithm SHA256).Hash
+
+    [IO.File]::WriteAllText($handoffSigned,'fixture replacement signed bytes')
+    Reject {Complete-InstallerSigning $handoffOriginal $originalDigest $handoffSigned $signedDigest} 'A changed signed file was handed back'
+    Assert ((Get-FileHash -LiteralPath $handoffOriginal -Algorithm SHA256).Hash -ceq $originalDigest) 'Rejected signed bytes replaced the original'
+    [IO.File]::WriteAllText($handoffSigned,'fixture approved signed')
+    [IO.File]::WriteAllText($handoffOriginal,'fixture changed unsigned')
+    Reject {Complete-InstallerSigning $handoffOriginal $originalDigest $handoffSigned $signedDigest} 'A changed original was replaced'
+    Assert ([IO.File]::ReadAllText($handoffOriginal) -ceq 'fixture changed unsigned') 'Rejected replacement overwrote the changed original'
+    [IO.File]::WriteAllText($handoffOriginal,'fixture unsigned')
+
+    if([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT){
+        $held=[IO.File]::Open($handoffOriginal,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        try {
+            Reject {Complete-InstallerSigning $handoffOriginal $originalDigest $handoffSigned $signedDigest} 'A locked original was replaced'
+        } finally {$held.Dispose()}
+        Assert ((Get-FileHash -LiteralPath $handoffOriginal -Algorithm SHA256).Hash -ceq $originalDigest) 'Failed replacement changed the locked original'
+    }
+    Complete-InstallerSigning $handoffOriginal $originalDigest $handoffSigned $signedDigest
+    Assert ((Get-FileHash -LiteralPath $handoffOriginal -Algorithm SHA256).Hash -ceq $signedDigest) 'Verified replacement bytes were not handed back'
+    Assert (-not (Test-Path -LiteralPath $handoffSigned)) 'Signing left the consumed file in staging'
+
+    [IO.File]::WriteAllText($handoffOriginal,'fixture unsigned')
+    [IO.File]::WriteAllText($handoffSigned,'fixture approved signed')
+    & {
+        $verifyDigest=${function:Assert-InstallerSigningDigest}
+        function Assert-InstallerSigningDigest([string]$Path,[string]$ExpectedSHA256) {
+            if($Path -ceq $handoffOriginal -and $ExpectedSHA256 -ceq $signedDigest){
+                [IO.File]::WriteAllText($Path,'fixture changed after replacement')
+            }
+            & $verifyDigest $Path $ExpectedSHA256
+        }
+        Reject {Complete-InstallerSigning $handoffOriginal $originalDigest $handoffSigned $signedDigest} 'Changed replacement bytes were returned as verified'
+        Assert ([IO.File]::ReadAllText($handoffOriginal) -ceq 'fixture changed after replacement') 'The post-replacement guard was not exercised'
+    }
+
     $setupPath=Join-Path $fixture 'preprocessed.iss'
     foreach($arch in @('amd64','arm64')){
         $architecture=if($arch -ceq 'arm64'){'arm64'}else{'x64os'}
