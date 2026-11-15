@@ -11,7 +11,7 @@ from verify_windows_installer_provenance import (
     validate_installation_path_refusals, validate_setup_completion_refusal, validate_uninstall_registration_refusal,
     validate_post_restoration_refusal, validate_restoration_controller_refusals, validate_setup_marker_replacement,
     validate_setup_uninstall_registration_refusal, validate_setup_upgrade_baseline, validate_uninstall_license_refusal,
-    validate_native_documentation_refusals, validate_inno_runtime_notice,
+    validate_native_documentation_refusals, validate_inno_runtime_notice, validate_previous_version_rollback,
 )
 from verify_windows_installer_provenance import BUNDLE_NAME,DEFAULT_VERSIONS,WORKFLOW,check_rejections,stage,subject_names,validate_build,verification_command,verify
 
@@ -593,6 +593,36 @@ class WindowsInstallerProvenanceTests(unittest.TestCase):
 
 
 
+class PreviousVersionRollbackContracts(unittest.TestCase):
+    def test_restored_setup_and_payload_must_match_the_earlier_build(self):
+        previous = {"version": "0.1.0-alpha", "installerSHA256": "a" * 64, "payloadSha256": "b" * 64}
+        timing = {"exitCode": 0, "elapsedMilliseconds": 123, "deadlineMilliseconds": 180000}
+        restored = {
+            **timing, "operation": "restore-previous-version", "version": previous["version"],
+            "installerSHA256": previous["installerSHA256"], "payloadSHA256": previous["payloadSha256"],
+            "setupCompletionVerified": True, "originalAndNewerProfilesReadBack": True,
+            "originalRecoveryJournalPreserved": True,
+        }
+        removed = {
+            **timing, "operation": "uninstall-previous-version",
+            "ownedPayloadAndRegistrationRemoved": True, "profilesPreserved": True, "bothRecoveryJournalsVerified": True,
+        }
+        self.assertEqual(validate_previous_version_rollback(restored, removed, previous),
+                         {"previousVersionRollbackVerified": True})
+        for changed in (
+            {"version": "0.1.1-alpha"}, {"installerSHA256": "c" * 64}, {"payloadSHA256": "d" * 64},
+            {"originalAndNewerProfilesReadBack": False}, {"originalRecoveryJournalPreserved": 1},
+            {"setupCompletionVerified": False}, {"operation": "uninstall"}, {"elapsedMilliseconds": 180000},
+            {"exitCode": False}, {"privateProfilePath": "fixture"},
+        ):
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                validate_previous_version_rollback({**restored, **changed}, removed, previous)
+        for changed in ({"profilesPreserved": False}, {"bothRecoveryJournalsVerified": False},
+                        {"ownedPayloadAndRegistrationRemoved": False}, {"exitCode": 3010}):
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                validate_previous_version_rollback(restored, {**removed, **changed}, previous)
+
+
 class WindowsStateObservationContracts(unittest.TestCase):
     def fixture(self):
         comparison={"exactMatch":True,"beforeSHA256":"a"*64,"afterSHA256":"a"*64,"domains":{}}
@@ -605,6 +635,22 @@ class WindowsStateObservationContracts(unittest.TestCase):
         self.assertIn("after-restoration-launch-failures",PHASES)
         result=validate_state_observations(self.fixture())
         self.assertEqual(result,{"nativeStateCheckpointsVerified":15,"nativeStateComparisonsVerified":30})
+
+    def test_rollback_requires_two_additional_unchanged_checkpoints(self):
+        observations = self.fixture()
+        for phase in ("after-rollback", "after-rollback-uninstall"):
+            observation = copy.deepcopy(observations[-1])
+            observation["phase"] = phase
+            observations.append(observation)
+        self.assertEqual(validate_state_observations(observations, include_rollback=True),
+                         {"nativeStateCheckpointsVerified": 17, "nativeStateComparisonsVerified": 34})
+        with self.assertRaises(ValueError):
+            validate_state_observations(observations)
+        with self.assertRaises(ValueError):
+            validate_state_observations(observations[:-1], include_rollback=True)
+        observations[-1]["transition"]["exactMatch"] = False
+        with self.assertRaises(ValueError):
+            validate_state_observations(observations, include_rollback=True)
 
     def test_missing_reordered_rebased_transient_private_or_incomplete_observations_refuse(self):
         for kind in ("missing","reordered","missing-transition","null","prior-drift","transient-restored","rebased","row-count-bool","counter-bool","changed-rule","raw-private-field","changed-hash","missing-domain","unknown-envelope"):
@@ -769,6 +815,19 @@ class ManagedDetectionEvidenceTests(unittest.TestCase):
         ]
         current = {**current, "schemaVersion": 51, "managedDetectionCases": with_notice_readback}
         self.assertEqual(validate_managed_detection(current), {"managedDetectionChecksVerified": 27})
+        rollback = [
+            *with_notice_readback,
+            {"phase": "after-rollback", "detected": True},
+            {"phase": "newer-version-after-rollback", "detected": False},
+            {"phase": "after-rollback-uninstall", "detected": False},
+        ]
+        latest_rollback = {**current, "schemaVersion": 53, "managedDetectionCases": rollback}
+        self.assertEqual(validate_managed_detection(latest_rollback), {"managedDetectionChecksVerified": 30})
+        with self.assertRaisesRegex(ValueError, "Incomplete managed detection coverage"):
+            validate_managed_detection({**latest_rollback, "managedDetectionCases": with_notice_readback})
+        incorrectly_detected = [*rollback[:-2], dict(rollback[-2], detected=True), rollback[-1]]
+        with self.assertRaisesRegex(ValueError, "Unexpected managed detection result"):
+            validate_managed_detection({**latest_rollback, "managedDetectionCases": incorrectly_detected})
         with self.assertRaisesRegex(ValueError, "Incomplete managed detection coverage"):
             validate_managed_detection({**current, "managedDetectionCases": with_documentation})
         incorrect = with_notice_readback.copy()

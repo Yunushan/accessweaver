@@ -22,6 +22,8 @@ WORKFLOW=REPOSITORY+"/.github/workflows/installer-lifecycle.yml"
 DEFAULT_VERSIONS=("0.1.0-alpha","0.1.1-alpha")
 RELEASE=re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?")
 SHA=re.compile(r"[a-f0-9]{64}")
+ROLLBACK_REPORT_SCHEMA = 53
+REPORT_SCHEMAS = range(11, ROLLBACK_REPORT_SCHEMA + 1)
 PHASES=["baseline","after-install","after-upgrade","after-reinstall","after-active-setup-uninstall","after-lifecycle-locks","after-refused-downgrade","after-version-policy","after-registry-read-boundaries","after-registry-view-policy","after-registry-access-policy","after-restoration-launch-failures","after-restoration-ownership-contracts","before-uninstall","after-uninstall"]
 
 def require(ok,message):
@@ -61,9 +63,10 @@ def validate_build(identity,commit,arch,version):
     datetime.datetime.strptime(identity["builtAt"],"%Y-%m-%dT%H:%M:%SZ")
 
 
-def validate_state_observations(observations):
-    require(type(observations) is list and len(observations)==len(PHASES) and all(type(o) is dict for o in observations),"Incomplete native state checkpoints")
-    require([o.get("phase") for o in observations]==PHASES,"Expected all fifteen ordered native state checkpoints")
+def validate_state_observations(observations, *, include_rollback=False):
+    phases = PHASES + (["after-rollback", "after-rollback-uninstall"] if include_rollback else [])
+    require(type(observations) is list and len(observations)==len(phases) and all(type(o) is dict for o in observations),"Incomplete native state checkpoints")
+    require([o.get("phase") for o in observations]==phases,"Expected all ordered native state checkpoints")
     baseline=observations[0].get("comparison")
     require(type(baseline) is dict and type(baseline.get("domains")) is dict and set(baseline["domains"])=={"services","firewall","dns"},"Incomplete native state baseline")
     for observation in observations:
@@ -79,7 +82,7 @@ def validate_state_observations(observations):
                 require(domain.get("serializedEqual") is True and type(domain.get("beforeSHA256")) is str and domain.get("beforeSHA256")==domain.get("afterSHA256")==initial.get("beforeSHA256") and SHA.fullmatch(domain["beforeSHA256"]) is not None,"Native state domain changed")
                 require(type(domain.get("beforeRows")) is int and type(domain.get("afterRows")) is int and domain["beforeRows"]==domain["afterRows"]==initial.get("beforeRows") and 0<=domain["beforeRows"]<=10000,"Native state row count differs")
                 require(all(type(domain.get(k)) is int and domain[k]==0 for k in ("added","removed","changed","rowSerializationChanges")) and domain.get("recordOrderingChanged") is False and domain.get("changes")==[] and domain.get("changesTruncated") is False,"Native state diagnostics report a change")
-    return {"nativeStateCheckpointsVerified":len(PHASES),"nativeStateComparisonsVerified":2*len(PHASES)}
+    return {"nativeStateCheckpointsVerified":len(phases),"nativeStateComparisonsVerified":2*len(phases)}
 
 
 def validate_firewall_origin_diagnostics(value):
@@ -139,6 +142,9 @@ def validate_managed_detection(report):
         refusals.add("missing-notice-refused")
         expected[3:3] = [("changed-notice", False), ("missing-notice-refused", False),
                          ("after-notice-restoration", True)]
+    if report.get("schemaVersion", 0) >= ROLLBACK_REPORT_SCHEMA:
+        expected += [("after-rollback", True), ("newer-version-after-rollback", False),
+                     ("after-rollback-uninstall", False)]
     source = Path(__file__).with_name("detect-windows-installer.ps1")
     require(report.get("managedDetectionSourceSHA256") == digest(source.read_bytes()),
             "Managed detection differs from the approved source")
@@ -443,6 +449,30 @@ def validate_fixed_restoration(refused, removed):
     return {"fixedRestorationCommandVerified": True}
 
 
+def validate_previous_version_rollback(restored, removed, previous_build):
+    timing_keys = {"operation", "exitCode", "elapsedMilliseconds", "deadlineMilliseconds"}
+    restore_flags = {"setupCompletionVerified", "originalAndNewerProfilesReadBack", "originalRecoveryJournalPreserved"}
+    removal_flags = {"ownedPayloadAndRegistrationRemoved", "profilesPreserved", "bothRecoveryJournalsVerified"}
+    require(type(restored) is dict and restored.keys() == timing_keys | restore_flags | {"version", "installerSHA256", "payloadSHA256"}
+            and type(removed) is dict and removed.keys() == timing_keys | removal_flags,
+            "Incomplete previous-version rollback evidence")
+    require(restored["operation"] == "restore-previous-version" and removed["operation"] == "uninstall-previous-version"
+            and all(type(operation["exitCode"]) is int and operation["exitCode"] == 0
+                    and type(operation["deadlineMilliseconds"]) is int and operation["deadlineMilliseconds"] == 180000
+                    and type(operation["elapsedMilliseconds"]) is int and 0 <= operation["elapsedMilliseconds"] < 180000
+                    for operation in (restored, removed)),
+            "Previous-version rollback operation failed")
+    require(restored["version"] == previous_build.get("version")
+            and isinstance(restored["installerSHA256"], str) and SHA.fullmatch(restored["installerSHA256"])
+            and restored["installerSHA256"] == previous_build.get("installerSHA256")
+            and isinstance(restored["payloadSHA256"], str) and SHA.fullmatch(restored["payloadSHA256"])
+            and restored["payloadSHA256"] == previous_build.get("payloadSha256"),
+            "Rollback did not restore the approved earlier installer and payload")
+    require(all(restored[flag] is True for flag in restore_flags) and all(removed[flag] is True for flag in removal_flags),
+            "Previous-version rollback did not verify profile and recovery state")
+    return {"previousVersionRollbackVerified": True}
+
+
 def validate_inno_runtime_notice(compiler, installed_digest):
     require(isinstance(installed_digest, str) and SHA.fullmatch(installed_digest),
             "Installed Inno Setup notice digest is missing or malformed")
@@ -459,7 +489,7 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
     if report_schema is not None:
         require(type(report.get("schemaVersion")) is int and report["schemaVersion"] == report_schema,
                 "Native lifecycle report schema differs from the approved schema")
-    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in range(11, 53) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in REPORT_SCHEMAS and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -505,7 +535,7 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
         setup_readback["uninstallDataDetectionVerified"] = True
     event_counts=validate_firewall_event_diagnostics(report.get("firewallEventDiagnostics"))
     attempt_counts=validate_native_attempt(report.get("lastNativeAttempt"))
-    state_counts=validate_state_observations(report.get("stateObservations"))
+    state_counts=validate_state_observations(report.get("stateObservations"), include_rollback=report["schemaVersion"] >= ROLLBACK_REPORT_SCHEMA)
     origin_counts=validate_firewall_origin_diagnostics(report.get("firewallOriginDiagnostics"))
     operations=report.get("operations",[])
     expected=["install","upgrade","reinstall","refused-downgrade","refused-uninstall","uninstall"]
@@ -527,7 +557,10 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
         upgrade_index = expected.index("upgrade")
         expected[upgrade_index:upgrade_index] = metadata_refusals
         locked_operations.update(metadata_refusals)
+    if report["schemaVersion"] >= ROLLBACK_REPORT_SCHEMA:
+        expected += ["restore-previous-version", "uninstall-previous-version"]
     require([o.get("operation") for o in operations]==expected,"Native lifecycle operation coverage differs")
+    operation_by_name = {operation["operation"]: operation for operation in operations}
     redirected_upgrade = {}
     locked_upgrade = {}
     failed_copy_recovery = {}
@@ -554,7 +587,7 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
             )
             continue
         require(operation.get("exitCode")== (1 if operation["operation"].startswith("refused-") else 0) and operation.get("deadlineMilliseconds")==180000 and type(operation.get("elapsedMilliseconds")) is int and 0<=operation["elapsedMilliseconds"]<180000,"Native lifecycle operation failed")
-    restoration = validate_fixed_restoration(*operations[-2:]) if report["schemaVersion"] >= 14 else {}
+    restoration = validate_fixed_restoration(operation_by_name["refused-uninstall"], operation_by_name["uninstall"]) if report["schemaVersion"] >= 14 else {}
     if report["schemaVersion"] >= 29:
         restoration.update(validate_restoration_controller_refusals(
             report.get("restorationLaunchCases"), require_hardlink=report["schemaVersion"] >= 30,
@@ -572,10 +605,14 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
     if report["schemaVersion"] >= 49:
         restoration.update(validate_native_documentation_refusals(report.get("nativeDocumentationRefusals")))
     if report["schemaVersion"] >= 15:
-        require(operations[-2].get("registeredUninstallerBindingVerified") is True,
+        require(operation_by_name["refused-uninstall"].get("registeredUninstallerBindingVerified") is True,
                 "Registered workflow uninstaller binding was not verified")
         restoration["registeredUninstallerBindingVerified"] = True
     builds=report.get("builds",[]);require([b.get("version") for b in builds]==list(versions),"Authenticated family differs from independently approved versions")
+    if report["schemaVersion"] >= ROLLBACK_REPORT_SCHEMA:
+        restoration.update(validate_previous_version_rollback(
+            operation_by_name["restore-previous-version"], operation_by_name["uninstall-previous-version"], builds[0],
+        ))
     candidates=[]
     for build,version in zip(builds,versions):
         name="accessweaver-"+version+"-windows-"+arch+"-setup.exe";binary=(root/name).read_bytes()
@@ -658,7 +695,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("directory",type=Path)
     parser.add_argument("--source-commit",required=True);parser.add_argument("--source-ref",required=True);parser.add_argument("--architecture",required=True)
     parser.add_argument("--versions",nargs=2,default=DEFAULT_VERSIONS);parser.add_argument("--gh",default="gh");parser.add_argument("--check-rejections",action="store_true");parser.add_argument("--stage-build-root",type=Path);parser.add_argument("--run-id",required=True)
-    parser.add_argument("--report-schema", type=int, choices=range(11, 53),
+    parser.add_argument("--report-schema", type=int, choices=REPORT_SCHEMAS,
                         help="require the report schema approved for this invocation")
     parser.add_argument("--run-attempt", help="require the approved GitHub Actions attempt on every subject")
     args=parser.parse_args()

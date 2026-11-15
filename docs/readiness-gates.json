@@ -154,6 +154,7 @@
           "status": "failed",
           "evidence": [
             "scripts/test-windows-integration.ps1",
+            "scripts/test-windows-installer-lifecycle.ps1",
             "docs/SPLITWIRE_IMPLEMENTATION.md",
             "scripts/test-windows-installer-reboot.ps1",
             "scripts/test-windows-installer-reboot-contracts.ps1",
@@ -589,6 +590,7 @@
             "scripts/build-windows-installer.ps1",
             "scripts/windows-installer.iss",
             "scripts/test-windows-integration.ps1",
+            "scripts/test-windows-installer-lifecycle.ps1",
             "scripts/test-windows-installer.ps1",
             ".github/workflows/ci.yml",
             "docs/qualification/16632c4b2a7f-linux-deb-lifecycle.json",
