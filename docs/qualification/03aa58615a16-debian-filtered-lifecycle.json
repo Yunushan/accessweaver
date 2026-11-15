@@ -1,0 +1,165 @@
+{
+  "schemaVersion": 1,
+  "scope": "Exact-package Debian lifecycle qualification with distribution documentation filtering",
+  "sourceCommit": "03aa58615a16a4e3975f09283d4357ea3e677878",
+  "previousPackageSourceCommit": "5ac640dede088bae7ff15cc5cc4d1c2c4d4073a2",
+  "fixtureCommit": "d43493d4083b9b4a86988f4562f7723f9e24c9f1",
+  "rebootEvidence": "docs/qualification/03aa58615a16-debian-managed-reboot.json",
+  "previousAMD64Evidence": "docs/qualification/03aa58615a16-debian-apt-dpkg-lifecycle.json",
+  "priorArm64Install": {
+    "approvedControllerSHA256": "27b5246d159d9fc15386c8572616e4d87a0dd76723cdb53d21bd57f91bc0837c",
+    "payloadFiles": 512,
+    "optionalDocumentationFilesFiltered": 503,
+    "otherFileModeMismatches": 0,
+    "otherFileDigestMismatches": 0
+  },
+  "exactPackageAndControllerDigestsMatchedRebootEvidence": true,
+  "amd64": {
+    "environment": "AMD64 Ubuntu WSL with private mount, PID and network namespaces, an Ubuntu-style documentation exclusion, and umask 077",
+    "aptVersion": "apt 3.2.1 (amd64)",
+    "dpkgVersion": "Debian 'dpkg' package management program version 1.23.7 (amd64).",
+    "matchesOriginalAMD64Qualification": true,
+    "aptChecks": 9,
+    "dpkgChecks": 12
+  },
+  "arm64": {
+    "environment": "Ubuntu Minimal 24.04 ARM64 guest under QEMU TCG on an AMD64 host",
+    "qemuVersion": "QEMU emulator version 10.2.1 (Debian 1:10.2.1+ds-1ubuntu3.3)",
+    "imageSHA256": "4b8bb9cf5476faca5079ad23b3664ccb14faeed311ffc739a3655fd5b3e014f0",
+    "firmwareSHA256": {
+      "code": "de01af793c9ff318ac206d8c12e404a2e89baa39bd10e12ed0437a2f69fe012a",
+      "initialVariables": "b3b855c5a80310168051164986855692d1bdb06e67619856177965cd87c6774f"
+    },
+    "externalNetworkingDisabled": true,
+    "umask": "077",
+    "distributionDocumentationFilterPresent": true,
+    "apt": {
+      "schemaVersion": 1,
+      "scope": "Loopback signed APT publication and isolated native Linux install lifecycle",
+      "endpointArchitecture": "arm64",
+      "builderSHA256": "f6af39d051ea0ef10fb358372d4e6b419df1ab1d01f6133c4d3149d0ce84b891",
+      "probeSHA256": "7a3a1a923b17bff1c37a0f5cc6ab721e9550cddbe511477a0a7b7563c92fb046",
+      "managedFixtureSHA256": "bef6d75d37e57c33eda2160246de5a39f0d033647516106d5329aff9cd704660",
+      "managedRevisionsObserved": [
+        1,
+        2
+      ],
+      "aptVersion": "apt 2.8.4 (arm64)",
+      "packageSHA256": {
+        "accessweaver_0.1.0~alpha.4_amd64.deb": "20052f8dadc966c9383794e785b5d8a1549e3843edb0ebca8e44e74efd44e9ef",
+        "accessweaver_0.1.0~alpha.4_arm64.deb": "f3525cbc2285c770dbaf539546be08a7b80fe9000fa4d8e8c011aa736b5999d0",
+        "accessweaver_0.1.0~alpha.5_amd64.deb": "8ed6c7dec921c55e3aca86e749e2c9ade418f0d2274af6281bae1fd716167a21",
+        "accessweaver_0.1.0~alpha.5_arm64.deb": "6b0303777d0abbc8bc979ee54a57f9b9e61e300db05c22f62324edbfb1010925"
+      },
+      "olderBinarySHA256": "27b5246d159d9fc15386c8572616e4d87a0dd76723cdb53d21bd57f91bc0837c",
+      "newerBinarySHA256": "edaef63731974ba5fc8a5867dda6534198a3c1f115317c4d28635967e0fa8648",
+      "suiteArchitectures": [
+        "amd64",
+        "arm64"
+      ],
+      "checks": [
+        "approved-signing-subkey-verified-against-primary-fingerprint",
+        "package-pin-and-untrusted-verification-key-rejected-without-publication",
+        "exclusive-publication-preserved-existing-snapshot",
+        "native-apt-fetched-index-by-signed-hash",
+        "signed-install-upgrade-purge-and-reinstall-preserved-enrolled-policy-and-profile",
+        "installed-controller-advanced-policy-and-denied-ordinary-mutation-and-launch",
+        "ordinary-user-installed-cli-matched-package-build-identity",
+        "wrong-scoped-key-tampered-signature-and-expired-metadata-rejected",
+        "tampered-index-and-payload-rejected-before-installation"
+      ],
+      "ephemeralSigningKeys": true,
+      "arm64EndpointExecution": true,
+      "productionQualificationComplete": false
+    },
+    "aptGuestProbeSHA256": "b63bc1a9fc983f5410e88cdd2b8fb600346683a3a4e1b07ab8d6ce384a03c245",
+    "aptResultSHA256": "c49695ad97fc6a009069cded5f64caa44b7da46e8c91a041fa5d1e3421ecb906",
+    "aptDependencyInputs": {
+      "repository": "https://ports.ubuntu.com/ubuntu-ports",
+      "archiveKeyringSHA256": "80a36b0a6de2f69f49d2df75ef473ccde121e9e190b9ea01d20a4f63778d5c31",
+      "signedReleaseSHA256": {
+        "ports.ubuntu.com_ubuntu-ports_dists_noble-security_InRelease": "58c274e629044455eff0a76d09c6b30e1b4bebb6253ca67c4e23cdddba4e7f64",
+        "ports.ubuntu.com_ubuntu-ports_dists_noble-updates_InRelease": "1d61be78c673b98f8c94d6a913645ee03f1f28315cc3fe7fc31357b9793266a3",
+        "ports.ubuntu.com_ubuntu-ports_dists_noble_InRelease": "cdb2f31d809f589719a53c6ad15f255b27569c4059542ada282aaa21b8e164b0"
+      },
+      "guestPackageStatusSHA256": "5d57337586a448adfc9e1a28915c9cdffd86ecbdcb8a05a760a9cb8db8cff3b0",
+      "signingToolArchives": [
+        {
+          "name": "gpg-agent_2.4.4-2ubuntu17.6_arm64.deb",
+          "sha256": "bd63797c0f64d838c3e9feb47fd6ea41addbe333a2f6172c364035be0bff857a",
+          "bytes": 221426,
+          "package": "gpg-agent",
+          "version": "2.4.4-2ubuntu17.6",
+          "architecture": "arm64"
+        },
+        {
+          "name": "gpg_2.4.4-2ubuntu17.6_arm64.deb",
+          "sha256": "59dc23fb52d0cdc67786a7865031f021b5e056c2547f2c1a858a6cbba8b2ec25",
+          "bytes": 548874,
+          "package": "gpg",
+          "version": "2.4.4-2ubuntu17.6",
+          "architecture": "arm64"
+        },
+        {
+          "name": "gpgconf_2.4.4-2ubuntu17.6_arm64.deb",
+          "sha256": "b7b1bd7b81bc226444a60eb2175eb4801620d79ee1f33cebbef94b897c5b5a70",
+          "bytes": 103292,
+          "package": "gpgconf",
+          "version": "2.4.4-2ubuntu17.6",
+          "architecture": "arm64"
+        },
+        {
+          "name": "pinentry-curses_1.2.1-3ubuntu5_arm64.deb",
+          "sha256": "545f390f1e30ab7fa0d0a13f4b9d5268ba81afc5288760474791a30e05b6ad1d",
+          "bytes": 34284,
+          "package": "pinentry-curses",
+          "version": "1.2.1-3ubuntu5",
+          "architecture": "arm64"
+        }
+      ],
+      "indexToolArchives": [
+        {
+          "name": "dpkg-dev_1.22.6ubuntu6.6_all.deb",
+          "sha256": "70da073557dbed76dc14eb1e682e7ec30fcb736f3d98812490a4c785b4c481cb",
+          "bytes": 1074218,
+          "package": "dpkg-dev",
+          "version": "1.22.6ubuntu6.6",
+          "architecture": "all"
+        },
+        {
+          "name": "libdpkg-perl_1.22.6ubuntu6.6_all.deb",
+          "sha256": "db57f9f0608f78001b5f468e03541fdb88b7e30a07b46d0bcdb57a916a6e8c11",
+          "bytes": 268420,
+          "package": "libdpkg-perl",
+          "version": "1.22.6ubuntu6.6",
+          "architecture": "all"
+        },
+        {
+          "name": "perl-modules-5.38_5.38.2-3.2ubuntu0.7_all.deb",
+          "sha256": "8d2652aa897458aa2482be38d1d0fb26745e87450ab5b620b33180ab0078190c",
+          "bytes": 3109958,
+          "package": "perl-modules-5.38",
+          "version": "5.38.2-3.2ubuntu0.7",
+          "architecture": "all"
+        },
+        {
+          "name": "libperl5.38t64_5.38.2-3.2ubuntu0.7_arm64.deb",
+          "sha256": "1fa28b3dfa9936d4689285737eada693e04263e78d9ce12814aa4cb0f2c54259",
+          "bytes": 4776664,
+          "package": "libperl5.38t64",
+          "version": "5.38.2-3.2ubuntu0.7",
+          "architecture": "arm64"
+        }
+      ],
+      "stagedToolInventorySHA256": "df022413cf3d533753cc83c6774bdf9f207aaca4d30a2cba000b20b89baa1259",
+      "testOnlyIPv4": "192.0.2.2/32",
+      "defaultRoutes": false
+    },
+    "directDpkgQualification": {
+      "status": "incomplete",
+      "reason": "The emulated direct fixture reached its outer deadline while the builder was processing the duplicate-output rejection. The full direct lifecycle did not emit a pass report."
+    }
+  },
+  "nativeEndpointQualificationComplete": false,
+  "productionQualificationComplete": false
+}

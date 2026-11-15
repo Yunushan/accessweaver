@@ -155,4 +155,6 @@ The [exact-package AMD64 APT and dpkg qualification](qualification/03aa58615a16-
 
 The isolated APT and direct dpkg checks explicitly include optional AccessWeaver files under `/usr/share/doc/accessweaver` so they can verify the full installed package on distributions that filter documentation by default. The reboot checks exercise the distribution filters and verify the controller and operational metadata that managed endpoints require.
 
+The [documentation-filter qualification](qualification/03aa58615a16-debian-filtered-lifecycle.json) passed all nine signed APT checks in an offline Ubuntu Minimal 24.04 ARM64 guest under QEMU emulation, using disposable signing keys. The package and executable digests matched the reboot evidence. AMD64 also passed the nine APT and 12 direct dpkg checks with the documentation filter active. The ARM64 direct dpkg run reached its deadline while checking duplicate-output refusal and did not complete.
+
 Production rollout still requires results for the approved release packages and native endpoint architectures. It also requires organization signing and hosting, reboot and active-engine checks, and validation through the organization's endpoint-management tools.
