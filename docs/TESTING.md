@@ -146,7 +146,16 @@ The [Linux AMD64 receipt](qualification/830ee87a940f-linux-byedpi-traffic.json) 
 
 Build the selected Linux candidate and stage it as `accessweaver` in a private fixture directory. Verify the upstream archive against its published SHA-256, extract the matching ELF member as `ciadpi`, and make both files executable. Put the observed digests and source identity in `prep.json` using the fields from `sourceCommit` through `engineSHA256` in the receipt. Run `scripts/test-linux-byedpi-traffic.py PRIVATE_FIXTURE_DIRECTORY` with Python 3 and OpenSSL available. The runner requires an ordinary user without Linux capabilities or privilege gain and a disposable network namespace with only loopback enabled. Prepare the namespace before dropping privileges. Preserve the original UID mapping so AccessWeaver can verify root-owned machine paths. The runner exclusively writes `traffic-report.json`.
 
-The domain probe uses the local `localhost` mapping. Live DNS transport, browser and Discord traffic, routing rules, vendor network recovery, and other platforms still require their own tests.
+With `--dns-rules`, the same runner adds a loopback-only UDP DNS responder and an HTTP origin that records the actual `Host` header. The [DNS and rule receipt](qualification/830ee87a940f-linux-byedpi-dns-rules.json) records A and AAAA queries and the expected header casing for included, nested excluded, and unlisted names. The unguided proxy and direct numeric connection provide separate controls. The rewrite uses ByeDPI's `--mod-http=h` option. [ByeDPI v0.17.3 documentation](https://github.com/hufrea/byedpi/tree/v0.17.3).
+
+For this mode, create private mount and network namespaces before preparing the environment. Enable loopback and bind a two-line file over `/etc/resolv.conf` in the private mount namespace. Set `net.ipv4.ip_unprivileged_port_start=0` only in that network namespace so the ordinary fixture account can bind port 53. Drop capabilities and privileges before running the fixture with `--dns-rules`. The runner requires these exact resolver contents and writes `dns-rule-report.json`.
+
+```text
+nameserver 127.0.0.53
+options timeout:1 attempts:1
+```
+
+External or encrypted DNS transport, browser and Discord traffic, ISP behavior, vendor network recovery, and other platforms still require their own tests.
 
 ## Release packaging
 

@@ -69,5 +69,6 @@
   "productionQualificationComplete": false,
   "host": "Ubuntu WSL",
   "probeSource": "scripts/test-linux-byedpi-traffic.py",
-  "namespacePreparation": "Loopback enabled in a transient network namespace before dropping to the ordinary account. The preliminary user-namespace attempt was refused during profile import because root ownership was unmapped."
+  "namespacePreparation": "Loopback enabled in a transient network namespace before dropping to the ordinary account. The preliminary user-namespace attempt was refused during profile import because root ownership was unmapped.",
+  "probeSourceCommit": "8506a94266f607a4b6239740336299027cc885a8"
 }

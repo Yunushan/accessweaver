@@ -4,8 +4,10 @@
 The private fixture directory contains accessweaver, ciadpi, and prep.json.
 The prep record pins the controller and engine SHA-256 digests and identifies
 the source, toolchain and engine release. The runner publishes traffic-report.json
-without replacing an existing report. Launch it with an ordinary Linux user and
-no capabilities in a disposable network namespace whose only interface is lo.
+without replacing an existing report. The optional --dns-rules mode also needs
+the documented private resolver setup and writes dns-rule-report.json. Launch
+with an ordinary user without capabilities in a disposable loopback-only
+network namespace.
 """
 
 import concurrent.futures
@@ -22,6 +24,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 def require(ok, label):
@@ -29,8 +32,9 @@ def require(ok, label):
         raise RuntimeError(label)
 
 
-if len(sys.argv) != 2:
-    raise SystemExit("usage: test-linux-byedpi-traffic.py PRIVATE_FIXTURE_DIRECTORY")
+if len(sys.argv) not in (2, 3) or (len(sys.argv) == 3 and sys.argv[2] != "--dns-rules"):
+    raise SystemExit("usage: test-linux-byedpi-traffic.py PRIVATE_FIXTURE_DIRECTORY [--dns-rules]")
+DNS_RULES = len(sys.argv) == 3
 ROOT = Path(sys.argv[1]).resolve(strict=True)
 require(ROOT.is_dir() and ROOT.stat().st_uid == os.geteuid() and ROOT.stat().st_mode & 0o077 == 0,
         "fixture-directory-not-private")
@@ -49,6 +53,15 @@ require(hashlib.sha256(ENGINE.read_bytes()).hexdigest() == PREP["engineSHA256"],
 results = []
 port = 0
 loopback = "127.0.0.1"
+DNS_SERVER = "127.0.0.53"
+RESOLVER_CONFIG = "nameserver 127.0.0.53\noptions timeout:1 attempts:1\n"
+INCLUDE = "included.aw-fixture.test"
+EXCLUDE = "excluded.included.aw-fixture.test"
+UNLISTED = "unlisted.aw-fixture.test"
+IPV6 = "v6.included.aw-fixture.test"
+DNS_TARGETS = {INCLUDE: loopback, EXCLUDE: loopback, UNLISTED: loopback, IPV6: "::1"}
+if DNS_RULES:
+    require(Path("/etc/resolv.conf").read_text() == RESOLVER_CONFIG, "expected-private-fixture-resolver")
 
 
 def trial(label, action):
@@ -73,8 +86,9 @@ def recv_exact(stream, count):
     return bytes(data)
 
 def endpoint(host, destination):
-    if host == "localhost":
-        return b"\x03\x09localhost" + struct.pack("!H", destination)
+    if host == "localhost" or host in DNS_TARGETS:
+        name = host.encode("ascii")
+        return bytes((3, len(name))) + name + struct.pack("!H", destination)
     address = ipaddress.ip_address(host)
     return (b"\x01" if address.version == 4 else b"\x04") + address.packed + struct.pack("!H", destination)
 
@@ -175,6 +189,83 @@ def udp_roundtrip(host):
                             "udp-relay-response-mismatch")
             require(observation.result(timeout=6) == stimulus, "server-udp-observation-mismatch")
 
+
+def dns_packet(data):
+    """Return the fixture query identity and its authoritative response."""
+    if len(data) < 17 or struct.unpack_from("!H", data, 4)[0] != 1:
+        return None
+    index, labels = 12, []
+    while index < len(data) and data[index] != 0:
+        size = data[index]
+        index += 1
+        if size > 63 or index + size >= len(data):
+            return None
+        labels.append(data[index:index + size])
+        index += size
+    if index + 5 > len(data):
+        return None
+    name = b".".join(labels).decode("ascii", errors="replace").lower()
+    query_type, query_class = struct.unpack_from("!HH", data, index + 1)
+    address = DNS_TARGETS.get(name)
+    expected_type = 28 if address == "::1" else 1
+    answer = b""
+    if address and query_class == 1 and query_type == expected_type:
+        wire_address = ipaddress.ip_address(address).packed
+        answer = struct.pack("!HHHIH", 0xC00C, query_type, 1, 0, len(wire_address)) + wire_address
+    flags = 0x8580 if address else 0x8583
+    header = data[:2] + struct.pack("!HHHHH", flags, 1, int(bool(answer)), 0, 0)
+    return name, query_type, bool(answer), header + data[12:index + 5] + answer
+
+
+def serve_dns(server, stop, observations):
+    server.settimeout(0.2)
+    while not stop.is_set():
+        try:
+            data, peer = server.recvfrom(512)
+        except TimeoutError:
+            continue
+        result = dns_packet(data)
+        if result is None:
+            continue
+        name, query_type, answered, response = result
+        if answered:
+            observations.add((name, query_type))
+        server.sendto(response, peer)
+
+
+def http_header_observed(name, target, *, use_proxy):
+    family = socket.AF_INET6 if ":" in target else socket.AF_INET
+    with socket.socket(family, socket.SOCK_STREAM) as listener:
+        listener.bind((target, 0))
+        listener.listen(1)
+        listener.settimeout(5)
+        destination = listener.getsockname()[1]
+        response = b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n"
+
+        def observe():
+            accepted, _ = listener.accept()
+            with accepted:
+                accepted.settimeout(4)
+                payload = bytearray()
+                while b"\r\n\r\n" not in payload and len(payload) < 512:
+                    payload.extend(recv_exact(accepted, 1))
+                require(b"\r\n\r\n" in payload, "http-request-not-observed")
+                accepted.sendall(response)
+                return bytes(payload).split(b"\r\n")[1]
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as task:
+            observation = task.submit(observe)
+            if use_proxy:
+                connection, _ = socks(1, name, destination)
+            else:
+                connection = socket.create_connection((target, destination), timeout=4)
+            with connection:
+                request = b"GET /fixture HTTP/1.1\r\nHost: " + name.encode("ascii") + b"\r\nConnection: close\r\n\r\n"
+                connection.sendall(request)
+                require(recv_exact(connection, len(response)) == response, "http-response-not-observed")
+            return observation.result(timeout=6)
+
+
 def open_child(parent):
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
@@ -235,17 +326,17 @@ with tempfile.TemporaryDirectory(prefix="run-", dir=ROOT) as temporary:
     def cli(*args):
         return subprocess.run([CORE, *args], env=env, cwd=work, capture_output=True, text=True, timeout=12)
 
-    def import_profile(id, fingerprint):
+    def import_profile(id, fingerprint, *, include=(), exclude=(), extra_args=()):
         profile = {"version": 1, "id": id, "name": "Synthetic ByeDPI traffic fixture", "engine": "byedpi",
-                   "binary": str(ENGINE), "sha256": fingerprint, "args": ["--ip", loopback, "--port", str(port)],
-                   "routing": {"includeDomains": [], "excludeDomains": [], "applications": []},
+                   "binary": str(ENGINE), "sha256": fingerprint, "args": ["--ip", loopback, "--port", str(port), *extra_args],
+                   "routing": {"includeDomains": list(include), "excludeDomains": list(exclude), "applications": []},
                    "probe": {"host": "localhost", "port": 443, "tls": True, "timeoutSeconds": 2}}
         source = work / (id + ".json")
         source.write_text(json.dumps(profile), encoding="utf-8")
         require(cli("import", str(source)).returncode == 0, "profile-import-failed")
 
-    def open_run():
-        return subprocess.Popen([CORE, "run", "socks-fixture"], env=env, cwd=work, stdin=subprocess.DEVNULL,
+    def open_run(id="socks-fixture"):
+        return subprocess.Popen([CORE, "run", id], env=env, cwd=work, stdin=subprocess.DEVNULL,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
     def run_checks():
@@ -307,6 +398,60 @@ with tempfile.TemporaryDirectory(prefix="run-", dir=ROOT) as temporary:
         require(output.returncode != 0 and "executable SHA-256 mismatch" in output.stderr and is_closed(),
                 "changed-engine-digest-not-refused")
 
+
+    def check_dns_rules(guided):
+        profile = "dns-guided" if guided else "dns-unguided"
+        import_profile(profile, PREP["engineSHA256"],
+                       include=(INCLUDE,) if guided else (), exclude=(EXCLUDE,) if guided else (),
+                       extra_args=("--mod-http=h",))
+        preview = cli("preview", profile)
+        require(preview.returncode == 0 and json.loads(preview.stdout)["ready"], "dns-rule-preview-not-ready")
+        observations = set()
+        stop = threading.Event()
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server, \
+                concurrent.futures.ThreadPoolExecutor(max_workers=1) as task:
+            server.bind((DNS_SERVER, 53))
+            dns = task.submit(serve_dns, server, stop, observations)
+            p, fd = None, None
+            try:
+                p = open_run(profile)
+                fd = open_child(p)
+                show_listener()
+                def inspect(name, expected_header, *, use_proxy=True):
+                    target = DNS_TARGETS[name]
+                    observed = http_header_observed(name, target, use_proxy=use_proxy)
+                    expected = expected_header + name.encode("ascii")
+                    require(observed == expected, "origin-http-host-casing-mismatch")
+                    if use_proxy:
+                        wanted = 28 if target == "::1" else 1
+                        require((name, wanted) in observations, "proxy-dns-query-not-observed")
+                    else:
+                        require(not observations, "direct-numeric-control-used-dns")
+
+                if guided:
+                    trial("direct-http-host-unmodified-without-dns", lambda: inspect(INCLUDE, b"Host: ", use_proxy=False))
+                    trial("guided-included-http-host-modified", lambda: inspect(INCLUDE, b"hOsT: "))
+                    trial("guided-nested-excluded-http-host-unmodified", lambda: inspect(EXCLUDE, b"Host: "))
+                    trial("guided-unlisted-http-host-unmodified", lambda: inspect(UNLISTED, b"Host: "))
+                    trial("guided-included-ipv6-http-host-modified", lambda: inspect(IPV6, b"hOsT: "))
+                else:
+                    inspect(UNLISTED, b"hOsT: ")
+
+                p.send_signal(signal.SIGTERM)
+                require(p.wait(timeout=9) == 0 and bool(select.select([fd], [], [], 2)[0]) and is_closed(),
+                        "dns-rule-proxy-cleanup-failed")
+            finally:
+                stop.set()
+                if p is not None and p.poll() is None:
+                    p.kill()
+                    p.wait(timeout=5)
+                if fd is not None:
+                    if not select.select([fd], [], [], 0)[0]:
+                        signal.pidfd_send_signal(fd, signal.SIGKILL)
+                    os.close(fd)
+            dns.result(timeout=4)
+
+
     with socket.socket() as allocation:
         allocation.bind((loopback, 0))
         port = allocation.getsockname()[1]
@@ -316,13 +461,18 @@ with tempfile.TemporaryDirectory(prefix="run-", dir=ROOT) as temporary:
     trial("controller-starts-owned-upstream-engine", run_checks)
     trial("engine-crash-observed-and-controller-lock-released", crash_recovery)
     trial("mismatched-engine-digest-refused-without-listener", changed_digest)
+    if DNS_RULES:
+        trial("unguided-http-marker-control", lambda: check_dns_rules(False))
+        trial("guided-dns-and-http-rules", lambda: check_dns_rules(True))
 
 report = {**PREP, "schemaVersion": 1, "scope": "Linux AMD64 real ByeDPI local traffic and lifecycle",
           "ordinaryUser": True, "zeroLinuxCapabilities": True,
           "loopbackOnlyNetworkNamespace": True, "tlsTargetLocal": True, "probeClients": "Python sockets",
           "probeSourceSHA256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+          "syntheticDNSRulesRequested": DNS_RULES,
           "tests": results, "allChecksPassed": all(record["passed"] for record in results),
           "productionQualificationComplete": False}
-with (ROOT / "traffic-report.json").open("x", encoding="utf-8") as stream:
+report_name = "dns-rule-report.json" if DNS_RULES else "traffic-report.json"
+with (ROOT / report_name).open("x", encoding="utf-8") as stream:
     json.dump(report, stream, indent=2)
 sys.exit(0 if report["allChecksPassed"] else 1)
