@@ -315,9 +315,13 @@ function updateBreadcrumb() {
   const label = {dashboard:'navDashboard',profiles:'navProfiles',engines:'navEngines',diagnostics:'navDiagnostics',settings:'navSettings',system:'systemTools'};
   $('crumb-name').textContent = t(label[state.view]);
 }
-function navigate(view, focus=false) {
+function navigate(view, focus=false, replaceHistory=false) {
   if (!['dashboard','profiles','engines','diagnostics','settings','system'].includes(view)) return;
   if(state.profileEditingOnly&&['system','diagnostics'].includes(view)){toast(t('profileAuditNotice'));view='profiles';}
+  const hash = '#' + view;
+  if (replaceHistory && location.hash !== hash) history.replaceState(history.state,'',hash);
+  if (replaceHistory && view === state.view) return;
+  const focusOutgoing = replaceHistory && $('view-' + state.view)?.contains(document.activeElement);
   state.view = view;
   $$('.view').forEach(el => { el.classList.toggle('active',el.id === 'view-' + view); });
   $$('.nav-item').forEach(el => {
@@ -328,9 +332,9 @@ function navigate(view, focus=false) {
   if(view==='profiles'&&!state.profileGridRendered)renderProfiles();
   updateBreadcrumb();
   setSidebarOpen(false);
-  if (location.hash !== '#' + view) location.hash = view;
+  if (!replaceHistory && location.hash !== hash) location.hash = view;
   window.scrollTo(0,0);
-  if (focus) $('content').focus({preventScroll:true});
+  if (focus || focusOutgoing) $('content').focus({preventScroll:true});
   probeNavigationChanged(view);
   supportNavigationChanged(view);
   if(typeof historyNavigationChanged==='function')historyNavigationChanged(view);
@@ -339,10 +343,7 @@ function navigate(view, focus=false) {
 function navigateFromHistory() {
   const hash = location.hash;
   if (hash === '#' + state.view) return;
-  const view = hash.slice(1) || 'dashboard';
-  const outgoing = $('view-' + state.view);
-  const moveFocus = view !== state.view && outgoing?.contains(document.activeElement);
-  navigate(view,moveFocus);
+  navigate(hash.slice(1) || 'dashboard',false,true);
 }
 async function apiRequest(path, method='GET', data, timeout=12000, externalSignal) {
   let target;
@@ -472,7 +473,7 @@ function renderHero() {
   setHidden('profile-audit-notice',!state.profileEditingOnly);
   setText('profile-audit-notice',t('profileAuditNotice'));
   $$('[data-action="diagnose"], [data-view="diagnostics"], [data-view="system"]').forEach(node=>{if(node.disabled!==state.profileEditingOnly)node.disabled=state.profileEditingOnly});
-  if(state.profileEditingOnly&&['system','diagnostics'].includes(state.view))navigate('profiles');
+  if(state.profileEditingOnly&&['system','diagnostics'].includes(state.view))navigate('profiles',false,true);
   const runtimeStatus = runtimeStatusKey(state.runtime);
   const pending = runtimeStatus === 'shutdownPending';
   const restart = runtimeStatus === 'preparationRestart';

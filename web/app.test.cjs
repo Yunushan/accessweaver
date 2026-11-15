@@ -293,6 +293,51 @@ test('history navigation moves focus only when leaving the focused view',()=>{
   assert.equal(env.context.document.activeElement,sidebar);
   assert.equal(env.run('state.view'),'profiles');
 });
+test('Back can pass a view that profile-editing-only mode redirects to profiles',()=>{
+  const env=environment(),search=env.get('profile-search');
+  env.get('view-profiles').contains=node=>node===search;
+  env.run('state.view="profiles";state.profileEditingOnly=true;state.profileGridRendered=true');
+  const entries=['#dashboard','#system','#profiles'];
+  let position=1;
+  const historyState={fixture:true};
+  env.context.history.state=historyState;
+  env.context.history.replaceState=(state,_title,hash)=>{
+    assert.equal(state,historyState);
+    entries[position]=hash;
+  };
+  Object.defineProperty(env.context.location,'hash',{
+    get:()=>entries[position],
+    set:value=>{
+      entries.splice(position+1,entries.length,'#'+value);
+      position++;
+    },
+  });
+  search.focus();
+  env.run('navigateFromHistory()');
+  assert.equal(position,1);
+  assert.deepEqual(entries,['#dashboard','#profiles','#profiles']);
+  assert.equal(env.context.document.activeElement,search);
+  position--;
+  env.run('navigateFromHistory()');
+  assert.equal(env.run('state.view'),'dashboard');
+  assert.equal(env.context.document.activeElement,env.get('content'));
+  position++;
+  env.run('navigateFromHistory()');
+  assert.equal(env.run('state.view'),'profiles');
+  assert.equal(entries.length,3);
+});
+test('enabling profile-only mode replaces the active restricted route and transfers focus',()=>{
+  const env=environment(),control=env.get('system-preview');
+  env.get('view-system').contains=node=>node===control;
+  env.context.location.hash='#system';
+  const rewrites=[];
+  env.context.history.replaceState=(_state,_title,hash)=>{rewrites.push(hash);env.context.location.hash=hash};
+  control.focus();
+  env.run('state.view="system";state.profileEditingOnly=true;renderHero()');
+  assert.deepEqual(rewrites,['#profiles']);
+  assert.equal(env.run('state.view'),'profiles');
+  assert.equal(env.context.document.activeElement,env.get('content'));
+});
 test('process exit refreshes profile actions',async()=>{const env=environment();env.context.profileRenderCalls=0;env.run('state.loading=false;state.offline=false;state.runtime={state:"running",profileId:"test-profile",pid:123};renderProfiles=()=>{profileRenderCalls++};apiRequest=async()=>({state:"exited",profileId:"test-profile"});');await env.run('pollStatus()');assert.equal(env.context.profileRenderCalls,1);});
 test('all HTML translation keys exist in both languages',()=>{const env=environment();const keys=[...html.matchAll(/data-i18n(?:-aria)?="([^"]+)"/g)].map(m=>m[1]);env.context.translationKeys=keys;assert.deepEqual(plain(env.run('translationKeys.filter(key=>!en[key]||!tr[key])')),[]);});
 test('Russian and Spanish cover every UI translation key',()=>{const env=environment();assert.deepEqual(plain(env.run('Object.keys(en).filter(key=>!extraLocales.ru[key]||!extraLocales.es[key])')),[]);});

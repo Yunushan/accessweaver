@@ -1303,6 +1303,29 @@ test('browser history moves focus from the outgoing view and preserves sidebar f
  await page.goForward();
  await expect(page.locator('#view-profiles')).toBeVisible();
  await expect(sidebar).toBeFocused();
+
+ await sidebar.click();
+ await page.locator('.nav-item[data-view="system"]').click();
+ await expect(page).toHaveURL(/#system$/);
+ await page.evaluate(()=>history.replaceState({restrictedViewFixture:true},''));
+ await profiles(page);
+ const historyLength=await page.evaluate(()=>{
+  state.profileEditingOnly=true;
+  renderHero();
+  return history.length;
+ });
+ await search.focus();
+ await page.goBack();
+ await expect.poll(()=>page.evaluate(()=>history.state?.restrictedViewFixture===true)).toBe(true);
+ await expect(page).toHaveURL(/#profiles$/);
+ await expect(search).toBeFocused();
+ expect(await page.evaluate(()=>history.length)).toBe(historyLength);
+ await page.goBack();
+ await expect(page).toHaveURL(/#dashboard$/);
+ await expect(page.locator('#content')).toBeFocused();
+ await page.goForward();
+ await expect(page).toHaveURL(/#profiles$/);
+ await expect(page.locator('#view-profiles')).toBeVisible();
 });
 
 test('background runtime changes announce localized status once and preserve keyboard focus', async ({page,core}) => {
