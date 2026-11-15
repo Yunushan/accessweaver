@@ -110,6 +110,7 @@ function Initialize-Operation {
             Require-Admin
             if($r.dns -and $r.dns -ne 'unchanged'){throw 'Configure system DNS separately from application operations'}
             Initialize-Changes
+            $script:splitCordRemovalRecoveryPath=Join-Path $root 'profiles\splitcord-removal.pending'
             return
         }
         Require-DesktopUser
@@ -4413,6 +4414,7 @@ function Install-App([string]$variant,[switch]$Reinstall) {
     }
     $stableBeforeDownload=$null;$stableBeforeDownloadDigest=$null;$stableUpdaterDigest=$null;$ptbBeforeSetupDigest=$null
     if($variant -eq 'splitcord'){
+        if(Read-SplitCordRemovalRecovery){throw 'Finish the pending SplitCord removal before running setup'}
         $splitCordBaseline=Get-SplitCordSetupBaseline
         $installer=Get-SplitCordInstaller
         $file=Join-Path $root 'downloads\splitcord-setup.exe'
@@ -4668,18 +4670,23 @@ function Read-SplitCordMachineUninstallCommand {
     if($commands.Count -gt 1){throw 'Multiple SplitCord machine uninstall registrations matched'}
     if($commands.Count -eq 1){return $commands[0]}
 }
-function Get-RegisteredSplitCordUninstaller([string]$Command) {
+function ConvertFrom-SplitCordUninstallCommand([string]$Command) {
     if(-not $Command){return}
     $match=[regex]::Match($Command,'\A"([A-Za-z]:\\[^:*?"<>|\x00-\x1f]+\\Uninstall[^\\:*?"<>|\x00-\x1f]*\.exe)" /allusers\z',
         [Text.RegularExpressions.RegexOptions]'IgnoreCase,CultureInvariant')
     if(-not $match.Success){throw 'SplitCord machine uninstall registration is invalid'}
     $path=$match.Groups[1].Value
     if([IO.Path]::GetFullPath($path) -ine $path){throw 'SplitCord machine uninstall path is not canonical'}
-    No-Reparse $path
-    if(-not (Test-Path -LiteralPath $path -PathType Leaf -ErrorAction Stop)){throw 'Application uninstaller not found'}
     $app=Join-Path ([IO.Path]::GetDirectoryName($path)) 'SplitCord-Turkey.exe'
-    Assert-SplitCordMaintenancePaths $app $path
-    return @{path=$path;arguments=@('/allusers','/S');timeout=600;app=$app}
+    return @{path=$path;arguments=@('/allusers','/S');timeout=600;app=$app;command=$Command}
+}
+function Get-RegisteredSplitCordUninstaller([string]$Command) {
+    if(-not $Command){return}
+    $uninstaller=ConvertFrom-SplitCordUninstallCommand $Command
+    No-Reparse $uninstaller.path
+    if(-not (Test-Path -LiteralPath $uninstaller.path -PathType Leaf -ErrorAction Stop)){throw 'Application uninstaller not found'}
+    Assert-SplitCordMaintenancePaths $uninstaller.app $uninstaller.path
+    return $uninstaller
 }
 function Assert-SplitCordSetupPreflight([string]$App) {
     # The per-machine NSIS installer also inspects the current user's old uninstall entry.
@@ -4757,13 +4764,48 @@ function Get-AppExecutableDigest([string]$path) {
         return (Get-FileHash -InputStream $file -Algorithm SHA256 -ErrorAction Stop).Hash
     } finally {$file.Dispose()}
 }
-function Resume-SplitCordRemoval([string]$Command) {
+function Read-SplitCordRemovalRecovery {
+    if(-not $script:splitCordRemovalRecoveryPath){return}
+    try {
+        $bytes=Read-DNSRecoveryFileBytes $script:splitCordRemovalRecoveryPath 16KB
+        if($null -eq $bytes){return}
+        $record=ConvertFrom-Json -InputObject ([Text.UTF8Encoding]::new($false,$true).GetString($bytes)) -ErrorAction Stop
+        if($record -isnot [pscustomobject] -or ($record.schemaVersion -isnot [int] -and $record.schemaVersion -isnot [long]) -or $record.schemaVersion -ne 1 -or
+            @($record.PSObject.Properties).Count -ne 4 -or $record.command -isnot [string] -or
+            [string]::IsNullOrWhiteSpace($record.command) -or $record.command.Length -gt 4096 -or
+            $record.uninstallerSHA256 -isnot [string] -or $record.uninstallerSHA256 -cnotmatch '\A[A-F0-9]{64}\z' -or
+            $record.applicationSHA256 -isnot [string] -or $record.applicationSHA256 -cnotmatch '\A(?:[A-F0-9]{64})?\z'){
+            throw 'Invalid SplitCord removal record'
+        }
+        $uninstaller=ConvertFrom-SplitCordUninstallCommand $record.command
+        return @{command=$record.command;app=$uninstaller.app;path=$uninstaller.path;
+            uninstallerSHA256=$record.uninstallerSHA256;applicationSHA256=$record.applicationSHA256;
+            sha256=(Get-WorkflowBytesSHA256 $bytes)}
+    }catch{throw 'SplitCord removal recovery record could not be verified'}
+}
+function Save-SplitCordRemovalRecovery([string]$Command,[string]$UninstallerSHA256,[string]$ApplicationSHA256) {
+    if(-not $script:splitCordRemovalRecoveryPath){return}
+    $record=@{schemaVersion=1;command=$Command;uninstallerSHA256=$UninstallerSHA256;applicationSHA256=$ApplicationSHA256}
+    $bytes=[Text.UTF8Encoding]::new($false,$true).GetBytes(($record | ConvertTo-Json -Compress))
+    if($bytes.Length -gt 16KB){throw 'SplitCord removal recovery record exceeds its size limit'}
+    Publish-WorkflowFile $script:splitCordRemovalRecoveryPath $bytes -BeforeHash ''
+    $saved=Read-SplitCordRemovalRecovery
+    if($saved.sha256 -cne (Get-WorkflowBytesSHA256 $bytes)){throw 'SplitCord removal recovery record changed during publication'}
+    return $saved
+}
+function Assert-SplitCordRemovalRegistration([string]$Command,[switch]$AllowAbsent) {
+    $current=Read-SplitCordMachineUninstallCommand
+    if($current -cne $Command -and ($current -or -not $AllowAbsent)){
+        throw 'SplitCord installation changed before removal retry'
+    }
+}
+function Resume-SplitCordRemoval([string]$Command,$Recovery) {
     $uninstaller=Get-RegisteredSplitCordUninstaller $Command
     $path=$uninstaller.path;$app=$uninstaller.app
     if(Test-Path -LiteralPath $app -ErrorAction Stop){
         throw 'SplitCord executable still exists; review the installed product before retrying'
     }
-    $digest=Get-AppExecutableDigest $path
+    $digest=if($Recovery){$Recovery.uninstallerSHA256}else{Get-AppExecutableDigest $path}
     Wait-SplitCordService $app 0 -AllowAbsentOrStopped -AllowMissingStoppedImage
     Wait-AppProcessesExited 'splitcord' $app 0
     $guard=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
@@ -4773,8 +4815,15 @@ function Resume-SplitCordRemoval([string]$Command) {
             throw 'SplitCord uninstaller changed before retry'
         }
         Save-ApplicationEffectBoundary
-        if((Read-SplitCordMachineUninstallCommand) -cne $Command -or (Find-App 'splitcord') -or
-           (Test-Path -LiteralPath $app -ErrorAction Stop)){
+        Assert-SplitCordRemovalRegistration $Command -AllowAbsent:([bool]$Recovery)
+        if(-not $Recovery){$Recovery=Save-SplitCordRemovalRecovery $Command $digest ''}
+        if($Recovery){
+            if((Read-SplitCordRemovalRecovery).sha256 -cne $Recovery.sha256){
+                throw 'SplitCord removal recovery record changed before vendor launch'
+            }
+            Assert-SplitCordRemovalRegistration $Command -AllowAbsent
+        }
+        if((Find-App 'splitcord') -or (Test-Path -LiteralPath $app -ErrorAction Stop)){
             throw 'SplitCord installation changed before removal retry'
         }
         Assert-SplitCordMaintenancePaths $app $path
@@ -4782,7 +4831,7 @@ function Resume-SplitCordRemoval([string]$Command) {
         Wait-AppProcessesExited 'splitcord' $app 0
         [void](Native $path $uninstaller.arguments -Timeout $uninstaller.timeout -StartGuard $guard)
     } finally {$guard.Dispose()}
-    Confirm-AppRemoval 'splitcord' $app
+    Confirm-AppRemoval 'splitcord' $app -SplitCordRecovery $Recovery
 }
 function Test-DiscordUpdaterPresent([string]$variant) {
     $path=Join-Path (Get-AppProcessBase $variant) 'Update.exe'
@@ -4917,7 +4966,7 @@ function Resume-DiscordRemoval([string]$Variant,$Recovery,[switch]$RetainRecover
     } finally {$guard.Dispose()}
     return (Confirm-AppRemoval $Variant $Recovery.image $Recovery -RetainRecovery:$RetainRecovery)
 }
-function Confirm-AppRemoval([string]$variant,[string]$app,$Recovery,[switch]$RetainRecovery) {
+function Confirm-AppRemoval([string]$variant,[string]$app,$Recovery,[switch]$RetainRecovery,$SplitCordRecovery) {
     Wait-App $variant $false 60 $app
     if($variant -eq 'splitcord'){Wait-SplitCordService ''}
     Wait-AppProcessesExited $variant $app
@@ -4931,18 +4980,37 @@ function Confirm-AppRemoval([string]$variant,[string]$app,$Recovery,[switch]$Ret
         Assert-DiscordUpdaterAbsent $variant
     }
     Wait-AppProcessesExited $variant $app 0
+    if($SplitCordRecovery){
+        Remove-VerifiedDNSRecoverySnapshot $script:splitCordRemovalRecoveryPath $SplitCordRecovery.sha256 16KB
+    }
     if(-not $RetainRecovery){Complete-DiscordRemovalRecovery $variant $Recovery}
     Event ('Application uninstalled: '+$variant)
     return $true
 }
-function Assert-AppRemovalTarget([string]$Variant,[string]$App,[string]$Uninstaller) {
-    if((Find-App $Variant) -ine $App){throw 'Application installation changed before uninstall launch'}
+function Assert-AppRemovalTarget([string]$Variant,[string]$App,[string]$Uninstaller,$SplitCordRecovery) {
+    $discovered=Find-App $Variant
+    if($discovered -ine $App -and
+        ($discovered -or -not $SplitCordRecovery -or $SplitCordRecovery.app -ine $App -or
+            -not (Test-Path -LiteralPath $App -PathType Leaf -ErrorAction Stop))){
+        throw 'Application installation changed before uninstall launch'
+    }
     No-Reparse $App
-    if((Get-AppUninstaller $Variant $App).path -ine $Uninstaller){throw 'Application uninstaller changed before launch'}
+    $current=if($SplitCordRecovery){
+        Assert-SplitCordRemovalRegistration $SplitCordRecovery.command -AllowAbsent
+        Get-RegisteredSplitCordUninstaller $SplitCordRecovery.command
+    }else{Get-AppUninstaller $Variant $App}
+    if($current.path -ine $Uninstaller -or ($SplitCordRecovery -and $current.app -ine $App)){
+        throw 'Application uninstaller changed before launch'
+    }
 }
 function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDigest,[string]$expectedUninstallerDigest,$Replacement,[string]$ExpectedRecordSHA256,$CleanPTBRecovery) {
     if($variant -eq 'splitcord'){Require-Admin}else{Require-DesktopUser}
     $app=Find-App $variant
+    $splitCordRecovery=if($variant -eq 'splitcord'){Read-SplitCordRemovalRecovery}
+    if($splitCordRecovery -and -not $app){
+        No-Reparse $splitCordRecovery.app
+        if(Test-Path -LiteralPath $splitCordRecovery.app -PathType Leaf -ErrorAction Stop){$app=$splitCordRecovery.app}
+    }
     if($expectedApp -and $app -ine $expectedApp){throw 'Application installation changed before removal'}
     $approvedRecovery=$null
     if($ExpectedRecordSHA256){
@@ -4955,6 +5023,18 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
     if(-not $app){
         Wait-AppProcessesExited $variant '' 0
         if($variant -eq 'splitcord'){
+            if($splitCordRecovery){
+                Assert-SplitCordRemovalRegistration $splitCordRecovery.command -AllowAbsent
+                No-Reparse $splitCordRecovery.app
+                No-Reparse $splitCordRecovery.path
+                if(Test-Path -LiteralPath $splitCordRecovery.app -ErrorAction Stop){
+                    throw 'Recorded SplitCord client path changed before removal retry'
+                }
+                if(Test-Path -LiteralPath $splitCordRecovery.path -ErrorAction Stop){
+                    return (Resume-SplitCordRemoval $splitCordRecovery.command $splitCordRecovery)
+                }
+                return (Confirm-AppRemoval 'splitcord' $splitCordRecovery.app -SplitCordRecovery $splitCordRecovery)
+            }
             $command=Read-SplitCordMachineUninstallCommand
             if($command){return (Resume-SplitCordRemoval $command)}
             Wait-SplitCordService '' 0
@@ -4974,9 +5054,16 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
     }
     $appDigest=Get-AppExecutableDigest $app
     if($expectedAppDigest -and $appDigest -ine $expectedAppDigest){throw 'Application installation changed before removal'}
-    $uninstaller=Get-AppUninstaller $variant $app
+    $uninstaller=if($splitCordRecovery){
+        if($app -ine $splitCordRecovery.app -or $appDigest -cne $splitCordRecovery.applicationSHA256){
+            throw 'SplitCord client changed before removal retry'
+        }
+        Assert-SplitCordRemovalRegistration $splitCordRecovery.command -AllowAbsent
+        Get-RegisteredSplitCordUninstaller $splitCordRecovery.command
+    }else{Get-AppUninstaller $variant $app}
     $digest=Get-AppExecutableDigest $uninstaller.path
-    if($expectedUninstallerDigest -and $digest -ine $expectedUninstallerDigest){
+    if(($expectedUninstallerDigest -and $digest -ine $expectedUninstallerDigest) -or
+       ($splitCordRecovery -and $digest -cne $splitCordRecovery.uninstallerSHA256)){
         throw 'Application uninstaller changed before removal'
     }
     $guard=Open-VerifiedAppExecutable $uninstaller.path $digest 'Application uninstaller changed before launch'
@@ -4984,7 +5071,10 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
     try {
         $clientGuard=Open-VerifiedAppExecutable $app $appDigest 'Application installation changed before uninstall launch'
         if($variant -eq 'splitcord'){Wait-SplitCordService $app 0 -AllowAbsentOrStopped}
-        Assert-AppRemovalTarget $variant $app $uninstaller.path
+        Assert-AppRemovalTarget $variant $app $uninstaller.path $splitCordRecovery
+        if($variant -eq 'splitcord' -and $script:splitCordRemovalRecoveryPath -and -not $splitCordRecovery){
+            $splitCordRecovery=Save-SplitCordRemovalRecovery $uninstaller.command $digest $appDigest
+        }
         if($CleanPTBRecovery){
             $recovery=$approvedRecovery
             if(-not $recovery){
@@ -4992,7 +5082,7 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
             }
         }
         Stop-AppProcesses $variant $app -ExpectedUninstaller $uninstaller.path
-        Assert-AppRemovalTarget $variant $app $uninstaller.path
+        Assert-AppRemovalTarget $variant $app $uninstaller.path $splitCordRecovery
         $base=Get-AppProcessBase $variant
         $names=@(Get-AppProcessNames $base $app)
         if(-not (Test-AppProcessesExited $base $app $names)){
@@ -5001,7 +5091,10 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
         Save-ApplicationEffectBoundary
         if($variant -eq 'splitcord'){Wait-SplitCordService $app 0 -AllowAbsentOrStopped}
         elseif(-not $recovery){$recovery=Save-DiscordRemovalRecovery $variant $app $digest $Replacement $ExpectedRecordSHA256}
-        Assert-AppRemovalTarget $variant $app $uninstaller.path
+        Assert-AppRemovalTarget $variant $app $uninstaller.path $splitCordRecovery
+        if($splitCordRecovery -and (Read-SplitCordRemovalRecovery).sha256 -cne $splitCordRecovery.sha256){
+            throw 'SplitCord removal recovery record changed before vendor launch'
+        }
         if($recovery -and (Read-DiscordRemovalRecovery $variant).sha256 -cne $recovery.sha256){
             throw 'Discord removal recovery record changed before vendor launch'
         }
@@ -5013,7 +5106,7 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
         if($null -ne $clientGuard){$clientGuard.Dispose()}
         $guard.Dispose()
     }
-    return (Confirm-AppRemoval $variant $app $recovery -RetainRecovery:($null -ne $Replacement -or $null -ne $CleanPTBRecovery))
+    return (Confirm-AppRemoval $variant $app $recovery -RetainRecovery:($null -ne $Replacement -or $null -ne $CleanPTBRecovery) -SplitCordRecovery $splitCordRecovery)
 }
 function Get-AppProcessBase([string]$variant) {
     if($variant -in @('discord','discord-ptb')){

@@ -2496,6 +2496,99 @@ try {
     foreach($name in $appRemovalSaved.Keys){Set-Item ('Function:'+$name) $appRemovalSaved[$name]}
     $script:externalEffectsPending=$false
 }
+# Simulate a protected SplitCord uninstall interrupted after removing registration.
+& {
+    $priorSplitCordPath=$script:splitCordRemovalRecoveryPath
+    $priorEffects=$script:externalEffectsPending
+    try {
+        function Require-Admin {}
+        function Find-App([string]$Variant){
+            if($Variant -cne 'splitcord'){throw 'Unexpected fixture application'}
+            if([IO.File]::Exists($splitFixture.app) -and ($splitFixture.mode -cne 'registered-only-client' -or $splitFixture.registration)){return $splitFixture.app}
+        }
+        function Read-SplitCordMachineUninstallCommand {return $splitFixture.registration}
+        function Assert-SplitCordMaintenancePaths([string]$App,[string]$Uninstaller){
+            if($App -ine $splitFixture.app -or $Uninstaller -ine $splitFixture.uninstaller){throw 'Unexpected maintenance paths'}
+            $splitFixture.protectionChecks++
+        }
+        function Wait-SplitCordService([string]$App,[int]$Seconds,[switch]$AllowAbsentOrStopped,[switch]$AllowMissingStoppedImage){
+            if($AllowAbsentOrStopped){
+                if($App -ine $splitFixture.app -or $splitFixture.service -cnotin @('Running','Stopped','Absent')){throw 'Unexpected service maintenance'}
+            }elseif($App -or $splitFixture.service -cne 'Absent'){throw 'SplitCord service removal could not be verified'}
+        }
+        function Stop-AppProcesses {}
+        function Get-Process {param($ErrorAction);return @()}
+        function Event {}
+        function Save-Journal {}
+        function Native {
+            param($Program,$Arguments,$Timeout,[IO.FileStream[]]$StartGuard)
+            $pending=Read-SplitCordRemovalRecovery
+            if($Program -ine $splitFixture.uninstaller -or ($Arguments -join ' ') -cne '/allusers /S' -or $Timeout -ne 600 -or
+                $pending.command -cne $splitFixture.command -or $pending.uninstallerSHA256 -cne (Get-AppExecutableDigest $Program) -or
+                $StartGuard[0].Name -ine $Program -or -not $StartGuard[0].CanRead -or -not $script:externalEffectsPending){
+                throw 'SplitCord vendor execution lacked its approved checkpoint'
+            }
+            foreach($guard in $StartGuard){$guard.Dispose()}
+            $splitFixture.launches++
+            $splitFixture.registration=$null
+            $splitFixture.service='Stopped'
+            if($splitFixture.mode -cnotin @('client-present','registered-only-client') -or $splitFixture.launches -gt 1){[IO.File]::Delete($splitFixture.app)}
+            if($splitFixture.mode -ceq 'completed' -or $splitFixture.launches -gt 1){
+                [IO.File]::Delete($splitFixture.uninstaller)
+                $splitFixture.service='Absent'
+            }
+            if($splitFixture.launches -eq 1){throw 'Synthetic interrupted SplitCord uninstall'}
+        }
+        foreach($mode in @('client-present','registered-only-client','uninstaller-present','completed')){
+            $directory=Join-Path $testRoot ('splitcord-retained-removal-'+$mode)
+            [void][IO.Directory]::CreateDirectory($directory)
+            $script:splitCordRemovalRecoveryPath=Join-Path $directory 'splitcord-removal.pending'
+            $splitFixture=@{mode=$mode;app=(Join-Path $directory 'SplitCord-Turkey.exe');uninstaller=(Join-Path $directory 'Uninstall.exe');
+                service='Running';protectionChecks=0;launches=0}
+            $splitFixture.command='"'+$splitFixture.uninstaller+'" /allusers'
+            $splitFixture.registration=$splitFixture.command
+            [IO.File]::WriteAllText($splitFixture.app,'approved SplitCord app')
+            [IO.File]::WriteAllText($splitFixture.uninstaller,'approved uninstaller')
+            $interrupted=$false
+            try{Remove-App 'splitcord'}catch{if($_.Exception.Message -cne 'Synthetic interrupted SplitCord uninstall'){throw};$interrupted=$true}
+            $saved=Read-SplitCordRemovalRecovery
+            Assert ($interrupted -and $splitFixture.launches -eq 1 -and -not $splitFixture.registration -and
+                $saved.command -ceq $splitFixture.command -and $saved.applicationSHA256 -cmatch '\A[A-F0-9]{64}\z') ('SplitCord retains its verified uninstall record after registration loss: '+$mode)
+
+            $recordBytes=[IO.File]::ReadAllBytes($script:splitCordRemovalRecoveryPath)
+            $recordJSON=[Text.Encoding]::UTF8.GetString($recordBytes) | ConvertFrom-Json
+            $recordJSON.command=''
+            [IO.File]::WriteAllText($script:splitCordRemovalRecoveryPath,($recordJSON | ConvertTo-Json),[Text.UTF8Encoding]::new($false))
+            $refused=$false
+            try{Remove-App 'splitcord'}catch{$refused=$_.Exception.Message -ceq 'SplitCord removal recovery record could not be verified'}
+            Assert ($refused -and $splitFixture.launches -eq 1) ('SplitCord rejects an empty recorded uninstall command: '+$mode)
+            [IO.File]::WriteAllBytes($script:splitCordRemovalRecoveryPath,$recordBytes)
+
+            $splitFixture.registration='"'+(Join-Path $directory 'UninstallOther.exe')+'" /allusers'
+            $refused=$false
+            try{Remove-App 'splitcord'}catch{$refused=$_.Exception.Message -ceq 'SplitCord installation changed before removal retry'}
+            Assert ($refused -and $splitFixture.launches -eq 1 -and (Read-SplitCordRemovalRecovery).sha256 -ceq $saved.sha256) ('SplitCord retry refuses a different registered command: '+$mode)
+            $splitFixture.registration=$null
+
+            foreach($file in @($splitFixture.app,$splitFixture.uninstaller)){
+                if(-not [IO.File]::Exists($file)){continue}
+                $original=[IO.File]::ReadAllText($file)
+                [IO.File]::WriteAllText($file,'changed file')
+                $refused=$false
+                try{Remove-App 'splitcord'}catch{$refused=$_.Exception.Message -match 'SplitCord (client|uninstaller) changed|Application uninstaller changed'}
+                Assert ($refused -and $splitFixture.launches -eq 1 -and (Read-SplitCordRemovalRecovery).sha256 -ceq $saved.sha256) ('SplitCord retry preserves changed '+[IO.Path]::GetFileName($file)+': '+$mode)
+                [IO.File]::WriteAllText($file,$original)
+            }
+            $retry=Remove-App 'splitcord'
+            Assert ($retry -ceq $true -and $splitFixture.launches -eq (1+[int]($mode -cne 'completed')) -and
+                $splitFixture.service -ceq 'Absent' -and -not [IO.File]::Exists($splitFixture.app) -and
+                -not [IO.File]::Exists($script:splitCordRemovalRecoveryPath) -and $splitFixture.protectionChecks -gt 0) ('SplitCord completes verified removal across registration loss: '+$mode)
+        }
+    } finally {
+        $script:splitCordRemovalRecoveryPath=$priorSplitCordPath
+        $script:externalEffectsPending=$priorEffects
+    }
+}
 # Interrupt the vendor between client and updater removal using inert files.
 & {
     $previousAppData=$env:LOCALAPPDATA
