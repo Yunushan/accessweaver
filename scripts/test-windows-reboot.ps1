@@ -14,7 +14,7 @@ $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 
 function Assert-DNSRebootAdmission($Saved,$Current) {
-    if($Saved.schemaVersion -ne 8 -or $Saved.architecture -isnot [string] -or
+    if($Saved.schemaVersion -ne 9 -or $Saved.architecture -isnot [string] -or
        $Saved.architecture -cnotin @('amd64','arm64') -or $Saved.architecture -cne $Current.architecture -or $Saved.method -isnot [string] -or
        $Saved.method -cnotin @('doh','dnscrypt') -or $Saved.method -cne $Current.method -or
        $Saved.requiredOriginalMode -isnot [string] -or $Saved.requiredOriginalMode -cne $Current.requiredOriginalMode -or
@@ -23,6 +23,8 @@ function Assert-DNSRebootAdmission($Saved,$Current) {
        $Saved.guestID -cne $Current.guestID -or $Saved.binarySHA256 -cne $Current.binarySHA256 -or
        $Saved.oracleSHA256 -cne $Current.oracleSHA256 -or $Saved.fixtureSHA256 -cne $Current.fixtureSHA256 -or
        $Saved.snapshotSHA256 -cnotmatch '\A[A-F0-9]{64}\z' -or $Saved.snapshotSHA256 -cne $Current.snapshotSHA256 -or
+       $Saved.copySHA256 -isnot [string] -or $Saved.copySHA256 -cnotmatch '\A[A-F0-9]{64}\z' -or
+       $Saved.copySHA256 -cne $Current.copySHA256 -or
        $Saved.journalId -isnot [string] -or $Saved.journalId -cnotmatch '\Aworkflow-[a-f0-9]{32}\.json\z' -or
        $Saved.journalId -cne $Current.journalId -or $Saved.journalSHA256 -cnotmatch '\A[A-F0-9]{64}\z' -or
        $Saved.journalSHA256 -cne $Current.journalSHA256){
@@ -177,7 +179,7 @@ if(-not $nativeArchitecture -or [Runtime.InteropServices.RuntimeInformation]::Pr
     throw 'A native 64-bit Windows DNS reboot guest and shell are required'
 }
 $current=@{
-    schemaVersion=8;architecture=$nativeArchitecture;method=$DNS;requiredOriginalMode=$RequiredOriginalMode.ToLowerInvariant();guestID=$guestID.ToString('D');qualificationID=$QualificationID;
+    schemaVersion=9;architecture=$nativeArchitecture;method=$DNS;requiredOriginalMode=$RequiredOriginalMode.ToLowerInvariant();guestID=$guestID.ToString('D');qualificationID=$QualificationID;
     binarySHA256=$ExecutableSHA256.ToUpperInvariant();
     fixtureSHA256=(Get-DNSRebootDigest $PSCommandPath 1MB);
     boot=$os.LastBootUpTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
@@ -187,6 +189,7 @@ $private=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'AccessWeaver 
 $baseline=Join-Path $private 'prepared.json'
 $machineRoot=Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'AccessWeaver'
 $snapshot=Join-Path $machineRoot 'profiles\dns-original.json'
+$recoveryCopy=Join-Path $machineRoot 'profiles\dns-original.copy'
 $logDirectory=Join-Path $machineRoot 'logs'
 $report=Join-Path $private 'reboot-results.json'
 
@@ -441,6 +444,7 @@ try {
             Assert-DNSRebootConfigured $before (Read-DNSAcceptanceState) $DNS
             $current.dns=$before
             $current.snapshotSHA256=Get-DNSRebootDigest $snapshot 8MB
+            $current.copySHA256=Get-DNSRebootDigest $recoveryCopy (8MB+65)
             $current.journalId=Get-DNSRebootJournalID $applied.journal $logDirectory
             $journalPath=Join-Path $logDirectory $current.journalId
             $journal=Read-DNSRebootRecord $journalPath 8MB
@@ -453,7 +457,8 @@ try {
             Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState)
             Assert-RebootResolver
             Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState)
-            if((Test-Path -LiteralPath $snapshot -ErrorAction Stop) -or -not (Test-DNSRebootServicesRemoved)){
+            if((Test-Path -LiteralPath $snapshot -ErrorAction Stop) -or
+               (Test-Path -LiteralPath $recoveryCopy -ErrorAction Stop) -or -not (Test-DNSRebootServicesRemoved)){
                 throw 'DNS reboot preparation cleanup retained a snapshot or managed service'
             }
         }
@@ -469,6 +474,7 @@ try {
     $journal=Read-DNSRebootRecord $journalPath 8MB
     $current.journalSHA256=$journal.sha256
     $current.snapshotSHA256=Get-DNSRebootDigest $snapshot 8MB
+    $current.copySHA256=Get-DNSRebootDigest $recoveryCopy (8MB+65)
     Assert-DNSRebootAdmission $saved $current
     Assert-DNSRebootJournal $journal.record $current.snapshotSHA256
     $coverage=Get-DNSRebootCoverage $saved.dns $saved.requiredOriginalMode
@@ -477,11 +483,13 @@ try {
         throw 'Interrupted DNS reboot verification requires a fresh checkpoint'
     }
     Save-DNSRebootRecord (Join-Path $private 'verification-started.json') @{schemaVersion=7}
-    $outcome=[ordered]@{schemaVersion=11;qualificationID=$saved.qualificationID;method=$saved.method;architecture=$current.architecture;binarySHA256=$current.binarySHA256;
+    $heldSnapshot=Join-Path ([IO.Path]::GetDirectoryName($snapshot)) ('reboot-held-'+$saved.qualificationID+'.json')
+    $primaryMoved=$false
+    $outcome=[ordered]@{schemaVersion=12;qualificationID=$saved.qualificationID;method=$saved.method;architecture=$current.architecture;binarySHA256=$current.binarySHA256;
         requiredOriginalMode=$saved.requiredOriginalMode;originalModeCoverage=$coverage;
         fixtureSHA256=$current.fixtureSHA256;oracleSHA256=$current.oracleSHA256;
         rebootVerified=$true;servicesVerified=$false;configuredStateVerified=$false;
-        resolverVerified=$false;journalBindingVerified=$true;journalRecoveryAccepted=$false;
+        resolverVerified=$false;journalBindingVerified=$true;primarySnapshotHeld=$false;journalRecoveryAccepted=$false;
         originalStateRestored=$false;originalResolverVerified=$false;snapshotRetired=$false;restorationReceiptVerified=$false;
         servicesRemoved=$false;passed=$false;stage='services';cleanupStage='not-started';teardownStage='not-started'}
     try {
@@ -502,10 +510,23 @@ try {
         # Record only the source-defined stage.
     } finally {
         try {
-            $outcome.cleanupStage='journal-recovery'
+            $outcome.cleanupStage='journal-binding'
             if((Get-DNSRebootDigest $journalPath 8MB) -cne $current.journalSHA256){
                 throw 'Prepared DNS journal changed before recovery'
             }
+            $outcome.cleanupStage='primary-hold'
+            if((Get-DNSRebootDigest $snapshot 8MB) -cne $current.snapshotSHA256){
+                throw 'Prepared DNS snapshot changed before recovery'
+            }
+            [IO.File]::Move($snapshot,$heldSnapshot)
+            $primaryMoved=$true
+            if((Test-Path -LiteralPath $snapshot -ErrorAction Stop) -or
+               (Get-DNSRebootDigest $heldSnapshot 8MB) -cne $current.snapshotSHA256 -or
+               (Get-DNSRebootDigest $recoveryCopy (8MB+65)) -cne $current.copySHA256){
+                throw 'Prepared DNS snapshot hold or protected copy could not be verified'
+            }
+            $outcome.primarySnapshotHeld=$true
+            $outcome.cleanupStage='journal-recovery'
             [void](Invoke-TestWorkflow @{action='recover';journalId=$saved.journalId})
             $outcome.journalRecoveryAccepted=$true
             $outcome.cleanupStage='original-state'
@@ -517,8 +538,9 @@ try {
             Assert-DNSAcceptanceRestored $saved.dns (Read-DNSAcceptanceState)
             $outcome.originalResolverVerified=$true
             $outcome.cleanupStage='snapshot-retirement'
-            $outcome.snapshotRetired=-not (Test-Path -LiteralPath $snapshot -ErrorAction Stop)
-            if(-not $outcome.snapshotRetired){throw 'Journal recovery retained the active snapshot'}
+            $outcome.snapshotRetired=-not ((Test-Path -LiteralPath $snapshot -ErrorAction Stop) -or
+                (Test-Path -LiteralPath $recoveryCopy -ErrorAction Stop))
+            if(-not $outcome.snapshotRetired){throw 'Journal recovery retained active DNS recovery files'}
             $outcome.cleanupStage='restoration-receipt'
             $receipt=Join-Path ([IO.Path]::GetDirectoryName($snapshot)) ('dns-restored-'+$current.snapshotSHA256.ToLowerInvariant()+'.receipt')
             $expectedReceipt=[Text.Encoding]::ASCII.GetBytes($current.snapshotSHA256.ToUpperInvariant())
@@ -529,9 +551,22 @@ try {
                 throw 'DNS restoration receipt does not bind the retired snapshot'
             }
             $outcome.restorationReceiptVerified=$true
+            $outcome.cleanupStage='held-snapshot-retirement'
+            if((Get-DNSRebootDigest $heldSnapshot 8MB) -cne $current.snapshotSHA256){
+                throw 'Held DNS snapshot changed after journal recovery'
+            }
+            [IO.File]::Delete($heldSnapshot)
+            if(Test-Path -LiteralPath $heldSnapshot -ErrorAction Stop){throw 'Held DNS snapshot was not retired'}
             $outcome.cleanupStage='recovered'
         } catch {
             # Keep the first fixed recovery failure even if teardown later restores DNS.
+            if($primaryMoved -and -not $outcome.journalRecoveryAccepted -and -not [IO.File]::Exists($snapshot)){
+                try {
+                    if((Get-DNSRebootDigest $heldSnapshot 8MB) -ceq $current.snapshotSHA256){
+                        [IO.File]::Move($heldSnapshot,$snapshot)
+                    }
+                }catch{}
+            }
         }
         try {
             $outcome.teardownStage='remove-all'
@@ -542,7 +577,8 @@ try {
             Assert-RebootResolver
             Assert-DNSAcceptanceRestored $saved.dns (Read-DNSAcceptanceState)
             $outcome.teardownStage='snapshot-retirement'
-            if(Test-Path -LiteralPath $snapshot -ErrorAction Stop){throw 'Teardown retained the active snapshot'}
+            if((Test-Path -LiteralPath $snapshot -ErrorAction Stop) -or
+               (Test-Path -LiteralPath $recoveryCopy -ErrorAction Stop)){throw 'Teardown retained active DNS recovery files'}
             $outcome.teardownStage='service-inventory'
             $outcome.servicesRemoved=Test-DNSRebootServicesRemoved
             $outcome.teardownStage=if($outcome.servicesRemoved){'complete'}else{'services-remain'}

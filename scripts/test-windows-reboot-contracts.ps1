@@ -222,8 +222,8 @@ if($stages.Count -ne 3 -or $stages[0].GetCommandName() -cne 'Register-ScheduledT
     throw 'VMware DNS preparation must follow task registration and retire the task on failure'
 }
 $journalId='workflow-'+('a'*32)+'.json'
-$saved=@{schemaVersion=8;architecture='amd64';qualificationID=('a'*32);method='doh';requiredOriginalMode='static-ipv6';guestID='synthetic';
-    binarySHA256=('a'*64);fixtureSHA256=('b'*64);oracleSHA256=('c'*64);snapshotSHA256=('D'*64);
+$saved=@{schemaVersion=9;architecture='amd64';qualificationID=('a'*32);method='doh';requiredOriginalMode='static-ipv6';guestID='synthetic';
+    binarySHA256=('a'*64);fixtureSHA256=('b'*64);oracleSHA256=('c'*64);snapshotSHA256=('D'*64);copySHA256=('C'*64);
     journalId=$journalId;journalSHA256=('E'*64);boot='639303000000000000'}
 $current=$saved.Clone()
 $current.boot='639303000000000001'
@@ -232,7 +232,7 @@ $changed=$current.Clone();$changed.method='dnscrypt'
 Refuse {Assert-DNSRebootAdmission $saved $changed}
 $changed=$current.Clone();$changed.requiredOriginalMode='dhcp-ipv4'
 Refuse {Assert-DNSRebootAdmission $saved $changed}
-foreach($field in @('qualificationID','guestID','binarySHA256','fixtureSHA256','oracleSHA256','snapshotSHA256','journalId','journalSHA256')){
+foreach($field in @('qualificationID','guestID','binarySHA256','fixtureSHA256','oracleSHA256','snapshotSHA256','copySHA256','journalId','journalSHA256')){
     $changed=$current.Clone()
     $changed[$field]='different'
     Refuse {Assert-DNSRebootAdmission $saved $changed}
@@ -243,7 +243,8 @@ foreach($value in @($saved.boot,'639302000000000000','unknown')){
     Refuse {Assert-DNSRebootAdmission $saved $changed}
 }
 $legacy=$saved.Clone()
-$legacy.schemaVersion=6
+$legacy.schemaVersion=8
+$legacy.Remove('copySHA256')
 Refuse {Assert-DNSRebootAdmission $legacy $current}
 foreach($value in @('..\\'+$journalId,'workflow-'+('A'*32)+'.json','foreign.json')){
     $invalid=$saved.Clone();$invalid.journalId=$value
@@ -559,13 +560,26 @@ function Invoke-TestWorkflow([hashtable]$Request) {
     $script:trace.Add($Request.action)
     switch($Request.action){
         'recover' {
-            if($Request.journalId -cne $journalId){throw 'Unexpected journal identity'}
+            if($Request.journalId -cne $journalId -or [IO.File]::Exists($snapshot) -or
+               -not [IO.File]::Exists($heldSnapshot) -or -not [IO.File]::Exists($recoveryCopy)){
+                $script:dispatchBoundaryFailed=$true
+                throw 'Recovery did not receive the protected copy alone'
+            }
             if($script:failure -in @('recover','recover-and-remove')){throw 'Synthetic recovery refusal'}
-            if($script:failure -ne 'snapshot'){$script:snapshotPresent=$false}
+            if($script:failure -ceq 'snapshot'){[IO.File]::WriteAllText($snapshot,'synthetic primary')}
+            if($script:failure -cne 'copy'){[IO.File]::Delete($recoveryCopy)}
         }
         'remove-all' {
+            if($script:failure -in @('recover','recover-and-remove','copy-changed') -and
+               (-not [IO.File]::Exists($snapshot) -or [IO.File]::Exists($heldSnapshot))){
+                $script:dispatchBoundaryFailed=$true
+                throw 'Failed recovery did not return the held primary before teardown'
+            }
             if($script:failure -in @('remove','recover-and-remove')){throw 'Synthetic teardown refusal'}
-            $script:snapshotPresent=$script:failure -ceq 'teardown-snapshot'
+            [IO.File]::Delete($snapshot)
+            [IO.File]::Delete($recoveryCopy)
+            if($script:failure -ceq 'teardown-snapshot'){[IO.File]::WriteAllText($snapshot,'synthetic primary')}
+            if($script:failure -ceq 'teardown-copy'){[IO.File]::WriteAllText($recoveryCopy,'synthetic copy')}
         }
         default {throw 'Unexpected workflow request'}
     }
@@ -584,14 +598,18 @@ function Assert-RebootResolver {
     if(($script:trace[-1] -eq 'recover' -and $script:failure -eq 'resolver') -or
         ($script:trace[-1] -eq 'remove-all' -and $script:failure -eq 'teardown-resolver')){throw 'Synthetic resolver failure'}
 }
-function Test-Path {param($LiteralPath,$ErrorAction);if($LiteralPath -cne $snapshot){throw 'Unexpected snapshot path'};return $script:snapshotPresent}
 function Test-DNSRebootServicesRemoved {
     if($script:failure -eq 'inventory'){throw 'Synthetic teardown inventory failure'}
     return $script:failure -ne 'service'
 }
 $save=(Get-Command Save-DNSRebootRecord).ScriptBlock
 function Save-DNSRebootRecord {param($Path,$Record);if($Path -cne $report){throw 'Unexpected report path'};$script:published=$Record}
-$report='synthetic report';$snapshot=Join-Path ([IO.Path]::GetTempPath()) 'synthetic snapshot';$journalPath='synthetic journal'
+$report='synthetic report';$journalPath='synthetic journal'
+$cleanupRoot=Join-Path ([IO.Path]::GetTempPath()) ('aw-dns-reboot-cleanup-'+[guid]::NewGuid().ToString('N'))
+[void][IO.Directory]::CreateDirectory($cleanupRoot)
+$snapshot=Join-Path $cleanupRoot 'dns-original.json'
+$recoveryCopy=Join-Path $cleanupRoot 'dns-original.copy'
+$heldSnapshot=Join-Path $cleanupRoot 'held.json'
 $current.snapshotSHA256='D'*64
 $receiptPath=Join-Path ([IO.Path]::GetDirectoryName($snapshot)) ('dns-restored-'+('d'*64)+'.receipt')
 $receiptDigest='96CA1E8D176B8F0FB41DC5A66BDD553BA480489369ABC337A7C5B397D3C8279D'
@@ -605,25 +623,41 @@ function Get-DNSRebootDigest {
             default {return $receiptDigest}
         }
     }
+    if($Path -cin @($snapshot,$heldSnapshot) -and $Maximum -eq 8MB -and [IO.File]::ReadAllText($Path) -ceq 'synthetic primary'){
+        if($Path -ceq $heldSnapshot -and $script:failure -ceq 'held-changed' -and $script:trace.Contains('recover')){
+            return 'F'*64
+        }
+        return $current.snapshotSHA256
+    }
+    if($Path -ceq $recoveryCopy -and $Maximum -eq (8MB+65) -and [IO.File]::ReadAllText($Path) -ceq 'synthetic copy'){
+        if($script:failure -ceq 'copy-changed'){return 'F'*64}
+        return $current.copySHA256
+    }
     if($Path -cne $journalPath -or $Maximum -ne 8MB){throw 'Unexpected journal read'}
     if($script:failure -ceq 'journal-changed'){return 'F'*64}
     return $current.journalSHA256
 }
-foreach($failure in @('none','journal-changed','recover','state','resolver','state-after-probe','snapshot','receipt-missing','receipt-mismatch','remove',
-        'teardown-state','teardown-resolver','teardown-state-after-probe','teardown-snapshot','inventory','service','recover-and-remove')){
+try {
+foreach($failure in @('none','journal-changed','copy-changed','recover','state','resolver','state-after-probe','snapshot','copy','receipt-missing','receipt-mismatch','held-changed','remove',
+        'teardown-state','teardown-resolver','teardown-state-after-probe','teardown-snapshot','teardown-copy','inventory','service','recover-and-remove')){
     $script:failure=$failure;$script:trace=[Collections.Generic.List[string]]::new()
     $script:stateReads=@{recover=0;'remove-all'=0}
-    $script:snapshotPresent=$true;$script:published=$null
-    $outcome=@{stage='complete';cleanupStage='not-started';teardownStage='not-started';journalRecoveryAccepted=$false;originalStateRestored=$false;originalResolverVerified=$false;snapshotRetired=$false;restorationReceiptVerified=$false;servicesRemoved=$false}
+    $script:published=$null;$script:dispatchBoundaryFailed=$false;$primaryMoved=$false
+    [IO.File]::Delete($heldSnapshot)
+    [IO.File]::WriteAllText($snapshot,'synthetic primary')
+    [IO.File]::WriteAllText($recoveryCopy,'synthetic copy')
+    $outcome=@{stage='complete';cleanupStage='not-started';teardownStage='not-started';primarySnapshotHeld=$false;journalRecoveryAccepted=$false;originalStateRestored=$false;originalResolverVerified=$false;snapshotRetired=$false;restorationReceiptVerified=$false;servicesRemoved=$false}
     & $cleanup
     $stage=switch($failure){
-        'journal-changed' {'journal-recovery'}
+        'journal-changed' {'journal-binding'}
+        'copy-changed' {'primary-hold'}
         'recover' {'journal-recovery'}
         'state' {'original-state'}
         'resolver' {'original-resolver'}
         'state-after-probe' {'original-resolver'}
-        'snapshot' {'snapshot-retirement'}
+        {$_ -cin @('snapshot','copy')} {'snapshot-retirement'}
         {$_ -cin @('receipt-missing','receipt-mismatch')} {'restoration-receipt'}
+        'held-changed' {'held-snapshot-retirement'}
         'recover-and-remove' {'journal-recovery'}
         default {'recovered'}
     }
@@ -633,15 +667,18 @@ foreach($failure in @('none','journal-changed','recover','state','resolver','sta
         'teardown-state' {'original-state'}
         'teardown-resolver' {'original-resolver'}
         'teardown-state-after-probe' {'original-resolver'}
-        'teardown-snapshot' {'snapshot-retirement'}
+        {$_ -cin @('teardown-snapshot','teardown-copy')} {'snapshot-retirement'}
         'inventory' {'service-inventory'}
         'service' {'services-remain'}
         default {'complete'}
     }
-    $expectedTrace=if($failure -ceq 'journal-changed'){'remove-all'}else{'recover,remove-all'}
-    if($script:published.cleanupStage -cne $stage -or $script:published.teardownStage -cne $teardown -or
-        $script:published.originalResolverVerified -ne ($stage -cin @('snapshot-retirement','restoration-receipt','recovered')) -or
-        $script:published.restorationReceiptVerified -ne ($stage -ceq 'recovered') -or
+    $expectedTrace=if($failure -cin @('journal-changed','copy-changed')){'remove-all'}else{'recover,remove-all'}
+    if($script:dispatchBoundaryFailed -or
+        $script:published.primarySnapshotHeld -ne ($stage -cnotin @('journal-binding','primary-hold')) -or
+        [IO.File]::Exists($heldSnapshot) -ne ($stage -cin @('original-state','original-resolver','snapshot-retirement','restoration-receipt','held-snapshot-retirement')) -or
+        $script:published.cleanupStage -cne $stage -or $script:published.teardownStage -cne $teardown -or
+        $script:published.originalResolverVerified -ne ($stage -cin @('snapshot-retirement','restoration-receipt','held-snapshot-retirement','recovered')) -or
+        $script:published.restorationReceiptVerified -ne ($stage -cin @('held-snapshot-retirement','recovered')) -or
         $script:published.servicesRemoved -ne ($teardown -ceq 'complete') -or $script:published.passed -ne ($failure -ceq 'none') -or
         ($script:trace -join ',') -cne $expectedTrace){
         throw 'DNS reboot cleanup failed to distinguish journal recovery from teardown'
@@ -649,6 +686,10 @@ foreach($failure in @('none','journal-changed','recover','state','resolver','sta
     if($failure -ceq 'none' -and ($script:stateReads.recover -ne 2 -or $script:stateReads['remove-all'] -ne 2)){
         throw 'Passing recovery and teardown must verify original state on both sides of the resolver probe'
     }
+}
+} finally {
+    foreach($path in @($snapshot,$recoveryCopy,$heldSnapshot)){[IO.File]::Delete($path)}
+    [IO.Directory]::Delete($cleanupRoot)
 }
 Set-Item Function:Save-DNSRebootRecord $save
 Set-Item Function:Get-DNSRebootDigest $digestCommand
@@ -685,13 +726,11 @@ $root=[IO.Path]::Combine([IO.Path]::GetTempPath(),('aw-dns-reboot-publication-'+
 [void][IO.Directory]::CreateDirectory($root)
 $shared=Join-Path $root 'share'
 $report=Join-Path $root 'reboot-results.json'
-$record=@{schemaVersion=11;architecture='amd64';qualificationID=('a'*32);method='doh';binarySHA256=('A'*64);fixtureSHA256=('B'*64);oracleSHA256=('C'*64)
+$record=@{schemaVersion=12;architecture='amd64';qualificationID=('a'*32);method='doh';binarySHA256=('A'*64);fixtureSHA256=('B'*64);oracleSHA256=('C'*64)
     requiredOriginalMode='static-ipv6';originalModeCoverage=@{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0;'static-ipv6'=1}
     rebootVerified=$true;servicesVerified=$true;configuredStateVerified=$true;resolverVerified=$true
-    journalBindingVerified=$true;journalRecoveryAccepted=$true;originalStateRestored=$true;originalResolverVerified=$true
+    journalBindingVerified=$true;primarySnapshotHeld=$true;journalRecoveryAccepted=$true;originalStateRestored=$true;originalResolverVerified=$true
     snapshotRetired=$true;restorationReceiptVerified=$true;servicesRemoved=$true;passed=$true;stage='complete';cleanupStage='recovered';teardownStage='complete'}
-$prior=$record.Clone();$prior.schemaVersion=10
-Refuse {Assert-DNSRebootPublicReport (Encode-Report $prior) $pin $qualificationID $method $originalMode $fixturePin $oraclePin 'amd64'}
 $legacy=$record.Clone();$legacy.schemaVersion=9;$legacy.Remove('architecture')
 $pin=$record.binarySHA256.ToLowerInvariant()
 $qualificationID=$record.qualificationID
@@ -699,6 +738,9 @@ $method=$record.method
 $originalMode=$record.requiredOriginalMode
 $fixturePin=$record.fixtureSHA256.ToLowerInvariant()
 $oraclePin=$record.oracleSHA256.ToLowerInvariant()
+$prior=$record.Clone();$prior.schemaVersion=11;$prior.Remove('primarySnapshotHeld')
+$data=[Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $prior -Depth 8))
+Refuse {Assert-DNSRebootPublicReport $data $pin $qualificationID $method $originalMode $fixturePin $oraclePin 'amd64'}
 $destination=Join-Path $shared ('reboot-results-'+$qualificationID+'.json')
 $secondID='b'*32
 $secondDestination=Join-Path $shared ('reboot-results-'+$secondID+'.json')
@@ -718,6 +760,8 @@ foreach($invalid in @(
     @{stage='services';servicesVerified=$false},
     @{cleanupStage='original-resolver'},
     @{restorationReceiptVerified=$false},
+    @{primarySnapshotHeld=$false},
+    @{cleanupStage='held-snapshot-retirement';restorationReceiptVerified=$false},
     @{architecture='arm64'},
     @{cleanupStage='restoration-receipt';restorationReceiptVerified=$true},
     @{teardownStage='services-remain'},
@@ -734,6 +778,12 @@ $candidate.cleanupStage='restoration-receipt';$candidate.restorationReceiptVerif
 $data=[Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $candidate -Depth 8))
 if((Assert-DNSRebootPublicReport $data $pin $qualificationID $method $originalMode $fixturePin $oraclePin 'amd64') -ne $false){
     throw 'A missing restoration receipt was credited as a pass'
+}
+$candidate=$record.Clone()
+$candidate.cleanupStage='held-snapshot-retirement';$candidate.passed=$false
+$data=[Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $candidate -Depth 8))
+if((Assert-DNSRebootPublicReport $data $pin $qualificationID $method $originalMode $fixturePin $oraclePin 'amd64') -ne $false){
+    throw 'Failure to retire the held primary was credited as a pass'
 }
 $candidate=$record.Clone()
 $candidate.stage='configured-readback';$candidate.configuredStateVerified=$false;$candidate.resolverVerified=$false
