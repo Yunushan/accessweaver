@@ -2129,6 +2129,84 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 launch.assert_not_called()
                 self.assertEqual(list(staging.iterdir()), [start_file])
 
+                def reject_late_dispatch(*args, **kwargs):
+                    with patch.object(release.subprocess, "Popen") as dispatch:
+                        try:
+                            return native_launch(*args, **kwargs)
+                        finally:
+                            dispatch.assert_not_called()
+
+                reboot_start = staging / (reboot_retry_id + ".started.json")
+                reboot_result = staging / (reboot_retry_id + ".result.json")
+                arrival = b"retained original result"
+                observed = iter((False, True))
+
+                def detect_with_late_result(*args):
+                    if next(observed):
+                        completed_receipt.write_bytes(arrival)
+                    return pending_status
+
+                boot.side_effect = [later_boot, reboot_boot]
+                detect.side_effect = detect_with_late_result
+                launch.side_effect = reject_late_dispatch
+                try:
+                    stopped = self.verify(approved, pin, policy_pin=newer_pin, **reboot_retry)["managedUpdate"]
+                finally:
+                    boot.side_effect = None
+                    detect.side_effect = None
+                    launch.side_effect = None
+                self.assertIs(stopped["setupDispatched"], False)
+                self.assertEqual(stopped["installedDetectionReason"], release.WINDOWS_PREVIOUS_RESULT_UNVERIFIED)
+                self.assertNotIn("startReceiptSHA256", stopped)
+                self.assertFalse(reboot_start.exists())
+                self.assertFalse(reboot_result.exists())
+                self.assertEqual(completed_receipt.read_bytes(), arrival)
+                completed_receipt.unlink()
+
+                retained = self.root / "retained-start.json"
+                retained.write_bytes(start_file.read_bytes())
+                retained_result = retained.parent / completed_receipt.name
+                write_receipt = release.write_windows_upgrade_receipt
+
+                def publish_start_with_late_result(path, record):
+                    saved = write_receipt(path, record)
+                    if path == reboot_start:
+                        retained_result.write_bytes(arrival)
+                    return saved
+
+                boot.side_effect = [later_boot, reboot_boot]
+                detect.side_effect = [pending_status, pending_status]
+                launch.side_effect = reject_late_dispatch
+                try:
+                    with patch.object(release, "write_windows_upgrade_receipt", side_effect=publish_start_with_late_result):
+                        stopped = self.verify(approved, pin, policy_pin=newer_pin, **{
+                            **reboot_retry, "windows_upgrade_start_receipt": (retained, start_digest),
+                        })["managedUpdate"]
+                finally:
+                    boot.side_effect = None
+                    detect.side_effect = None
+                    launch.side_effect = None
+                self.assertIs(stopped["setupDispatched"], False)
+                self.assertIsNone(stopped["setupExitCode"])
+                self.assertEqual(stopped["installedDetectionReason"], release.WINDOWS_PREVIOUS_RESULT_UNVERIFIED)
+                self.assertEqual(retained_result.read_bytes(), arrival)
+                stopped_start = (reboot_start, stopped["startReceiptSHA256"])
+                stopped_result = (reboot_result, stopped["resultReceiptSHA256"])
+                lineage = release.load_windows_upgrade_start_receipt(approved, *stopped_start)
+                self.assertEqual(release.load_windows_upgrade_result_receipt(approved, *stopped_result, lineage), {
+                    "setupDispatched": False, "setupExitCode": None, "installedDetection": "unverified",
+                    "installedDetectionReason": release.WINDOWS_PREVIOUS_RESULT_UNVERIFIED,
+                })
+                launch.reset_mock()
+                with self.assertRaisesRegex(ValueError, "Verify the original Windows Setup result"):
+                    self.verify(approved, pin, policy_pin=newer_pin, **{
+                        **launch_options, "windows_upgrade_attempt_id": "e" * 32,
+                        "windows_upgrade_start_receipt": stopped_start, "windows_upgrade_result_receipt": stopped_result,
+                    })
+                launch.assert_not_called()
+                for fixture_path in (retained, retained_result, reboot_start, reboot_result):
+                    fixture_path.unlink()
+
                 boot.side_effect = [later_boot, reboot_boot]
                 detect.side_effect = [pending_status, pending_status, ("detected", None)]
                 launch.side_effect = dispatch_receipt_bound_retry
@@ -2525,6 +2603,22 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
             script.write_bytes(b"different detector")
             self.assertEqual(release.detect_windows_upgrade(qualification, "e" * 64), ("unverified", "detector-unavailable"))
             call.assert_not_called()
+
+    def test_windows_retry_requires_inspectable_previous_results(self):
+        directory = self.root / "receipts"
+        directory.mkdir()
+        result = directory / "previous.result.json"
+        release.require_missing_windows_results((result,))
+        result.mkdir()
+        with self.assertRaisesRegex(release.WindowsSetupPreviousResultUnverified, "found an existing result receipt"):
+            release.require_missing_windows_results((result,))
+        result.rmdir()
+        with patch.object(Path, "lstat", side_effect=PermissionError("synthetic unreadable receipt")):
+            with self.assertRaisesRegex(release.WindowsSetupPreviousResultUnverified, "could not verify absence"):
+                release.require_missing_windows_results((result,))
+        directory.rmdir()
+        with self.assertRaisesRegex(release.WindowsSetupPreviousResultUnverified, "could not verify absence"):
+            release.require_missing_windows_results((result,))
 
     @unittest.skipUnless(os.name == "nt", "requires native Windows file sharing")
     def test_windows_staging_holds_approved_setup_and_parents_through_launch(self):

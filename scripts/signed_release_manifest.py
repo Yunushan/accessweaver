@@ -43,6 +43,7 @@ WINDOWS_DETECTION_FAILURE_REASONS = (
     "installer-managed-upgrade-pending",
     "revocation-policy-expired",
 )
+WINDOWS_PREVIOUS_RESULT_UNVERIFIED = "previous-result-absence-unverified"
 WINDOWS_PAYLOAD_PUBLISHER = "payloadPublisherCertificateSHA256"
 WINDOWS_BUILD_INFO = "buildInfoSHA256"
 WINDOWS_DETECTOR = "detectorSHA256"
@@ -633,8 +634,9 @@ def load_windows_upgrade_result_receipt(directory, path, fingerprint, start_rece
     reason = receipt.get("installedDetectionReason")
     if "setupDispatched" in receipt:
         require(receipt["setupDispatched"] is False and code is None and detection == "unverified"
-                and reason == "revocation-policy-expired",
-                "Malformed Windows upgrade result receipt")
+                and (reason == "revocation-policy-expired" or (
+                    start_receipt["schemaVersion"] == 4 and reason == WINDOWS_PREVIOUS_RESULT_UNVERIFIED
+                )), "Malformed Windows upgrade result receipt")
     else:
         require(type(code) is int and 0 <= code <= 0xFFFFFFFF
                 and ((code == 0 and detection in ("detected", "unverified"))
@@ -1013,7 +1015,30 @@ class WindowsSetupDispatchPolicyExpired(ValueError):
     """The policy expired after the start receipt was published."""
 
 
-def launch_windows_setup(directory, update, policy, *, size, directory_identity, attempt=None, wait_seconds=None):
+class WindowsSetupPreviousResultUnverified(ValueError):
+    """Absence of the original Setup result could not be verified."""
+
+
+def require_missing_windows_results(paths):
+    for path in paths:
+        try:
+            if not stat.S_ISDIR(path.parent.stat().st_mode):
+                raise NotADirectoryError()
+            try:
+                path.lstat()
+            except FileNotFoundError:
+                continue
+        except OSError as error:
+            raise WindowsSetupPreviousResultUnverified(
+                "Windows retry after reboot could not verify absence of the previous result receipt"
+            ) from error
+        raise WindowsSetupPreviousResultUnverified(
+            "Windows retry after reboot found an existing result receipt; verify it instead"
+        )
+
+
+def launch_windows_setup(directory, update, policy, *, size, directory_identity, attempt=None, wait_seconds=None,
+                         previous_result_paths=()):
     setup = directory / update["installer"]
     arguments = [str(setup), "/SP-", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
                  "/RESTARTEXITCODE=3010", "/NOICONS", update["windowsSetupBaselineArgument"]]
@@ -1025,11 +1050,13 @@ def launch_windows_setup(directory, update, policy, *, size, directory_identity,
             working_directory = windows_system_directory()
             require_current_revocation_policy(policy)
             if attempt is not None:
+                require_missing_windows_results(previous_result_paths)
                 require(not os.path.lexists(directory / (attempt["attemptID"] + ".result.json")),
                         "Windows upgrade attempt already has a result receipt")
                 update["startReceiptSHA256"] = write_windows_upgrade_receipt(
                     directory / (attempt["attemptID"] + ".started.json"), attempt,
                 )
+                require_missing_windows_results(previous_result_paths)
                 try:
                     require_current_revocation_policy(policy)
                 except ValueError as error:
@@ -1258,6 +1285,9 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
         require(windows_upgrade_attempt_id is not None and windows_upgrade_attempt_id != start_receipt["attemptID"],
                 "A receipt-bound Windows retry requires a new attempt ID")
         if not retry_windows_upgrade_after_reboot:
+            require(recorded_result is None or
+                    recorded_result.get("installedDetectionReason") != WINDOWS_PREVIOUS_RESULT_UNVERIFIED,
+                    "Verify the original Windows Setup result before retrying this upgrade")
             require(recorded_result is not None and (
                 recorded_result["installedDetection"] == "setup-failed"
                 or recorded_result.get("setupDispatched") is False
@@ -1534,6 +1564,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             report["revocationPolicyExpiresAt"] = policy["expiresAt"]
         if start_receipt is not None:
             require_windows_attempt_binding(start_receipt, report, policy)
+        previous_result_paths = ()
         if launch_staged_windows_setup and start_receipt is not None:
             observed_boot = read_windows_boot(start_receipt["attemptID"])
             saved_boot = start_receipt["boot"]
@@ -1542,10 +1573,11 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     "Receipt-bound Windows retry requires the original endpoint and a current boot observation")
             if retry_windows_upgrade_after_reboot:
                 result_name = start_receipt["attemptID"] + ".result.json"
-                receipt_directory = Path(windows_upgrade_start_receipt[0]).parent
-                require(not any(os.path.lexists(directory / result_name)
-                                for directory in (stage_directory, receipt_directory)),
-                        "Windows retry after reboot found an existing result receipt; verify it instead")
+                receipt_directory = Path(windows_upgrade_start_receipt[0]).absolute().parent
+                previous_result_paths = tuple(dict.fromkeys(
+                    (stage_directory / result_name, receipt_directory / result_name)
+                ))
+                require_missing_windows_results(previous_result_paths)
                 require(observed_boot["bootTicks"] > saved_boot["bootTicks"],
                         "Windows retry without a result requires a later boot on the original endpoint")
                 require_pending_windows_upgrade(report["managedUpdate"], payload_publisher, policy)
@@ -1632,13 +1664,15 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                 try:
                     code = launch_windows_setup(stage_directory, update, policy, attempt=attempt,
                                                 size=installer["size"], directory_identity=stage_directory_id,
-                                                wait_seconds=windows_setup_wait_seconds)
+                                                wait_seconds=windows_setup_wait_seconds,
+                                                previous_result_paths=previous_result_paths)
                 except (WindowsSetupLaunchError, WindowsSetupWaitError, WindowsSetupDispatchPolicyExpired,
-                        subprocess.TimeoutExpired) as error:
+                        WindowsSetupPreviousResultUnverified, subprocess.TimeoutExpired) as error:
                     reasons = {
                         WindowsSetupLaunchError: "setup-launch-failed",
                         WindowsSetupWaitError: "setup-wait-failed",
                         WindowsSetupDispatchPolicyExpired: "revocation-policy-expired",
+                        WindowsSetupPreviousResultUnverified: WINDOWS_PREVIOUS_RESULT_UNVERIFIED,
                         subprocess.TimeoutExpired: "setup-wait-timeout",
                     }
                     update["setupExitCode"] = None
@@ -1646,6 +1680,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     update["installedDetectionReason"] = reasons[type(error)]
                     if isinstance(error, WindowsSetupDispatchPolicyExpired):
                         report["revocationCheckPassed"] = False
+                    if isinstance(error, (WindowsSetupDispatchPolicyExpired, WindowsSetupPreviousResultUnverified)):
                         update["setupDispatched"] = False
                         if "startReceiptSHA256" in update:
                             record_windows_setup_result(stage_directory, stage_directory_id, attempt, update)
