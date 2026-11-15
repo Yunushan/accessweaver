@@ -544,6 +544,86 @@
     "hostedRunIDs": {
       "browser": 43683804434,
       "sustained": 43683804427
+    },
+    "fullFunctional": {
+      "scope": "local-offline-linux-amd64",
+      "performanceCaseExecutedSeparately": 52,
+      "browsers": [
+        {
+          "browser": "webkit",
+          "version": "27.2",
+          "passed": 56,
+          "skipped": 0,
+          "retries": 0,
+          "durationMs": 421077
+        },
+        {
+          "browser": "firefox",
+          "version": "157.0",
+          "passed": 56,
+          "skipped": 0,
+          "retries": 0,
+          "durationMs": 526493
+        },
+        {
+          "browser": "chromium",
+          "version": "156.0.8078.80",
+          "passed": 56,
+          "skipped": 0,
+          "retries": 0,
+          "durationMs": 285111
+        }
+      ]
+    },
+    "correctedPerformance": {
+      "scope": "local-offline-linux-amd64-webkit",
+      "reportSHA256": "ead14a63098157c6524a76acb336197a6d39520fa382fa28149557627d6f021c",
+      "outcome": "failed",
+      "violations": [
+        "dashboardReadyMs"
+      ],
+      "metrics": {
+        "controllerStartupMs": 32.46106499999996,
+        "dashboardReadyMs": 3443.923917,
+        "reloadP95Ms": 471.0032679999995,
+        "navigationP95Ms": 381.1272919999974,
+        "editorP95Ms": 372.03272300000026,
+        "apiP95Ms": 45,
+        "burstRequestsPerSecond": 88.77560234273942,
+        "loadRequestsPerSecond": 3.9998514833811676,
+        "loadCpuPercentOneCore": 3.4332058565688355,
+        "sampledPeakRssBytes": 16560128,
+        "sampledPeakDescriptors": 14,
+        "sampledPeakThreads": 11,
+        "cooldownRssGrowthBytes": 1855488,
+        "cooldownDescriptorGrowth": -2,
+        "cooldownThreadGrowth": 2,
+        "browserSampledPeakRssBytes": 772485120,
+        "browserSampledPeakDescriptors": 101,
+        "browserSampledPeakThreads": 100,
+        "browserSampledPeakProcesses": 5,
+        "browserObservedLoadCpuPercentOneCore": 11.879937252309821,
+        "browserCooldownRssGrowthBytes": 134045696,
+        "browserCooldownDescriptorGrowth": 5,
+        "browserCooldownThreadGrowth": -12,
+        "browserCooldownProcessGrowth": 0,
+        "jobLoadCpuPercentOneCore": 25.8573507997726
+      },
+      "counts": {
+        "reload": 5,
+        "navigation": 24,
+        "editor": 10,
+        "burstRequests": 96,
+        "loadRequests": 240,
+        "resourceSamples": 312,
+        "loadMilliseconds": 60002,
+        "browserResourceSamples": 81,
+        "browserObservedExits": 0,
+        "browserCpuMilliseconds": 61111,
+        "browserFailureStage": 0,
+        "jobCpuMilliseconds": 61104,
+        "jobCpuFailureStage": 0
+      }
     }
   }
 }

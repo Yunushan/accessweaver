@@ -416,7 +416,8 @@
             "docs/TESTING.md",
             "docs/qualification/beb4db7be0c7-browser-runtime-status-acceptance.json",
             "docs/qualification/f9ca4d5c8001-browser-runtime-language-reset.json",
-            "docs/qualification/c856935f8aaa-local-linux-browser.json"
+            "docs/qualification/c856935f8aaa-local-linux-browser.json",
+            "docs/qualification/415d704e363b-local-webkit-styles.json"
           ]
         },
         {
