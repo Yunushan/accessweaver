@@ -157,4 +157,6 @@ The isolated APT and direct dpkg checks explicitly include optional AccessWeaver
 
 The [documentation-filter qualification](qualification/03aa58615a16-debian-filtered-lifecycle.json) passed all nine signed APT checks in an offline Ubuntu Minimal 24.04 ARM64 guest under QEMU emulation, using disposable signing keys. The package and executable digests matched the reboot evidence. AMD64 also passed the nine APT and 12 direct dpkg checks with the documentation filter active. The ARM64 direct dpkg run reached its deadline while checking duplicate-output refusal and did not complete.
 
+The [ARM64 direct dpkg rerun](qualification/03aa58615a16-debian-arm64-dpkg-lifecycle.json) passed all 12 checks under QEMU emulation. The builder refused the occupied output before compression, repeat packaging produced the same bytes, and the installed and rolled-back executables matched the reboot qualification. The run verified that the enrolled policy and ordinary-user profile survived downgrade refusal, explicit rollback, purge, and reinstall.
+
 Production rollout still requires results for the approved release packages and native endpoint architectures. It also requires organization signing and hosting, reboot and active-engine checks, and validation through the organization's endpoint-management tools.

@@ -180,7 +180,8 @@
             "docs/qualification/d57c7c8d8a97-hosted-debian-amd64.json",
             "docs/qualification/03aa58615a16-debian-managed-reboot.json",
             "docs/qualification/03aa58615a16-debian-apt-dpkg-lifecycle.json",
-            "docs/qualification/03aa58615a16-debian-filtered-lifecycle.json"
+            "docs/qualification/03aa58615a16-debian-filtered-lifecycle.json",
+            "docs/qualification/03aa58615a16-debian-arm64-dpkg-lifecycle.json"
           ]
         }
       ]
