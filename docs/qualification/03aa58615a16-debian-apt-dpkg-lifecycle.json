@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "scope": "Exact-package AMD64 Debian dpkg and loopback signed APT qualification",
+  "sourceCommit": "03aa58615a16a4e3975f09283d4357ea3e677878",
+  "previousPackageSourceCommit": "5ac640dede088bae7ff15cc5cc4d1c2c4d4073a2",
+  "fixtureCommit": "6822c06590d5346cd7a2e700ef054762b1ac6c89",
+  "rebootEvidence": "docs/qualification/03aa58615a16-debian-managed-reboot.json",
+  "sourceSHA256": {
+    "scripts/test-linux-apt-repository.py": "3d9982357d298e8649556cfeecf2140641f119fbd0fdc3b7f4c2e5ab6e56ced2",
+    "scripts/build-linux-apt-repository.py": "f6af39d051ea0ef10fb358372d4e6b419df1ab1d01f6133c4d3149d0ce84b891",
+    "scripts/test-linux-deb-lifecycle.py": "a3483306237e3f34791c6e3369a432da359e28728d0ab4e52c17d2bc9dc3aa48",
+    "scripts/build-linux-deb.py": "c32262e9314bf3ae844082dca4b2e65e02ba0ee94ef7cb2c57aa2e3dcb01a0fb",
+    "scripts/linux_deb_payload.py": "26805f1e6465b40c72fef84ec55e11a2130f0b7cb6e6a79ce10ffe7eb315c2c6",
+    "scripts/linux_package_managed_fixture.py": "bef6d75d37e57c33eda2160246de5a39f0d033647516106d5329aff9cd704660"
+  },
+  "environment": {
+    "host": "Ubuntu WSL",
+    "endpointArchitecture": "amd64",
+    "fixtureMode": "isolated mount and PID namespaces with loopback-only network and private Linux root",
+    "packageStateFilesystem": "ext4",
+    "umask": "077",
+    "hostToolsAndInputsReadOnly": true,
+    "aptLogsUnderFixtureRoot": true
+  },
+  "debianAndAptPayloadsMatchRebootEvidence": true,
+  "dpkg": {
+    "schemaVersion": 1,
+    "scope": "Isolated unsigned Debian package construction and native Linux dpkg lifecycle",
+    "endpointArchitecture": "amd64",
+    "dpkgVersion": "Debian 'dpkg' package management program version 1.23.7 (amd64).",
+    "builderSHA256": "c32262e9314bf3ae844082dca4b2e65e02ba0ee94ef7cb2c57aa2e3dcb01a0fb",
+    "probeSHA256": "a3483306237e3f34791c6e3369a432da359e28728d0ab4e52c17d2bc9dc3aa48",
+    "payloadProbeSHA256": "26805f1e6465b40c72fef84ec55e11a2130f0b7cb6e6a79ce10ffe7eb315c2c6",
+    "packages": [
+      {
+        "arch": "amd64",
+        "version": "0.1.0~alpha.4",
+        "archiveSHA256": "0d5a76f26c45c10542d1958c068becf06c06c00e72a7ca35c451a2cadf54a330",
+        "debSHA256": "20052f8dadc966c9383794e785b5d8a1549e3843edb0ebca8e44e74efd44e9ef",
+        "binarySHA256": "ccde641ca6d9f15466634f969fc40c5f5f5797c1a0c58f1f209667c3ed6e410f",
+        "payloadFiles": 512
+      },
+      {
+        "arch": "amd64",
+        "version": "0.1.0~alpha.5",
+        "archiveSHA256": "e314af95eab6dc0d18f39d46d57ac3373e187e09e40ad45fae8e735561c9d003",
+        "debSHA256": "8ed6c7dec921c55e3aca86e749e2c9ade418f0d2274af6281bae1fd716167a21",
+        "binarySHA256": "992b460f09028b4891606637547b1807ca26c60ee878da4ac431bd4bbc22ea7d",
+        "payloadFiles": 527
+      },
+      {
+        "arch": "arm64",
+        "version": "0.1.0~alpha.5",
+        "archiveSHA256": "b0c2655503d8ce35a7483df8289d39705d1ae0034c3371cb94703740e403e35c",
+        "debSHA256": "6b0303777d0abbc8bc979ee54a57f9b9e61e300db05c22f62324edbfb1010925",
+        "binarySHA256": "edaef63731974ba5fc8a5867dda6534198a3c1f115317c4d28635967e0fa8648",
+        "payloadFiles": 527
+      }
+    ],
+    "managedRevisionsObserved": [
+      1,
+      2
+    ],
+    "managedFixtureSHA256": "bef6d75d37e57c33eda2160246de5a39f0d033647516106d5329aff9cd704660",
+    "checks": [
+      "mismatched-source-digest-refused-without-output",
+      "amd64-and-arm64-control-and-payload-inspected",
+      "reproducible-package-and-exclusive-publication",
+      "clean-install-upgrade-and-same-version-reinstall",
+      "ordinary-user-installed-cli-identity-after-each-change",
+      "dpkg-verify-after-each-change",
+      "guarded-downgrade-refusal-and-explicit-rollback",
+      "purge-and-package-registration-removal",
+      "enrollment-and-profile-created-with-first-installed-controller",
+      "new-controller-advanced-policy-and-older-rollback-refused-replay",
+      "ordinary-mutation-and-engine-launch-denied-through-installed-controllers",
+      "enrolled-policy-and-profile-preserved-through-purge-and-reinstall"
+    ],
+    "amd64Execution": true,
+    "arm64Execution": false,
+    "productionQualificationComplete": false
+  },
+  "apt": {
+    "schemaVersion": 1,
+    "scope": "Loopback signed APT publication and isolated native Linux install lifecycle",
+    "endpointArchitecture": "amd64",
+    "builderSHA256": "f6af39d051ea0ef10fb358372d4e6b419df1ab1d01f6133c4d3149d0ce84b891",
+    "probeSHA256": "3d9982357d298e8649556cfeecf2140641f119fbd0fdc3b7f4c2e5ab6e56ced2",
+    "managedFixtureSHA256": "bef6d75d37e57c33eda2160246de5a39f0d033647516106d5329aff9cd704660",
+    "managedRevisionsObserved": [
+      1,
+      2
+    ],
+    "aptVersion": "apt 3.2.1 (amd64)",
+    "packageSHA256": {
+      "accessweaver_0.1.0~alpha.4_amd64.deb": "20052f8dadc966c9383794e785b5d8a1549e3843edb0ebca8e44e74efd44e9ef",
+      "accessweaver_0.1.0~alpha.4_arm64.deb": "f3525cbc2285c770dbaf539546be08a7b80fe9000fa4d8e8c011aa736b5999d0",
+      "accessweaver_0.1.0~alpha.5_amd64.deb": "8ed6c7dec921c55e3aca86e749e2c9ade418f0d2274af6281bae1fd716167a21",
+      "accessweaver_0.1.0~alpha.5_arm64.deb": "6b0303777d0abbc8bc979ee54a57f9b9e61e300db05c22f62324edbfb1010925"
+    },
+    "olderBinarySHA256": "ccde641ca6d9f15466634f969fc40c5f5f5797c1a0c58f1f209667c3ed6e410f",
+    "newerBinarySHA256": "992b460f09028b4891606637547b1807ca26c60ee878da4ac431bd4bbc22ea7d",
+    "suiteArchitectures": [
+      "amd64",
+      "arm64"
+    ],
+    "checks": [
+      "approved-signing-subkey-verified-against-primary-fingerprint",
+      "package-pin-and-untrusted-verification-key-rejected-without-publication",
+      "exclusive-publication-preserved-existing-snapshot",
+      "native-apt-fetched-index-by-signed-hash",
+      "signed-install-upgrade-purge-and-reinstall-preserved-enrolled-policy-and-profile",
+      "installed-controller-advanced-policy-and-denied-ordinary-mutation-and-launch",
+      "ordinary-user-installed-cli-matched-package-build-identity",
+      "wrong-scoped-key-tampered-signature-and-expired-metadata-rejected",
+      "tampered-index-and-payload-rejected-before-installation"
+    ],
+    "ephemeralSigningKeys": true,
+    "arm64EndpointExecution": false,
+    "productionQualificationComplete": false
+  },
+  "nativeEndpointQualificationComplete": false,
+  "productionQualificationComplete": false
+}
