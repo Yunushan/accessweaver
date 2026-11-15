@@ -4,7 +4,7 @@ $fixture=Join-Path $PSScriptRoot 'test-windows-apps.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($fixture,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Interactive Windows app fixture failed parsing'}
-foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Assert-FixtureCommunicationImage','Test-FixtureCommunication','Check-FixtureCommunications','Test-FixtureAppChecks','Start-FixtureApp','Remove-FixtureApp','Assert-FixtureDiscordUpdaterAbsent','Assert-FixtureSplitCordServiceState','New-SplitCordHandoff','Read-SplitCordHandoff')){
+foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Assert-FixtureCommunicationImage','Test-FixtureCommunication','Check-FixtureCommunications','Test-FixtureAppChecks','Start-FixtureApp','Remove-FixtureApp','Assert-FixtureDiscordUpdaterAbsent','Assert-FixtureSplitCordServiceState','New-SplitCordHandoff','Read-SplitCordHandoff','Get-DiscordProxyRequest','New-DiscordProxyReceipt','Assert-DiscordProxyReceipt','Assert-FixtureDroverApplied','Assert-FixtureDroverRestored','Test-FixtureDiscordDroverLoaded','Get-FixtureDroverFiles','Get-FixtureDiscordProxy')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -113,7 +113,20 @@ try {
             }
             $process.Path=$null
             if($null -ne (Test-FixtureAppProcess $installed 7 @($process) $folder -AllSessions -CleanupVariant $variant)){
-                throw 'Discord removal credited an unreadable process as absent'
+                throw 'Discord removal credited an unreadable desktop process as absent'
+            }
+            $process.SessionId=0
+            $process.HasExited=$null
+            $absence=Test-FixtureAppProcess $installed 7 @($process) $folder -AllSessions -CleanupVariant $variant
+            if($process.ProcessName -eq $folder){
+                if($null -ne $absence){throw 'Discord cleanup ignored an unreadable service-session client'}
+            }elseif($absence -cne $false){
+                throw 'Discord cleanup could not exclude a generic service-session process'
+            }
+            $process.HasExited=$false
+            $process.Path=Join-Path $base $suffix
+            if((Test-FixtureAppProcess $installed 7 @($process) $folder -AllSessions -CleanupVariant $variant) -cne $true){
+                throw 'Discord cleanup missed an identified image in the service session'
             }
         }
     }
@@ -596,4 +609,130 @@ $job.result.data=@{application='splitcord';removed=$false}
 $receipt=New-SplitCordHandoff ($job | ConvertTo-Json -Depth 5) $id 'app-remove' $pin
 $decoded=Read-SplitCordHandoff $receipt $id 'app-remove' $pin
 if($decoded.removed -ne $false){throw 'Idempotent SplitCord cleanup lost the absent result'}
+$stageOrder=@('discord-proxy-stage','discord-proxy-detach','discord-reinstall','discord-proxy-reapply','discord-start-after-reinstall','discord-proxy-cleanup','discord-remove')
+$stageIndexes=@($stageOrder | ForEach-Object {[array]::IndexOf($stages,$_)})
+for($i=0;$i -lt $stageIndexes.Count;$i++){
+    if($stageIndexes[$i] -lt 0 -or ($i -gt 0 -and $stageIndexes[$i] -le $stageIndexes[$i-1])){
+        throw 'Staged repair lost the required desktop and machine operation order'
+    }
+}
+if($commands[$stageIndexes[4]].Extent.Text -notmatch 'Test-FixtureDiscordDroverLoaded'){
+    throw 'Staged repair omitted module load verification after launch'
+}
+
+& {
+    $fixtureID='1'*32
+    $controllerPin='a'*64
+    $job=@{action='install';state='succeeded';result=@{
+        ok=$true;finalizationFailures=@();data=@{installed='byedpi'}
+        events=@('fixture-time Reused the running managed ByeDPI service for Discord')
+    }}
+    $expectedRequests=@{
+        stage='install:byedpi:dll:unchanged';detach='remove:drover::'
+        reapply='install:byedpi:dll:unchanged';cleanup='remove:byedpi::'
+    }
+    foreach($phase in $expectedRequests.Keys){
+        $request=Get-DiscordProxyRequest $phase
+        if(('{0}:{1}:{2}:{3}' -f $request.action,$request.engine,$request.mode,$request.dns) -cne $expectedRequests[$phase]){
+            throw 'Staged repair admitted the wrong machine request'
+        }
+    }
+    $json=$job | ConvertTo-Json -Depth 5 -Compress
+    $receipt=New-DiscordProxyReceipt $json $fixtureID 'reapply' $controllerPin
+    Assert-DiscordProxyReceipt $receipt $fixtureID 'reapply' $controllerPin
+    foreach($rejected in @(
+        {$null=New-DiscordProxyReceipt ($json.Replace('Reused the running','Started a new')) $fixtureID 'reapply' $controllerPin},
+        {Assert-DiscordProxyReceipt $receipt ('2'*32) 'reapply' $controllerPin},
+        {Assert-DiscordProxyReceipt $receipt $fixtureID 'stage' $controllerPin},
+        {Assert-DiscordProxyReceipt $receipt $fixtureID 'reapply' ('b'*64)}
+    )){
+        $refused=$false
+        try {& $rejected}catch{$refused=$true}
+        if(-not $refused){throw 'Discord proxy receipt admitted mismatched evidence'}
+    }
+
+    $image='C:\Fixture\Discord\app-1\Discord.exe'
+    $original=[pscustomobject][ordered]@{image=$image;'Discord.exe'=('A'*64);'version.dll'=$null;'drover.ini'=('B'*64)}
+    $applied=[pscustomobject][ordered]@{image=$image;'Discord.exe'=('A'*64);'version.dll'=('C'*64);'drover.ini'=('D'*64)}
+    Assert-FixtureDroverApplied @($original) @($applied) $applied
+    Assert-FixtureDroverRestored @($original) @($original)
+    foreach($rejected in @(
+        {Assert-FixtureDroverApplied @($original) @() $applied},
+        {Assert-FixtureDroverApplied @($original) @($original) $applied},
+        {Assert-FixtureDroverApplied @($original) @($applied) $original},
+        {Assert-FixtureDroverRestored @($original) @($applied)}
+    )){
+        $refused=$false
+        try {& $rejected}catch{$refused=$true}
+        if(-not $refused){throw 'Discord proxy readback accepted a changed file state'}
+    }
+    $process=[pscustomobject]@{SessionId=7;Path=$image;HasExited=$false;Modules=@(@{FileName='C:\Windows\System32\version.dll'})}
+    if(Test-FixtureDiscordDroverLoaded $image 7 @($process)){throw 'Staged repair credited a different version DLL'}
+    $process.Modules=@(@{FileName='C:\Fixture\Discord\app-1\version.dll'})
+    if(Test-FixtureDiscordDroverLoaded $image 8 @($process)){throw 'Staged repair credited a different desktop session'}
+    if(-not (Test-FixtureDiscordDroverLoaded $image 7 @($process))){throw 'Staged repair missed the expected live DLL'}
+    $process.HasExited=$true
+    if(Test-FixtureDiscordDroverLoaded $image 7 @($process)){throw 'Staged repair credited an exited process'}
+}
+
+& {
+    function Get-CimInstance {
+        [CmdletBinding()]param($ClassName,$Filter,$Property)
+        if($ClassName -ceq 'Win32_Service' -and $Filter -ceq "Name='AccessWeaver-byedpi'"){
+            if($null -ne $service){return $service}
+            return
+        }
+        if($ClassName -ceq 'Win32_Process' -and $Filter -ceq 'ProcessId=21' -and ($Property -join ',') -ceq 'ProcessId,CreationDate'){
+            return $processRow
+        }
+        throw 'Unexpected proxy identity query'
+    }
+    $service=$null
+    if(Get-FixtureDiscordProxy){throw 'Absent proxy was treated as registered'}
+    $service=@{Name='AccessWeaver-byedpi';State='Running';StartMode='Auto';ProcessId=21;PathName='fixture registration'}
+    $processRow=@{ProcessId=21;CreationDate=[datetime]'2024-01-01'}
+    $first=Get-FixtureDiscordProxy
+    $processRow.CreationDate=$processRow.CreationDate.AddSeconds(1)
+    if(-not $first -or (Get-FixtureDiscordProxy) -ceq $first){throw 'Proxy identity missed a reused PID'}
+    $processRow.ProcessId=22
+    $refused=$false
+    try {[void](Get-FixtureDiscordProxy)}catch{$refused=$true}
+    if(-not $refused){throw 'Proxy observer accepted an unrelated process'}
+}
+& {
+    $priorLocalAppData=$env:LOCALAPPDATA
+    $temp=Join-Path (Split-Path -Parent $PSScriptRoot) ('build\staged-discord-fixture-'+[guid]::NewGuid().ToString('N'))
+    try {
+        $env:LOCALAPPDATA=$temp
+        $base=Join-Path $temp 'Discord'
+        $first=Join-Path $base 'app-1'
+        $second=Join-Path $base 'app-2'
+        [void][IO.Directory]::CreateDirectory($first)
+        [void][IO.Directory]::CreateDirectory($second)
+        $image=Join-Path $second 'Discord.exe'
+        [IO.File]::WriteAllText((Join-Path $first 'Discord.exe'),'first image')
+        [IO.File]::WriteAllText($image,'second image')
+        $baseline=@(Get-FixtureDroverFiles $image)
+        if($baseline.Count -ne 2 -or $baseline[0].'Discord.exe' -eq $baseline[1].'Discord.exe' -or
+            $baseline[0].'version.dll' -or $baseline[1].'drover.ini'){
+            throw 'Proxy snapshot did not record both original Discord version directories'
+        }
+        foreach($directory in @($first,$second)){
+            [IO.File]::WriteAllText((Join-Path $directory 'version.dll'),'fixture DLL')
+            [IO.File]::WriteAllText((Join-Path $directory 'drover.ini'),'fixture config')
+        }
+        $applied=@(Get-FixtureDroverFiles $image)
+        Assert-FixtureDroverApplied $baseline $applied $applied[0]
+        [IO.File]::WriteAllText((Join-Path $first 'version.dll'),'wrong DLL')
+        $refused=$false
+        try {Assert-FixtureDroverApplied $baseline @(Get-FixtureDroverFiles $image) $applied[0]}catch{$refused=$true}
+        if(-not $refused){throw 'Proxy snapshot missed an altered older version directory'}
+        foreach($directory in @($first,$second)){
+            [IO.File]::Delete((Join-Path $directory 'version.dll'))
+            [IO.File]::Delete((Join-Path $directory 'drover.ini'))
+        }
+        Assert-FixtureDroverRestored $baseline @(Get-FixtureDroverFiles $image)
+    }finally{$env:LOCALAPPDATA=$priorLocalAppData}
+}
+
 Write-Output 'Interactive Windows application evidence contracts passed.'

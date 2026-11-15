@@ -13,6 +13,9 @@ param(
     [switch]$SkipSplitCord,
     [switch]$DisposableVM,
     [switch]$InteractiveCommunications,
+    [switch]$StagedDiscordRepair,
+    [ValidateSet('stage','detach','reapply','cleanup')][string]$DiscordProxyAction,
+    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$DesktopAccountSHA256='',
     [string]$ResultsDirectory='',
     [ValidateSet('app-install','app-remove')][string]$SplitCordAction,
     [ValidatePattern('\A[a-f0-9]{32}\z')][string]$HandoffID,
@@ -39,21 +42,31 @@ function Test-FixtureAppProcess([string]$Path,[int]$Session,$Processes,[string]$
     $complete=$true
     foreach($process in $Processes){
         try {
+            $name=$null
             if($ProcessName){
                 $name=$process.ProcessName
                 if([string]::IsNullOrWhiteSpace($name)){$complete=$false;continue}
                 if($name -notin $processNames){continue}
             }
-            $exited=$process.HasExited
-            if($exited -isnot [bool]){$complete=$false;continue}
-            if($exited){continue}
+            $exited=$null
+            try {$exited=$process.HasExited}catch{}
+            if($exited -is [bool] -and $exited){continue}
             if(-not $AllSessions){
                 $observedSession=$process.SessionId
                 if($observedSession -isnot [int] -or $observedSession -lt 0){$complete=$false;continue}
                 if($observedSession -ne $Session){continue}
             }
-            $image=$process.Path
-            if([string]::IsNullOrWhiteSpace($image)){$complete=$false;continue}
+            $image=$null
+            try {$image=$process.Path}catch{}
+            if([string]::IsNullOrWhiteSpace($image)){
+                if($CleanupVariant -cin @('discord','discord-ptb') -and $name -in @('Update','crashpad_handler')){
+                    $serviceSession=$process.SessionId
+                    if($serviceSession -is [int] -and $serviceSession -eq 0){continue}
+                }
+                $complete=$false
+                continue
+            }
+            if($exited -isnot [bool]){$complete=$false;continue}
             $exited=$process.HasExited
             if($exited -isnot [bool]){$complete=$false;continue}
             if($exited){continue}
@@ -296,13 +309,135 @@ function Read-SplitCordHandoff([string]$Receipt,[string]$ID,[string]$Action,[str
     return @{application='splitcord';removed=$record.changed}
 }
 
-if([bool]$SplitCordAction -ne [bool]$HandoffID -or ($SplitCordAction -and
-    (-not $ExpectedSHA256 -or -not $PSBoundParameters.ContainsKey('Executable') -or -not $DisposableVM -or
-        $InteractiveCommunications -or $SkipSplitCord -or $ResultsDirectory))){
-    throw 'SplitCord handoff requires a fixed action, request ID, explicit approved controller path and digest, and disposable guest'
+function Get-DiscordProxyRequest([string]$Phase) {
+    switch -CaseSensitive ($Phase){
+        {$_ -cin @('stage','reapply')} {return @{action='install';engine='byedpi';mode='dll';dns='unchanged'}}
+        'detach' {return @{action='remove';engine='drover'}}
+        'cleanup' {return @{action='remove';engine='byedpi'}}
+        default {throw 'Unknown staged repair phase'}
+    }
 }
-if(-not $SplitCordAction -and ($InteractiveCommunications -or -not $SkipSplitCord) -and (-not $ExpectedSHA256 -or [Console]::IsInputRedirected)){
-    throw 'SplitCord maintenance and communications checks require the approved controller digest and an interactive desktop console'
+function New-DiscordProxyReceipt([string]$JSON,[string]$ID,[string]$Phase,[string]$Digest) {
+    $request=Get-DiscordProxyRequest $Phase
+    if(-not $JSON -or $JSON.Length -gt 1MB){throw 'Discord proxy workflow output exceeds the inspection limit'}
+    $job=ConvertFrom-Json -InputObject $JSON -ErrorAction Stop
+    if($job -isnot [pscustomobject] -or $job.action -cne $request.action -or $job.state -cne 'succeeded' -or
+        $job.result.ok -isnot [bool] -or -not $job.result.ok -or @($job.result.finalizationFailures).Count -ne 0 -or
+        ($request.action -ceq 'install' -and $job.result.data.installed -cne 'byedpi')){
+        throw 'Discord proxy workflow did not verify the requested operation'
+    }
+    if($Phase -ceq 'reapply' -and @($job.result.events | Where-Object {
+        $_ -is [string] -and $_.EndsWith(' Reused the running managed ByeDPI service for Discord',[StringComparison]::Ordinal)
+    }).Count -ne 1){throw 'Discord proxy reapplication did not confirm service reuse'}
+    @{id=$ID;phase=$Phase;controllerSHA256=$Digest} | ConvertTo-Json -Compress
+}
+function Assert-DiscordProxyReceipt([string]$Receipt,[string]$ID,[string]$Phase,[string]$Digest) {
+    if(-not $Receipt -or $Receipt.Length -gt 512 -or $Receipt -cnotmatch '\A\{'){throw 'Discord proxy receipt is unavailable'}
+    $record=ConvertFrom-Json -InputObject $Receipt -ErrorAction Stop
+    if($record -isnot [pscustomobject] -or @($record.PSObject.Properties).Count -ne 3 -or
+        $record.id -isnot [string] -or $record.id -cne $ID -or
+        $record.phase -isnot [string] -or $record.phase -cne $Phase -or
+        $record.controllerSHA256 -isnot [string] -or $record.controllerSHA256 -cne $Digest){
+        throw 'Discord proxy receipt does not match the current request'
+    }
+}
+function Get-FixtureDiscordProxy([ValidateSet('byedpi','proxifyre')][string]$Engine='byedpi') {
+    $name='AccessWeaver-'+$Engine
+    $rows=@(Get-CimInstance -ClassName Win32_Service -Filter ("Name='"+$name+"'") -ErrorAction Stop)
+    if($rows.Count -eq 0){return}
+    if($rows.Count -ne 1 -or $rows[0].Name -cne $name -or $rows[0].State -cne 'Running' -or
+        $rows[0].StartMode -cne 'Auto' -or $rows[0].ProcessId -le 0 -or
+        $rows[0].PathName -isnot [string] -or [string]::IsNullOrWhiteSpace($rows[0].PathName)){
+        throw 'Managed proxy registration or running process could not be verified'
+    }
+    $id=[uint32]$rows[0].ProcessId
+    $processes=@(Get-CimInstance -ClassName Win32_Process -Filter ('ProcessId='+$id) -Property ProcessId,CreationDate -ErrorAction Stop)
+    if($processes.Count -ne 1 -or $processes[0].ProcessId -ne $id -or $processes[0].CreationDate -isnot [datetime]){
+        throw 'Managed proxy process identity could not be verified'
+    }
+    return ('{0}:{1}:{2}' -f $id,$processes[0].CreationDate.Ticks,$rows[0].PathName)
+}
+function Get-FixtureDroverFiles([string]$Image) {
+    if(-not $Image){throw 'Stable Discord is absent during proxy verification'}
+    $base=Join-Path $env:LOCALAPPDATA 'Discord'
+    $rootItem=Get-Item -LiteralPath $base -Force -ErrorAction Stop
+    if(-not $rootItem.PSIsContainer -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint)){
+        throw 'Discord root is not an ordinary directory'
+    }
+    $directories=@(Get-ChildItem -LiteralPath $base -Directory -Filter 'app-*' -Force -ErrorAction Stop |
+        Select-Object -First 257 | Sort-Object FullName)
+    if($directories.Count -gt 256){throw 'Discord version inventory exceeds the inspection limit'}
+    $observed=$false
+    foreach($directory in $directories){
+        if($directory.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Discord version directory is redirected'}
+        $app=Join-Path $directory.FullName 'Discord.exe'
+        if(-not (Test-Path -LiteralPath $app -ErrorAction Stop)){continue}
+        if($app -ieq $Image){$observed=$true}
+        $record=[ordered]@{image=$app}
+        foreach($name in @('Discord.exe','version.dll','drover.ini')){
+            $path=Join-Path $directory.FullName $name
+            $hash=$null
+            if(Test-Path -LiteralPath $path -ErrorAction Stop){
+                $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+                if($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+                    $item.Length -gt 512MB -or ($name -ceq 'Discord.exe' -and $item.Length -le 0)){
+                    throw 'Discord proxy fixture encountered an unsafe file'
+                }
+                $hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash
+            }
+            if($name -ceq 'Discord.exe' -and -not $hash){throw 'Discord executable disappeared during proxy verification'}
+            $record[$name]=$hash
+        }
+        [pscustomobject]$record
+    }
+    if(-not $observed){throw 'Observed Discord client is missing from the version inventory'}
+}
+function Assert-FixtureDroverApplied([object[]]$Baseline,[object[]]$Observed,[object]$Expected) {
+    if($Observed.Count -eq 0 -or $Observed.Count -ne $Baseline.Count){throw 'Discord version inventory changed during proxy application'}
+    for($i=0;$i -lt $Observed.Count;$i++){
+        $before=$Baseline[$i];$after=$Observed[$i]
+        if($after.image -ine $before.image -or $after.'Discord.exe' -cne $before.'Discord.exe' -or
+            -not $after.'version.dll' -or -not $after.'drover.ini' -or
+            $after.'version.dll' -ceq $before.'version.dll' -or $after.'drover.ini' -ceq $before.'drover.ini' -or
+            $after.'version.dll' -cne $Expected.'version.dll' -or $after.'drover.ini' -cne $Expected.'drover.ini'){
+            throw 'Discord proxy files did not match the expected deployment'
+        }
+    }
+}
+
+function Assert-FixtureDroverRestored([object[]]$Baseline,[object[]]$Observed) {
+    if((ConvertTo-Json -InputObject $Observed -Compress) -cne (ConvertTo-Json -InputObject $Baseline -Compress)){
+        throw 'Original Discord files were not restored'
+    }
+}
+function Test-FixtureDiscordDroverLoaded([string]$Image,[int]$Session,[object[]]$Processes) {
+    $expected=Join-Path (Split-Path -Parent $Image) 'version.dll'
+    $loaded=$false
+    foreach($process in $Processes){
+        try {
+            if($process.SessionId -ne $Session -or $process.Path -ine $Image -or $process.HasExited -cne $false){continue}
+            foreach($module in $process.Modules){
+                if($module.FileName -ieq $expected -and $process.HasExited -ceq $false){$loaded=$true;break}
+            }
+        }catch{
+            # A process can exit during module enumeration. Require a positive observation.
+        }finally{
+            if($process -is [IDisposable]){$process.Dispose()}
+        }
+    }
+    return $loaded
+}
+
+$machineHandoff=[bool]($SplitCordAction -or $DiscordProxyAction)
+if(($SplitCordAction -and $DiscordProxyAction) -or [bool]$DiscordProxyAction -ne [bool]$DesktopAccountSHA256 -or
+    $machineHandoff -ne [bool]$HandoffID -or ($machineHandoff -and
+    (-not $ExpectedSHA256 -or -not $PSBoundParameters.ContainsKey('Executable') -or -not $DisposableVM -or
+        $InteractiveCommunications -or $SkipSplitCord -or $StagedDiscordRepair -or $ResultsDirectory))){
+    throw 'Machine handoff requires a fixed action, request ID, explicit approved controller path and digest, and disposable guest'
+}
+if(-not $machineHandoff -and ($StagedDiscordRepair -or $InteractiveCommunications -or -not $SkipSplitCord) -and
+    (-not $ExpectedSHA256 -or [Console]::IsInputRedirected)){
+    throw 'Machine maintenance and communications checks require the approved controller digest and an interactive desktop console'
 }
 if($env:OS -cne 'Windows_NT' -or ($env:USERNAME -ne 'WDAGUtilityAccount' -and
    (-not $DisposableVM -or (Get-CimInstance Win32_ComputerSystem).Model -notmatch 'Virtual|VMware'))){
@@ -313,8 +448,16 @@ try {$session=$current.SessionId} finally {$current.Dispose()}
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
 try {
     $elevated=([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-    if($identity.IsSystem -or $session -eq 0 -or $elevated -ne [bool]$SplitCordAction){
-        throw 'Use an unelevated desktop shell for the fixture and a separate administrator shell for the SplitCord handoff'
+    if($identity.IsSystem -or $session -eq 0 -or $elevated -ne $machineHandoff){
+        throw 'Use an unelevated desktop shell for the fixture and a separate administrator shell for machine handoffs'
+    }
+    if($StagedDiscordRepair -or $DiscordProxyAction){
+        $sha=[Security.Cryptography.SHA256]::Create()
+        try {$accountDigest=[BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($identity.User.Value))).Replace('-','').ToLowerInvariant()}
+        finally {$sha.Dispose()}
+        if($DiscordProxyAction -and $accountDigest -ine $DesktopAccountSHA256){
+            throw 'Staged Discord repair requires elevation under the fixture desktop account'
+        }
     }
 } finally {$identity.Dispose()}
 
@@ -330,16 +473,33 @@ try {
     if($guard.Length -le 0 -or $guard.Length -gt 128MB){throw 'Expected a bounded ordinary controller executable'}
     $controllerDigest=(Get-FileHash -InputStream $guard -Algorithm SHA256).Hash.ToLowerInvariant()
     if($ExpectedSHA256 -and $controllerDigest -ine $ExpectedSHA256){throw 'Controller differs from the approved candidate'}
-    if($SplitCordAction){
-        $SplitCordAction=$SplitCordAction.ToLowerInvariant()
-        $request=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) ('AccessWeaver-SplitCord-'+$HandoffID+'.json')
-        $data=[Text.Encoding]::UTF8.GetBytes((@{action=$SplitCordAction;engine='splitcord'} | ConvertTo-Json -Compress))
+    if($machineHandoff){
+        $operation=if($SplitCordAction){
+            $SplitCordAction=$SplitCordAction.ToLowerInvariant()
+            @{action=$SplitCordAction;engine='splitcord'}
+        }else{
+            $DiscordProxyAction=$DiscordProxyAction.ToLowerInvariant()
+            if($DiscordProxyAction -ceq 'stage'){
+                $manifest=Join-Path $env:ProgramData 'AccessWeaver\profiles\drover-owned.json'
+                if((Get-FixtureDiscordProxy) -or (Get-FixtureDiscordProxy 'proxifyre') -or
+                    (Test-Path -LiteralPath $manifest -ErrorAction Stop)){
+                    throw 'Staged repair requires a clean managed proxy baseline'
+                }
+            }
+            Get-DiscordProxyRequest $DiscordProxyAction
+        }
+        $request=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) ('AccessWeaver-App-Handoff-'+$HandoffID+'.json')
+        $data=[Text.Encoding]::UTF8.GetBytes(($operation | ConvertTo-Json -Compress))
         $requestStream=[IO.File]::Open($request,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
         try {
             try {$requestStream.Write($data,0,$data.Length)} finally {$requestStream.Dispose()}
             $output=@(& $Executable system apply $request --confirm)
-            if($LASTEXITCODE -ne 0){throw 'SplitCord machine workflow failed'}
-            New-SplitCordHandoff ($output -join "`n") $HandoffID $SplitCordAction $controllerDigest
+            if($LASTEXITCODE -ne 0){throw 'Application fixture machine workflow failed'}
+            if($SplitCordAction){
+                New-SplitCordHandoff ($output -join "`n") $HandoffID $SplitCordAction $controllerDigest
+            }else{
+                New-DiscordProxyReceipt ($output -join "`n") $HandoffID $DiscordProxyAction $controllerDigest
+            }
         } finally {[IO.File]::Delete($request)}
         return
     }
@@ -356,6 +516,9 @@ try {
         'discord-reinstall','discord-start-after-reinstall','discord-remove','discord-install-for-ptb-clean',
         'ptb-install-with-stable','ptb-start-with-stable','ptb-remove-with-stable','ptb-clean-install','ptb-start','ptb-remove'
     )
+    $repair=@{}
+    $repairChecks=@('discord-proxy-stage','discord-proxy-detach','discord-proxy-reapply','discord-proxy-cleanup')
+    if($StagedDiscordRepair){$expectedChecks+=$repairChecks}
     if(-not $SkipSplitCord){$expectedChecks+=@('splitcord-install','splitcord-start','splitcord-remove')}
     foreach($variant in $variants){
         $expectedChecks+=@('cleanup-'+$variant)
@@ -367,12 +530,13 @@ try {
     $checks=[Collections.Generic.List[object]]::new()
     $script:appEvidenceStage='baseline'
     $report=[ordered]@{
-        schemaVersion=10;runID=$runID;controllerSHA256=$controllerDigest;approvedDigestMatched=[bool]$ExpectedSHA256;
+        schemaVersion=11;runID=$runID;controllerSHA256=$controllerDigest;approvedDigestMatched=[bool]$ExpectedSHA256;
         fixtureSHA256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant();
         architecture=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant();
         checks=$null;baselineClear=$false;splitCordIncluded=(-not $SkipSplitCord);
         communicationMethod=$(if($InteractiveCommunications){'operator-observed-two-way'}else{'not-requested'});
-        textExercised=$false;voiceExercised=$false;combinedRepairExecuted=$false;passed=$false
+        textExercised=$false;voiceExercised=$false;combinedRepairExecuted=$false;
+        stagedDiscordRepairRequested=[bool]$StagedDiscordRepair;stagedDiscordRepairExercised=$false;passed=$false
     }
 
     function Invoke-FixtureCLI([string[]]$Arguments){
@@ -416,6 +580,14 @@ try {
             }
             return $job.result.data
         } finally {[IO.File]::Delete($path)}
+    }
+    function Invoke-DiscordProxyWorkflow([string]$Phase){
+        $script:appEvidenceStage='operator-machine-workflow'
+        $id=[guid]::NewGuid().ToString('N')
+        Write-Host 'In the elevated shell for this desktop account, use the reviewed fixture and approved controller from protected storage.'
+        Write-Host ("Use -DisposableVM -DiscordProxyAction "+$Phase+" -HandoffID "+$id+" -DesktopAccountSHA256 "+$accountDigest+" -ExpectedSHA256 "+$controllerDigest)
+        $receipt=Read-Host 'Paste the single-line Discord proxy receipt. Press Enter to record failure'
+        Assert-DiscordProxyReceipt $receipt $id $Phase $controllerDigest
     }
     function Inspect-Apps {
         $script:appEvidenceStage='discovery'
@@ -499,7 +671,32 @@ try {
                 throw 'Combined repair refusal changed the observed Discord state'
             }
         }
+        if($StagedDiscordRepair){
+            Check 'discord-proxy-stage' {
+                $script:appEvidenceStage='proxy-baseline'
+                $repair.baseline=@(Get-FixtureDroverFiles (Get-FixtureAppImage (Inspect-Apps) 'discord'))
+                $repair.attempted=$true
+                Invoke-DiscordProxyWorkflow 'stage'
+                $repair.stageConfirmed=$true
+                $script:appEvidenceStage='proxy-readback'
+                $repair.proxy=Get-FixtureDiscordProxy
+                if(-not $repair.proxy){throw 'Initial proxy registration is missing'}
+                $deployed=@(Get-FixtureDroverFiles (Get-FixtureAppImage (Inspect-Apps) 'discord'))
+                Assert-FixtureDroverApplied $repair.baseline $deployed $deployed[0]
+                $repair.assets=$deployed[0]
+            }
+            Check 'discord-proxy-detach' {
+                if(-not $repair.assets){throw 'Initial Discord proxy deployment was not verified'}
+                Invoke-DiscordProxyWorkflow 'detach'
+                $script:appEvidenceStage='proxy-readback'
+                if((Get-FixtureDiscordProxy) -cne $repair.proxy){throw 'Proxy changed when removing the Discord DLL'}
+                $observed=@(Get-FixtureDroverFiles (Get-FixtureAppImage (Inspect-Apps) 'discord'))
+                Assert-FixtureDroverRestored $repair.baseline $observed
+                $repair.detached=$true
+            }
+        }
         Check 'discord-reinstall' {
+            if($StagedDiscordRepair -and -not $repair.detached){throw 'Discord proxy detach prerequisite failed'}
             $installedDigests.Remove('discord')
             if(-not $installedImages.ContainsKey('discord')){throw 'Stable Discord install prerequisite failed'}
             $data=Invoke-AppWorkflow @{action='app-reinstall';engine='discord'}
@@ -510,9 +707,57 @@ try {
             if($InteractiveCommunications){
                 $installedDigests['discord']=(Get-FileHash -LiteralPath $image -Algorithm SHA256 -ErrorAction Stop).Hash
             }
+            $repair.reinstalled=$true
         }
-        Check 'discord-start-after-reinstall' {Start-FixtureApp 'discord'}
+        if($StagedDiscordRepair){
+            Check 'discord-proxy-reapply' {
+                if(-not $repair.reinstalled){throw 'Discord replacement was not verified'}
+                $script:appEvidenceStage='proxy-readback'
+                if((Get-FixtureDiscordProxy) -cne $repair.proxy){throw 'Proxy changed during desktop reinstall'}
+                $repair.baseline=@(Get-FixtureDroverFiles (Get-FixtureAppImage (Inspect-Apps) 'discord'))
+                Invoke-DiscordProxyWorkflow 'reapply'
+                $script:appEvidenceStage='proxy-readback'
+                if((Get-FixtureDiscordProxy) -cne $repair.proxy){throw 'Proxy changed during DLL reapplication'}
+                $deployed=@(Get-FixtureDroverFiles (Get-FixtureAppImage (Inspect-Apps) 'discord'))
+                Assert-FixtureDroverApplied $repair.baseline $deployed $repair.assets
+                $repair.reapplied=$true
+            }
+        }
+        Check 'discord-start-after-reinstall' {
+            if($StagedDiscordRepair -and -not $repair.reapplied){throw 'Staged proxy repair prerequisite failed'}
+            Start-FixtureApp 'discord'
+            if($StagedDiscordRepair){
+                $script:appEvidenceStage='proxy-module-readback'
+                $image=$installedImages['discord']
+                $wait=[Diagnostics.Stopwatch]::StartNew()
+                do {
+                    $loaded=Test-FixtureDiscordDroverLoaded $image $session @([Diagnostics.Process]::GetProcessesByName('Discord'))
+                    if(-not $loaded){Start-Sleep -Milliseconds 250}
+                }while(-not $loaded -and $wait.Elapsed.TotalSeconds -lt 10)
+                if(-not $loaded){throw 'Discord did not load the staged proxy DLL'}
+                $deployed=@(Get-FixtureDroverFiles (Get-FixtureAppImage (Inspect-Apps) 'discord'))
+                $script:appEvidenceStage='proxy-module-readback'
+                Assert-FixtureDroverApplied $repair.baseline $deployed $repair.assets
+                if((Get-FixtureDiscordProxy) -cne $repair.proxy){throw 'Proxy changed during desktop launch'}
+            }
+        }
         Check-FixtureCommunications 'discord' 'discord-start-after-reinstall'
+        if($StagedDiscordRepair){
+            Check 'discord-proxy-cleanup' {
+                if(-not $repair.stageConfirmed){throw 'Initial proxy ownership was not confirmed for cleanup'}
+                $script:appEvidenceStage='proxy-readback'
+                if($repair.proxy -and (Get-FixtureDiscordProxy) -cne $repair.proxy){
+                    throw 'Retain the disposable guest for review of the changed proxy registration'
+                }
+                Invoke-DiscordProxyWorkflow 'cleanup'
+                $script:appEvidenceStage='proxy-readback'
+                if((Get-FixtureDiscordProxy) -or (Get-FixtureDiscordProxy 'proxifyre')){throw 'Discord proxy remains registered after cleanup'}
+                $observed=@(Get-FixtureDroverFiles (Get-FixtureAppImage (Inspect-Apps) 'discord'))
+                Assert-FixtureDroverRestored $repair.baseline $observed
+                $repair.cleanupVerified=$true
+            }
+            if($repair.attempted -and -not $repair.cleanupVerified){throw 'Retain the disposable guest for staged repair cleanup'}
+        }
         Check 'discord-remove' {Remove-FixtureApp 'discord'}
         Check 'discord-install-for-ptb-clean' {
             if(Get-FixtureAppImage (Inspect-Apps) 'discord'){throw 'Stable Discord removal prerequisite failed'}
@@ -571,9 +816,18 @@ try {
         }
     } finally {
         foreach($variant in $attempted){
-            Check ('cleanup-'+$variant) {Remove-FixtureApp $variant -Cleanup}
+            Check ('cleanup-'+$variant) {
+                if($variant -ceq 'discord' -and $repair.attempted -and -not $repair.cleanupVerified){
+                    throw 'Keep the Discord installation until staged repair cleanup can be verified'
+                }
+                Remove-FixtureApp $variant -Cleanup
+            }
         }
         $report.checks=@($checks.ToArray())
+        if($StagedDiscordRepair){
+            $expectedRepair=$repairChecks+@('discord-reinstall','discord-start-after-reinstall')
+            $report.stagedDiscordRepairExercised=Test-FixtureAppChecks @($report.checks | Where-Object {$_.name -cin $expectedRepair}) $expectedRepair
+        }
         if($InteractiveCommunications){
             $textChecks=@($report.checks | Where-Object {$_.name -clike 'communications-*-text'})
             $voiceChecks=@($report.checks | Where-Object {$_.name -clike 'communications-*-voice'})
