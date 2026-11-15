@@ -16,6 +16,36 @@ The builder verifies the SHA-256 of the exact private copy it packages, along wi
 
 The generated `.deb` is unsigned. Record the final package SHA-256 and the approved source identity in the deployment handoff. For an APT-managed rollout, authenticate your organization’s signed repository metadata and scope the repository key with `Signed-By`. For direct installation, compare the final package against its independently approved digest in administrator-controlled staging before invoking `dpkg`. [APT repository authentication](https://manpages.debian.org/stable/apt/apt-secure.8.en.html).
 
+## Build an organization-signed APT snapshot
+
+The APT builder uses Python 3.11 or later, `dpkg-scanpackages` from `dpkg-dev`, `gpg` and `gpgv`. Put only approved AccessWeaver `.deb` files in a private input directory. Record each package SHA-256 from the approved build handoff and repeat `--package-sha256` for every file, including versions retained for rollback. Use your organization's existing OpenPGP repository signing key or agent-backed signing subkey and an independently provisioned binary public keyring. Confirm the full primary fingerprint through your key administration process. [Debian package indexing](https://manpages.debian.org/trixie/dpkg-dev/dpkg-scanpackages.1.en.html).
+
+```sh
+python3 scripts/build-linux-apt-repository.py APPROVED_PACKAGE_DIRECTORY NEW_REPOSITORY_DIRECTORY \
+  --suite accessweaver-managed --valid-days 7 \
+  --gnupg-home ORGANIZATION_GNUPG_HOME --keyring APPROVED_PUBLIC_KEYRING.gpg \
+  --fingerprint APPROVED_PRIMARY_FINGERPRINT \
+  --package-sha256 AMD64_PACKAGE_FILENAME APPROVED_AMD64_SHA256 \
+  --package-sha256 ARM64_PACKAGE_FILENAME APPROVED_ARM64_SHA256
+```
+
+The builder snapshots approved packages, generates architecture-specific indexes, and signs `InRelease`. It verifies both the recovered metadata bytes and the primary fingerprint before it publishes the complete snapshot at a new local destination. It supports one to sixteen package files and metadata validity of one to thirty days. Renew signed metadata before its `Valid-Until` deadline. The output contains no signing material or public trust configuration. [APT repository authentication](https://manpages.debian.org/trixie/apt/apt-secure.8.en.html).
+
+Deploy the independently approved `.gpg` keyring to `/etc/apt/keyrings/accessweaver.gpg`, readable by APT. Configure `/etc/apt/sources.list.d/accessweaver.sources` using the HTTPS URL of your approved repository and the same primary fingerprint. Use the target architecture on your endpoint.
+
+```text
+Types: deb
+URIs: https://packages.example.org/accessweaver
+Suites: accessweaver-managed
+Components: main
+Architectures: amd64
+Signed-By: /etc/apt/keyrings/accessweaver.gpg APPROVED_PRIMARY_FINGERPRINT
+```
+
+For a rolling channel, upload and verify new pool and `by-hash` objects before exposing the new `InRelease`. Serve the signed metadata with content-based revalidation so two publications within the same second return the current bytes. Retain prior immutable objects through the validity window of any metadata that references them, plus your rollback retention window. Keep each package filename bound to its original bytes and issue a new version for changes. Use normal APT authentication and expiry checks. [APT sources and by-hash acquisition](https://manpages.debian.org/trixie/apt/sources.list.5.en.html).
+
+Use `sudo apt-get -o APT::Update::Error-Mode=any update` and `sudo apt-get install accessweaver=APPROVED_DEBIAN_VERSION` for managed installation. Compare the selected version and origin with the rollout record. The detection, engine recovery and policy-retention checks below also apply to APT. Your endpoint management tooling owns channel promotion and the rollout schedule.
+
 ## Install, detect and roll back
 
 Run these commands on a disposable endpoint first. Stage the correct architecture on the host. The package operations are noninteractive and install no service or network engine.
@@ -46,4 +76,6 @@ sudo python3 -B scripts/test-linux-deb-lifecycle.py \
 
 The source-bound [Ubuntu 26.04 WSL AMD64 evidence](qualification/16632c4b2a7f-linux-deb-lifecycle.json) records the exact archive, package, executable, builder and probe digests. The probe verified both assembly targets and ran dpkg and the installed CLI on AMD64.
 
-Managed rollout still requires a signed repository or approved distribution mechanism, native ARM64 lifecycle testing, reboot and active-engine checks, and deployment through the organization's endpoint-management tools.
+The [signed APT probe](../scripts/test-linux-apt-repository.py) uses disposable Ed25519 keys, a loopback HTTP repository and private APT and dpkg state on AMD64. It requires two approved versions for each architecture and a SHA-256 pin for each `.deb`. To isolate the probe, run it as root in a disposable system or private network namespace with loopback enabled. It checks by-hash index retrieval, install, upgrade and purge. It also exercises refusal of the wrong scoped key, expired metadata, and altered signed metadata, indexes or package bytes. [Ubuntu WSL APT evidence](qualification/4caa86d5b6d0-linux-apt-repository.json).
+
+Production rollout requires an organization-controlled signing key and hosted deployment, native ARM64 lifecycle testing, reboot and active-engine checks, and validation through the organization's endpoint-management tools.

@@ -158,7 +158,8 @@
             "scripts/test-windows-installer-reboot-contracts.ps1",
             "docs/qualification/56924863f63e-installer-lifecycle.json",
             "docs/qualification/16632c4b2a7f-linux-deb-lifecycle.json",
-            "docs/LINUX_DEBIAN_DEPLOYMENT.md"
+            "docs/LINUX_DEBIAN_DEPLOYMENT.md",
+            "docs/qualification/4caa86d5b6d0-linux-apt-repository.json"
           ]
         }
       ]
@@ -583,7 +584,8 @@
             "scripts/test-windows-installer.ps1",
             ".github/workflows/ci.yml",
             "docs/qualification/16632c4b2a7f-linux-deb-lifecycle.json",
-            "docs/LINUX_DEBIAN_DEPLOYMENT.md"
+            "docs/LINUX_DEBIAN_DEPLOYMENT.md",
+            "docs/qualification/4caa86d5b6d0-linux-apt-repository.json"
           ]
         },
         {
@@ -615,7 +617,8 @@
             "scripts/test-macos-deployment-package.py",
             "docs/MACOS_MANAGED_POLICY.md",
             "docs/qualification/16632c4b2a7f-linux-deb-lifecycle.json",
-            "docs/LINUX_DEBIAN_DEPLOYMENT.md"
+            "docs/LINUX_DEBIAN_DEPLOYMENT.md",
+            "docs/qualification/4caa86d5b6d0-linux-apt-repository.json"
           ]
         }
       ]
