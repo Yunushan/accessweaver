@@ -3829,6 +3829,21 @@ try {
         finally {$case.row[$case.key]=$previous}
         Assert $refused ('Discord proxy readiness refuses mismatched '+$case.key)
     }
+    $service.PathName='fixture protected service command'
+    $digest=Get-ManagedServiceCommandDigest $service.PathName
+    $child.CommandLine=$binary+' --split 2'
+    Assert ((Get-ManagedByeDPILoopbackOwner $binary $digest $child.CommandLine) -ceq $owner) 'Retained ByeDPI verifies its service registration and running arguments'
+    foreach($case in @(
+        @{digest=('A'*64);command=$child.CommandLine;error='Managed ByeDPI registration changed during verification'},
+        @{digest=$digest;command=($binary+' --split 3');error='Running ByeDPI arguments differ from the reviewed strategy'}
+    )){
+        $refused=$false
+        try {[void](Get-ManagedByeDPILoopbackOwner $binary $case.digest $case.command)}catch{
+            if($_.Exception.Message -cne $case.error){throw}
+            $refused=$true
+        }
+        Assert $refused $case.error
+    }
     $listeners+=@(@{LocalAddress='::';LocalPort=1080;OwningProcess=42})
     $refused=$false
     try {Get-ManagedByeDPILoopbackOwner $binary | Out-Null}catch{$refused=$true}
@@ -3874,6 +3889,7 @@ try {
     $root=Join-Path $testRoot 'byedpi-probe'
     function Discord-Directories {return 'C:\fixture\app-1'}
     function Ensure-Asset {return 'C:\fixture\ciadpi.exe'}
+    function Assert-ManagedServiceOwnership {return $null}
     function Install-EngineService {$trace.Add('service')}
     function Firewall {$trace.Add('firewall')}
     function Assert-ManagedByeDPILoopbackProxy([string]$Binary){
@@ -3913,6 +3929,78 @@ try {
     $trace.Clear()
     Install-Method | Out-Null
     Assert (($trace -join ',') -ceq 'foreground') 'One-shot ByeDPI keeps the foreground launch path'
+}
+
+# A retained proxy is reused only after ownership, persisted settings and live argv agree.
+& {
+    $root=Join-Path $testRoot 'retained ByeDPI'
+    $assetNames=@{byedpi='ciadpi.exe'}
+    $binary=Join-Path $root 'components\byedpi\ciadpi.exe'
+    $configPath=Join-Path $root 'services\byedpi.json'
+    [void][IO.Directory]::CreateDirectory((Split-Path -Parent $configPath))
+    $name='AccessWeaver-byedpi'
+    $r=@{engine='byedpi';mode='dll';args=@('--split','2','two words\','a\"b','')}
+    $argsRequested=@('--ip','127.0.0.1','--port','1080')+$r.args
+    $config=@{name=$name;binary=$binary;args=$argsRequested;directory=(Split-Path -Parent $binary);logPath=(Join-Path $root 'logs\byedpi.log')}
+    $configJSON=$config | ConvertTo-Json
+    $serviceDigest='A'*64
+    $expectedCommandLine='"'+$binary+'" --ip 127.0.0.1 --port 1080 --split 2 "two words\\" a\\\"b ""'
+    $trace=[Collections.Generic.List[string]]::new()
+    function Discord-Directories {return 'C:\fixture\app-1'}
+    function Assert-ManagedServiceOwnership([string]$Name){
+        if($Name -cne 'AccessWeaver-byedpi'){throw 'Unexpected service name'}
+        $script:externalEffectsPending=$true
+        if($case -eq 'foreign'){throw 'Fixture service ownership mismatch'}
+        return @{name=$Name;commandSHA256=$serviceDigest}
+    }
+    function Assert-TrustedItem([string]$Path){
+        if($Path -cnotin @($binary,$configPath)){throw 'Unexpected protected path'}
+    }
+    function Ensure-Asset {throw 'Retained ByeDPI must not acquire the proxy binary'}
+    function Install-EngineService {throw 'Retained ByeDPI must not register a service'}
+    function Firewall {throw 'Retained ByeDPI must not add firewall rules'}
+    function Assert-ManagedByeDPILoopbackProxy([string]$Path,[string]$Digest,[string]$Raw){
+        if($Path -cne $binary -or $Digest -cne $serviceDigest -or $Raw -cne $expectedCommandLine){throw 'Retained service probe received a mismatched identity'}
+        $trace.Add('probe')
+        if($case -eq 'probe'){throw 'Fixture SOCKS negotiation failed'}
+    }
+    function Install-Drover {
+        $other=$null
+        try {$other=[IO.File]::Open($configPath,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::Read)}
+        catch [IO.IOException] {$trace.Add('drover');return}
+        finally {if($other){$other.Dispose()}}
+        throw 'Retained ByeDPI configuration was writable during deployment'
+    }
+    function Get-ManagedByeDPILoopbackOwner([string]$Path,[string]$Digest,[string]$Raw){
+        if($Path -cne $binary -or $Digest -cne $serviceDigest -or $Raw -cne $expectedCommandLine){throw 'Retained service final check received a mismatched identity'}
+        $trace.Add('confirm')
+        return 'fixture owner'
+    }
+    function Event {}
+    $oldEffects=$script:externalEffectsPending
+    try {
+        foreach($entry in @(
+            @{case='foreign';error='Fixture service ownership mismatch';calls=''},
+            @{case='config';error='Existing ByeDPI service configuration does not match the requested proxy';calls=''},
+            @{case='invalid';error='Existing ByeDPI service configuration could not be read safely';calls=''},
+            @{case='probe';error='Fixture SOCKS negotiation failed';calls='probe'},
+            @{case='matching';error='';calls='probe,drover,confirm'}
+        )){
+            $case=$entry.case
+            $json=switch($case){
+                'invalid' {'{'}
+                'config' {$configJSON.Replace('"--split"','"--other"')}
+                default {$configJSON}
+            }
+            [IO.File]::WriteAllText($configPath,$json)
+            $script:externalEffectsPending=$false
+            $trace.Clear()
+            $errorText=''
+            try {[void](Install-Method)}catch{$errorText=$_.Exception.Message}
+            Assert ($errorText -ceq $entry.error -and ($trace -join ',') -ceq $entry.calls -and
+                -not $script:externalEffectsPending -and [IO.File]::ReadAllText($configPath) -ceq $json) ('Retained ByeDPI DLL install handles '+$case)
+        }
+    } finally {$script:externalEffectsPending=$oldEffects}
 }
 
 $previousAppData=$env:APPDATA

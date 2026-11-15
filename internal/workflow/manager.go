@@ -412,14 +412,16 @@ func installationSteps(r Request) []string {
 			steps = append(steps, "Register the five-minute reconnect task")
 		}
 	case "byedpi":
-		steps = append(steps, "Stage ByeDPI and listen on the local SOCKS endpoint 127.0.0.1:1080")
-		if r.Mode == "once" {
-			steps = append(steps, "Run until the operation is cancelled")
-		} else {
-			steps = append(steps, "Install an automatic Windows service and its firewall rules")
-		}
 		if r.Mode == "dll" {
-			steps = append(steps, "Close Discord and deploy drover files with original-file backups")
+			steps = append(steps, "Install the ByeDPI service and firewall rules if absent, or verify the running managed service and its matching strategy")
+			steps = append(steps, "Verify SOCKS5 on 127.0.0.1:1080, then close Discord and deploy drover files with original-file backups")
+		} else {
+			steps = append(steps, "Stage ByeDPI and listen on the local SOCKS endpoint 127.0.0.1:1080")
+			if r.Mode == "once" {
+				steps = append(steps, "Run until the operation is cancelled")
+			} else {
+				steps = append(steps, "Install an automatic Windows service and its firewall rules")
+			}
 		}
 		if r.Mode == "split" || r.Mode == "" {
 			steps = append(steps, "Install Windows Packet Filter and runtime prerequisites if needed, then start ProxiFyre for the selected applications")
