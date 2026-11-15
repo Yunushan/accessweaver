@@ -2081,7 +2081,93 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 self.assertEqual(retried_detection["attemptID"], retry_attempt_id)
                 self.assertEqual(retried_detection["installedDetection"], "detected")
                 launch.assert_not_called()
-                for fixture_path in (start_file, completed_receipt, retry_start, retry_result, staged_path):
+                for fixture_path in (retry_start, retry_result, staged_path):
+                    fixture_path.unlink()
+
+                reboot_retry_id = "d" * 32
+                reboot_retry = {**launch_options, "windows_upgrade_start_receipt": receipt,
+                                "windows_upgrade_attempt_id": reboot_retry_id, "retry_windows_upgrade_after_reboot": True}
+                boot.side_effect = [later_boot]
+                try:
+                    with self.assertRaisesRegex(ValueError, "found an existing result receipt"):
+                        self.verify(approved, pin, policy_pin=newer_pin, **reboot_retry)
+                finally:
+                    boot.side_effect = None
+                completed_receipt.unlink()
+                detect.reset_mock()
+                with patch.object(release, "stage_managed_update") as stage:
+                    with self.assertRaisesRegex(ValueError, "requires a later boot"):
+                        self.verify(approved, pin, policy_pin=newer_pin, **reboot_retry)
+                    detect.assert_not_called()
+                    for observation in (("detected", None), ("unverified", "detector-inspection-failed"),
+                                        ("unverified", "approved-installation-not-detected")):
+                        boot.side_effect = [later_boot]
+                        detect.side_effect = [observation]
+                        try:
+                            with self.subTest(reboot_retry_detection=observation), self.assertRaisesRegex(
+                                    ValueError, "requires a verified pending installation marker"):
+                                self.verify(approved, pin, policy_pin=newer_pin, **reboot_retry)
+                        finally:
+                            boot.side_effect = None
+                            detect.side_effect = None
+                    stage.assert_not_called()
+                launch.assert_not_called()
+
+                pending_status = ("unverified", "installer-recovery-pending")
+                reboot_boot = {**later_boot, "endpointSHA256": "d" * 64}
+                boot.side_effect = [later_boot, reboot_boot]
+                detect.side_effect = [pending_status, ("detected", None)]
+                try:
+                    with patch.object(release, "stage_managed_update") as stage, self.assertRaisesRegex(
+                            ValueError, "requires a verified pending installation marker"):
+                        self.verify(approved, pin, policy_pin=newer_pin, **reboot_retry)
+                    stage.assert_called_once()
+                finally:
+                    boot.side_effect = None
+                    detect.side_effect = None
+                launch.assert_not_called()
+                self.assertEqual(list(staging.iterdir()), [start_file])
+
+                boot.side_effect = [later_boot, reboot_boot]
+                detect.side_effect = [pending_status, pending_status, ("detected", None)]
+                launch.side_effect = dispatch_receipt_bound_retry
+                try:
+                    recovery = self.verify(approved, pin, policy_pin=newer_pin, **reboot_retry)["managedUpdate"]
+                finally:
+                    boot.side_effect = None
+                    detect.side_effect = None
+                    launch.side_effect = None
+                self.assertEqual(recovery["setupExitCode"], 0)
+                self.assertEqual(recovery["installedDetection"], "detected")
+                reboot_start = staging / (reboot_retry_id + ".started.json")
+                reboot_result = staging / (reboot_retry_id + ".result.json")
+                reboot_lineage = release.load_windows_upgrade_start_receipt(
+                    approved, reboot_start, recovery["startReceiptSHA256"],
+                )
+                self.assertEqual(reboot_lineage, {
+                    **attempt, "schemaVersion": 4, "attemptID": reboot_retry_id, "boot": reboot_boot,
+                    "revocationPolicySequence": 5, "revocationListSHA256": newer_pin,
+                    "previousAttemptID": attempt_id, "previousStartReceiptSHA256": start_digest,
+                    "previousBootTicks": initial_boot["bootTicks"],
+                })
+                self.assertEqual(release.load_windows_upgrade_result_receipt(
+                    approved, reboot_result, recovery["resultReceiptSHA256"], reboot_lineage,
+                ), {"setupExitCode": 0, "installedDetection": "detected"})
+                self.assertEqual(release.digest(start_file), start_digest)
+                launch.reset_mock()
+                boot.side_effect = [reboot_boot, reboot_boot]
+                try:
+                    post_reboot_retry = self.verify(
+                        approved, pin, policy_pin=newer_pin, **receipt_options,
+                        windows_upgrade_start_receipt=(reboot_start, recovery["startReceiptSHA256"]),
+                        windows_upgrade_result_receipt=(reboot_result, recovery["resultReceiptSHA256"]),
+                    )["managedUpdate"]
+                finally:
+                    boot.side_effect = None
+                self.assertEqual(post_reboot_retry["installedDetection"], "detected")
+                self.assertEqual(post_reboot_retry["attemptID"], reboot_retry_id)
+                launch.assert_not_called()
+                for fixture_path in (start_file, reboot_start, reboot_result, staged_path):
                     fixture_path.unlink()
             self.write_policy(self.policy)
         strict_args = [*retry_cli, "--require-windows-setup-wrong-baseline-refusal"]
