@@ -2802,8 +2802,12 @@ function Get-DNSCryptReloadFile($Resolver,$Journal) {
         throw 'Original DNSCrypt file recovery is unverified'
     }
     $record=$records[0]
+    $pending=$record.pendingHash
+    if($null -ne $pending -and ($pending -isnot [string] -or $pending -notmatch '\A[a-fA-F0-9]{64}\z')){
+        throw 'DNSCrypt configuration recovery contains an invalid pending digest'
+    }
     $current=Get-WorkflowFileHash $record.path
-    if(-not $current -or ($current -ine $record.originalHash -and $current -ine $record.expectedHash)){
+    if(-not $current -or ($current -ine $record.originalHash -and $current -ine $record.expectedHash -and $current -ine $pending)){
         throw 'DNSCrypt configuration differs from the recorded activation; preserve the current settings'
     }
     return $record
@@ -3073,6 +3077,28 @@ function Configure-DNS([string]$method) {
             if($updatedConfig.Length -gt 1MB){throw 'DNSCrypt configuration exceeds its size limit'}
             $publishedConfigSHA256=Get-WorkflowBytesSHA256 $updatedConfig
             $configChanged=$configBefore -cne $publishedConfigSHA256
+            $reload=$null
+            if($configChanged -and $existingResolver -and $configBefore){
+                $service=Get-Service -Name $serviceName -ErrorAction Stop
+                try {$originalStartup=[string]$service.StartType}
+                finally {if($service -is [IDisposable]){$service.Dispose()}}
+                if($originalStartup -cnotin @('Manual','Automatic')){
+                    throw 'Existing DNSCrypt startup policy is unsupported for staged reconfiguration'
+                }
+                [void](Backup-File $config)
+                $reload=@{kind='dnscrypt-reload';name=$existingResolver.name;commandSHA256=$existingResolver.commandSHA256;
+                    path=$config;originalHash=$configBefore;originalStartup=$originalStartup}
+                [void](Get-DNSCryptReloadFile $reload $script:undo)
+                # An automatic service may read the replacement on reboot as
+                # soon as it reaches disk, even before this worker restarts it.
+                $script:undo.Add($reload)
+                try {Save-Journal}catch{
+                    [void]$script:undo.Remove($reload)
+                    throw
+                }
+                Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+                if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before startup'}
+            }
             if($configChanged){Publish-WorkflowFile $config $updatedConfig -Recorded -BeforeHash $configBefore}
             $servers=@('127.0.0.1','::1')
             $listeners=@(foreach($number in @('4','6')){
@@ -3091,24 +3117,7 @@ function Configure-DNS([string]$method) {
                 Assert-DNSCryptConfiguration $config $publishedConfigSHA256
                 $service=Get-Service -Name $serviceName -ErrorAction Stop
                 try {
-                    if($configChanged -and $configBefore){
-                        $originalStartup=[string]$service.StartType
-                        if($originalStartup -cnotin @('Manual','Automatic')){
-                            throw 'Existing DNSCrypt startup policy is unsupported for staged reconfiguration'
-                        }
-                        $reload=@{kind='dnscrypt-reload';name=$existingResolver.name;commandSHA256=$existingResolver.commandSHA256;
-                            path=$config;originalHash=$configBefore;originalStartup=$originalStartup}
-                        [void](Get-DNSCryptReloadFile $reload $script:undo)
-                        $script:undo.Add($reload)
-                        try {Save-Journal}catch{
-                            [void]$script:undo.Remove($reload)
-                            throw
-                        }
-                        $resolverReload=$reload
-                        Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
-                        Assert-DNSCryptConfiguration $config $publishedConfigSHA256
-                        if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before startup'}
-                    }
+                    $resolverReload=$reload
                     if($service.Status -eq 'Stopped'){
                         Start-Service -InputObject $service -ErrorAction Stop
                     }elseif($configChanged){
