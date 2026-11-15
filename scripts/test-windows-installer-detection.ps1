@@ -36,6 +36,7 @@ $fixture=Join-Path $testRoot 'fixture.ps1'
 $uninstaller=Join-Path $testRoot 'unins001.exe'
 $uninstallData=[IO.Path]::ChangeExtension($uninstaller,'.dat')
 $sbom=Join-Path $testRoot 'SBOM.cdx.json'
+$notice=Join-Path $testRoot 'licenses\fixture-license.txt'
 $buildInfo=Join-Path $testRoot 'BUILD-INFO.json'
 $packageDirectories=@('licenses','docs','docs\assets','docs\qualification')
 $buildInfoBytes=[Text.Encoding]::UTF8.GetBytes('{"version":"0.1.0-alpha"}')
@@ -45,9 +46,19 @@ try {
     $hash=(Get-FileHash -LiteralPath $payload -Algorithm SHA256).Hash
     [IO.File]::WriteAllText($uninstaller,'inert uninstaller fixture')
     $uninstallerHash=(Get-FileHash -LiteralPath $uninstaller -Algorithm SHA256).Hash
-    $sbomBytes=[Text.Encoding]::UTF8.GetBytes('{"fixture":true}')
+    $noticeBytes=[Text.Encoding]::UTF8.GetBytes('Inert fixture license notice')
+    [IO.File]::WriteAllBytes($notice,$noticeBytes)
+    $noticeDigest=(Get-FileHash -LiteralPath $notice -Algorithm SHA256).Hash.ToLowerInvariant()
+    $noticeEvidence=ConvertTo-Json -InputObject @(@{path='licenses/fixture-license.txt';sha256=$noticeDigest}) -Compress
+    $sbomDocument=@{bomFormat='CycloneDX';specVersion='1.6';components=@()
+        metadata=@{component=@{type='application';properties=@(@{name='accessweaver:license-evidence';value=$noticeEvidence})}}}
+    $sbomBytes=[Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $sbomDocument -Depth 8 -Compress))
     [IO.File]::WriteAllBytes($sbom,$sbomBytes)
     $sbomHash=(Get-FileHash -LiteralPath $sbom -Algorithm SHA256).Hash
+    $invalidSBOMBytes=[Text.Encoding]::UTF8.GetBytes('{"fixture":true}')
+    $invalidSBOM=[IO.MemoryStream]::new($invalidSBOMBytes,$false)
+    try {$invalidSBOMHash=(Get-FileHash -InputStream $invalidSBOM -Algorithm SHA256).Hash}
+    finally {$invalidSBOM.Dispose()}
     [IO.File]::WriteAllBytes($buildInfo,$buildInfoBytes)
     $buildInfoHash=(Get-FileHash -LiteralPath $buildInfo -Algorithm SHA256).Hash
     $sha256=[Security.Cryptography.SHA256]::Create()
@@ -168,6 +179,9 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             @{mode='other-version';code=0;count=0;hash=$hash;uninstaller=$uninstallerHash},
             @{mode='approved';code=0;count=1;hash=$hash;sbom=$sbomHash},
             @{mode='approved';code=0;count=1;hash=$hash;sbom=$sbomHash;uninstaller=$uninstallerHash},
+            @{mode='approved';code=1;count=0;hash=$hash;sbom=$invalidSBOMHash;invalidSBOM=$true;label='invalid SBOM with a matching hash'},
+            @{mode='approved';code=0;count=0;hash=$hash;sbom=$sbomHash;changedNotice=$true;label='changed SBOM-listed notice'},
+            @{mode='approved';code=1;count=0;hash=$hash;sbom=$sbomHash;removeNotice=$true;label='missing SBOM-listed notice'},
             @{mode='approved';code=0;count=0;hash=$hash;sbom=('0'*64);uninstaller=$uninstallerHash},
             @{mode='approved';code=1;count=0;hash=$hash;sbom='invalid'},
             @{mode='approved';code=1;count=0;hash=$hash;sbom=$sbomHash;removeSBOM=$true},
@@ -201,7 +215,12 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             if($case.removeUninstallData){[IO.File]::Delete($uninstallData)}
             elseif($case.emptyUninstallData){[IO.File]::WriteAllBytes($uninstallData,[byte[]]@())}
             else{[IO.File]::WriteAllText($uninstallData,'inert uninstall data fixture')}
-            if($case.removeSBOM){[IO.File]::Delete($sbom)}else{[IO.File]::WriteAllBytes($sbom,$sbomBytes)}
+            if($case.removeSBOM){[IO.File]::Delete($sbom)}
+            elseif($case.invalidSBOM){[IO.File]::WriteAllBytes($sbom,$invalidSBOMBytes)}
+            else{[IO.File]::WriteAllBytes($sbom,$sbomBytes)}
+            if($case.removeNotice){[IO.File]::Delete($notice)}
+            elseif($case.changedNotice){[IO.File]::WriteAllText($notice,'changed fixture notice')}
+            else{[IO.File]::WriteAllBytes($notice,$noticeBytes)}
             if($case.removeBuildInfo){[IO.File]::Delete($buildInfo)}
             elseif($case.changedBuildInfo){[IO.File]::WriteAllText($buildInfo,'{"version":"0.1.1-alpha"}')}
             elseif($case.oversizedBuildInfo){[IO.File]::WriteAllBytes($buildInfo,[byte[]]::new(64KB+1))}
@@ -214,7 +233,10 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             if($case.publisher){$arguments+=@('-PayloadPublisherSHA256',$case.publisher)}
             if($case.inventory){$arguments+='-UpgradeInventory'}
             $output=@(& $stock @arguments 2>&1)
-            if($LASTEXITCODE -ne $case.code -or $output.Count -ne $case.count){throw ('Unexpected managed detection fixture result: '+$case.mode)}
+            if($LASTEXITCODE -ne $case.code -or $output.Count -ne $case.count){
+                $label=if($case.label){$case.label}else{$case.mode}
+                throw ('Unexpected managed detection fixture result: '+$label)
+            }
             if($case.count -eq 1){
                 if($case.inventory){
                     $record=$output[0] | ConvertFrom-Json
@@ -350,7 +372,7 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
         }
     } finally {$env:AW_DETECTION_FIXTURE=$saved}
 } finally {
-    foreach($file in @($payload,$fixture,$uninstaller,$uninstallData,$sbom,$buildInfo)){
+    foreach($file in @($payload,$fixture,$uninstaller,$uninstallData,$sbom,$buildInfo,$notice)){
         if(Test-Path -LiteralPath $file){Remove-Item -LiteralPath $file -Force}
     }
     for($i=$packageDirectories.Count-1;$i -ge 0;$i--){
