@@ -145,4 +145,6 @@ The AMD64 guest upgraded from the previously qualified `0.1.0-alpha.2` packages 
 
 The KVM AMD64 guest upgraded from the approved `0.1.0-alpha.2` package to `0.1.0-alpha.4` built from `5ac640dede08`. It verified managed ByeDPI traffic before and after reboot, then rolled back and purged the package while preserving policy and profile state. The host compared the executable on each boot and after rollback to the approved Debian packages and matched the upgrade executable to the verified portable archive. [AMD64 reboot and executable evidence](qualification/5ac640dede08-debian-reboot-payload.json).
 
+An ARM64 guest under QEMU emulation on the AMD64 host passed the same two-boot test with the `5ac640dede08` ARM64 package. The verifier matched the installed and rolled-back executables to their approved package bytes, checked routed traffic before and after reboot, and verified that policy and profile state survived rollback and purge. Native ARM64 endpoint qualification is pending. [ARM64 emulated reboot and executable evidence](qualification/5ac640dede08-debian-reboot-arm64-payload.json).
+
 Production rollout still requires results for the approved release packages and native endpoint architectures. It also requires organization signing and hosting, reboot and active-engine checks, and validation through the organization's endpoint-management tools.

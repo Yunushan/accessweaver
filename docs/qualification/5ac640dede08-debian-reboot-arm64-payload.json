@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "scope": "Source-built ARM64 Debian install, upgrade, active-engine reboot, rollback and purge in an offline emulated guest",
+  "sourceCommit": "5ac640dede088bae7ff15cc5cc4d1c2c4d4073a2",
+  "sourceSHA256": {
+    "scripts/test-linux-package-reboot.py": "22fb98b37ee42b8ee2e4da229434f39d3876ef78e40d85eff248edacc192b941",
+    "scripts/linux_package_reboot_guest.py": "289bdcba2c541cdcd513a7e994d37a930de3b58a3b093183c68a07fa8dbebe47",
+    "scripts/linux_package_reboot_traffic.py": "22f3f6b918ccc0bb1966e16d578727a75f3b6464927c7b7e7e50dd7bf12ffdde",
+    "scripts/test-linux-managed-byedpi.py": "e6a738ff9a57782c1c3673469367ba815909f42992ad4fdba56fc7f1bb5a3f01",
+    "scripts/linux_deb_payload.py": "26805f1e6465b40c72fef84ec55e11a2130f0b7cb6e6a79ce10ffe7eb315c2c6",
+    "scripts/build-linux-deb.py": "c32262e9314bf3ae844082dca4b2e65e02ba0ee94ef7cb2c57aa2e3dcb01a0fb",
+    "scripts/package-release.sh": "467a7a8f0d3d225148e65cf2342c809cf52f50a3740400b3096e0ec890865b35",
+    "scripts/verify_release.py": "4338d95d41b2e7c3ab394a0403c1e81ac57f76e524e06f776c58b4a1b2976744",
+    "scripts/release_archive.py": "d4f2da52a8519042193e7bf1f330fff5372c2b6e736a5aed1442d218595dd517",
+    "scripts/build-all.sh": "6d8712ac794b04cbd9406d819557db3d74d6f31db43c138a45f5f74be146ccdc",
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+    "scripts/sbom-tools/go.mod": "d31958b2a0537cc549be979c567d829812523558d713cc50c59f20caa747a211",
+    "scripts/sbom-tools/go.sum": "da615e479f84e5f7278666ec31f14478644b08f1b3c6f62b5b4a4fb6e417ba50"
+  },
+  "previousPackageEvidence": "docs/qualification/fc603251a130-linux-package-reboot.json",
+  "portableArchiveSHA256": "d59011067958814391cf662e4f697b936d513960474a4fc77c520cd1b4db39ba",
+  "guestReportSHA256": "957bb161e876f27e23f2369769b3daf2060ce70d67e6ff8fc2e39b9e4d7471d6",
+  "build": {
+    "version": "0.1.0-alpha.4",
+    "commit": "5ac640dede088bae7ff15cc5cc4d1c2c4d4073a2",
+    "sourceState": "clean",
+    "builtAt": "2026-11-15T13:39:53Z",
+    "goVersion": "go1.27.4",
+    "platform": "linux",
+    "arch": "arm64"
+  },
+  "report": {
+    "schemaVersion": 2,
+    "scope": "Offline Ubuntu Linux QEMU guest kernel restart and Debian lifecycle",
+    "guestArchitecture": "arm64",
+    "hostArchitecture": "amd64",
+    "emulation": "tcg",
+    "imageSHA256": "4b8bb9cf5476faca5079ad23b3664ccb14faeed311ffc739a3655fd5b3e014f0",
+    "firmwareSHA256": {
+      "code": "de01af793c9ff318ac206d8c12e404a2e89baa39bd10e12ed0437a2f69fe012a",
+      "initialVariables": "b3b855c5a80310168051164986855692d1bdb06e67619856177965cd87c6774f"
+    },
+    "packagesSHA256": {
+      "older.deb": "f5399328d1fcc849956900d5eed48e104aac42ed1ef221a993349a6d592374ae",
+      "newer.deb": "f3525cbc2285c770dbaf539546be08a7b80fe9000fa4d8e8c011aa736b5999d0"
+    },
+    "packageControllerSHA256": {
+      "older.deb": "cea8dd11576a6d36f527e54a412bcaaf6a730b30dfa17f959ac3a49c7e4521f0",
+      "newer.deb": "27b5246d159d9fc15386c8572616e4d87a0dd76723cdb53d21bd57f91bc0837c"
+    },
+    "driverSHA256": "22fb98b37ee42b8ee2e4da229434f39d3876ef78e40d85eff248edacc192b941",
+    "guestProbeSHA256": "289bdcba2c541cdcd513a7e994d37a930de3b58a3b093183c68a07fa8dbebe47",
+    "payloadProbeSHA256": "26805f1e6465b40c72fef84ec55e11a2130f0b7cb6e6a79ce10ffe7eb315c2c6",
+    "qemuVersion": "QEMU emulator version 10.2.1 (Debian 1:10.2.1+ds-1ubuntu3.3)",
+    "guestExternalNetworkDisabled": true,
+    "firstBoot": {
+      "phase": "before-reboot",
+      "guestArchitecture": "arm64",
+      "bootSHA256": "3d39ef6cc0652949b04b75bbefc585509e24a69797d308dc5fdd5ba0a2918955",
+      "installedVersion": "0.1.0~alpha.4",
+      "acceptedRevision": 2,
+      "controllerSHA256": "27b5246d159d9fc15386c8572616e4d87a0dd76723cdb53d21bd57f91bc0837c",
+      "initialControllerSHA256": "cea8dd11576a6d36f527e54a412bcaaf6a730b30dfa17f959ac3a49c7e4521f0",
+      "liveEngine": {
+        "connectedWhenRebootRequested": true,
+        "ordinaryControllerAndVendor": true,
+        "routedBytesVerified": true
+      }
+    },
+    "secondBoot": {
+      "phase": "after-reboot",
+      "guestArchitecture": "arm64",
+      "bootSHA256": "de509476fa532623dd6f3e4a8d1c2a49d3615d93f68e9cf61222214cabe364e1",
+      "installedVersion": "0.1.0~alpha.4",
+      "acceptedRevision": 2,
+      "controllerSHA256": "27b5246d159d9fc15386c8572616e4d87a0dd76723cdb53d21bd57f91bc0837c",
+      "rollbackVersion": "0.1.0~alpha.2",
+      "rollbackControllerSHA256": "cea8dd11576a6d36f527e54a412bcaaf6a730b30dfa17f959ac3a49c7e4521f0",
+      "rollbackKeptCurrentPolicy": true,
+      "replayRefused": true,
+      "purgePreservedState": true,
+      "liveEngine": {
+        "oldEngineAndListenerAbsent": true,
+        "ownedEngineAndClientStopped": true,
+        "restoredApprovalRoutedBytes": true
+      }
+    },
+    "productionQualificationComplete": false,
+    "liveByedpi": {
+      "engineSHA256": "a1a27de042a46084c78db34cfd9ca2a0dff7c9b3d0574942480f268d54569ca4",
+      "trafficProbeSHA256": "22f3f6b918ccc0bb1966e16d578727a75f3b6464927c7b7e7e50dd7bf12ffdde",
+      "sharedNetworkProbeSHA256": "e6a738ff9a57782c1c3673469367ba815909f42992ad4fdba56fc7f1bb5a3f01"
+    }
+  },
+  "nativeEndpointQualificationComplete": false,
+  "productionQualificationComplete": false
+}

@@ -174,7 +174,8 @@
             "docs/qualification/fc603251a130-linux-package-reboot.json",
             "docs/qualification/0c9c8fd3806c-linux-package-reboot.json",
             "docs/qualification/16632c4b2a7f-linux-package-arm64-reboot.json",
-            "docs/qualification/5ac640dede08-debian-reboot-payload.json"
+            "docs/qualification/5ac640dede08-debian-reboot-payload.json",
+            "docs/qualification/5ac640dede08-debian-reboot-arm64-payload.json"
           ]
         }
       ]
