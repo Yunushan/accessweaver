@@ -55,7 +55,12 @@ function Save-Journal {
     }
     Publish-WorkflowFile $script:journalPath ($encoding.GetBytes($text))
 }
-function Under([string]$path,[string]$parent) { $p=[IO.Path]::GetFullPath($path);$b=[IO.Path]::GetFullPath($parent).TrimEnd('\')+'\';return $p.StartsWith($b,[StringComparison]::OrdinalIgnoreCase) }
+function Under([string]$path,[string]$parent) {
+    $separator=[IO.Path]::DirectorySeparatorChar
+    $path=[IO.Path]::GetFullPath($path)
+    $base=[IO.Path]::GetFullPath($parent).TrimEnd($separator)+$separator
+    return $path.StartsWith($base,[StringComparison]::OrdinalIgnoreCase)
+}
 function No-Reparse([string]$path) {
     $current=[IO.Path]::GetFullPath($path)
     while ($current) { if ((Test-Path -LiteralPath $current) -and ((Get-Item -LiteralPath $current -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Reparse points are not supported in installation paths' };$next=Split-Path -Parent $current;if ($next -eq $current) {break};$current=$next }
@@ -2307,13 +2312,14 @@ function Assert-ConfiguredDNSServers([object[]]$Adapters,[object[]]$Records,[str
         }
     }
 }
-function Test-DNSIPv4Answer([object[]]$Answers,[string]$Name) {
+function Test-DNSAddressAnswer([object[]]$Answers,[string]$Name,[ValidateSet('A','AAAA')][string]$Type) {
+    $family=if($Type -ceq 'A'){[Net.Sockets.AddressFamily]::InterNetwork}else{[Net.Sockets.AddressFamily]::InterNetworkV6}
     foreach($answer in $Answers){
         $address=$null
-        if($answer.Section -eq 'Answer' -and $answer.Type -eq 'A' -and
+        if($answer.Section -eq 'Answer' -and $answer.Type -eq $Type -and
             $answer.Name -is [string] -and $answer.Name.TrimEnd('.') -ieq $Name -and
             $answer.IPAddress -is [string] -and [Net.IPAddress]::TryParse($answer.IPAddress,[ref]$address) -and
-            $address.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetwork){return $true}
+            $address.AddressFamily -eq $family -and -not $address.IsIPv4MappedToIPv6){return $true}
     }
     return $false
 }
@@ -2323,7 +2329,11 @@ function Wait-OrdinaryDNSResolver([int]$TimeoutSeconds) {
         try {
             Clear-DnsClientCache -ErrorAction Stop
             $answers=@(Resolve-DnsName -Name 'example.com.' -Type A -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
-            if(Test-DNSIPv4Answer $answers 'example.com'){return $true}
+            if(Test-DNSAddressAnswer $answers 'example.com' 'A'){
+                # Query the AAAA record through the same ordinary resolver.
+                $answers=@(Resolve-DnsName -Name 'example.com.' -Type AAAA -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
+                if(Test-DNSAddressAnswer $answers 'example.com' 'AAAA'){return $true}
+            }
         }catch{}
         if($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds){break}
         Start-Sleep -Seconds 2
@@ -2340,7 +2350,7 @@ function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds=30,
             try {
                 Clear-DnsClientCache -ErrorAction Stop
                 $answers=@(Resolve-DnsName -Name 'example.net.' -Server $server -Type A -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
-                $ready=Test-DNSIPv4Answer $answers 'example.net'
+                $ready=Test-DNSAddressAnswer $answers 'example.net' 'A'
             } catch {}
             if(-not $ready){$server}
         })
@@ -2882,7 +2892,7 @@ function Configure-DNS([string]$method) {
             $recoveryAttempted=$true
             Restore-DNS $snapshotSHA256 -ResolverReload $resolverReload
             if($resolverReload){[void]$script:undo.Remove($resolverReload)}
-            throw 'Resolver verification failed; original DNS settings restored: the ordinary resolver did not return the expected DNS answer'
+            throw 'Resolver verification failed; original DNS settings restored: the ordinary resolver did not return valid A and AAAA answers'
         }
         if($method -ceq 'dnscrypt'){
             # The ordinary resolver can succeed through one family even when a
