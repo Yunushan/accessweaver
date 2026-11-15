@@ -584,9 +584,12 @@ def load_windows_upgrade_start_receipt(directory, path, fingerprint):
                "rebootEvidenceSHA256", "revocationListSHA256")
     strings = ("attemptID", "sourceCommit", "sourceRef", "target", "windowsSetupBaselineArgument")
     require(isinstance(receipt, dict) and type(receipt.get("schemaVersion")) is int
-            and receipt["schemaVersion"] in (1, 2), "Malformed Windows upgrade start receipt")
+            and receipt["schemaVersion"] in (1, 2, 3), "Malformed Windows upgrade start receipt")
+    if receipt["schemaVersion"] == 3:
+        digests += ("previousStartReceiptSHA256", "previousResultReceiptSHA256")
+        strings += ("previousAttemptID",)
     fields = {*digests, *strings, "schemaVersion", "revocationPolicySequence"}
-    if receipt["schemaVersion"] == 2:
+    if receipt["schemaVersion"] >= 2:
         fields.add("boot")
     require(receipt.keys() == fields
             and type(receipt["revocationPolicySequence"]) is int and receipt["revocationPolicySequence"] > 0
@@ -594,8 +597,12 @@ def load_windows_upgrade_start_receipt(directory, path, fingerprint):
             and all(isinstance(receipt[field], str) for field in strings)
             and re.fullmatch(r"[a-f0-9]{32}", receipt["attemptID"]),
             "Malformed Windows upgrade start receipt")
-    if receipt["schemaVersion"] == 2:
+    if "boot" in receipt:
         validate_windows_boot(receipt["boot"])
+    if receipt["schemaVersion"] == 3:
+        require(re.fullmatch(r"[a-f0-9]{32}", receipt["previousAttemptID"])
+                and receipt["previousAttemptID"] != receipt["attemptID"],
+                "Malformed Windows upgrade retry lineage")
     return receipt
 
 
@@ -620,6 +627,23 @@ def load_windows_upgrade_result_receipt(directory, path, fingerprint, start_rece
                  or (code == 0 and detection == "unverified" and reason in WINDOWS_DETECTION_FAILURE_REASONS)),
             "Malformed Windows upgrade result receipt")
     return {field: receipt[field] for field in sorted(fields)}
+
+
+def require_windows_attempt_binding(receipt, report, policy):
+    update = report["managedUpdate"]
+    bindings = {
+        "sourceCommit": report["sourceCommit"], "sourceRef": report["sourceRef"], "target": update["target"],
+        "manifestSHA256": report["signedReleaseManifestSHA256"],
+        "approvalCertificateSHA256": report["approvalCertificateSHA256"],
+        "rebootEvidenceSHA256": update["windowsUpgradeDetection"]["rebootEvidenceSHA256"],
+    }
+    require(all(receipt[field] == value for field, value in bindings.items()),
+            "Signed Windows upgrade differs from the saved start receipt")
+    original_sequence = receipt["revocationPolicySequence"]
+    require(policy["sequence"] >= original_sequence and (
+        policy["sequence"] != original_sequence
+        or receipt["revocationListSHA256"] == report["revocationListSHA256"]
+    ), "Windows recovery requires the original revocation policy or a newer sequence")
 
 
 def revocation_time(value):
@@ -1159,9 +1183,9 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                 "Windows Setup wait limit requires Setup launch and a positive duration within the Windows wait range")
     start_receipt = None
     if windows_upgrade_start_receipt is not None:
-        require(detect_installed_windows_upgrade and not launch_staged_windows_setup
+        require(detect_installed_windows_upgrade != launch_staged_windows_setup
                 and resume_windows_upgrade_setup_sha256 is None and resume_windows_upgrade_baseline_argument is None,
-                "A Windows start receipt is for read-only detection and replaces explicit retry pins")
+                "A Windows start receipt requires detection or retry launch and replaces explicit retry pins")
         path, fingerprint = windows_upgrade_start_receipt
         start_receipt = load_windows_upgrade_start_receipt(directory, path, fingerprint)
         resume_windows_upgrade_setup_sha256 = start_receipt["installerSHA256"]
@@ -1175,6 +1199,12 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
         require(launch_staged_windows_setup and isinstance(windows_upgrade_attempt_id, str)
                 and re.fullmatch(r"[a-f0-9]{32}", windows_upgrade_attempt_id),
                 "A Windows upgrade attempt ID requires Setup launch and 32 lowercase hexadecimal characters")
+    if launch_staged_windows_setup and start_receipt is not None:
+        require(windows_upgrade_attempt_id is not None and windows_upgrade_attempt_id != start_receipt["attemptID"],
+                "A receipt-bound Windows retry requires a new attempt ID")
+        require(recorded_result is not None and recorded_result["installedDetection"] == "setup-failed",
+                "A receipt-bound Windows retry requires a saved Setup failure result")
+        require("boot" in start_receipt, "A receipt-bound Windows retry requires saved endpoint identity")
     if windows_setup_wait_seconds is not None:
         require(windows_upgrade_attempt_id is not None, "Windows Setup wait limit requires a Windows upgrade attempt ID")
     if windows_upgrade_inventory is not None:
@@ -1444,29 +1474,24 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             require_current_revocation_policy(policy)
             report["revocationPolicySequence"] = policy["sequence"]
             report["revocationPolicyExpiresAt"] = policy["expiresAt"]
+        if start_receipt is not None:
+            require_windows_attempt_binding(start_receipt, report, policy)
+        if launch_staged_windows_setup and start_receipt is not None:
+            observed_boot = read_windows_boot(start_receipt["attemptID"])
+            saved_boot = start_receipt["boot"]
+            require(observed_boot["endpointSHA256"] == saved_boot["endpointSHA256"]
+                    and observed_boot["bootTicks"] >= saved_boot["bootTicks"],
+                    "Receipt-bound Windows retry requires the original endpoint and a current boot observation")
         if detect_installed_windows_upgrade:
             update = report["managedUpdate"]
             current_boot = None
             if start_receipt is not None:
-                bindings = {
-                    "sourceCommit": commit, "sourceRef": ref, "target": update["target"],
-                    "manifestSHA256": manifest_sha256,
-                    "approvalCertificateSHA256": certificate_sha256,
-                    "rebootEvidenceSHA256": update["windowsUpgradeDetection"]["rebootEvidenceSHA256"],
-                }
-                require(all(start_receipt[field] == value for field, value in bindings.items()),
-                        "Signed Windows upgrade differs from the saved start receipt")
-                original_sequence = start_receipt["revocationPolicySequence"]
-                require(policy["sequence"] >= original_sequence and (
-                    policy["sequence"] != original_sequence
-                    or start_receipt["revocationListSHA256"] == report["revocationListSHA256"]
-                ), "Windows detection requires the original revocation policy or a newer sequence")
                 update["attemptID"] = start_receipt["attemptID"]
                 if recorded_result is not None:
                     update["recordedSetupResult"] = recorded_result
                 restart_required = recorded_result is not None and recorded_result["setupExitCode"] == 3010
                 restart_unconfirmed = recorded_result is None
-                if start_receipt["schemaVersion"] == 2:
+                if "boot" in start_receipt:
                     try:
                         current_boot = read_windows_boot(start_receipt["attemptID"])
                     except (ValueError, OSError, subprocess.SubprocessError):
@@ -1522,6 +1547,16 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                         "revocationPolicySequence": policy["sequence"],
                     }
                     update["attemptID"] = windows_upgrade_attempt_id
+                    if start_receipt is not None:
+                        require(attempt["boot"]["bootTicks"] == observed_boot["bootTicks"],
+                                "Windows retry boot evidence changed before dispatch")
+                        attempt.update({
+                            "schemaVersion": 3,
+                            "previousAttemptID": start_receipt["attemptID"],
+                            "previousStartReceiptSHA256": windows_upgrade_start_receipt[1].lower(),
+                            "previousResultReceiptSHA256": windows_upgrade_result_receipt[1].lower(),
+                        })
+                        update["previousAttemptID"] = start_receipt["attemptID"]
                 try:
                     code = launch_windows_setup(stage_directory, update, policy, attempt=attempt,
                                                 size=installer["size"], directory_identity=stage_directory_id,
@@ -1617,7 +1652,7 @@ def main():
     verify_args.add_argument("--stage-directory", type=Path,
                              help="existing trusted directory for the authenticated eligible installer")
     verify_args.add_argument("--windows-upgrade-start-receipt", nargs=2, metavar=("PATH", "SHA256"),
-                             help="bind read-only detection to an independently pinned start receipt")
+                             help="bind detection or a new retry launch to an independently pinned start receipt")
     verify_args.add_argument("--windows-upgrade-result-receipt", nargs=2, metavar=("PATH", "SHA256"),
                              help="verify an independently pinned result receipt against the saved start receipt")
     verify_args.add_argument("--windows-upgrade-attempt-id",

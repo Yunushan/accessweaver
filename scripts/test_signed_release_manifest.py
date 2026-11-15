@@ -1941,7 +1941,99 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 launch.assert_not_called()
                 self.assertEqual(list(staging.iterdir()), [start_file])
                 self.assertEqual(release.digest(start_file), start_digest)
-                start_file.unlink()
+
+                retry_attempt_id = "b" * 32
+                retry_from_receipt = {**launch_options, "windows_upgrade_start_receipt": receipt,
+                                      "windows_upgrade_attempt_id": retry_attempt_id}
+                with patch.object(release, "stage_managed_update") as stage:
+                    with self.assertRaisesRegex(ValueError, "saved Setup failure result"):
+                        self.verify(approved, pin, policy_pin=newer_pin, **retry_from_receipt)
+                    for code, status in ((0, "detected"), (3010, "restart-required")):
+                        terminal_pin = release.write_windows_upgrade_receipt(completed_receipt, {
+                            **attempt, "setupExitCode": code, "installedDetection": status,
+                        })
+                        try:
+                            with self.assertRaisesRegex(ValueError, "saved Setup failure result"):
+                                self.verify(approved, pin, policy_pin=newer_pin, **retry_from_receipt,
+                                            windows_upgrade_result_receipt=(completed_receipt, terminal_pin))
+                        finally:
+                            completed_receipt.unlink()
+                    failure_pin = release.write_windows_upgrade_receipt(completed_receipt, {
+                        **attempt, "setupExitCode": 1603, "installedDetection": "setup-failed",
+                    })
+                    retry_from_receipt["windows_upgrade_result_receipt"] = (completed_receipt, failure_pin)
+                    for same_or_missing_id in (attempt_id, None):
+                        with self.assertRaisesRegex(ValueError, "requires a new attempt ID"):
+                            self.verify(approved, pin, policy_pin=newer_pin,
+                                        **{**retry_from_receipt, "windows_upgrade_attempt_id": same_or_missing_id})
+                    for observed_retry_boot in ({**initial_boot, "endpointSHA256": "5" * 64},
+                                                {**initial_boot, "bootTicks": "638899999999999999"}):
+                        boot.side_effect = [observed_retry_boot]
+                        with self.assertRaisesRegex(ValueError, "original endpoint and a current boot"):
+                            self.verify(approved, pin, policy_pin=newer_pin, **retry_from_receipt)
+                    boot.side_effect = None
+                    stage.assert_not_called()
+                launch.assert_not_called()
+                self.assertEqual(set(staging.iterdir()), {start_file, completed_receipt})
+
+                retry_boot = {**later_boot, "endpointSHA256": "b" * 64}
+                boot.side_effect = [later_boot, {**retry_boot, "bootTicks": initial_boot["bootTicks"]}]
+                try:
+                    with patch.object(release, "stage_managed_update"), self.assertRaisesRegex(
+                            ValueError, "boot evidence changed before dispatch"):
+                        self.verify(approved, pin, policy_pin=newer_pin, **retry_from_receipt)
+                finally:
+                    boot.side_effect = None
+                launch.assert_not_called()
+                self.assertEqual(set(staging.iterdir()), {start_file, completed_receipt})
+                boot.side_effect = [later_boot, retry_boot]
+                process = Mock()
+                process.wait.return_value = 0
+
+                def dispatch_receipt_bound_retry(*args, **kwargs):
+                    with patch.object(release.subprocess, "Popen", return_value=process) as dispatch:
+                        result = native_launch(*args, **kwargs)
+                        dispatch.assert_called_once()
+                        self.assertEqual(dispatch.call_args.args[0][-1], original_baseline)
+                        return result
+
+                launch.side_effect = dispatch_receipt_bound_retry
+                try:
+                    retried = self.verify(approved, pin, policy_pin=newer_pin, **retry_from_receipt)["managedUpdate"]
+                finally:
+                    launch.side_effect = None
+                    boot.side_effect = None
+                self.assertEqual(retried["setupExitCode"], 0)
+                self.assertEqual(retried["installedDetection"], "detected")
+                self.assertEqual(retried["previousAttemptID"], attempt_id)
+                self.assertEqual(release.digest(start_file), start_digest)
+                self.assertEqual(release.digest(completed_receipt), failure_pin)
+                retry_start = staging / (retry_attempt_id + ".started.json")
+                retry_result = staging / (retry_attempt_id + ".result.json")
+                lineage = release.load_windows_upgrade_start_receipt(approved, retry_start, retried["startReceiptSHA256"])
+                self.assertEqual(lineage, {**attempt, "schemaVersion": 3, "attemptID": retry_attempt_id,
+                                           "boot": retry_boot, "revocationPolicySequence": 5,
+                                           "revocationListSHA256": newer_pin, "previousAttemptID": attempt_id,
+                                           "previousStartReceiptSHA256": start_digest,
+                                           "previousResultReceiptSHA256": failure_pin})
+                self.assertEqual(release.load_windows_upgrade_result_receipt(
+                    approved, retry_result, retried["resultReceiptSHA256"], lineage,
+                ), {"setupExitCode": 0, "installedDetection": "detected"})
+                launch.reset_mock()
+                boot.side_effect = [retry_boot, retry_boot]
+                try:
+                    retried_detection = self.verify(
+                        approved, pin, policy_pin=newer_pin, **receipt_options,
+                        windows_upgrade_start_receipt=(retry_start, retried["startReceiptSHA256"]),
+                        windows_upgrade_result_receipt=(retry_result, retried["resultReceiptSHA256"]),
+                    )["managedUpdate"]
+                finally:
+                    boot.side_effect = None
+                self.assertEqual(retried_detection["attemptID"], retry_attempt_id)
+                self.assertEqual(retried_detection["installedDetection"], "detected")
+                launch.assert_not_called()
+                for fixture_path in (start_file, completed_receipt, retry_start, retry_result, staged_path):
+                    fixture_path.unlink()
             self.write_policy(self.policy)
         strict_args = [*retry_cli, "--require-windows-setup-wrong-baseline-refusal"]
         refused = subprocess.run(strict_args, capture_output=True, text=True, timeout=30)
