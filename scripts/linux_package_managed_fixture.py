@@ -28,21 +28,25 @@ class ManagedPackageFixture:
         require(self.root != Path("/") and self.root.stat().st_uid == 0, "Expected an owned private package root")
         work = root / "managed-fixture"
         work.mkdir(mode=0o755)
+        work.chmod(0o755)
         self.private = work / "private"
         self.private.mkdir(mode=0o700)
         self.profile_path = root / f"home/fixture/.config/AccessWeaver/profiles/{PROFILE_ID}.json"
         self.policy_paths = [root / path for path in ("etc/accessweaver/installation.json",
                                                      "etc/accessweaver/acceptance.json",
                                                      "etc/.accessweaver-policy.lock")]
-        (root / "etc").mkdir(mode=0o755, exist_ok=True)
+        for directory in (root / "etc", root / "home"):
+            directory.mkdir(mode=0o755, exist_ok=True)
+            directory.chmod(0o755)
         home = root / "home/fixture"
-        home.mkdir(mode=0o700, parents=True)
+        home.mkdir(mode=0o700)
         os.chown(home, UID, UID)
         engine = work / "inert-engine"
         if byedpi is not None:
             engine = work / "bin" / "ciadpi"
-            engine.parent.mkdir(mode=0o755)
-            (root / "dev").mkdir(mode=0o755)
+            for directory in (engine.parent, root / "dev"):
+                directory.mkdir(mode=0o755)
+                directory.chmod(0o755)
             null = root / "dev/null"
             os.mknod(null, stat.S_IFCHR | 0o666, os.makedev(1, 3))
             null.chmod(0o666)

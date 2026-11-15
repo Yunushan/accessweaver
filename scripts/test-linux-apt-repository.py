@@ -63,10 +63,15 @@ def apt_client(work, url, keyring, fingerprint, arch):
     config = work / "config"
     database = root / "var/lib/dpkg"
     status = database / "status"
+    logs = work / "logs"
     for directory in (database / "info", database / "updates", work / "state/lists",
                       work / "cache/archives", config / "apt.conf.d", config / "trusted.gpg.d",
-                      config / "sources.list.d"):
+                      config / "sources.list.d", config / "preferences.d", logs):
         directory.mkdir(parents=True)
+    # The downloader and ordinary-user executable probe need to traverse
+    # these directories even when the fixture uses a restrictive umask.
+    for directory in (work, root, work / "state", work / "state/lists", work / "cache", work / "cache/archives"):
+        directory.chmod(0o755)
     status.touch()
     (config / "sources.list.d/accessweaver.sources").write_text(
         f"Types: deb\nURIs: {url}\nSuites: {SUITE}\nComponents: main\nArchitectures: {arch}\n"
@@ -74,7 +79,7 @@ def apt_client(work, url, keyring, fingerprint, arch):
     options = work / "config.conf"
     options.write_text(
         f'Dir::Etc "{config}";\nDir::State "{work / "state"}";\n'
-        f'Dir::State::status "{status}";\nDir::Cache "{work / "cache"}";\n'
+        f'Dir::State::status "{status}";\nDir::Cache "{work / "cache"}";\nDir::Log "{logs}";\n'
         'Dir::Etc::sourcelist "sources.list";\nDir::Etc::sourceparts "sources.list.d";\n'
         'Dir::Etc::main "apt.conf";\nDir::Etc::parts "apt.conf.d";\n'
         'Dir::Etc::trusted "trusted.gpg";\nDir::Etc::trustedparts "trusted.gpg.d";\n'

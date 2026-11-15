@@ -99,6 +99,8 @@ def exercise(work, arch, old, old_pin, new, new_pin, other, other_pin, byedpi=No
     require(sha(before) == sha(repeat), "Repeat builds disagree or exclusive publication altered the first package")
 
     root = work / "root"
+    root.mkdir()
+    root.chmod(0o755)
     database = root / "var/lib/dpkg"
     database.mkdir(parents=True)
     for name in ("info", "updates"):
