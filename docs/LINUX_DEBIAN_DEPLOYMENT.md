@@ -86,4 +86,6 @@ On a disposable supported Linux host with the repository's Go toolchain, Python 
 bash scripts/test-linux-package-candidate.sh amd64 "$(git rev-parse HEAD)" /var/tmp/accessweaver-package-report
 ```
 
+The [exact-source AMD64 rehearsal](qualification/227b43d8500e-linux-package-candidate.json) ran this entry point on Ubuntu 26.04 WSL. Both package routes installed the same executable bytes for the two fixture versions and preserved synthetic policy and profile files. The architecture check refused an ARM64 report on that AMD64 host.
+
 Production rollout still requires results for the approved release packages and native endpoint architectures. It also requires organization signing and hosting, reboot and active-engine checks, and validation through the organization's endpoint-management tools.

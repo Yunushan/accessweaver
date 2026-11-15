@@ -160,7 +160,8 @@
             "docs/qualification/16632c4b2a7f-linux-deb-lifecycle.json",
             "docs/LINUX_DEBIAN_DEPLOYMENT.md",
             "docs/qualification/4caa86d5b6d0-linux-apt-repository.json",
-            ".github/workflows/linux-package-lifecycle.yml"
+            ".github/workflows/linux-package-lifecycle.yml",
+            "docs/qualification/227b43d8500e-linux-package-candidate.json"
           ]
         }
       ]
@@ -587,7 +588,8 @@
             "docs/qualification/16632c4b2a7f-linux-deb-lifecycle.json",
             "docs/LINUX_DEBIAN_DEPLOYMENT.md",
             "docs/qualification/4caa86d5b6d0-linux-apt-repository.json",
-            ".github/workflows/linux-package-lifecycle.yml"
+            ".github/workflows/linux-package-lifecycle.yml",
+            "docs/qualification/227b43d8500e-linux-package-candidate.json"
           ]
         },
         {
@@ -621,7 +623,8 @@
             "docs/qualification/16632c4b2a7f-linux-deb-lifecycle.json",
             "docs/LINUX_DEBIAN_DEPLOYMENT.md",
             "docs/qualification/4caa86d5b6d0-linux-apt-repository.json",
-            ".github/workflows/linux-package-lifecycle.yml"
+            ".github/workflows/linux-package-lifecycle.yml",
+            "docs/qualification/227b43d8500e-linux-package-candidate.json"
           ]
         }
       ]
