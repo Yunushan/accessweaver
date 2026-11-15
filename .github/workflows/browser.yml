@@ -4,7 +4,7 @@ on:
   workflow_call:
   workflow_dispatch:
   push:
-    branches: [codex/dns-adapter-coverage]
+    branches: [codex/dns-adapter-coverage, 'codex/webkit-border-surfaces-candidate']
     paths:
       - web/app.js
       - web/app.css
