@@ -1043,20 +1043,30 @@ def detect_windows_upgrade(qualification, publisher_pin):
     return "unverified", "detector-result-invalid"
 
 
-def record_windows_installed_detection(update, publisher_pin, policy):
-    def policy_is_current():
-        try:
-            require_current_revocation_policy(policy)
-        except ValueError:
+def check_windows_upgrade_policy(report, policy):
+    try:
+        require_current_revocation_policy(policy)
+    except ValueError:
+        report["revocationCheckPassed"] = False
+        update = report["managedUpdate"]
+        if update.get("installedDetection") in (None, "detected"):
             update["installedDetection"] = "unverified"
             update["installedDetectionReason"] = "revocation-policy-expired"
-            return False
-        return True
+        return False
+    return True
 
-    if not policy_is_current():
+
+def finish_windows_upgrade_report(report, policy):
+    check_windows_upgrade_policy(report, policy)
+    return report
+
+
+def record_windows_installed_detection(report, publisher_pin, policy):
+    if not check_windows_upgrade_policy(report, policy):
         return
+    update = report["managedUpdate"]
     detection, reason = detect_windows_upgrade(update["windowsUpgradeDetection"], publisher_pin)
-    if policy_is_current():
+    if check_windows_upgrade_policy(report, policy):
         update["installedDetection"] = detection
         if reason is not None:
             update["installedDetectionReason"] = reason
@@ -1462,23 +1472,23 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     except (ValueError, OSError, subprocess.SubprocessError):
                         update["installedDetection"] = "unverified"
                         update["installedDetectionReason"] = "boot-evidence-unavailable"
-                        return report
+                        return finish_windows_upgrade_report(report, policy)
                     old_boot = start_receipt["boot"]
                     if current_boot["endpointSHA256"] != old_boot["endpointSHA256"]:
                         update["installedDetection"] = "unverified"
                         update["installedDetectionReason"] = "endpoint-mismatch"
-                        return report
+                        return finish_windows_upgrade_report(report, policy)
                     if current_boot["bootTicks"] <= old_boot["bootTicks"] and (restart_required or restart_unconfirmed):
                         update["installedDetection"] = "unverified"
                         update["installedDetectionReason"] = (
                             "restart-required" if restart_required else "restart-status-unverified"
                         )
-                        return report
+                        return finish_windows_upgrade_report(report, policy)
                 elif restart_required or restart_unconfirmed:
                     update["installedDetection"] = "unverified"
                     update["installedDetectionReason"] = "boot-evidence-unavailable"
-                    return report
-            record_windows_installed_detection(update, payload_publisher, policy)
+                    return finish_windows_upgrade_report(report, policy)
+            record_windows_installed_detection(report, payload_publisher, policy)
             if current_boot is not None and update["installedDetection"] == "detected":
                 try:
                     confirmed_boot = read_windows_boot(start_receipt["attemptID"])
@@ -1489,12 +1499,6 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     if confirmed_boot != current_boot:
                         update["installedDetection"] = "unverified"
                         update["installedDetectionReason"] = "boot-evidence-changed"
-                try:
-                    require_current_revocation_policy(policy)
-                except ValueError:
-                    report["revocationCheckPassed"] = False
-                    update["installedDetection"] = "unverified"
-                    update["installedDetectionReason"] = "revocation-policy-expired"
         if stage_directory is not None:
             update = report["managedUpdate"]
             require(update["updateAvailable"], "Candidate is not an eligible managed upgrade")
@@ -1533,10 +1537,12 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     update["setupExitCode"] = None
                     update["installedDetection"] = "unverified"
                     update["installedDetectionReason"] = reasons[type(error)]
-                    return report
+                    if isinstance(error, WindowsSetupDispatchPolicyExpired):
+                        report["revocationCheckPassed"] = False
+                    return finish_windows_upgrade_report(report, policy)
                 update["setupExitCode"] = code
                 if code == 0:
-                    record_windows_installed_detection(update, payload_publisher, policy)
+                    record_windows_installed_detection(report, payload_publisher, policy)
                 elif code == 3010:
                     update["installedDetection"] = "restart-required"
                 else:
@@ -1558,15 +1564,9 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                         update["resultReceiptStatus"] = "unverified"
                     else:
                         update["resultReceiptStatus"] = "published"
-                    if update["installedDetection"] == "detected":
-                        # Receipt publication can outlast the policy. Keep the historical
-                        # observation, but require current policy for the live result.
-                        try:
-                            require_current_revocation_policy(policy)
-                        except ValueError:
-                            report["revocationCheckPassed"] = False
-                            update["installedDetection"] = "unverified"
-                            update["installedDetectionReason"] = "revocation-policy-expired"
+        if detect_installed_windows_upgrade or launch_staged_windows_setup:
+            # A Setup exit code or saved receipt remains a historical observation.
+            return finish_windows_upgrade_report(report, policy)
         return report
 
 

@@ -1597,8 +1597,10 @@ class SignedReleaseManifestTests(unittest.TestCase):
                     with self.subTest(reason=reason):
                         launch.side_effect = fail_wait if reason == "setup-wait-failed" else expire_before_dispatch
                         try:
-                            update = self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
-                                                 windows_upgrade_attempt_id=attempt_id)["managedUpdate"]
+                            report = self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
+                                                 windows_upgrade_attempt_id=attempt_id)
+                            update = report["managedUpdate"]
+                            self.assertEqual(report["revocationCheckPassed"], reason == "setup-wait-failed")
                             self.assertEqual(update["attemptID"], attempt_id)
                             self.assertIsNone(update["setupExitCode"])
                             self.assertEqual(update["installedDetection"], "unverified")
@@ -1657,17 +1659,21 @@ class SignedReleaseManifestTests(unittest.TestCase):
                             return real_check(policy, **kwargs)
 
                         with patch.object(release, "require_current_revocation_policy", side_effect=check_after_native_call):
-                            result = self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
-                                                 windows_upgrade_attempt_id=attempt_id)["managedUpdate"]
-                        self.assertEqual(result["setupExitCode"], 0)
-                        self.assertEqual(result["installedDetection"], "unverified")
-                        self.assertEqual(result["installedDetectionReason"], "revocation-policy-expired")
-                        self.assertEqual(detect.call_count, int(when == "detection"))
+                            report = self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
+                                                 windows_upgrade_attempt_id=attempt_id)
+                        result = report["managedUpdate"]
                         receipt_path = staging / (attempt_id + ".result.json")
-                        receipt = json.loads(receipt_path.read_bytes())
-                        self.assertEqual(receipt, {**attempt, "setupExitCode": 0, "installedDetection": "unverified",
-                                                   "installedDetectionReason": "revocation-policy-expired"})
-                        receipt_path.unlink()
+                        try:
+                            self.assertFalse(report["revocationCheckPassed"])
+                            self.assertEqual(result["setupExitCode"], 0)
+                            self.assertEqual(result["installedDetection"], "unverified")
+                            self.assertEqual(result["installedDetectionReason"], "revocation-policy-expired")
+                            self.assertEqual(detect.call_count, int(when == "detection"))
+                            receipt = json.loads(receipt_path.read_bytes())
+                            self.assertEqual(receipt, {**attempt, "setupExitCode": 0, "installedDetection": "unverified",
+                                                       "installedDetectionReason": "revocation-policy-expired"})
+                        finally:
+                            receipt_path.unlink(missing_ok=True)
 
                 real_write = release.write_windows_upgrade_receipt
                 policy_expired = False
@@ -1711,12 +1717,22 @@ class SignedReleaseManifestTests(unittest.TestCase):
                         self.assertEqual(write.call_args.args[0], receipt_path)
                         self.assertFalse(receipt_path.exists())
 
+                def expire_after_setup(policy, **kwargs):
+                    if launch.called:
+                        raise ValueError("Revocation policy is outside its validity window")
+                    return real_check(policy, **kwargs)
+
                 detect.reset_mock()
-                launch.return_value = 7
-                result = self.verify(approved, pin, policy_pin=launch_pin, **launch_options)["managedUpdate"]
-                self.assertEqual(result["setupExitCode"], 7)
-                self.assertEqual(result["installedDetection"], "setup-failed")
-                detect.assert_not_called()
+                for code, status in ((3010, "restart-required"), (7, "setup-failed")):
+                    with self.subTest(expired_setup_exit=code):
+                        launch.reset_mock()
+                        launch.return_value = code
+                        with patch.object(release, "require_current_revocation_policy", side_effect=expire_after_setup):
+                            report = self.verify(approved, pin, policy_pin=launch_pin, **launch_options)
+                        self.assertFalse(report["revocationCheckPassed"])
+                        self.assertEqual(report["managedUpdate"]["setupExitCode"], code)
+                        self.assertEqual(report["managedUpdate"]["installedDetection"], status)
+                        detect.assert_not_called()
                 launch.reset_mock()
                 detect_options = {**launch_options, "stage_directory": None, "launch_staged_windows_setup": False,
                                   "detect_installed_windows_upgrade": True,
@@ -1912,9 +1928,11 @@ class SignedReleaseManifestTests(unittest.TestCase):
 
                 with patch.object(release, "require_current_revocation_policy", side_effect=expire_during_recovery):
                     boot.side_effect = [{**initial_boot, "bootTicks": "638900000000000001"}]
-                    expired = self.verify(approved, pin, policy_pin=newer_pin, **receipt_options,
-                                          windows_upgrade_start_receipt=receipt)["managedUpdate"]
+                    report = self.verify(approved, pin, policy_pin=newer_pin, **receipt_options,
+                                         windows_upgrade_start_receipt=receipt)
                     boot.side_effect = None
+                expired = report["managedUpdate"]
+                self.assertFalse(report["revocationCheckPassed"])
                 self.assertEqual(expired["attemptID"], attempt_id)
                 self.assertEqual(expired["installedDetection"], "unverified")
                 self.assertEqual(expired["installedDetectionReason"], "revocation-policy-expired")
