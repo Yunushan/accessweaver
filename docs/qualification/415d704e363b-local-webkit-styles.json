@@ -499,5 +499,51 @@
     }
   ],
   "installedQualificationComplete": false,
-  "productionQualificationComplete": false
+  "productionQualificationComplete": false,
+  "forcedColorsFollowUp": {
+    "scope": "local-browser-forced-colors-emulation",
+    "case": 54,
+    "originalWebKit": {
+      "sourceCommit": "415d704e363b56b959d59811ebf0058071cb4266",
+      "functionalPassed": 55,
+      "functionalFailed": 1,
+      "assertion": "inactive-navigation-border-width",
+      "sourceLine": 1237
+    },
+    "correctedSourceCommit": "7143479537429eecb6b6e11d0fac98ab98a89bb0",
+    "hostedSourceCommit": "874ff6941ef4b6dbbc270bafa862eb5b962c26c4",
+    "correctedBinarySHA256": "0a57a20a98ba0b100b95061c8c526823d17e5df183c34be9231e82eca2b9f088",
+    "sourceSHA256": {
+      "web/app.css": "e2a4f7fae2a10701c482450171544a4e6d13170e60f4e6b3699fd6c19978f5c7",
+      "scripts/browser-tests/browser-shadow-control.cjs": "4193f68043efd44e95d13404e2085b9770d5436ff9772a66b98d4fe9c563ce73",
+      "scripts/browser-tests/browser-shadow-control.test.cjs": "4c5d8953e2681037f574595eaa13f8135e96f0a34fe48b1f974d6846af84283e",
+      "scripts/browser-tests/desktop.spec.cjs": "68a2ecbb7bfd61e568afe75aa8ae583a1d909af87992e78d37e0cc6674b304b8"
+    },
+    "cases": [
+      {
+        "browser": "webkit",
+        "version": "27.2",
+        "passed": true
+      },
+      {
+        "browser": "firefox",
+        "version": "157.0",
+        "passed": true
+      },
+      {
+        "browser": "chromium",
+        "version": "156.0.8078.80",
+        "passed": true
+      }
+    ],
+    "historicalShadowDiagnosticTests": {
+      "passed": 64,
+      "skipped": 2,
+      "failed": 0
+    },
+    "hostedRunIDs": {
+      "browser": 43683804434,
+      "sustained": 43683804427
+    }
+  }
 }
