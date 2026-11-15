@@ -170,6 +170,11 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
     border: 1px solid ButtonText;
   }
 
+  .nav-item:not([aria-current="page"]) {
+    border-inline-start: 0;
+    padding-inline-start: 14px;
+  }
+
   .nav-item[aria-current="page"],
   .modal-tab[aria-selected="true"] {
     border-inline-start: 3px solid Highlight;

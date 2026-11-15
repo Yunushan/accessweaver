@@ -10,6 +10,20 @@ const controlStylesheetPath='/__accessweaver-owned-shadow.css';
 const controlPattern=/^http:\/\/127\.0\.0\.1:[0-9]+\/__accessweaver-owned-shadow\.css$/;
 const sources=['scripts/browser-tests/browser-shadow-control.cjs','scripts/browser-tests/browser-shadow-control.test.cjs','scripts/browser-tests/browser-shadow-control.spec.cjs','scripts/browser-tests/shadow.config.cjs','scripts/browser-tests/playwright.config.cjs','scripts/browser-tests/browser-control.cjs','scripts/browser-tests/desktop-performance.cjs','scripts/browser-tests/browser-timing.cjs','scripts/browser-tests/browser-resources.cjs','scripts/browser-tests/browser-memory.cjs','scripts/browser-tests/job-cpu.cjs','scripts/browser-tests/browser-native-binary.cjs','scripts/browser-tests/check-image-environment.cjs','scripts/browser-tests/performance-budgets.json','scripts/browser-tests/package-lock.json','scripts/check-native-environment.cjs','.github/workflows/browser-shadow.yml','internal/api/server.go','internal/profile/store.go','web/app.js','web/app.css','web/index.html','web/locales.js','web/system.js','go.mod','go.sum'];
 const styles={original:'/* owned box-shadow control: original */','without-core-and-modal-shadow':'.core-symbol,.modal-card{box-shadow:none!important}','without-other-decorative-shadows':'.brand-mark,.online-dot,.topbar-secure-dot,.btn-primary,.orbit-node,#toast,.sidebar{box-shadow:none!important}','without-box-shadow':'*,*::before,*::after{box-shadow:none!important}'};
+function matchesShadowFixture(css) {
+  const declared = new Set();
+  for (const [, selectors, declarations] of css.matchAll(/([^{}]+)\{([^{}]*?)\}/g)) {
+    if (!/(?:^|;)\s*box-shadow\s*:/.test(declarations)) continue;
+    for (const selector of selectors.split(',')) declared.add(selector.trim().replace(/:hover$/, ''));
+  }
+  if (declared.size === 0) return false;
+
+  const decorativeGroups = ['without-core-and-modal-shadow', 'without-other-decorative-shadows'];
+  const selected = ['.nav-item.active', '.profile-active'];
+  const expected = selected.concat(...decorativeGroups.map(variant => styles[variant].split('{')[0].split(',')));
+  assert.deepEqual([...declared].sort(), expected.sort(), 'Unexpected shadow fixture stylesheet');
+  return true;
+}
 const controlMarkerPath='/__accessweaver-owned-shadow-ready.js';
 const markerPattern=/^http:\/\/127\.0\.0\.1:[0-9]+\/__accessweaver-owned-shadow-ready\.js$/;
 const documentPattern=/^http:\/\/127\.0\.0\.1:[0-9]+\/$/;
@@ -70,6 +84,8 @@ async function run({variant=process.env.SHADOW_VARIANT,referenceBrowser,launchOp
  const repo=path.resolve(__dirname,'../..'),source=process.env.GITHUB_SHA,project=process.env.BROWSER,arch=process.env.ACCESSWEAVER_EXPECT_GOARCH,v=empty();assert.ok(/^[a-f0-9]{40}$/.test(source)&&['chromium','firefox','webkit'].includes(project)&&['amd64','arm64'].includes(arch));assert.equal(process.getuid(),1001);assert.equal(execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim(),source);assert.equal(execFileSync('git',['status','--porcelain=v1'],{cwd:repo,encoding:'utf8'}).trim(),'');
  const binary=path.join(repo,'build/browser-tests/accessweaver'),parent=path.join(repo,'build/browser-shadow-state');let binarySHA256=null,home,child,server,browserChild,context,job,observer;let output='',startFailed=false;
  try{
+  const stylesheet = await fs.readFile(path.join(repo, 'web/app.css'), 'utf8');
+  assert.ok(matchesShadowFixture(stylesheet), 'Use a revision with the original shadow surfaces for this diagnostic');
   v.stage='controller';binarySHA256=await hash(binary,128<<20);const build=JSON.parse(execFileSync(binary,['version','--json'],{encoding:'utf8',timeout:10000,maxBuffer:16384}));assert.ok(build.commit===source&&build.sourceState==='clean'&&build.platform==='linux'&&build.arch===arch&&build.goVersion==='go1.27.4');
   await fs.mkdir(parent,{recursive:true,mode:0o700});home=await fs.mkdtemp(path.join(parent,'case-'));await fs.mkdir(path.join(home,'cache'),{mode:0o700});await P.seedPerformanceProfiles(home);
   child=spawn(binary,['ui'],{stdio:['ignore','pipe','pipe'],env:{...process.env,ACCESSWEAVER_HOME:path.join(home,'state'),ACCESSWEAVER_NO_BROWSER:'1',XDG_CACHE_HOME:path.join(home,'cache'),LOCALAPPDATA:path.join(home,'cache')}});child.once('error',()=>{startFailed=true});for(const stream of [child.stdout,child.stderr])stream?.on('data',data=>{output=(output+data.toString()).slice(-65536)});
@@ -97,4 +113,4 @@ async function run({variant=process.env.SHADOW_VARIANT,referenceBrowser,launchOp
  if(v.failureKind==='none'&&Object.values(v.cleanup).every(Boolean))v.stage='complete';
  const done=await writeReport(repo,source,binarySHA256,project,arch,variant,v,{platform:process.platform,architecture:process.arch,node:process.version,playwright:require('@playwright/test/package.json').version});assert.ok(done,'Shadow control observation incomplete');
 }
-module.exports={allowed,empty,validate,complete,markerSource,markerTemplate,instrumentDocument,prepareDocumentResponse,headInsertion,documentBoundary,securityHeaders,securityHeadersMatch,shadowProjection,styles,variants,styleFields,controlStylesheetPath,controlMarkerPath,controlPattern,markerPattern,documentPattern,stages,cleanupNames,sources,writeReport,run};
+module.exports={allowed,empty,validate,complete,markerSource,markerTemplate,instrumentDocument,prepareDocumentResponse,headInsertion,documentBoundary,securityHeaders,securityHeadersMatch,shadowProjection,styles,variants,styleFields,controlStylesheetPath,controlMarkerPath,controlPattern,markerPattern,documentPattern,stages,cleanupNames,sources,matchesShadowFixture,writeReport,run};
