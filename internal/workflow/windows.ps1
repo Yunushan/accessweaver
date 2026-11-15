@@ -2812,20 +2812,37 @@ function Get-DNSCryptReloadFile($Resolver,$Journal) {
     }
     return $record
 }
+function Wait-DNSCryptServiceTransition($Service,[int]$TimeoutSeconds=20) {
+    $timer=[Diagnostics.Stopwatch]::StartNew()
+    while([string]$Service.Status -cin @('StartPending','StopPending')){
+        if($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds){
+            throw 'DNSCrypt service transition did not finish; retain the recovery journal'
+        }
+        Start-Sleep -Milliseconds 250
+        $Service.Refresh()
+    }
+}
 function Restore-DNSCryptAfterActivationFailure($Resolver,[string]$SnapshotSHA256,[switch]$LegacyReceipt) {
     try {
         $record=Get-DNSCryptReloadFile $Resolver $script:undo
         if($LegacyReceipt){Assert-DNSRecoverySnapshotUnchanged ''}
         else{Assert-DNSRecoverySnapshotUnchanged $SnapshotSHA256}
         if((Assert-RecordedServiceBinding $Resolver) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
-        Restore-RecordedWorkflowFile $record
-        Assert-DNSCryptConfiguration $record.path $record.originalHash
-        if((Assert-RecordedServiceBinding $Resolver) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
         $service=Get-Service -Name $Resolver.name -ErrorAction Stop
         try {
-            if($Resolver.originalStartup -and [string]$service.StartType -cnotin @($Resolver.originalStartup,'Automatic')){
-                throw 'DNSCrypt startup policy changed independently during recovery'
+            if([string]$service.Status -cin @('StartPending','StopPending')){
+                Wait-DNSCryptServiceTransition $service
+                if($LegacyReceipt){Assert-DNSRecoverySnapshotUnchanged ''}
+                else{Assert-DNSRecoverySnapshotUnchanged $SnapshotSHA256}
+                if((Assert-RecordedServiceBinding $Resolver) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
             }
+            if([string]$service.Status -cnotin @('Running','Stopped') -or
+                ($Resolver.originalStartup -and [string]$service.StartType -cnotin @($Resolver.originalStartup,'Automatic'))){
+                throw 'DNSCrypt service state changed independently; retain the recovery journal'
+            }
+            Restore-RecordedWorkflowFile $record
+            Assert-DNSCryptConfiguration $record.path $record.originalHash
+            if((Assert-RecordedServiceBinding $Resolver) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
             if($service.Status -eq 'Stopped'){
                 Start-Service -InputObject $service -ErrorAction Stop
             }else{
@@ -2872,7 +2889,7 @@ function New-DNSCryptRetirementRecord($Resolver) {
     return @{name=$Resolver.name;commandSHA256=$Resolver.commandSHA256;startup=$startup;
         configSHA256=(Get-WorkflowBytesSHA256 $bytes)}
 }
-function Read-DNSCryptRetirementState($Record) {
+function Read-DNSCryptRetirementState($Record,[switch]$WaitForTransition) {
     if($Record.name -isnot [string] -or $Record.name -cne 'AccessWeaver-dnscrypt' -or
         $Record.commandSHA256 -isnot [string] -or $Record.commandSHA256 -cnotmatch '\A[A-F0-9]{64}\z' -or
         $Record.startup -isnot [string] -or $Record.startup -cnotin @('Manual','Automatic') -or
@@ -2884,6 +2901,11 @@ function Read-DNSCryptRetirementState($Record) {
     if((Assert-RecordedServiceBinding $Record) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
     $service=Get-Service -Name $Record.name -ErrorAction Stop
     try {
+        if($WaitForTransition -and [string]$service.Status -cin @('StartPending','StopPending')){
+            Wait-DNSCryptServiceTransition $service
+            Assert-DNSCryptConfiguration $config $Record.configSHA256
+            if((Assert-RecordedServiceBinding $Record) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
+        }
         $status=[string]$service.Status
         $startup=[string]$service.StartType
         if($startup -cnotin @($Record.startup,'Manual') -or $status -cnotin @('Running','Stopped')){
@@ -2899,16 +2921,25 @@ function Restore-DNSCryptRetirement($DNSEntry) {
     }
     $record=$DNSEntry.dnscryptRetirement
     [void](Confirm-DNSRecoveryEntry $DNSEntry)
-    $current=Read-DNSCryptRetirementState $record
+    $current=Read-DNSCryptRetirementState $record -WaitForTransition
+    [void](Confirm-DNSRecoveryEntry $DNSEntry)
     if($current.startup -cne $record.startup){
         Set-Service -Name $record.name -StartupType $record.startup -ErrorAction Stop
     }
     if($current.status -ceq 'Stopped'){
+        [void](Read-DNSCryptRetirementState $record -WaitForTransition)
         [void](Confirm-DNSRecoveryEntry $DNSEntry)
-        [void](Read-DNSCryptRetirementState $record)
         $service=Get-Service -Name $record.name -ErrorAction Stop
         try {
-            if($service.StartType -ne $record.startup){throw 'DNSCrypt startup policy could not be restored'}
+            if([string]$service.Status -cin @('StartPending','StopPending')){
+                Wait-DNSCryptServiceTransition $service
+                Assert-DNSCryptConfiguration (Join-Path $root 'components\dnscrypt\dnscrypt-proxy.toml') $record.configSHA256
+                if((Assert-RecordedServiceBinding $record) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
+                [void](Confirm-DNSRecoveryEntry $DNSEntry)
+            }
+            if($service.StartType -ne $record.startup -or [string]$service.Status -cnotin @('Running','Stopped')){
+                throw 'DNSCrypt startup policy or service state could not be restored'
+            }
             if($service.Status -eq 'Stopped'){Start-Service -InputObject $service -ErrorAction Stop}
             $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
         } finally {if($service -is [IDisposable]){$service.Dispose()}}
