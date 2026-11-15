@@ -3263,6 +3263,9 @@ function Configure-DNS([string]$method) {
                 $dnsUndo.Remove('dnscryptRetirement')
                 throw
             }
+            Assert-ConfiguredDNSServers $adapters $records $servers
+            Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy changed before stopping DNSCrypt; retain the original DNS snapshot'
+            Assert-DNSDohPlaintextBlock $plaintextBlockID
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
             $serviceState=Read-DNSCryptRetirementState $retirement
             if($serviceState.status -cne 'Running' -or $serviceState.startup -cne $retirement.startup){
@@ -3295,6 +3298,7 @@ function Configure-DNS([string]$method) {
             Assert-ConfiguredDNSServers $adapters $records $servers
             Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy changed after stopping DNSCrypt; retain the original DNS snapshot'
             if(-not $listenerNeeded){
+                Assert-DNSDohPlaintextBlock $plaintextBlockID
                 Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
                 $serviceState=Read-DNSCryptRetirementState $retirement
                 if($serviceState.status -cne 'Stopped' -or $serviceState.startup -cne $retirement.startup){
