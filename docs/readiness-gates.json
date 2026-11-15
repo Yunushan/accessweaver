@@ -441,7 +441,8 @@
             "scripts/browser-tests/performance-budgets.json",
             "docs/qualification/7cbda587c8aa-dns-family-normal.json",
             "docs/qualification/593b59fb450d-browser-soak-attempt.json",
-            "docs/qualification/c856935f8aaa-local-webkit-performance.json"
+            "docs/qualification/c856935f8aaa-local-webkit-performance.json",
+            "docs/qualification/415d704e363b-local-webkit-styles.json"
           ]
         },
         {
