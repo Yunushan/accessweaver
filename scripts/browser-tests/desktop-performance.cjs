@@ -42,6 +42,16 @@ async function sampleController(child,identity,pageBytes){
  liveChild(child);return {...stat,descriptors};
 }
 async function paint(page){await page.evaluate(async()=>{await Promise.all(document.getAnimations().filter(a=>a.effect?.getComputedTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))})}
+async function measureEditorOpen(page){
+ const started=performance.now();
+ await page.locator('#new-profile').click();
+ const acted=performance.now();
+ await page.locator('#editor-modal').waitFor({state:'visible'});
+ const visible=performance.now();
+ await paint(page);
+ const painted=performance.now();
+ return {actionMs:acted-started,visibilityMs:visible-acted,paintMs:painted-visible,totalMs:painted-started};
+}
 function dashboardReady(count){return typeof state!=='undefined'&&state.coreAuthenticated&&!state.offline&&!state.loading&&Array.isArray(state.profiles)&&state.profiles.length===count&&document.querySelector('#hero-status')?.textContent==='Ready when you are'}
 async function ready(page){await page.waitForFunction(dashboardReady,budgets.profiles,{timeout:10000});await paint(page)}
 async function requestBatch(page,count){
@@ -99,7 +109,7 @@ async function runDesktopPerformance(page,core,testInfo,browserChild){
   const navigate=async(view)=>{const start=performance.now();await page.locator('.nav-item[data-view="'+view+'"]').click();await page.locator('#view-'+view+'.active').waitFor({state:'visible'});await paint(page);if(view==='profiles')assert.equal(await page.locator('#all-profiles .profile-card').count(),budgets.profiles,'Full performance profile collection must be rendered');navigation.push(performance.now()-start);counts.navigation++};
   value.stage='navigation';for(let i=0;i<12;i++)await navigate(views[i%views.length]);
   await captureMemory('navigation');
-  value.stage='editor';await page.locator('.nav-item[data-view="profiles"]').click();await paint(page);for(let i=0;i<budgets.editorSamples;i++){started=performance.now();await page.locator('#new-profile').click();const acted=performance.now();await page.locator('#editor-modal').waitFor({state:'visible'});const visible=performance.now();await paint(page);const painted=performance.now();editor.push(painted-started);timing.editor.push({actionMs:acted-started,visibilityMs:visible-acted,paintMs:painted-visible,totalMs:painted-started});counts.editor++;await page.locator('#close-editor').click();await page.locator('#editor-modal').waitFor({state:'hidden'})}metrics.editorP95Ms=percentile(editor);await captureMemory('editor');
+  value.stage='editor';await page.locator('.nav-item[data-view="profiles"]').click();await paint(page);for(let i=0;i<budgets.editorSamples;i++){const sample=await measureEditorOpen(page);editor.push(sample.totalMs);timing.editor.push(sample);counts.editor++;await page.locator('#close-editor').click();await page.locator('#editor-modal').waitFor({state:'hidden'})}metrics.editorP95Ms=percentile(editor);await captureMemory('editor');
   value.stage='burst';started=performance.now();for(let i=0;i<budgets.burstRequests;i+=budgets.burstConcurrency){api.push(...await requestBatch(page,budgets.burstConcurrency));counts.burstRequests+=budgets.burstConcurrency}metrics.burstRequestsPerSecond=counts.burstRequests/((performance.now()-started)/1000);
   await captureMemory('burst');
   value.stage='load';await browserTaskPause();const browserBefore=await browserSample(),browserCpuStarted=performance.now(),before=await sample(),jobBefore=await jobCpu.sample(),loadStarted=performance.now();resumeBrowserSampling();for(let i=0;i<budgets.loadSeconds;i++){await waitUntil(loadStarted+i*1000);const [latencies]=await Promise.all([requestBatch(page,budgets.requestsPerSecond),i%5===0?navigate(views[(i/5)%views.length]):Promise.resolve()]);api.push(...latencies);counts.loadRequests+=budgets.requestsPerSecond;assert.ok(!samplingError,'owned resource observation failed')}
@@ -117,4 +127,4 @@ async function runDesktopPerformance(page,core,testInfo,browserChild){
  if(process.env.GITHUB_ACTIONS==='true'&&process.env.ACCESSWEAVER_BROWSER_SOAK==='1')await Timing.writeReport(path.resolve(__dirname,'../..'),core.build.commit,core.binarySha256,testInfo.project.name,process.env.ACCESSWEAVER_EXPECT_GOARCH,value.stage,value.failureKind,timing);
  assert.equal(outcome,'passed','Desktop performance contract failed at '+value.stage);
 }
-module.exports={waitUntil,failureKinds,classifyFailure,dashboardReady,budgets,performanceCaseName,metricNames,countNames,stages,sources,parseStat,percentile,cpuPercent,violations,validateValue,seedPerformanceProfiles,liveChild,writePerformanceReport,runDesktopPerformance,sampleController,requestBatch,paint};
+module.exports={waitUntil,failureKinds,classifyFailure,dashboardReady,budgets,performanceCaseName,metricNames,countNames,stages,sources,parseStat,percentile,cpuPercent,violations,validateValue,seedPerformanceProfiles,liveChild,writePerformanceReport,runDesktopPerformance,sampleController,requestBatch,paint,measureEditorOpen};
