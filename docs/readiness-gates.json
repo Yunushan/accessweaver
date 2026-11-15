@@ -26,6 +26,7 @@
           "acceptance": "Selected and unselected applications have independently verified TCP, UDP, DNS and IPv4/IPv6 paths for each supported routing mode.",
           "status": "partial",
           "evidence": [
+            "docs/qualification/adb10502a18a-linux-managed-byedpi.json",
             "docs/qualification/402dca260f4b-native-wiresock-lifecycle.json",
             "docs/qualification/3ba0b0e4b20a-native-wiresock-lifecycle.json",
             "docs/qualification/2d65f3430e6b-native-wiresock-lifecycle.json",
@@ -513,6 +514,7 @@
           "acceptance": "Administrator-enforced local policy controls permitted engines, executable provenance, inputs, downloads and privileged operations; ordinary users cannot alter policy or bypass it within the managed installation.",
           "status": "partial",
           "evidence": [
+            "docs/qualification/adb10502a18a-linux-managed-byedpi.json",
             "internal/managed/guard.go",
             "internal/managed/authorization.go",
             "internal/managed/authorization_test.go",
@@ -542,6 +544,7 @@
           "acceptance": "Versioned administrator configuration can be signed, reviewed, imported/exported and applied with deterministic precedence; invalid, unsigned, stale or tampered configuration is rejected while preserving the last known state.",
           "status": "partial",
           "evidence": [
+            "docs/qualification/adb10502a18a-linux-managed-byedpi.json",
             "internal/managed/policy.go",
             "internal/managed/policy_test.go",
             "cmd/accessweaver/managed.go",
