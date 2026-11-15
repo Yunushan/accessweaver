@@ -90,6 +90,8 @@ The [exact-source AMD64 rehearsal](qualification/227b43d8500e-linux-package-cand
 
 The corrected browser candidate also passed the isolated Debian fixture on Ubuntu 26.04 WSL AMD64. Both installation routes consumed the approved package bytes, exercised their respective upgrade and removal paths, and preserved the enrolled policy and fixture profile. The APT run authenticated signed by-hash indexes and rejected the scoped-key, expiry and tampering cases. The fixture inspected ARM64 packages on AMD64. A native ARM64 lifecycle, reboot, and deployment-signing qualification remain open. [Exact-source receipt](qualification/874ff6941ef4-local-debian-candidate.json).
 
+The isolated AMD64 run at source `d6227a18b894` verified portable archives and SBOMs for both fixture versions across all ten targets. It passed 12 dpkg and nine signed APT checks, including matching installed executable digests and preserving the enrolled policy and profile during package transitions. The independent GitHub-hosted AMD64 job also passed for that commit. [Local qualification receipt](qualification/d6227a18b894-local-debian-candidate.json) · [Hosted AMD64 job](https://github.com/Yunushan/accessweaver/actions/runs/43709529917/job/132797855626).
+
 ### Live engine maintenance
 
 The direct package probe accepts a separately approved static native `ciadpi` executable. Obtain its SHA-256 from your approved engine record. With the same archive arguments shown above, add these options.
