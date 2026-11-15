@@ -16,6 +16,10 @@ function Read-WorkflowRecoveryJournal {return @{undo=$script:saved}}
 $saveJournal=(Get-Command Save-Journal).ScriptBlock
 function Save-Journal {$script:journalWrites++}
 function Event {}
+function Assert-DNSDohPlaintextRuleOwnership([string]$ID) {
+    if($ID){throw 'Unexpected DNS firewall receipt check'}
+    if($script:remainingDohFirewall){throw 'Synthetic remaining managed DoH firewall rule'}
+}
 function Test-DNSCryptListenerNeeded {
     if($script:serviceFault -ceq 'replace-during-dns-inventory'){$script:serviceCommand='replacement service command'}
     return [bool]$script:resolverInUse
@@ -467,6 +471,12 @@ try {
         Require ($refused -and $script:order.Count -eq 0) 'Locked restoration receipt allowed teardown'
     }finally{$receiptLock.Dispose()}
     Require (-not (Confirm-DNSRecoveryEntry $dnsUndo)) 'An exact restoration receipt did not allow cleanup'
+    $script:remainingDohFirewall=$true
+    try{
+        $refused=$false
+        try{Recover-Operation}catch{$refused=$_.Exception.Message -ceq 'Synthetic remaining managed DoH firewall rule'}
+        Require ($refused -and $script:order.Count -eq 0 -and [IO.File]::Exists($receipt)) 'A restoration receipt bypassed verification of remaining managed firewall rules'
+    }finally{$script:remainingDohFirewall=$false}
     & {
         $readRecoveryFile=(Get-Command Read-DNSRecoveryFileBytes).ScriptBlock
         function Read-DNSRecoveryFileBytes([string]$Path,[int]$Maximum){

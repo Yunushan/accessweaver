@@ -2532,14 +2532,19 @@ function Assert-DNSDohFirewallAvailable {
         } finally {if($service -is [IDisposable]){$service.Dispose()}}
     }
 }
+function Read-DNSDohPlaintextRules([ValidateSet('PersistentStore','ActiveStore')][string]$Store) {
+    $warnings=@()
+    $rules=@(Get-NetFirewallRule -PolicyStore $Store -TracePolicyStore:($Store -ceq 'ActiveStore') -ErrorAction Stop `
+        -WarningAction SilentlyContinue -WarningVariable warnings | Where-Object {$_.Name -ilike 'AccessWeaver-DoH-Plaintext-*'})
+    if($warnings.Count){throw 'Managed DoH firewall inventory could not be verified; retain the recovery snapshot'}
+    return $rules
+}
 function Get-DNSDohPlaintextRule([string]$ID,[ValidateSet('TCP','UDP')][string]$Protocol,
-        [ValidateSet('PersistentStore','ActiveStore')][string]$Store) {
+        [ValidateSet('PersistentStore','ActiveStore')][string]$Store,[object[]]$Inventory) {
     if($ID -cnotmatch '\A[a-f0-9]{32}\z'){throw 'Invalid DoH plaintext protection identity'}
     $name='AccessWeaver-DoH-Plaintext-'+$Protocol+'-'+$ID
-    $warnings=@()
-    $rows=@(Get-NetFirewallRule -PolicyStore $Store -TracePolicyStore:($Store -ceq 'ActiveStore') -ErrorAction Stop `
-        -WarningAction SilentlyContinue -WarningVariable warnings | Where-Object {$_.Name -ieq $name})
-    if($warnings.Count){throw 'Managed DoH firewall inventory could not be verified; retain the recovery snapshot'}
+    if(-not $PSBoundParameters.ContainsKey('Inventory')){$Inventory=@(Read-DNSDohPlaintextRules $Store)}
+    $rows=@($Inventory | Where-Object {$_.Name -ieq $name})
     if($rows.Count -eq 0){return}
     $rule=$rows[0]
     $failure='Managed DoH plaintext protection rule changed independently; retain the recovery snapshot'
@@ -2552,6 +2557,7 @@ function Get-DNSDohPlaintextRule([string]$ID,[ValidateSet('TCP','UDP')][string]$
         ($Store -ceq 'ActiveStore' -and [string]$rule.PolicyStoreSourceType -cne 'Local')){
         throw $failure
     }
+    $warnings=@()
     $filterQuery=@{AssociatedNetFirewallRule=$rule;PolicyStore=$Store;ErrorAction='Stop';
         WarningAction='SilentlyContinue';WarningVariable='+warnings'}
     $ports=@(Get-NetFirewallPortFilter @filterQuery)
@@ -2594,10 +2600,19 @@ function Get-DNSDohPlaintextRule([string]$ID,[ValidateSet('TCP','UDP')][string]$
     return $rule
 }
 function Assert-DNSDohPlaintextRuleOwnership([string]$ID) {
-    if(-not $ID){return}
-    foreach($protocol in @('TCP','UDP')){
-        [void](Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore')
-        [void](Get-DNSDohPlaintextRule $ID $protocol 'ActiveStore')
+    $expected=@()
+    if($ID){
+        if($ID -cnotmatch '\A[a-f0-9]{32}\z'){throw 'Invalid DoH plaintext protection identity'}
+        $expected=@(('AccessWeaver-DoH-Plaintext-TCP-'+$ID),('AccessWeaver-DoH-Plaintext-UDP-'+$ID))
+    }
+    foreach($store in @('PersistentStore','ActiveStore')){
+        $inventory=@(Read-DNSDohPlaintextRules $store)
+        if(@($inventory | Where-Object {$_.Name -cnotin $expected}).Count){
+            throw 'Managed DoH firewall rules do not match the current DNS recovery snapshot; restore the matching original snapshot before retrying'
+        }
+        if($ID){
+            foreach($protocol in @('TCP','UDP')){[void](Get-DNSDohPlaintextRule $ID $protocol $store -Inventory $inventory)}
+        }
     }
 }
 function Assert-DNSDohPlaintextBlock([string]$ID) {
@@ -2642,6 +2657,7 @@ function Remove-DNSDohPlaintextBlock([string]$ID,[string]$SnapshotSHA256) {
             throw 'Managed DoH plaintext protection could not be removed; retain the recovery snapshot'
         }
     }
+    Assert-DNSDohPlaintextRuleOwnership ''
 }
 
 function Test-DNSRecoveryUsesDohOwnership($Record,[bool]$OwnsDoh) {
@@ -3254,7 +3270,10 @@ function Test-DNSFamilyNeedsRollback([object]$Record,[string]$Number,[object]$Ob
 function Restore-DNS([string]$ExpectedSHA256,$ResolverReload) {
     $snapshot=Join-Path $root 'profiles\dns-original.json'
     $restoration=Read-DNSRecoverySnapshot
-    if(-not $restoration){throw 'No original DNS snapshot exists; no settings were changed'}
+    if(-not $restoration){
+        Assert-DNSDohPlaintextRuleOwnership ''
+        throw 'No original DNS snapshot exists; no settings were changed'
+    }
     $snapshotSHA256=$restoration.sha256
     if($ExpectedSHA256 -and $snapshotSHA256 -ine $ExpectedSHA256){
         throw 'DNS recovery journal does not match the active snapshot; review dns-restore'
@@ -3387,6 +3406,7 @@ function Restore-DNS([string]$ExpectedSHA256,$ResolverReload) {
     # Receipt publication may overlap an adapter or policy change. The active
     # snapshot takes precedence over a receipt until retirement succeeds.
     Assert-RestoredDNSState $plans $dohPlans $dohAvailable
+    Assert-DNSDohPlaintextRuleOwnership ''
     Remove-VerifiedDNSRecoverySnapshot $snapshot $snapshotSHA256
     if(Get-DNSRecoverySnapshotDigest){throw 'Original DNS snapshot retirement could not be verified'}
     Event 'Original DNS and DoH settings restored'
@@ -3730,6 +3750,7 @@ function Remove-All {
     # have been restored and independently read back by Restore-DNS.
     $digest=Get-DNSRecoverySnapshotDigest
     if($digest){Restore-DNS $digest}
+    else{Assert-DNSDohPlaintextRuleOwnership ''}
     if(Assert-ManagedServiceOwnership 'AccessWeaver-dnscrypt'){
         Assert-DNSCryptCanBeRemoved
     }
@@ -5470,7 +5491,9 @@ function Confirm-DNSRecoveryEntry($Entry) {
     }
     # Receipt inspection may overlap a snapshot publication. If an active
     # snapshot now exists it must pass the journal binding before cleanup.
-    return (Confirm-DNSRecoverySnapshot $digest)
+    if(Confirm-DNSRecoverySnapshot $digest){return $true}
+    Assert-DNSDohPlaintextRuleOwnership ''
+    return $false
 }
 function Recover-Operation {
     if($r.journalId -notmatch '^workflow-[a-fA-F0-9]{32}\.json$'){throw 'Invalid recovery journal name'}
