@@ -266,16 +266,26 @@ function toast(message, bad=false) {
   toast.timer = setTimeout(() => { target.className = ''; }, bad ? 6500 : 4000);
 }
 function updateTranslations() {
-  document.documentElement.lang = state.lang;
-  $$('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
-  $$('[data-i18n-aria]').forEach(el => { el.setAttribute('aria-label',t(el.dataset.i18nAria)); });
-  $('lang-toggle').innerHTML = state.lang.toUpperCase() + ' <span aria-hidden="true">⌄</span>';
-  $('lang-toggle').setAttribute('aria-label',t('language') + ': ' + state.lang.toUpperCase());
+  if (document.documentElement.lang !== state.lang) document.documentElement.lang = state.lang;
+  $$('[data-i18n]').forEach(el => {
+    const text = t(el.dataset.i18n);
+    if (el.textContent !== text) el.textContent = text;
+  });
+  $$('[data-i18n-aria]').forEach(el => {
+    const label = t(el.dataset.i18nAria);
+    if (el.getAttribute('aria-label') !== label) el.setAttribute('aria-label',label);
+  });
+  const languageToggle = $('lang-toggle'), languageCode = state.lang.toUpperCase();
+  renderMarkup(languageToggle,languageCode + ' <span aria-hidden="true">⌄</span>');
+  const languageLabel = t('language') + ': ' + languageCode;
+  if (languageToggle.getAttribute('aria-label') !== languageLabel) languageToggle.setAttribute('aria-label',languageLabel);
   $('settings-language').value = state.lang;
   $('profile-search').placeholder = t('searchProfiles');
-  const filter = $('profile-filter').value || 'all';
-  $('profile-filter').innerHTML = `<option value="all">${escapeHTML(t('allEngines'))}</option>` + engineOptions();
-  $('profile-filter').value = state.engines.some(e => e.id === filter) ? filter : 'all';
+  const profileFilter = $('profile-filter');
+  const selectedEngine = profileFilter.value;
+  renderMarkup(profileFilter,`<option value="all">${escapeHTML(t('allEngines'))}</option>` + engineOptions());
+  const filter = state.engines.some(e => e.id === selectedEngine) ? selectedEngine : 'all';
+  if (profileFilter.value !== filter) profileFilter.value = filter;
   if (state.editing) {
     $('editor-title').textContent = t(state.editing.isNew ? 'editorTitleNew' : 'editorTitleEdit');
     updateEditorGuidance();
@@ -327,7 +337,9 @@ function navigate(view, focus=false) {
   if(view==='system'&&coreAvailable()&&typeof loadSystemTools==='function')loadSystemTools().catch(error=>{setTextOutput('system-output',error.message)});
 }
 function navigateFromHistory() {
-  const view = location.hash.slice(1) || 'dashboard';
+  const hash = location.hash;
+  if (hash === '#' + state.view) return;
+  const view = hash.slice(1) || 'dashboard';
   const outgoing = $('view-' + state.view);
   const moveFocus = view !== state.view && outgoing?.contains(document.activeElement);
   navigate(view,moveFocus);
@@ -525,15 +537,19 @@ function renderMarkup(element, markup) {
 }
 function renderProfiles() {
   const focus = rememberFocus(document.activeElement);
-  const term = $('profile-search').value.toLocaleLowerCase(state.lang).trim();
-  const filter = $('profile-filter').value || 'all';
-  const selected = state.profiles.filter(p => (filter === 'all' || p.engine === filter) && [p.name,p.engine,p.id,p.description,p.notes].join(' ').toLocaleLowerCase(state.lang).includes(term));
   const empty = `<div class="empty-card">${icon('layers')}<p>${escapeHTML(t('noProfiles'))}</p><button class="btn btn-outline" data-create-profile>${escapeHTML(t('createProfile'))}</button></div>`;
   let replaced = renderMarkup($('quick-profiles'),state.profiles.length ? state.profiles.slice(0,3).map(p => profileCard(p)).join('') : empty);
   // Build the full collection on demand; keep it current after its first visit.
   if(state.view==='profiles'||state.profileGridRendered){
+    const term = $('profile-search').value.trim().toLocaleLowerCase(state.lang);
+    const filter = $('profile-filter').value || 'all';
+    let selected = state.profiles;
+    if (term || filter !== 'all') {
+      selected = state.profiles.filter(p => (filter === 'all' || p.engine === filter) &&
+        (!term || [p.name,p.engine,p.id,p.description,p.notes].join(' ').toLocaleLowerCase(state.lang).includes(term)));
+    }
     replaced = renderMarkup($('all-profiles'),selected.length ? selected.map(p => profileCard(p,true)).join('') : empty) || replaced;
-    $('profile-result-count').textContent = selected.length + ' / ' + state.profiles.length + ' ' + t('profilesShown');
+    setText('profile-result-count',selected.length + ' / ' + state.profiles.length + ' ' + t('profilesShown'));
     state.profileGridRendered=true;
   }
   if (replaced) restoreReplacedFocus(focus);

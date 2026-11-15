@@ -278,7 +278,10 @@ test('history navigation moves focus only when leaving the focused view',()=>{
   env.run('state.view="profiles";state.profileGridRendered=true');
   search.focus();
   env.context.location.hash='#profiles';
+  let scrollCalls=0;
+  env.context.window.scrollTo=()=>{scrollCalls++};
   env.run('navigateFromHistory()');
+  assert.equal(scrollCalls,0);
   assert.equal(env.context.document.activeElement,search);
   env.context.location.hash='#dashboard';
   env.run('navigateFromHistory()');
@@ -1679,6 +1682,55 @@ test('profile grids retain unchanged markup across navigation and still reflect 
   env.run('state.profiles=[];renderProfiles()');assert.equal(writes.all,7);assert.equal(writes.quick,5);
 });
 
+
+test('reapplying a locale preserves static labels and replacing the locale updates them',()=>{
+ const env=environment();
+ const label=env.get('static-label'),button=env.get('static-button');
+ label.dataset.i18n='navProfiles';button.dataset.i18nAria='language';
+ env.context.document.querySelectorAll=selector=>
+  selector==='[data-i18n]'?[label]:selector==='[data-i18n-aria]'?[button]:[];
+ env.run('updateTranslations()');
+ assert.equal(label.textContent,env.run('t("navProfiles")'));
+ assert.equal(button.getAttribute('aria-label'),env.run('t("language")'));
+ const writes=[];
+ let text=label.textContent;
+ Object.defineProperty(label,'textContent',{get:()=>text,set:value=>{writes.push(value);text=value}});
+ const setAttribute=button.setAttribute.bind(button);
+ button.setAttribute=(name,value)=>{writes.push(value);setAttribute(name,value)};
+ env.run('updateTranslations()');
+ assert.deepEqual(writes,[]);
+ env.run('changeLanguage("tr")');
+ assert.deepEqual(writes,[env.run('t("navProfiles")'),env.run('t("language")')]);
+});
+
+test('profile cards use locale-aware text search only when a query is present',()=>{
+ const env=environment();
+ env.put('fixtures',Array.from({length:256},(_,index)=>({
+  ...baseProfile(),id:'profile-'+index,name:'Fixture '+index,description:'Profile description',
+  engine:index===255?'spoofdpi':'byedpi',
+ })));
+ env.run('state.profiles=fixtures;state.lang="tr";let notesReads=0;'+
+  'Object.defineProperty(state.profiles[255],"notes",{get(){notesReads++;return "IŞIK"}});'+
+  'profileCard=profile=>profile.id+"|";');
+ env.run('renderProfiles()');
+ assert.equal(env.run('notesReads'),0);
+ assert.equal(env.get('all-profiles').innerHTML,'');
+ env.run('state.view="profiles";renderProfiles()');
+ assert.equal(env.run('notesReads'),0);
+ assert.equal(env.get('all-profiles').innerHTML.split('|').filter(Boolean).length,256);
+ env.get('profile-filter').value='spoofdpi';
+ env.run('renderProfiles()');
+ assert.equal(env.run('notesReads'),0);
+ assert.equal(env.get('all-profiles').innerHTML,'profile-255|');
+ env.get('profile-search').value='ışık';
+ env.run('renderProfiles()');
+ assert.equal(env.run('notesReads'),1);
+ assert.equal(env.get('all-profiles').innerHTML,'profile-255|');
+ env.get('profile-filter').value='byedpi';
+ env.run('renderProfiles()');
+ assert.equal(env.run('notesReads'),1);
+ assert.ok(env.get('all-profiles').innerHTML.includes('class="empty-card"'));
+});
 
 test('unchanged dashboard polling preserves status text, control nodes and focused action',async()=>{
  const env=environment();env.run('state.loading=false;state.offline=false;state.coreAuthenticated=true;state.token="fixture";state.platform="linux";state.runtime={state:"stopped"};renderHero()');let writes=0;
