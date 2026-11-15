@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "scope": "Active managed ByeDPI across AMD64 Debian package upgrade, two guest boots, rollback and purge",
+  "sourceCommit": "0c9c8fd3806c5ad3bcaf7447cbe3d1404a8dece0",
+  "sourceSHA256": {
+    "scripts/test-linux-package-reboot.py": "9a17950f2a3ca31ba6fddc5e002b6bbd70cea9a5ccd0ec1ca318d124bee2ca21",
+    "scripts/linux_package_reboot_guest.py": "52b782eb0489c2aa702867775879896a196c5444c4b094fecf7d4f150182c65b",
+    "scripts/linux_package_reboot_traffic.py": "73eb75ed481753f29c6eef6cfa34c3d133c97f7dbaaaf2f1836d5587ec832c34",
+    "scripts/test-linux-managed-byedpi.py": "e6a738ff9a57782c1c3673469367ba815909f42992ad4fdba56fc7f1bb5a3f01",
+    "scripts/package-release.sh": "467a7a8f0d3d225148e65cf2342c809cf52f50a3740400b3096e0ec890865b35",
+    "scripts/build-linux-deb.py": "c32262e9314bf3ae844082dca4b2e65e02ba0ee94ef7cb2c57aa2e3dcb01a0fb",
+    "scripts/verify_release.py": "4338d95d41b2e7c3ab394a0403c1e81ac57f76e524e06f776c58b4a1b2976744",
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+    "scripts/sbom-tools/go.mod": "d31958b2a0537cc549be979c567d829812523558d713cc50c59f20caa747a211",
+    "scripts/sbom-tools/go.sum": "da615e479f84e5f7278666ec31f14478644b08f1b3c6f62b5b4a4fb6e417ba50"
+  },
+  "host": {
+    "distribution": "Ubuntu",
+    "version": "26.04.1",
+    "hostKernelArchitecture": "x86_64",
+    "environment": "WSL"
+  },
+  "guestResults": {
+    "amd64": {
+      "candidateArchiveSHA256": "0fd95e7608726aa1e30ab29e5201aa051ee856fe4d58de8e9e28fdbe9d77824e",
+      "packageBuildInfo": {
+        "older": {
+          "arch": "amd64",
+          "side": "older",
+          "commit": "fc603251a13091254f4fc23c3eb72184b826198e",
+          "sourceState": "clean",
+          "version": "0.1.0-alpha.2",
+          "goVersion": "go1.27.4",
+          "platform": "linux"
+        },
+        "newer": {
+          "arch": "amd64",
+          "side": "newer",
+          "commit": "0c9c8fd3806c5ad3bcaf7447cbe3d1404a8dece0",
+          "sourceState": "clean",
+          "version": "0.1.0-alpha.3",
+          "goVersion": "go1.27.4",
+          "platform": "linux"
+        }
+      },
+      "approvedInputEvidence": "docs/qualification/fc603251a130-linux-package-reboot.json",
+      "report": {
+        "schemaVersion": 1,
+        "scope": "Offline Ubuntu Linux QEMU guest kernel restart and Debian lifecycle",
+        "guestArchitecture": "amd64",
+        "hostArchitecture": "amd64",
+        "emulation": "kvm",
+        "imageSHA256": "406630c08b5e545fcc7209854b129d47e3af822db128c9f19336593b5a2d3fe0",
+        "firmwareSHA256": {
+          "code": "874f15a7c9110e78a89db159f0f68fc97e9076b74777520de1c235426f758aa7",
+          "initialVariables": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e"
+        },
+        "packagesSHA256": {
+          "older.deb": "9f0628c131a61cc43ddd4bbad25ad36b3874e2a078e0f1a4a5e9a27f38ccd301",
+          "newer.deb": "abcf3e41b4d356ce83c043c51bde99bf997832ad8306aed4ea30fb59fa7e9104"
+        },
+        "driverSHA256": "9a17950f2a3ca31ba6fddc5e002b6bbd70cea9a5ccd0ec1ca318d124bee2ca21",
+        "guestProbeSHA256": "52b782eb0489c2aa702867775879896a196c5444c4b094fecf7d4f150182c65b",
+        "qemuVersion": "QEMU emulator version 10.2.1 (Debian 1:10.2.1+ds-1ubuntu3.3)",
+        "guestExternalNetworkDisabled": true,
+        "firstBoot": {
+          "phase": "before-reboot",
+          "guestArchitecture": "amd64",
+          "bootSHA256": "82d7107851568294caa1710ae0335bac452522e90ade0287e081ff7f09a6ee16",
+          "installedVersion": "0.1.0~alpha.3",
+          "acceptedRevision": 2,
+          "controllerSHA256": "1b95d54ed3f0d8786c7d394f90a9f655fb2c3bddaec531c76c994a5f2a6d677e",
+          "liveEngine": {
+            "connectedWhenRebootRequested": true,
+            "ordinaryControllerAndVendor": true,
+            "routedBytesVerified": true
+          }
+        },
+        "secondBoot": {
+          "phase": "after-reboot",
+          "guestArchitecture": "amd64",
+          "bootSHA256": "ec66d1e791e64df004ec5c9042daf3d2ca36c78ed2a57e8a1ab2d843f390d4ff",
+          "installedVersion": "0.1.0~alpha.3",
+          "acceptedRevision": 2,
+          "controllerSHA256": "1b95d54ed3f0d8786c7d394f90a9f655fb2c3bddaec531c76c994a5f2a6d677e",
+          "rollbackVersion": "0.1.0~alpha.2",
+          "rollbackKeptCurrentPolicy": true,
+          "replayRefused": true,
+          "purgePreservedState": true,
+          "liveEngine": {
+            "oldEngineAndListenerAbsent": true,
+            "ownedEngineAndClientStopped": true,
+            "restoredApprovalRoutedBytes": true
+          }
+        },
+        "productionQualificationComplete": false,
+        "liveByedpi": {
+          "engineSHA256": "c70e87c6168af1832b21641a98bb53e3500b1daf6a5df8bfd22fac4a9294abda",
+          "trafficProbeSHA256": "73eb75ed481753f29c6eef6cfa34c3d133c97f7dbaaaf2f1836d5587ec832c34",
+          "sharedNetworkProbeSHA256": "e6a738ff9a57782c1c3673469367ba815909f42992ad4fdba56fc7f1bb5a3f01"
+        }
+      }
+    }
+  },
+  "arm64Attempts": [
+    {
+      "emulation": "tcg",
+      "outcome": "failed",
+      "failureCode": "TimeoutExpired",
+      "ranAlongsideAMD64": true
+    },
+    {
+      "emulation": "tcg",
+      "outcome": "failed",
+      "failureCode": "TimeoutExpired",
+      "ranAlongsideAMD64": false
+    },
+    {
+      "emulation": "tcg",
+      "outcome": "failed",
+      "failureCode": "qemu-boot-deadline",
+      "ranAlongsideAMD64": false,
+      "bootNumber": 1,
+      "bootDeadlineSeconds": 600,
+      "operationSpecificGuestDiagnostics": true
+    }
+  ],
+  "productionQualificationComplete": false
+}

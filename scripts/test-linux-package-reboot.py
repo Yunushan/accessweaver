@@ -113,15 +113,22 @@ def seed_guest(seed, packages, engine_sha, arch):
 def boot(command, temporary, number, timeout):
     serial = temporary / f"result-{number}.json"
     console = temporary / f"console-{number}.log"
-    result = subprocess.run([*command, "-serial", f"file:{console}", "-serial", f"file:{serial}"],
-                            stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout)
+    try:
+        result = subprocess.run([*command, "-serial", f"file:{console}", "-serial", f"file:{serial}"],
+                                stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise ValueError(f"Guest boot {number} exceeded the QEMU deadline") from None
     require(result.returncode == 0, "QEMU did not exit cleanly: " + result.stderr[-2048:].decode("utf-8", "replace"))
     require(serial.is_file() and 0 < serial.stat().st_size <= 16384, "Guest did not emit a bounded boot report")
     marker = b"ACCESSWEAVER-BOOT-V1 "
     frames = [line[len(marker):] for line in serial.read_bytes().splitlines() if line.startswith(marker)]
     require(len(frames) == 1, "Expected one guest report frame after firmware output")
     receipt = json.loads(frames[0])
-    require(receipt.get("phase") != "failure", f"Guest acceptance failed: {receipt.get('code')}")
+    if receipt.get("phase") == "failure":
+        code = receipt.get("code")
+        if not isinstance(code, str) or not re.fullmatch(r"[A-Za-z0-9-]{1,96}", code):
+            code = "invalid-failure-code"
+        raise ValueError(f"Guest boot {number} acceptance failed: {code}")
     return receipt
 
 

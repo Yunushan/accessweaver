@@ -38,8 +38,17 @@ def digest(path):
 
 def command(*args, ordinary=False, rejection=None):
     credentials = dict(user=65534, group=65534, extra_groups=[]) if ordinary else {}
-    result = subprocess.run(args, env=ENV, capture_output=True, timeout=60, **credentials)
-    operation = f"{Path(args[0]).name}-{args[1]}" if args[0] == CORE else Path(args[0]).name
+    operation = Path(args[0]).name
+    if args[0] == CORE:
+        operation += "-" + args[1]
+        if args[1] == "managed":
+            operation += "-" + args[2]
+    elif operation == "dpkg":
+        operation += "-" + args[1].lstrip("-")
+    try:
+        result = subprocess.run(args, env=ENV, capture_output=True, timeout=60, **credentials)
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError(f"guest-command-{operation}-timed-out") from error
     if rejection is None:
         require(result.returncode == 0, f"guest-command-{operation}-failed")
     else:

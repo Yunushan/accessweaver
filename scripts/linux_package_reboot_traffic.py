@@ -47,7 +47,10 @@ def routed_session(seed, controller, profile, env):
     descriptor = None
     try:
         probe["wait_listener"](proc)
-        descriptor = probe["owned_engine_pidfd"](proc)
+        try:
+            descriptor = probe["owned_engine_pidfd"](proc)
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError("guest-engine-ownership-inspection-timed-out") from error
         pid = int(next(line.split()[1] for line in Path(f"/proc/self/fdinfo/{descriptor}").read_text().splitlines()
                        if line.startswith("Pid:")))
         require(ordinary(proc.pid) and ordinary(pid), "controller-or-vendor-ran-with-privilege")
@@ -73,7 +76,10 @@ def routed_session(seed, controller, profile, env):
             require(exact(client, len(response)) == response, "guest-socks-did-not-return-origin-response")
             yield proc, descriptor, client, probe
     finally:
-        probe["clean_engine"](proc, descriptor)
+        try:
+            probe["clean_engine"](proc, descriptor)
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError("guest-engine-cleanup-timed-out") from error
 
 
 def prove_connected(session):
@@ -85,7 +91,11 @@ def prove_connected(session):
 def stop_and_verify(session):
     proc, descriptor, client, probe = session
     proc.terminate()
-    require(proc.wait(timeout=10) == 0 and bool(select.select([descriptor], [], [], 3)[0])
+    try:
+        status = proc.wait(timeout=10)
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError("guest-controller-stop-timed-out") from error
+    require(status == 0 and bool(select.select([descriptor], [], [], 3)[0])
             and probe["listener_closed"](), "recovered-controller-did-not-stop-its-vendor")
     try:
         data = client.recv(1)
