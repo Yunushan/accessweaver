@@ -453,7 +453,8 @@
             "docs/qualification/c856935f8aaa-local-webkit-performance.json",
             "docs/qualification/415d704e363b-local-webkit-styles.json",
             "docs/qualification/1ed0fa951710-integrated-browser-styles.json",
-            "docs/qualification/1ed0fa951710-local-webkit-soak.json"
+            "docs/qualification/1ed0fa951710-local-webkit-soak.json",
+            "docs/qualification/2e0f6f4b7f30-local-webkit-baseline-miss.json"
           ]
         },
         {
