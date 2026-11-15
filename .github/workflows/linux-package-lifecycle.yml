@@ -42,8 +42,10 @@ jobs:
     name: Native package lifecycle (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     concurrency:
+      # New pushes must preserve the pending qualification of earlier revisions.
       group: linux-package-lifecycle-${{ matrix.arch }}-${{ github.ref }}
       cancel-in-progress: false
+      queue: max
     timeout-minutes: 35
     strategy:
       fail-fast: false

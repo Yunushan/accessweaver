@@ -80,6 +80,8 @@ The [signed APT probe](../scripts/test-linux-apt-repository.py) uses disposable 
 
 The [native lifecycle workflow](../.github/workflows/linux-package-lifecycle.yml) runs the two probes on separate GitHub-hosted Ubuntu 24.04 AMD64 and ARM64 jobs. Each architecture has its own scheduling group per ref. It builds two fixture versions from the exact source under test. It verifies that both probes consumed the same package bytes and installed the same native binaries. Each successful job uploads a source-bound digest summary and the two probe reports. Check both results for the candidate commit. [GitHub-hosted runner labels](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 
+The workflow keeps pending revisions queued so a new push cannot replace a waiting qualification within the queue limit. Five consecutive runs on the development branch completed AMD64 while their ARM64 jobs were canceled. [Most recent canceled ARM64 run](https://github.com/Yunushan/accessweaver/actions/runs/43715869941) · [GitHub Actions queue behavior](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+
 On a disposable supported Linux host with the repository's Go toolchain, Python 3.11 or later, Debian package tools, GnuPG, OpenSSL and administrator access for the isolated probes, run the same entry point from the clean candidate checkout.
 
 ```sh
