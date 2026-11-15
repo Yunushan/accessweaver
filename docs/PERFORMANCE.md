@@ -427,3 +427,16 @@ The steady-heading candidate passed all 168 local Linux AMD64 functional cases u
 A local run with the hosted Node v26.8.2 pin completed the same WebKit workload on the exact candidate and controller. Dashboard readiness reached 3.33 seconds against the 3-second cap. Navigation p95 was 381 ms and editor-open p95 was 420 ms. Dashboard readiness was the only budget miss. [Local qualification results](qualification/415d704e363b-local-webkit-styles.json).
 
 A serial repeat with Node v26.8.2 met every budget on the same controller. Dashboard readiness was 2.56 seconds, navigation p95 was 338 ms and editor-open p95 was 390 ms. The repeat used the hosted workflow's isolated machine-policy volume and private cgroup, with external networking disabled. [Local qualification results](qualification/415d704e363b-local-webkit-styles.json).
+
+## Integrated stylesheet qualification
+
+The exact integrated source `1ed0fa9` was built with Go 1.27.4 and tested serially on offline Linux AMD64 with Node v26.8.2, Playwright 1.64.1 and verified private cgroup CPU accounting. Chromium and WebKit each passed all 57 cases in a single invocation, including all 25 performance limits for the original 256-profile workload. Firefox passed the first 51 cases before the 10-minute suite deadline. A separate invocation against the same source and binary passed all six unstarted cases, including all 25 performance limits. The full Firefox suite remains unsuccessful, and the targeted run does not satisfy the full-suite gate.
+
+| Browser | Dashboard ready | Navigation p95 | Editor-open p95 |
+| --- | ---: | ---: | ---: |
+| Chromium | 434 ms | 347 ms | 126 ms |
+| Firefox, targeted invocation | 929 ms | 331 ms | 459 ms |
+| WebKit | 907 ms | 372 ms | 401 ms |
+| Original limit | 3,000 ms | 500 ms | 500 ms |
+
+The local receipt verifies the reported source hashes against Git and independently recomputes each budget result. The hosted matrix, installed-platform acceptance and long-duration qualification remain open. [Local integrated source results](qualification/1ed0fa951710-integrated-browser-styles.json) and [hosted browser matrix](https://github.com/Yunushan/accessweaver/actions/runs/43716759760).
