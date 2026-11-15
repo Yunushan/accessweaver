@@ -88,6 +88,8 @@ bash scripts/test-linux-package-candidate.sh amd64 "$(git rev-parse HEAD)" /var/
 
 The [exact-source AMD64 rehearsal](qualification/227b43d8500e-linux-package-candidate.json) ran this entry point on Ubuntu 26.04 WSL. Both package routes installed the same executable bytes for the two fixture versions and preserved synthetic policy and profile files. The architecture check refused an ARM64 report on that AMD64 host. The [packaged managed-state evidence](qualification/16632c4b2a7f-linux-packaged-managed-policy.json) verifies both package routes on Ubuntu 26.04 WSL AMD64 with two versions built from distinct source commits.
 
+The corrected browser candidate also passed the isolated Debian fixture on Ubuntu 26.04 WSL AMD64. Both installation routes consumed the approved package bytes, exercised their respective upgrade and removal paths, and preserved the enrolled policy and fixture profile. The APT run authenticated signed by-hash indexes and rejected the scoped-key, expiry and tampering cases. The fixture inspected ARM64 packages on AMD64. A native ARM64 lifecycle, reboot, and deployment-signing qualification remain open. [Exact-source receipt](qualification/874ff6941ef4-local-debian-candidate.json).
+
 ### Live engine maintenance
 
 The direct package probe accepts a separately approved static native `ciadpi` executable. Obtain its SHA-256 from your approved engine record. With the same archive arguments shown above, add these options.
