@@ -2702,6 +2702,117 @@ try {
         $script:externalEffectsPending=$previousEffects
     }
 }
+# Interrupt clean-mode PTB after setup, at each stable uninstall boundary.
+& {
+    $previousAppData=$env:LOCALAPPDATA
+    $previousRecoveryRoot=$script:appRemovalRecoveryRoot
+    $previousEffects=$script:externalEffectsPending
+    try {
+        function Require-DesktopUser {}
+        function Get-Process {param($ErrorAction);return @()}
+        function Stop-AppProcesses {
+            if($mode -ceq 'before-stop' -and -not $state.stopInterrupted){
+                $state.stopInterrupted=$true
+                throw 'Synthetic clean removal interruption'
+            }
+        }
+        function Event {}
+        function Save-Journal {}
+        function Download {
+            param($url,$hash,$destination,[switch]$Signed,$Publisher,[switch]$ReturnVerifiedHash)
+            if($url -notmatch 'channel=ptb' -or -not $Signed -or $Publisher -cne 'discord' -or -not $ReturnVerifiedHash){
+                throw 'PTB installer was not acquired with publisher verification'
+            }
+            $state.downloads++
+            [IO.File]::WriteAllText($destination,'verified PTB installer')
+            return (Get-AppExecutableDigest $destination)
+        }
+        function Native {
+            param($Program,$Arguments,$Timeout,[IO.FileStream[]]$StartGuard)
+            if($Program -ieq $fixtureStableUpdater){
+                $pending=Read-DiscordRemovalRecovery 'discord'
+                if(($Arguments -join ' ') -cne '--uninstall -s' -or $pending.cleanPTB.appSHA256 -cne (Get-AppExecutableDigest $fixturePTBImage) -or
+                    $pending.cleanPTB.updaterSHA256 -cne (Get-AppExecutableDigest $fixturePTBUpdater) -or $pending.cleanPTB.image -ine $fixturePTBImage){
+                    throw 'Stable removal began without verified PTB recovery'
+                }
+                foreach($file in @($fixturePTBImage,$fixturePTBUpdater)){
+                    $locked=$false
+                    try {$writer=[IO.File]::OpenWrite($file);$writer.Dispose()}catch [IO.IOException]{$locked=$true}
+                    if(-not $locked){throw 'Verified PTB files were not held during stable cleanup'}
+                }
+                foreach($guard in $StartGuard){$guard.Dispose()}
+                $state.removals++
+                if($state.removals -eq 1 -and $mode -ceq 'client-present'){throw 'Synthetic clean removal interruption'}
+                [IO.File]::Delete($fixtureStableImage)
+                if($state.removals -eq 1 -and $mode -ceq 'updater-present'){throw 'Synthetic clean removal interruption'}
+                [IO.File]::Delete($fixtureStableUpdater)
+                if($state.removals -eq 1 -and $mode -ceq 'stable-absent'){throw 'Synthetic clean removal interruption'}
+                return
+            }
+            if(($Arguments -join ' ') -cne '-s' -or $StartGuard.Count -ne 1 -or -not $StartGuard[0].CanRead){
+                throw 'PTB setup did not use its verified installer'
+            }
+            $state.setups++
+            $StartGuard[0].Dispose()
+            [IO.File]::WriteAllText($fixturePTBImage,'verified replacement PTB client')
+            [IO.File]::WriteAllText($fixturePTBUpdater,'verified PTB updater')
+        }
+        foreach($mode in @('before-stop','client-present','updater-present','stable-absent')){
+            $hadPTB=$mode -ceq 'updater-present'
+            $initialRemovals=[int]($mode -cne 'before-stop')
+            $state=@{downloads=0;setups=0;removals=0;stopInterrupted=$false}
+            $root=Join-Path $testRoot ('ptb-resume-'+$mode)
+            $script:appRemovalRecoveryRoot=Join-Path $root 'application-recovery'
+            $env:LOCALAPPDATA=Join-Path $root 'fixture-appdata'
+            $r=[pscustomobject]@{action='app-install';engine='discord-ptb';clean=$true}
+            $inputData=@{nativeArchitecture='amd64'}
+            $stableBase=Get-AppProcessBase 'discord'
+            $ptbBase=Get-AppProcessBase 'discord-ptb'
+            $fixtureStableImage=Join-Path $stableBase 'app-1.0.0\Discord.exe'
+            $fixturePTBImage=Join-Path $ptbBase 'app-1.0.0\DiscordPTB.exe'
+            $fixtureStableUpdater=Join-Path $stableBase 'Update.exe'
+            $fixturePTBUpdater=Join-Path $ptbBase 'Update.exe'
+            foreach($directory in @((Split-Path -Parent $fixtureStableImage),(Split-Path -Parent $fixturePTBImage),(Join-Path $root 'downloads'))){
+                [void][IO.Directory]::CreateDirectory($directory)
+            }
+            [IO.File]::WriteAllText($fixtureStableImage,'original stable client')
+            [IO.File]::WriteAllText($fixtureStableUpdater,'original stable updater')
+            if($hadPTB){[IO.File]::WriteAllText($fixturePTBImage,'previous PTB client')}
+            $interrupted=$false
+            try{Install-App 'discord-ptb'}catch{if($_.Exception.Message -cne 'Synthetic clean removal interruption'){throw};$interrupted=$true}
+            $saved=Read-DiscordRemovalRecovery 'discord'
+            Assert ($interrupted -and $saved.cleanPTB.previouslyInstalled -eq $hadPTB -and $state.removals -eq $initialRemovals) ('PTB clean saves verified files before interrupted stable cleanup: '+$mode)
+
+            foreach($file in @($fixturePTBImage,$fixturePTBUpdater)){
+                $original=[IO.File]::ReadAllText($file)
+                [IO.File]::WriteAllText($file,'changed PTB file')
+                $refused=$false
+                try{Install-App 'discord-ptb'}catch{$refused=$_.Exception.Message -like 'Verified Discord PTB*changed before stable cleanup retry*'}
+                Assert ($refused -and $state.downloads -eq 1 -and $state.removals -eq $initialRemovals -and
+                    (Read-DiscordRemovalRecovery 'discord').sha256 -ceq $saved.sha256) ('PTB clean retry refuses changed '+[IO.Path]::GetFileName($file)+' before stable cleanup: '+$mode)
+                [IO.File]::WriteAllText($file,$original)
+            }
+            foreach($file in @($fixtureStableImage,$fixtureStableUpdater)){
+                if(-not [IO.File]::Exists($file)){continue}
+                $original=[IO.File]::ReadAllText($file)
+                [IO.File]::WriteAllText($file,'changed stable file')
+                $refused=$false
+                try{Install-App 'discord-ptb'}catch{$refused=$_.Exception.Message -match 'changed before removal|differs from the interrupted removal'}
+                Assert ($refused -and $state.removals -eq $initialRemovals -and
+                    (Read-DiscordRemovalRecovery 'discord').sha256 -ceq $saved.sha256) ('PTB clean retry preserves changed stable files: '+$mode)
+                [IO.File]::WriteAllText($file,$original)
+            }
+            $result=Install-App 'discord-ptb'
+            Assert ($result.installed -eq $true -and $result.previouslyInstalled -eq $hadPTB -and $state.downloads -eq 1 -and $state.setups -eq 1 -and
+                $state.removals -eq ($initialRemovals+[int]($mode -cne 'stable-absent')) -and -not [IO.File]::Exists($fixtureStableImage) -and -not [IO.File]::Exists($fixtureStableUpdater) -and
+                -not [IO.File]::Exists($saved.path)) ('PTB clean completes stable cleanup without running setup again: '+$mode)
+        }
+    } finally {
+        $env:LOCALAPPDATA=$previousAppData
+        $script:appRemovalRecoveryRoot=$previousRecoveryRoot
+        $script:externalEffectsPending=$previousEffects
+    }
+}
 # Mock installer acquisition and user operations; never execute a vendor process.
 $appInstallSaved=@{};foreach($name in @('Require-DesktopUser','Find-App','Get-AppExecutableDigest','Get-AppUninstaller','Open-VerifiedAppExecutable','Remove-App','Download','Native','Wait-App','Wait-AppProcessesExited','Event','Save-Journal')){$appInstallSaved[$name]=(Get-Command $name).ScriptBlock}
 $previousAppRequest=$r

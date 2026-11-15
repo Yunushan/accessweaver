@@ -4349,6 +4349,39 @@ function Save-ApplicationEffectBoundary {
         throw
     }
 }
+function Resume-CleanPTBRemoval($Recovery) {
+    $record=$Recovery.cleanPTB
+    $ptb=Find-App 'discord-ptb'
+    if($ptb -ine $record.image){
+        throw 'Verified Discord PTB changed before stable cleanup retry; review the current installation'
+    }
+    $updater=Get-AppUninstaller 'discord-ptb' $ptb
+    $clientGuard=Open-VerifiedAppExecutable $ptb $record.appSHA256 'Verified Discord PTB changed before stable cleanup retry'
+    try {
+        $updaterGuard=Open-VerifiedAppExecutable $updater.path $record.updaterSHA256 'Verified Discord PTB updater changed before stable cleanup retry'
+        try {
+            if((Find-App 'discord-ptb') -ine $ptb -or (Get-AppUninstaller 'discord-ptb' $ptb).path -ine $updater.path){
+                throw 'Verified Discord PTB changed before stable cleanup retry; review the current installation'
+            }
+            $stable=Find-App 'discord'
+            if($stable){
+                [void](Remove-App 'discord' $Recovery.image $record.stableSHA256 $Recovery.updaterSHA256 -ExpectedRecordSHA256 $Recovery.sha256 -CleanPTBRecovery $record)
+            }else{
+                Assert-DiscordRemovalRecoveryTarget 'discord' $Recovery
+                if(Test-DiscordUpdaterPresent 'discord'){
+                    [void](Resume-DiscordRemoval 'discord' $Recovery -RetainRecovery)
+                }
+            }
+            if((Find-App 'discord-ptb') -ine $ptb -or (Get-AppUninstaller 'discord-ptb' $ptb).path -ine $updater.path){
+                throw 'Verified Discord PTB changed during stable cleanup retry; review the current installation'
+            }
+            Wait-AppProcessesExited 'discord' $Recovery.image 0
+            Complete-DiscordRemovalRecovery 'discord' $Recovery
+        } finally {$updaterGuard.Dispose()}
+    } finally {$clientGuard.Dispose()}
+    Event 'Discord PTB clean installation recovered in the desktop session'
+    return @{application='discord-ptb';installed=$true;previouslyInstalled=$record.previouslyInstalled}
+}
 function Install-App([string]$variant,[switch]$Reinstall) {
     if($variant -eq 'splitcord'){Require-Admin}else{Require-DesktopUser}
     if($Reinstall -and ($variant -cne 'discord' -or $r.clean -or $r.downloadUrl -or $r.sha256 -or $r.configPath -or $r.bundlePath)){
@@ -4374,6 +4407,10 @@ function Install-App([string]$variant,[switch]$Reinstall) {
     }
     if($variant -notin @('discord','discord-ptb','splitcord')){throw 'Choose Discord, Discord PTB or SplitCord'}
     $cleanPTB=$r.clean -and $variant -eq 'discord-ptb'
+    if($cleanPTB -and $script:appRemovalRecoveryRoot){
+        $pendingClean=Read-DiscordRemovalRecovery 'discord'
+        if($pendingClean.cleanPTB){return (Resume-CleanPTBRemoval $pendingClean)}
+    }
     $stableBeforeDownload=$null;$stableBeforeDownloadDigest=$null;$stableUpdaterDigest=$null;$ptbBeforeSetupDigest=$null
     if($variant -eq 'splitcord'){
         $splitCordBaseline=Get-SplitCordSetupBaseline
@@ -4537,7 +4574,22 @@ function Install-App([string]$variant,[switch]$Reinstall) {
             try {
                 $updaterGuard=Open-VerifiedAppExecutable $installedUpdater.path $installedUpdaterDigest
                 try {
-                    [void](Remove-App 'discord' $stableBeforeDownload $stableBeforeDownloadDigest $stableUpdaterDigest)
+                    $cleanRecord=$null
+                    if($script:appRemovalRecoveryRoot){
+                        $cleanRecord=@{image=$installedApp;appSHA256=$installedDigest;updaterSHA256=$installedUpdaterDigest;
+                            stableSHA256=$stableBeforeDownloadDigest;previouslyInstalled=$previouslyInstalled}
+                    }
+                    [void](Remove-App 'discord' $stableBeforeDownload $stableBeforeDownloadDigest $stableUpdaterDigest -CleanPTBRecovery $cleanRecord)
+                    if($cleanRecord){
+                        $recovery=Read-DiscordRemovalRecovery 'discord'
+                        $saved=$recovery.cleanPTB
+                        if($recovery.image -ine $stableBeforeDownload -or $recovery.updaterSHA256 -cne $stableUpdaterDigest -or
+                           $saved.image -ine $cleanRecord.image -or $saved.appSHA256 -cne $cleanRecord.appSHA256 -or
+                           $saved.updaterSHA256 -cne $cleanRecord.updaterSHA256 -or $saved.stableSHA256 -cne $cleanRecord.stableSHA256 -or
+                           $saved.previouslyInstalled -cne $cleanRecord.previouslyInstalled){
+                            throw 'Verified Discord PTB cleanup record changed after stable removal'
+                        }
+                    }
                 } finally {$updaterGuard.Dispose()}
             } finally {$clientGuard.Dispose()}
         }
@@ -4751,6 +4803,14 @@ function Get-DiscordRemovalRecoveryPath([string]$Variant) {
         return (Join-Path $script:appRemovalRecoveryRoot ($Variant+'.pending'))
     }
 }
+function Test-DiscordRecoveryImagePath([string]$Variant,$Image) {
+    $name=if($Variant -ceq 'discord'){'Discord.exe'}else{'DiscordPTB.exe'}
+    if($Image -isnot [string] -or $Image -ine [IO.Path]::GetFullPath($Image) -or
+       [IO.Path]::GetFileName($Image) -ine $name){return $false}
+    $directory=[IO.Path]::GetDirectoryName($Image)
+    return ([IO.Path]::GetFileName($directory) -ilike 'app-*' -and
+        [IO.Path]::GetDirectoryName($directory) -ieq [IO.Path]::GetFullPath((Get-AppProcessBase $Variant)))
+}
 function Read-DiscordRemovalRecovery([string]$Variant) {
     $path=Get-DiscordRemovalRecoveryPath $Variant
     if(-not $path){return}
@@ -4760,20 +4820,13 @@ function Read-DiscordRemovalRecovery([string]$Variant) {
         $text=[Text.UTF8Encoding]::new($false,$true).GetString($bytes)
         if($text.IndexOf([char]0) -ge 0 -or -not $text.TrimStart().StartsWith('{')){throw 'Invalid record text'}
         $record=ConvertFrom-Json -InputObject $text -ErrorAction Stop
-        $name=if($Variant -ceq 'discord'){'Discord.exe'}else{'DiscordPTB.exe'}
         if($record -isnot [pscustomobject] -or
-            ($record.schemaVersion -isnot [int] -and $record.schemaVersion -isnot [long]) -or $record.schemaVersion -notin @(1,2) -or
-            @($record.PSObject.Properties).Count -ne (3+$record.schemaVersion) -or
+            ($record.schemaVersion -isnot [int] -and $record.schemaVersion -isnot [long]) -or $record.schemaVersion -notin @(1,2,3) -or
+            @($record.PSObject.Properties).Count -ne $(if($record.schemaVersion -eq 1){4}else{5}) -or
             $record.variant -isnot [string] -or $record.variant -cne $Variant -or
             $record.updaterSHA256 -isnot [string] -or $record.updaterSHA256 -cnotmatch '\A[A-F0-9]{64}\z' -or
-            $record.image -isnot [string] -or $record.image -ine [IO.Path]::GetFullPath($record.image) -or
-            [IO.Path]::GetFileName($record.image) -ine $name){
+            -not (Test-DiscordRecoveryImagePath $Variant $record.image)){
             throw 'Invalid removal record'
-        }
-        $directory=[IO.Path]::GetDirectoryName($record.image)
-        if([IO.Path]::GetFileName($directory) -inotlike 'app-*' -or
-            [IO.Path]::GetDirectoryName($directory) -ine [IO.Path]::GetFullPath((Get-AppProcessBase $Variant))){
-            throw 'Removal record does not match this installation'
         }
         $replacement=$null
         if($record.schemaVersion -eq 2){
@@ -4787,11 +4840,22 @@ function Read-DiscordRemovalRecovery([string]$Variant) {
                 throw 'Invalid replacement record'
             }
         }
+        $cleanPTB=$null
+        if($record.schemaVersion -eq 3){
+            $cleanPTB=$record.cleanPTB
+            if($Variant -cne 'discord' -or $cleanPTB -isnot [pscustomobject] -or @($cleanPTB.PSObject.Properties).Count -ne 5 -or
+                -not (Test-DiscordRecoveryImagePath 'discord-ptb' $cleanPTB.image) -or $cleanPTB.previouslyInstalled -isnot [bool]){
+                throw 'Invalid PTB clean installation record'
+            }
+            foreach($digest in @($cleanPTB.appSHA256,$cleanPTB.updaterSHA256,$cleanPTB.stableSHA256)){
+                if($digest -isnot [string] -or $digest -cnotmatch '\A[A-F0-9]{64}\z'){throw 'Invalid PTB clean installation digest'}
+            }
+        }
         return @{path=$path;sha256=(Get-WorkflowBytesSHA256 $bytes);image=$record.image;
-            updaterSHA256=$record.updaterSHA256;replacement=$replacement}
+            updaterSHA256=$record.updaterSHA256;replacement=$replacement;cleanPTB=$cleanPTB}
     }catch{throw 'Discord removal recovery record could not be verified; review the installation before retrying'}
 }
-function Save-DiscordRemovalRecovery([string]$Variant,[string]$Image,[string]$UpdaterSHA256,$Replacement,[string]$ExpectedRecordSHA256) {
+function Save-DiscordRemovalRecovery([string]$Variant,[string]$Image,[string]$UpdaterSHA256,$Replacement,[string]$ExpectedRecordSHA256,$CleanPTBRecovery) {
     $path=Get-DiscordRemovalRecoveryPath $Variant
     if(-not $path){return}
     No-Reparse $path
@@ -4803,6 +4867,9 @@ function Save-DiscordRemovalRecovery([string]$Variant,[string]$Image,[string]$Up
     if($Replacement){
         $record.schemaVersion=2
         $record.replacement=$Replacement
+    }elseif($CleanPTBRecovery){
+        $record.schemaVersion=3
+        $record.cleanPTB=$CleanPTBRecovery
     }
     $bytes=[Text.UTF8Encoding]::new($false,$true).GetBytes(($record | ConvertTo-Json -Depth 4 -Compress))
     if($bytes.Length -gt 32KB){throw 'Discord removal recovery record exceeds its size limit'}
@@ -4873,10 +4940,17 @@ function Assert-AppRemovalTarget([string]$Variant,[string]$App,[string]$Uninstal
     No-Reparse $App
     if((Get-AppUninstaller $Variant $App).path -ine $Uninstaller){throw 'Application uninstaller changed before launch'}
 }
-function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDigest,[string]$expectedUninstallerDigest,$Replacement,[string]$ExpectedRecordSHA256) {
+function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDigest,[string]$expectedUninstallerDigest,$Replacement,[string]$ExpectedRecordSHA256,$CleanPTBRecovery) {
     if($variant -eq 'splitcord'){Require-Admin}else{Require-DesktopUser}
     $app=Find-App $variant
     if($expectedApp -and $app -ine $expectedApp){throw 'Application installation changed before removal'}
+    $approvedRecovery=$null
+    if($ExpectedRecordSHA256){
+        $approvedRecovery=Read-DiscordRemovalRecovery $variant
+        if($approvedRecovery.sha256 -cne $ExpectedRecordSHA256){
+            throw 'Discord removal recovery record changed before retry'
+        }
+    }
     $recovery=$null
     if(-not $app){
         Wait-AppProcessesExited $variant '' 0
@@ -4911,6 +4985,12 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
         $clientGuard=Open-VerifiedAppExecutable $app $appDigest 'Application installation changed before uninstall launch'
         if($variant -eq 'splitcord'){Wait-SplitCordService $app 0 -AllowAbsentOrStopped}
         Assert-AppRemovalTarget $variant $app $uninstaller.path
+        if($CleanPTBRecovery){
+            $recovery=$approvedRecovery
+            if(-not $recovery){
+                $recovery=Save-DiscordRemovalRecovery $variant $app $digest -CleanPTBRecovery $CleanPTBRecovery
+            }
+        }
         Stop-AppProcesses $variant $app -ExpectedUninstaller $uninstaller.path
         Assert-AppRemovalTarget $variant $app $uninstaller.path
         $base=Get-AppProcessBase $variant
@@ -4920,7 +5000,7 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
         }
         Save-ApplicationEffectBoundary
         if($variant -eq 'splitcord'){Wait-SplitCordService $app 0 -AllowAbsentOrStopped}
-        else{$recovery=Save-DiscordRemovalRecovery $variant $app $digest $Replacement $ExpectedRecordSHA256}
+        elseif(-not $recovery){$recovery=Save-DiscordRemovalRecovery $variant $app $digest $Replacement $ExpectedRecordSHA256}
         Assert-AppRemovalTarget $variant $app $uninstaller.path
         if($recovery -and (Read-DiscordRemovalRecovery $variant).sha256 -cne $recovery.sha256){
             throw 'Discord removal recovery record changed before vendor launch'
@@ -4933,7 +5013,7 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
         if($null -ne $clientGuard){$clientGuard.Dispose()}
         $guard.Dispose()
     }
-    return (Confirm-AppRemoval $variant $app $recovery -RetainRecovery:($null -ne $Replacement))
+    return (Confirm-AppRemoval $variant $app $recovery -RetainRecovery:($null -ne $Replacement -or $null -ne $CleanPTBRecovery))
 }
 function Get-AppProcessBase([string]$variant) {
     if($variant -in @('discord','discord-ptb')){
