@@ -451,4 +451,12 @@ The harness now collects sustained observations when the short workload complete
 
 The local WebKit run on `2d1e263` passed the 25 short-workload limits and all 22 sustained limits with 900 seconds of load, 3,600 requests and 30 editor opens. Sustained editor-open p95 was 404 ms, made up of 334 ms for click and actionability, 14 ms for dialog visibility, and 55 ms for paint settlement. The slowest open was 602 ms. The product sources match the earlier 846 ms p95 run, so the pair shows run-to-run variation. Hosted and installed-platform qualification remain open. [Verified WebKit timings](qualification/2d1e263f7fc6-local-webkit-editor-timings.json).
 
-The dashboard change in `d57c7c8` avoids rewriting unchanged translations, skips text matching when profiles have no search query, and handles hash changes when the view changes. Local WebKit on Linux AMD64 passed all 56 functional cases and the original 25 short performance limits. Dashboard readiness was 963 ms, navigation p95 was 402 ms, and editor-open p95 was 266 ms. The revised dashboard still needs a sustained workload result and wider browser and installed-platform qualification. [Exact WebKit results](qualification/d57c7c8d8a97-dashboard-webkit.json).
+The dashboard change in `d57c7c8` avoids rewriting unchanged translations, skips text matching when profiles have no search query, and handles hash changes when the view changes. Local Linux AMD64 WebKit and Chromium passed all 56 functional cases and the 25 short performance limits in their full suites. Firefox completed 54 of 57 cases, including the passing performance case, before the ten-minute deadline. Its three unstarted cases passed in a separate invocation. The Firefox full suite retains its timeout result.
+
+| Browser | Dashboard ready | Navigation p95 | Editor-open p95 |
+| --- | ---: | ---: | ---: |
+| Chromium | 294 ms | 294 ms | 128 ms |
+| Firefox | 987 ms | 336 ms | 371 ms |
+| WebKit | 963 ms | 402 ms | 266 ms |
+
+The revised dashboard still needs a sustained workload result and hosted and installed-platform qualification. [Exact dashboard browser results](qualification/d57c7c8d8a97-dashboard-browser-acceptance.json).

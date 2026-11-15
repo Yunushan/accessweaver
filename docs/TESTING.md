@@ -114,6 +114,8 @@ CI and release verification run the same suite on Chromium, Firefox and WebKit o
 
 The [local Linux AMD64 receipt](qualification/c856935f8aaa-local-linux-browser.json) binds WebKit and Firefox to the same clean source-built controller. Each passed all 56 functional cases in the pinned Playwright container with external networking disabled. The independent controller probe passed 11 checks, and a second ordinary Linux account could not read the launcher and received HTTP 403 from all six tested API operations. The run excluded the performance case and did not exercise other architectures, native installers or screen readers.
 
+The managed navigation regression on `eec0a50` verifies that Back can traverse a previously visited System page after profile-only mode is enabled. The redirect updates that history entry, keeps focus in Profiles when its view stays active, and moves focus to main content when Back leaves the focused view. Back and Forward completed in Chromium, Firefox and WebKit on the offline Linux AMD64 fixture. [Targeted browser verification](qualification/eec0a50e3b29-browser-managed-history.json).
+
 ## Automated accessibility checks
 
 `desktop.spec.cjs` scans all six views, guided/expanded/JSON editors, editor preview/error states, launch review and logs in English, Turkish, Russian and Spanish, in both themes. The development-only `@axe-core/playwright` 4.14.0 runner uses the WCAG 2 A/AA, 2.1 A/AA, 2.2 AA and best-practice tags. Within those tags, no rules, elements or known violations are excluded. Each scan waits for finite page transitions to finish; it does not disable the application's normal animation. Failed violations fail the test. Incomplete checks remain in the evidence for review.

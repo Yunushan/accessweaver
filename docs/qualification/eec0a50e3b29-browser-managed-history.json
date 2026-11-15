@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "scope": "Targeted real-browser profile-only Back and Forward navigation and keyboard focus in offline Linux AMD64",
+  "sourceCommit": "eec0a50e3b29e3faa99efd6b1c125b98d7f4e76c",
+  "sourceSHA256": {
+    "scripts/browser-tests/job-cpu.cjs": "4812d6387bcec43bc84855eef4f223000440fb2e7d15f1ca7a7fe31a85980b37",
+    "scripts/check-native-environment.cjs": "cf56a8253f0444ec6cb8c8bf92249151165d8bd4061985c8a0e8df0df2aea562",
+    "scripts/browser-tests/check-image-environment.cjs": "e19b4bf61bc94d045e2566f0353a04e267e45d404aae4fabfae63dcec87f460b",
+    "scripts/browser-tests/browser-native-binary.cjs": "8194f82559f9b7f32b43d74c3d3c0df6bf00b48e34c23bb3e8ed3132f82db972",
+    "scripts/browser-tests/package-lock.json": "8be62d9880021ca910c493d5540682379b6bc5f0b907707a7579dc4f74fbbd6a",
+    ".github/workflows/browser.yml": "c4979a03afd26c51385edbfe32ae697950e151c3e064c26a043f464684b9b4a9",
+    "scripts/browser-tests/svg-geometry.cjs": "c2a02e5c288b13c5194299774d9e31ee6996c79d273f4a9a7e16d0a20f414cb3",
+    "scripts/browser-tests/svg-geometry.test.cjs": "b15a0dbc6d812a0dc022051b8c05d67b1c26f49eb66d617bc0dc32a61697baa0",
+    "internal/api/server.go": "78739ec3254d72aa75343dcd4c9dd25ce9022d69cd8445607afdbf54e1a67adf",
+    "web/app.test.cjs": "80ce3558b8c5d4fac0ae76b1d5d5e0c76959fea256d1e3436245dcc5cf4f380b",
+    "web/locales.js": "ea6f2360041e9da71ee62645049e53180b71c5a14639f248a37b9fb972cc1077",
+    "web/system.js": "b2328e2b085c2d15d8471db0baebd83cf85267eb2c9a482428d2d870226bae3f",
+    "internal/profile/testdata/timestamps.json": "2009c2b8f7b48e28fd62586809dabff9029c8b386227093345c225dbabb39ffe",
+    "scripts/browser-tests/browser-memory.cjs": "6e3e73268803a6aa43794f62a40bd04a652a06c3d87d7396a1b16ddb5910fc03",
+    "scripts/browser-tests/browser-resources.cjs": "5aeab55a5dd67264a96baf34b264815fb80bcdf9c2ad086b22613ca675c1e5e1",
+    "scripts/browser-tests/desktop-performance.cjs": "997ef389d5acffacb9c1d42d053186fb4152ab6cf71a1841d47c7edb2bcfe29f",
+    "scripts/browser-tests/performance-budgets.json": "97e105bb42966d2b4a0cf4b8505385dbaab1aa1a4afab9670be4f8ee9785160e",
+    "web/app.js": "54138863e741a62fc1b29a485a172d2859fdbf65a70f78c7364d215be0006ef3",
+    "web/index.html": "5682e309e6dd03d7f0cc1489cf43a6cc7e4535a4dcc31a2bb138562b3701dee5",
+    "web/app.css": "6391cf2d9213fcf49e0cfc27271f5f8aeee4b99c64abbb754159148d50c394f3",
+    "scripts/browser-tests/desktop.spec.cjs": "4907bf49329dac498fae4b5719de5eb42d982f64616339f3975796568459401e",
+    "scripts/browser-tests/modal-keyboard.cjs": "7a27a9d2ca02a323cabfbe02675972e7762998366531f25685643ca13d0c5465",
+    "scripts/browser-tests/accessibility.cjs": "55f56de47f8ece4254fb8bec35678f25d0f4a1f260e4e65ac42852da21f8fad7",
+    "scripts/browser-tests/playwright.config.cjs": "fb951bf6f1eca621cb69eab2d46517b1a57a3779714142879d8f4f93cc719fa9",
+    "scripts/browser-tests/suite-contracts.json": "2ced236ebd6e344fab431f1da765ca62fb84b32c283571976720c68a8d773f46",
+    "scripts/browser-tests/suite-status-reporter.cjs": "c563c60ce2c9a618d2435ee823e1c6dec10eeb43d528eae48e3385545bb89c5f"
+  },
+  "binarySHA256": "c4162a62d2e8562eac5e89f6a482d224336e0d0cddffa11aeb7c7001cc297578",
+  "fixedCaseID": 56,
+  "browsers": {
+    "chromium": {
+      "caseStatus": "passed",
+      "attempts": 1,
+      "fullSuiteQualified": false,
+      "reportsSHA256": {
+        "image": "96d598e57e014bae0db169f709aa6e67952f4f4d1b39b39446b719f40dd4dc4d",
+        "suite": "0853afb91f6fdea3bd0549a812f60e5c537858cea3125f864d20bd020c2aed93"
+      }
+    },
+    "firefox": {
+      "caseStatus": "passed",
+      "attempts": 1,
+      "fullSuiteQualified": false,
+      "reportsSHA256": {
+        "image": "750c2b65ab994fb98cbf60e85dd70381edce06b9b1db9f926c79114858f05e56",
+        "suite": "1a57ae47d8d0e2121a7ef82e3073c5b8feb6f68532cfe4d50257fefcfde575fd"
+      }
+    },
+    "webkit": {
+      "caseStatus": "passed",
+      "attempts": 1,
+      "fullSuiteQualified": false,
+      "reportsSHA256": {
+        "image": "127f1cbcb4572014a0609ad0f1d4512bd9e9303035200c93ecd4c1d639f43a74",
+        "suite": "93ea7b87408f3369b715e04b98ee5e91f3481b6a53b94d4ad308007e87bf3c5f"
+      }
+    }
+  },
+  "productionQualificationComplete": false
+}

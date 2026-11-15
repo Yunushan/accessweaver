@@ -425,7 +425,9 @@
             "docs/qualification/f9ca4d5c8001-browser-runtime-language-reset.json",
             "docs/qualification/c856935f8aaa-local-linux-browser.json",
             "docs/qualification/415d704e363b-local-webkit-styles.json",
-            "docs/qualification/1ed0fa951710-integrated-browser-styles.json"
+            "docs/qualification/1ed0fa951710-integrated-browser-styles.json",
+            "docs/qualification/d57c7c8d8a97-dashboard-browser-acceptance.json",
+            "docs/qualification/eec0a50e3b29-browser-managed-history.json"
           ]
         },
         {
@@ -458,7 +460,8 @@
             "docs/qualification/2e0f6f4b7f30-local-webkit-baseline-miss.json",
             "docs/qualification/2e0f6f4b7f30-local-webkit-baseline-repeat.json",
             "docs/qualification/2d1e263f7fc6-local-webkit-editor-timings.json",
-            "docs/qualification/d57c7c8d8a97-dashboard-webkit.json"
+            "docs/qualification/d57c7c8d8a97-dashboard-webkit.json",
+            "docs/qualification/d57c7c8d8a97-dashboard-browser-acceptance.json"
           ]
         },
         {
