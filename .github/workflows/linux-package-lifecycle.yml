@@ -75,6 +75,8 @@ jobs:
             sudo apt-get -o APT::Update::Error-Mode=any update
             sudo apt-get install --no-install-recommends -y dpkg-dev gnupg gpgv iproute2 openssl
           fi
+      - name: Verify reboot evidence rejects mismatched executables
+        run: python3 -B scripts/test_linux_package_reboot.py
       - name: Build the exact source and exercise native dpkg and APT lifecycles
         run: |
           bash scripts/test-linux-package-candidate.sh "$TARGET_ARCH" "$GITHUB_SHA" "$RUNNER_TEMP/accessweaver-package-evidence"

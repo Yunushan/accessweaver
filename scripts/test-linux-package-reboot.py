@@ -13,6 +13,7 @@ import sys
 import tarfile
 import tempfile
 
+from linux_deb_payload import payload_hashes
 import linux_package_reboot_traffic as traffic
 from verify_release import MAX_FILE, release_file, require
 
@@ -120,7 +121,7 @@ def boot(command, temporary, number, timeout):
         raise ValueError(f"Guest boot {number} exceeded the QEMU deadline") from None
     require(result.returncode == 0, "QEMU did not exit cleanly: " + result.stderr[-2048:].decode("utf-8", "replace"))
     require(serial.is_file() and 0 < serial.stat().st_size <= 16384, "Guest did not emit a bounded boot report")
-    marker = b"ACCESSWEAVER-BOOT-V1 "
+    marker = b"ACCESSWEAVER-BOOT-V2 "
     frames = [line[len(marker):] for line in serial.read_bytes().splitlines() if line.startswith(marker)]
     require(len(frames) == 1, "Expected one guest report frame after firmware output")
     receipt = json.loads(frames[0])
@@ -151,11 +152,13 @@ def exercise(args, temporary):
     seed = temporary / "seed"
     seed.mkdir()
     packages = {}
+    controllers = {}
     versions = {}
     for label, source, pin in (("older", args.old, args.old_sha256), ("newer", args.new, args.new_sha256)):
         name = label + ".deb"
         packages[name] = stage(source, seed / name, MAX_FILE, pin)
         versions[label] = package_info(seed / name, args.arch)
+        controllers[name] = payload_hashes(seed / name)["usr/bin/accessweaver"]
     run("dpkg", "--compare-versions", versions["older"], "lt", versions["newer"])
     engine_sha = None
     if args.byedpi is not None:
@@ -180,31 +183,13 @@ def exercise(args, temporary):
     if args.qemu_data is not None:
         system.extend(["-L", args.qemu_data])
     first, second = (boot(system, temporary, index, args.boot_timeout) for index in (1, 2))
-    startup_fields = {"phase", "guestArchitecture", "bootSHA256", "installedVersion", "acceptedRevision", "controllerSHA256"}
-    recovery_fields = {"rollbackVersion", "rollbackKeptCurrentPolicy", "replayRefused", "purgePreservedState"}
-    if engine_sha:
-        startup_fields.add("liveEngine")
-        for receipt, expected in ((first, traffic.BEFORE), (second, traffic.AFTER)):
-            require(isinstance(receipt.get("liveEngine"), dict)
-                    and receipt["liveEngine"].keys() == expected
-                    and all(value is True for value in receipt["liveEngine"].values()),
-                    "Guest did not prove the required live engine state")
-    require(set(first) == startup_fields and set(second) == startup_fields | recovery_fields
-            and first["phase"] == "before-reboot" and second["phase"] == "after-reboot"
-            and all(SHA256.fullmatch(receipt["bootSHA256"]) and SHA256.fullmatch(receipt["controllerSHA256"])
-                    and receipt["guestArchitecture"] == args.arch
-                    and receipt["installedVersion"] == versions["newer"] and receipt["acceptedRevision"] == 2
-                    for receipt in (first, second))
-            and first["bootSHA256"] != second["bootSHA256"]
-            and first["controllerSHA256"] == second["controllerSHA256"]
-            and second["rollbackVersion"] == versions["older"]
-            and all(second[name] is True for name in recovery_fields - {"rollbackVersion"}),
-            "Unexpected pre-reboot and reboot evidence")
+    verify_boots(first, second, args.arch, versions, controllers, engine_sha is not None)
     require(digest(base) == args.image_sha256, "Approved guest base snapshot changed")
-    report = {"schemaVersion": 1, "scope": "Offline Ubuntu Linux QEMU guest kernel restart and Debian lifecycle",
+    report = {"schemaVersion": 2, "scope": "Offline Ubuntu Linux QEMU guest kernel restart and Debian lifecycle",
             "guestArchitecture": args.arch, "hostArchitecture": HOST_ARCHITECTURES[os.uname().machine], "emulation": args.accel, "imageSHA256": args.image_sha256,
-            "firmwareSHA256": template_pins, "packagesSHA256": packages,
+            "firmwareSHA256": template_pins, "packagesSHA256": packages, "packageControllerSHA256": controllers,
             "driverSHA256": digest(Path(__file__)), "guestProbeSHA256": digest(GUEST),
+            "payloadProbeSHA256": digest(Path(__file__).with_name("linux_deb_payload.py")),
             "qemuVersion": run(args.qemu, "--version").splitlines()[0].decode("ascii"),
             "guestExternalNetworkDisabled": True, "firstBoot": first, "secondBoot": second,
             "productionQualificationComplete": False}
@@ -215,6 +200,33 @@ def exercise(args, temporary):
             "sharedNetworkProbeSHA256": digest(GUEST.with_name(traffic.SHARED_PROBE)),
         }
     return report
+
+
+def verify_boots(first, second, arch, versions, controllers, live_engine):
+    startup_fields = {"phase", "guestArchitecture", "bootSHA256", "installedVersion", "acceptedRevision", "controllerSHA256"}
+    recovery_flags = {"rollbackKeptCurrentPolicy", "replayRefused", "purgePreservedState"}
+    recovery_fields = recovery_flags | {"rollbackVersion", "rollbackControllerSHA256"}
+    if live_engine:
+        startup_fields.add("liveEngine")
+        for receipt, expected in ((first, traffic.BEFORE), (second, traffic.AFTER)):
+            require(isinstance(receipt.get("liveEngine"), dict)
+                    and receipt["liveEngine"].keys() == expected
+                    and all(value is True for value in receipt["liveEngine"].values()),
+                    "Guest did not prove the required live engine state")
+    require(set(first) == startup_fields | {"initialControllerSHA256"}
+            and set(second) == startup_fields | recovery_fields
+            and first["phase"] == "before-reboot" and second["phase"] == "after-reboot"
+            and all(SHA256.fullmatch(receipt["bootSHA256"])
+                    and receipt["guestArchitecture"] == arch
+                    and receipt["installedVersion"] == versions["newer"] and receipt["acceptedRevision"] == 2
+                    and receipt["controllerSHA256"] == controllers["newer.deb"]
+                    for receipt in (first, second))
+            and first["bootSHA256"] != second["bootSHA256"]
+            and first["initialControllerSHA256"] == controllers["older.deb"]
+            and second["rollbackVersion"] == versions["older"]
+            and second["rollbackControllerSHA256"] == controllers["older.deb"]
+            and all(second[name] is True for name in recovery_flags),
+            "Guest lifecycle evidence does not match the approved package payloads")
 
 
 def main():

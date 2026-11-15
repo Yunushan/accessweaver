@@ -127,7 +127,7 @@ def receipt(phase, **fields):
         settings = termios.tcgetattr(descriptor)
         settings[2] |= termios.CLOCAL
         termios.tcsetattr(descriptor, termios.TCSANOW, settings)
-        serial.write("\nACCESSWEAVER-BOOT-V1 " + json.dumps(dict(phase=phase, guestArchitecture=arch, **fields),
+        serial.write("\nACCESSWEAVER-BOOT-V2 " + json.dumps(dict(phase=phase, guestArchitecture=arch, **fields),
                                                             separators=(",", ":")) + "\n")
 
 
@@ -135,6 +135,7 @@ def before_reboot(boot, checkpoint, engine_sha, arch):
     require(not POLICY.exists(), "test-image-already-enrolled")
     command("dpkg", "--install", SEED / "older.deb")
     old = package_version(arch)
+    initial_controller = digest(CORE)
     WORK.mkdir(mode=0o755, exist_ok=True)
     private = WORK / "private"
     private.mkdir(mode=0o700)
@@ -191,7 +192,7 @@ def before_reboot(boot, checkpoint, engine_sha, arch):
         os.fsync(output.fileno())
     os.sync()
     startup = {"bootSHA256": boot, "installedVersion": new, "acceptedRevision": 2,
-               "controllerSHA256": record["controllerSHA256"]}
+               "controllerSHA256": record["controllerSHA256"], "initialControllerSHA256": initial_controller}
     if engine_sha:
         with traffic.routed_session(SEED, CORE, PROFILE_ID, ENV) as session:
             traffic.prove_connected(session)
@@ -227,6 +228,7 @@ def after_reboot(boot, checkpoint, engine_sha, arch):
     verify_installed(2, record["keyId"], record["profile"])
     cli("managed", "update", WORK / "private/envelope-1.json", rejection=b"newer than the minimum revision")
     require(state() == record["state"], "rollback-or-policy-replay-changed-state")
+    rollback_controller = digest(CORE)
     command("dpkg", "--purge", "accessweaver")
     require(not CORE.exists() and not DATA.exists()
             and "Package: accessweaver" not in Path("/var/lib/dpkg/status").read_text()
@@ -234,6 +236,7 @@ def after_reboot(boot, checkpoint, engine_sha, arch):
     require(not (PROFILE.parent / "reboot-refused-fixture.json").exists(), "refused-profile-was-created")
     receipt("after-reboot", bootSHA256=boot, installedVersion=record["newer"], acceptedRevision=2,
             controllerSHA256=record["controllerSHA256"], rollbackVersion=record["older"],
+            rollbackControllerSHA256=rollback_controller,
             rollbackKeptCurrentPolicy=True, replayRefused=True, purgePreservedState=True, **extra)
     command("systemctl", "--no-block", "poweroff")
 

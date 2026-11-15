@@ -14,6 +14,7 @@ import sys
 import tarfile
 import tempfile
 
+from linux_deb_payload import payload_hashes
 from linux_package_managed_fixture import ManagedPackageFixture
 import linux_package_traffic_fixture as traffic
 from verify_release import require
@@ -57,34 +58,7 @@ def inspect(package, arch):
         require({str(PurePosixPath(item.name)) for item in archive} == {".", "control", "md5sums"},
                 "Unexpected install hooks or control files")
 
-    recorded = {}
-    with subprocess.Popen(["/usr/bin/dpkg-deb", "--fsys-tarfile", package],
-                          stdout=subprocess.PIPE, env=COMMAND_ENV) as process:
-        with tarfile.open(fileobj=process.stdout, mode="r|") as archive:
-            for item in archive:
-                name = PurePosixPath(item.name)
-                binary = name == PurePosixPath("usr/bin/accessweaver")
-                docs = name.is_relative_to("usr/share/doc/accessweaver")
-                data = name.is_relative_to("usr/share/accessweaver")
-                parents = {".", "usr", "usr/bin", "usr/share", "usr/share/doc"}
-                require(item.uid == item.gid == 0 and not name.is_absolute()
-                        and ".." not in name.parts and (binary or docs or data or str(name) in parents and item.isdir()),
-                        "Package payload extends beyond the controller and documentation")
-                if item.isdir():
-                    require(item.mode == 0o755, "Unexpected package directory mode")
-                else:
-                    require(item.isfile() and item.mode == (0o755 if binary else 0o644),
-                            "Unexpected package file type or mode")
-                    require(str(name) not in recorded, "Unexpected duplicate payload path")
-                    with archive.extractfile(item) as stream:
-                        recorded[str(name)] = hashlib.file_digest(stream, "sha256").hexdigest()
-        require(process.wait(timeout=30) == 0, "Failed to inspect native payload")
-    expected = {"usr/bin/accessweaver"}
-    expected.update({"usr/share/doc/accessweaver/copyright", "usr/share/doc/accessweaver/SECURITY.md"})
-    expected.update("usr/share/accessweaver/" + name for name in (
-        "BUILD-INFO.json", "SBOM.cdx.json", "THIRD_PARTY.md", "licenses/Go-runtime-LICENSE"))
-    require(expected <= recorded.keys(), "Package is missing the controller, metadata or notices")
-    return info["Version"], recorded
+    return info["Version"], payload_hashes(package, COMMAND_ENV)
 
 
 def install_state(root, package_version, payload):
@@ -183,6 +157,7 @@ def exercise(work, arch, old, old_pin, new, new_pin, other, other_pin, byedpi=No
             "endpointArchitecture": arch,
             "dpkgVersion": run("/usr/bin/dpkg", "--version").splitlines()[0].decode("ascii"),
             "builderSHA256": sha(BUILDER), "probeSHA256": sha(Path(__file__)),
+            "payloadProbeSHA256": sha(Path(__file__).with_name("linux_deb_payload.py")),
             "packages": [{"arch": target, "version": version, "archiveSHA256": pin, "debSHA256": sha(package),
                           "binarySHA256": payload["usr/bin/accessweaver"], "payloadFiles": len(payload)}
                          for target, version, pin, package, payload in (
