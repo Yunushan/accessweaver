@@ -55,7 +55,7 @@ function Assert-InstallerPEArchitecture([string]$Binary, [string]$Arch) {
     if($machine -ne $expectedMachine){throw 'Installer payload PE machine does not match its requested architecture'}
 }
 
-function Assert-InstallerPackageDirectories([string]$Root,[string]$SetupScript) {
+function Assert-InstallerPackageDirectories([string]$Root,[string]$SetupScript,[string]$PreprocessedScript) {
     $source=[IO.File]::ReadAllText($SetupScript)
     $preflight=[regex]::Match($source,'(?ms)^function AWCheckPackageDirectories\(.*?^end;')
     if(-not $preflight.Success){throw 'Installer package directory preflight is missing'}
@@ -65,6 +65,14 @@ function Assert-InstallerPackageDirectories([string]$Root,[string]$SetupScript) 
         if(-not $checked.Add($match.Groups[1].Value)){throw 'Duplicate installer package directory check'}
     }
 
+    $compiledReplacement=$null
+    if($PreprocessedScript){
+        $compiled=[IO.File]::ReadAllText($PreprocessedScript)
+        $compiledReplacement=[regex]::Match($compiled,'(?ms)^function AWPayloadReplacementPreflight\(.*?^end;')
+        if(-not $compiledReplacement.Success -or $compiled -cnotmatch '(?m)^Source: .*; BeforeInstall: AWCheckPackageCopyDestination\s*$'){
+            throw 'Compiled installer package preflight or copy guard is missing'
+        }
+    }
     $rootItem=Get-Item -LiteralPath $Root -Force -ErrorAction Stop
     if(-not $rootItem.PSIsContainer -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint)){
         throw 'Installer package staging root must be an ordinary directory'
@@ -77,12 +85,17 @@ function Assert-InstallerPackageDirectories([string]$Root,[string]$SetupScript) 
             if($entry.Attributes -band [IO.FileAttributes]::ReparsePoint){
                 throw 'Installer package staging includes a reparse point'
             }
+            $relative=$entry.FullName.Substring($prefixLength)
             if($entry -is [IO.DirectoryInfo]){
-                $relative=$entry.FullName.Substring($prefixLength)
                 if(-not $checked.Contains($relative)){
                     throw ('Installer package directory has no Setup and uninstall preflight: '+$relative)
                 }
                 $pending.Enqueue($entry)
+            }elseif($compiledReplacement){
+                $literal=$relative.Replace("'","''")
+                if(-not $compiledReplacement.Value.Contains("AWCanReplaceInstalledFile(Destination + '\$literal')")){
+                    throw ('Compiled installer omitted package-file replacement preflight: '+$relative)
+                }
             }
         }
     }

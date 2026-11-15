@@ -129,6 +129,7 @@ try {
         }
     } finally {$noticeGuard.Dispose()}
     $null=Assert-InstallerSetupScript $preprocessed $TargetArch $Version -OrganizationSigning:$organizationSigning
+    Assert-InstallerPackageDirectories $stage $setupScript $preprocessed
     $compilerOutput | Write-Output
     $actualVersion=[regex]::Match(($compilerOutput -join "`n"),'(?im)^Compiler engine version:\s*Inno Setup\s+(\d+\.\d+\.\d+)\b')
     if(-not $actualVersion.Success){throw 'Could not identify installer compiler version'}

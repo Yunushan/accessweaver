@@ -103,6 +103,10 @@ Assert ($replaceProbe.Contains('AWOpenReplaceProbe(Path, $00010080, $00000007, 0
     $replaceProbe -cmatch '(?s)AWGetFileInfo\(Handle, Info\).*Info.Attributes and \(\$00000400 or \$00000010 or \$00000001\).*Info.Links = 1.*finally.*AWCloseNativeHandle') 'Setup must refuse read-only, aliased or redirected files before replacement'
 $installerBuild=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'build-windows-installer.ps1'))
 Assert ($installerBuild -cmatch '(?s)stage-docs.*Assert-InstallerPackageDirectories \$stage \$setupScript.*& \$Compiler') 'Installer build must check the staged directory tree before compiling it'
+Assert ($installerBuild -cmatch '(?s)Assert-InstallerSetupScript \$preprocessed.*Assert-InstallerPackageDirectories \$stage \$setupScript \$preprocessed') 'Installer build must verify coverage for each staged file in the compiled script'
+$copyGuard=[regex]::Match($installerSource,'(?ms)^procedure AWCheckPackageCopyDestination;.*?^end;').Value
+Assert ($installerSource -cmatch '(?m)^Source: .*; BeforeInstall: AWCheckPackageCopyDestination\s*$' -and
+    $copyGuard -cmatch '(?s)CurrentFilename.*ExpandConstant\(Destination\).*AWInstallationPathPreflight\(ExtractFileDir\(Destination\), True\).*AWCanReplaceInstalledFile\(Destination\).*Log\(Failure\).*Abort;') 'Every package file must recheck its destination immediately before copying'
 $replacement=[regex]::Match($installerSource,'(?ms)^function AWPayloadReplacementPreflight\([^;\r\n]+\): String;\r?\nbegin.*?^end;').Value
 $packageDirectories=[regex]::Match($installerSource,'(?ms)^function AWCheckPackageDirectories\(.*?^end;').Value
 foreach($directory in @('licenses','docs','docs\assets','docs\qualification')){
@@ -227,6 +231,20 @@ try {
         [void][IO.Directory]::CreateDirectory((Join-Path $layout $directory))
     }
     Assert-InstallerPackageDirectories $layout $setupScript
+
+    $stagedDocument=Join-Path $layout "docs\qualification\fixture's report.json"
+    [IO.File]::WriteAllText($stagedDocument,'{}')
+    $compiled=Join-Path $fixture 'preprocessed-package.iss'
+    $nl=[Environment]::NewLine
+    $header=@('[Files]','Source: "C:\Fixture\*"; DestDir: "{app}"; BeforeInstall: AWCheckPackageCopyDestination',
+        '[Code]','function AWPayloadReplacementPreflight(const Destination: String): String;','begin') -join $nl
+    [IO.File]::WriteAllText($compiled,$header+$nl+'end;'+$nl)
+    Reject {Assert-InstallerPackageDirectories $layout $setupScript $compiled} 'Compiled installer without the nested file preflight was accepted'
+    $probe="  if not AWCanReplaceInstalledFile(Destination + '\docs\qualification\fixture''s report.json') then Exit;"
+    [IO.File]::WriteAllText($compiled,$header+$nl+$probe+$nl+'end;'+$nl)
+    Assert-InstallerPackageDirectories $layout $setupScript $compiled
+    [IO.File]::WriteAllText($compiled,([IO.File]::ReadAllText($compiled).Replace('; BeforeInstall: AWCheckPackageCopyDestination','')))
+    Reject {Assert-InstallerPackageDirectories $layout $setupScript $compiled} 'Compiled installer without a per-file copy guard was accepted'
     $uncovered=Join-Path $layout 'docs\qualification\new'
     [void][IO.Directory]::CreateDirectory($uncovered)
     Reject {Assert-InstallerPackageDirectories $layout $setupScript} 'Unprotected staged documentation directory was accepted'

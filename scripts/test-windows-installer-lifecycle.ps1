@@ -882,12 +882,15 @@ end;
     $stage='locked-payload-upgrade'
     $machineBeforeUpgrade=State-Snapshot
     $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint
-    foreach($case in @(
-        @{file='accessweaver.exe';subject='executable';operation='refused-locked-upgrade'},
-        @{file='BUILD-INFO.json';subject='BUILD-INFO.json';operation='refused-locked-build-info-upgrade'},
-        @{file='SBOM.cdx.json';subject='SBOM.cdx.json';operation='refused-locked-sbom-upgrade'}
-    )){
-        $upgradeLog=Join-Path $capsule ($case.operation+'.log')
+    $replacementCases=@(
+        @{file='accessweaver.exe';reason='The AccessWeaver executable cannot be replaced.';operation='refused-locked-upgrade'},
+        @{file='BUILD-INFO.json';reason='The AccessWeaver BUILD-INFO.json cannot be replaced.';operation='refused-locked-build-info-upgrade'},
+        @{file='SBOM.cdx.json';reason='The AccessWeaver SBOM.cdx.json cannot be replaced.';operation='refused-locked-sbom-upgrade'},
+        @{file='docs\WINDOWS_WORKFLOWS.md';reason='The shipped AccessWeaver file cannot be replaced: docs\WINDOWS_WORKFLOWS.md.';operation=''}
+    )
+    foreach($case in $replacementCases){
+        $logName=if($case.operation){$case.operation}else{'refused-locked-'+$case.file.Replace('\','-')}
+        $upgradeLog=Join-Path $capsule ($logName+'.log')
         $guard=[IO.File]::Open((Join-Path $install $case.file),[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
         try {
             $blocked=Native-Record $second ($arguments+@('/LOG='+$upgradeLog)) @(7)
@@ -895,23 +898,21 @@ end;
         No-Reparse $upgradeLog
         $logFile=Get-Item -LiteralPath $upgradeLog -ErrorAction Stop
         Require (-not $logFile.PSIsContainer -and $logFile.Length -gt 0 -and $logFile.Length -le 1MB) 'Locked upgrade log is missing or exceeds its bound'
-        $reason='The AccessWeaver '+$case.subject+' cannot be replaced.'
-        Require ([IO.File]::ReadAllText($upgradeLog).Contains($reason)) 'Locked upgrade did not reach the expected release-file replacement preflight'
+        Require ([IO.File]::ReadAllText($upgradeLog).Contains($case.reason)) 'Locked upgrade did not reach the expected release-file replacement preflight'
         Require ($null -eq (Get-PendingInstallFixtureValue)) 'Locked upgrade created a pending installation record'
         Require ((Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint) -ceq $registrationBefore) 'Locked upgrade changed installed files or registration'
         Assert-Installed $builds[0];Assert-UserState
         Require ((State-Snapshot) -ceq $machineBeforeUpgrade) 'Locked upgrade changed observed machine state'
-        $observations+=,@{operation=$case.operation;exitCode=$blocked.result.exitCode;elapsedMilliseconds=$blocked.milliseconds;deadlineMilliseconds=180000;preflightRefusalLogged=$true;pendingMarkerAbsent=$true;installedFileTreePreserved=$true;completeRegistrationPreserved=$true;profilePreserved=$true;machineStateUnchanged=$true}
+        if($case.operation){
+            $observations+=,@{operation=$case.operation;exitCode=$blocked.result.exitCode;elapsedMilliseconds=$blocked.milliseconds;deadlineMilliseconds=180000;preflightRefusalLogged=$true;pendingMarkerAbsent=$true;installedFileTreePreserved=$true;completeRegistrationPreserved=$true;profilePreserved=$true;machineStateUnchanged=$true}
+        }
     }
     $stage='hard-linked-payload-upgrade'
-    foreach($case in @(
-        @{file='accessweaver.exe';subject='executable'},
-        @{file='BUILD-INFO.json';subject='BUILD-INFO.json'},
-        @{file='SBOM.cdx.json';subject='SBOM.cdx.json'}
-    )){
+    foreach($case in $replacementCases){
         $subject=Join-Path $install $case.file
-        $alias=Join-Path $capsule ('upgrade-alias-'+$case.file)
-        $upgradeLog=Join-Path $capsule ('upgrade-alias-'+$case.file+'.log')
+        $subjectName=$case.file.Replace('\','-')
+        $alias=Join-Path $capsule ('upgrade-alias-'+$subjectName)
+        $upgradeLog=Join-Path $capsule ('upgrade-alias-'+$subjectName+'.log')
         $original=Digest $subject
         $null=New-Item -ItemType HardLink -Path $alias -Target $subject -ErrorAction Stop
         try {
@@ -919,7 +920,7 @@ end;
             No-Reparse $upgradeLog
             $size=(Get-Item -LiteralPath $upgradeLog -ErrorAction Stop).Length
             Require ($size -gt 0 -and $size -le 1MB) 'Hard-linked upgrade log is missing or exceeds its bound'
-            Require ([IO.File]::ReadAllText($upgradeLog).Contains('The AccessWeaver '+$case.subject+' cannot be replaced.')) 'Hard-linked upgrade did not reach release-file preflight'
+            Require ([IO.File]::ReadAllText($upgradeLog).Contains($case.reason)) 'Hard-linked upgrade did not reach release-file preflight'
             Require ((Digest $alias) -ceq $original -and (Digest $subject) -ceq $original -and
                 $null -eq (Get-PendingInstallFixtureValue)) 'Hard-linked upgrade changed a release file or published a pending record'
         } finally {[IO.File]::Delete($alias)}
@@ -928,13 +929,10 @@ end;
         Assert-UserState
     }
     $stage='read-only-payload-upgrade'
-    foreach($case in @(
-        @{file='accessweaver.exe';subject='executable'},
-        @{file='BUILD-INFO.json';subject='BUILD-INFO.json'},
-        @{file='SBOM.cdx.json';subject='SBOM.cdx.json'}
-    )){
+    foreach($case in $replacementCases){
         $subject=Join-Path $install $case.file
-        $upgradeLog=Join-Path $capsule ('upgrade-read-only-'+$case.file+'.log')
+        $subjectName=$case.file.Replace('\','-')
+        $upgradeLog=Join-Path $capsule ('upgrade-read-only-'+$subjectName+'.log')
         $originalAttributes=[IO.File]::GetAttributes($subject)
         Require (($originalAttributes -band [IO.FileAttributes]::ReadOnly) -eq 0) 'Installed release fixture is already read-only'
         $readOnlyAttributes=$originalAttributes -bor [IO.FileAttributes]::ReadOnly
@@ -944,7 +942,7 @@ end;
             No-Reparse $upgradeLog
             $size=(Get-Item -LiteralPath $upgradeLog -ErrorAction Stop).Length
             Require ($size -gt 0 -and $size -le 1MB) 'Read-only upgrade log is missing or exceeds its bound'
-            Require ([IO.File]::ReadAllText($upgradeLog).Contains('The AccessWeaver '+$case.subject+' cannot be replaced.')) 'Read-only upgrade did not reach release-file preflight'
+            Require ([IO.File]::ReadAllText($upgradeLog).Contains($case.reason)) 'Read-only upgrade did not reach release-file preflight'
             Require ([IO.File]::GetAttributes($subject) -eq $readOnlyAttributes -and
                 $null -eq (Get-PendingInstallFixtureValue)) 'Read-only upgrade changed file attributes or published a pending record'
         } finally {[IO.File]::SetAttributes($subject,$originalAttributes)}

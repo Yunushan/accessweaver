@@ -71,7 +71,7 @@ SetupLogging=yes
 UninstallLogging=no
 SetupMutex=Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092
 [Files]
-Source: "{#BuildRoot}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#BuildRoot}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; BeforeInstall: AWCheckPackageCopyDestination
 [Icons]
 Name: "{group}\AccessWeaver"; Filename: "{app}\accessweaver.exe"; Parameters: "ui"
 [Code]
@@ -389,6 +389,37 @@ begin
   end;
 end;
 
+{ Generate destination preflight checks for the staged files in every package
+  directory. The build admits only the directories checked by Setup. }
+#dim AWStagedDirectories[5] { "", "licenses", "docs", "docs\assets", "docs\qualification" }
+#define AWStagedDirectoryIndex
+#define AWStagedPrefix
+#define AWStagedFind
+#define AWStagedResult
+#sub AWEmitStagedFileCheck
+  #define AWStagedRelative AWStagedPrefix + FindGetFileName(AWStagedFind)
+  #define AWStagedName LowerCase(AWStagedRelative)
+  #if AWStagedName != "accessweaver.exe" && AWStagedName != "build-info.json" && AWStagedName != "sbom.cdx.json" && AWStagedName != "licenses\inno-setup-license.txt"
+    if not AWCanReplaceInstalledFile(Destination + '\{#StringChange(AWStagedRelative, "'", "''")}') then begin
+      Result := AWPackageFileReplacementFailure('{#StringChange(AWStagedRelative, "'", "''")}');
+      Exit;
+    end;
+  #endif
+#endsub
+#sub AWEmitStagedDirectoryChecks
+  #expr AWStagedPrefix = AWStagedDirectories[AWStagedDirectoryIndex] == "" ? "" : AddBackslash(AWStagedDirectories[AWStagedDirectoryIndex])
+  #for {AWStagedFind = AWStagedResult = FindFirst(AddBackslash(BuildRoot) + AWStagedPrefix + "*", faReadOnly | faHidden | faSysFile | faArchive); AWStagedResult; AWStagedResult = FindNext(AWStagedFind)} AWEmitStagedFileCheck
+  #if AWStagedFind
+    #call FindClose(AWStagedFind)
+  #endif
+#endsub
+
+function AWPackageFileReplacementFailure(const Relative: String): String;
+begin
+  Result := 'The shipped AccessWeaver file cannot be replaced: ' + Relative +
+    '. Release any file locks and check its file attributes before retrying setup.';
+end;
+
 function AWPayloadReplacementPreflight(const Destination: String): String;
 begin
   Result := AWPackageDirectoryPreflight(Destination);
@@ -403,6 +434,25 @@ begin
   if (Result = '') and not AWCanReplaceInstalledFile(Destination + '\licenses\Inno-Setup-License.txt') then
     Result := 'The Inno Setup runtime notice cannot be replaced. Release any file locks and check its file attributes before retrying setup.';
 #endif
+  if Result <> '' then Exit;
+  #for {AWStagedDirectoryIndex = 0; AWStagedDirectoryIndex < DimOf(AWStagedDirectories); AWStagedDirectoryIndex++} AWEmitStagedDirectoryChecks
+end;
+
+procedure AWCheckPackageCopyDestination;
+var Destination, Failure: String;
+begin
+  Destination := CurrentFilename;
+  if Copy(Destination, 1, 1) = '{' then Destination := ExpandConstant(Destination);
+  if Copy(Destination, 1, 4) = '\\?\' then Delete(Destination, 1, 4);
+  Failure := AWInstallationPathPreflight(ExtractFileDir(Destination), True);
+  if Failure = '' then
+    if not AWCanReplaceInstalledFile(Destination) then
+      Failure := 'An AccessWeaver package file destination cannot be safely replaced. Setup recovery is required.';
+  if Failure <> '' then begin
+    Log(Failure);
+    if not WizardSilent then SuppressibleMsgBox(Failure, mbCriticalError, MB_OK, IDOK);
+    Abort;
+  end;
 end;
 
 function AWRegistrationPreflight(const Destination: String): String;
