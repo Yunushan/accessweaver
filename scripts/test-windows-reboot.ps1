@@ -276,18 +276,78 @@ function Assert-RebootResolver([string]$Server='') {
         if(-not $verified){throw ('Ordinary Windows DNS returned no valid '+$type+' answer')}
     }
 }
-function Assert-DNSRebootActiveResolver([System.Collections.IDictionary]$Coverage,[string]$Method) {
-    Assert-RebootResolver
-    if($Method -eq 'dnscrypt'){
-        # An ordinary DNS response can mask a failed listener in the other family.
-        if($Coverage['dhcp-ipv4'] + $Coverage['static-ipv4'] -gt 0){
-            Assert-RebootResolver -Server '127.0.0.1'
-        }
-        if($Coverage['dhcp-ipv6'] + $Coverage['static-ipv6'] -gt 0){
-            Assert-RebootResolver -Server '::1'
+function Get-DNSRebootListenerOwner([string]$Engine,[string]$Root,[string]$ApprovedSHA256,
+    [uint16]$Port,[string[]]$Addresses,[switch]$IncludeUDP) {
+    $name='AccessWeaver-'+$Engine
+    $rows=@(Get-CimInstance -ClassName Win32_Service -Filter ("Name='"+$name+"'") -ErrorAction Stop)
+    if($rows.Count -ne 1 -or $rows[0].Name -ine $name -or $rows[0].State -cne 'Running' -or
+       $rows[0].StartMode -cne 'Auto' -or $rows[0].ProcessId -le 0){
+        throw 'Expected automatic managed service is not running'
+    }
+    $serviceID=[uint32]$rows[0].ProcessId
+    $directory=Join-Path $Root 'services'
+    $hostPath=Join-Path $directory ('host-'+$ApprovedSHA256.ToLowerInvariant()+'.exe')
+    $configPath=Join-Path $directory ($Engine+'.json')
+    $expectedCommand='"'+$hostPath+'" service-host "'+$configPath+'"'
+    $command=$rows[0].PathName
+    if($command -isnot [string] -or -not $command.StartsWith($expectedCommand,[StringComparison]::OrdinalIgnoreCase) -or
+       $command.Substring($expectedCommand.Length) -cnotmatch '\A --instance=[a-f0-9]{32}\z'){
+        throw 'Service registration does not match the approved controller'
+    }
+    $hostProcess=@(Get-CimInstance -ClassName Win32_Process -Filter ("ProcessId="+$serviceID) -ErrorAction Stop)
+    if($hostProcess.Count -ne 1 -or $hostProcess[0].ProcessId -ne $serviceID -or
+       $hostProcess[0].ExecutablePath -ine $hostPath -or $hostProcess[0].CreationDate -isnot [datetime] -or
+       (Get-DNSRebootDigest $hostPath 128MB) -ine $ApprovedSHA256){
+        throw 'Running service host does not match the approved controller'
+    }
+
+    $config=(Read-DNSRebootRecord $configPath 1MB).record
+    if($config.name -ine $name -or $config.binary -isnot [string] -or -not [IO.Path]::IsPathRooted($config.binary)){
+        throw 'Managed service executable could not be identified'
+    }
+    $tcp=@(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction Stop)
+    $udp=@()
+    if($IncludeUDP){$udp=@(Get-NetUDPEndpoint -LocalPort $Port -ErrorAction Stop)}
+    $listeners=@()
+    foreach($address in $Addresses){
+        $atAddress=@($tcp | Where-Object {$_.LocalAddress -ceq $address})
+        if($atAddress.Count -ne 1){throw 'Expected one managed TCP listener on each required loopback address'}
+        $listeners+=$atAddress
+        if($IncludeUDP){
+            $atAddress=@($udp | Where-Object {$_.LocalAddress -ceq $address})
+            if($atAddress.Count -ne 1){throw 'Expected one managed UDP listener on each required loopback address'}
+            $listeners+=$atAddress
         }
     }
+    if(@(($tcp+$udp) | Where-Object {$_.LocalAddress -cin @('0.0.0.0','::')}).Count -ne 0){throw 'Wildcard listener makes loopback ownership ambiguous'}
+    if(@($listeners | Where-Object {$_.OwningProcess -le 0}).Count -ne 0){throw 'Loopback listener has no observable process owner'}
+    $listenerIDs=@($listeners.OwningProcess | Select-Object -Unique)
+    if($listenerIDs.Count -ne 1 -or $listenerIDs[0] -le 0){throw 'Loopback listeners do not have one managed owner'}
+    $listenerID=[uint32]$listenerIDs[0]
+    $child=@(Get-CimInstance -ClassName Win32_Process -Filter ("ProcessId="+$listenerID) -ErrorAction Stop)
+    if($child.Count -ne 1 -or $child[0].ProcessId -ne $listenerID -or $child[0].ParentProcessId -ne $serviceID -or
+       $child[0].ExecutablePath -ine $config.binary -or $child[0].CreationDate -isnot [datetime] -or
+       $child[0].CreationDate -lt $hostProcess[0].CreationDate){
+        throw 'Loopback listener does not belong to the expected managed service child'
+    }
+    return '{0}:{1}:{2}:{3}' -f $serviceID,$hostProcess[0].CreationDate.Ticks,$listenerID,$child[0].CreationDate.Ticks
 }
+function Assert-DNSRebootActiveResolver([System.Collections.IDictionary]$Coverage,[string]$Method,[string]$Root,[string]$ApprovedSHA256) {
+    if($Method -ceq 'doh'){
+        Assert-RebootResolver
+        return
+    }
+    $addresses=@()
+    if($Coverage['dhcp-ipv4'] + $Coverage['static-ipv4'] -gt 0){$addresses+='127.0.0.1'}
+    if($Coverage['dhcp-ipv6'] + $Coverage['static-ipv6'] -gt 0){$addresses+='::1'}
+    $owner=Get-DNSRebootListenerOwner 'dnscrypt' $Root $ApprovedSHA256 53 $addresses -IncludeUDP
+    Assert-RebootResolver
+    foreach($address in $addresses){Assert-RebootResolver -Server $address}
+    if((Get-DNSRebootListenerOwner 'dnscrypt' $Root $ApprovedSHA256 53 $addresses -IncludeUDP) -cne $owner){
+        throw 'DNSCrypt listener owner changed during resolver verification'
+    }
+}
+
 function Wait-DNSRebootObservation([scriptblock]$Observe,[int]$TimeoutSeconds=60) {
     $timer=[Diagnostics.Stopwatch]::StartNew()
     do {
@@ -314,23 +374,31 @@ function Test-DNSRebootServicesRemoved {
     if(-not $observed){throw 'Service inventory returned no service identities'}
     return -not $remaining
 }
-function Assert-RebootServices([string]$Method) {
-    foreach($name in @('AccessWeaver-byedpi','AccessWeaver-dnscrypt')){
-        if($name -eq 'AccessWeaver-dnscrypt' -and $Method -ne 'dnscrypt'){continue}
-        $service=Get-CimInstance Win32_Service -Filter ("Name='"+$name+"'") -ErrorAction Stop
-        if(@($service).Count -ne 1 -or $service.State -cne 'Running' -or $service.StartMode -cne 'Auto'){
-            throw 'Expected automatic service is not running'
-        }
-    }
-    $client=[Net.Sockets.TcpClient]::new()
+function Invoke-DNSRebootSocksProbe {
+    $client=[Net.Sockets.TcpClient]::new([Net.Sockets.AddressFamily]::InterNetwork)
     try {
-        $task=$client.ConnectAsync('127.0.0.1',1080)
+        $task=$client.ConnectAsync([Net.IPAddress]::Loopback,1080)
         if(-not $task.Wait(5000)){throw 'Expected loopback service did not respond'}
         $stream=$client.GetStream()
         $stream.ReadTimeout=5000
+        $stream.WriteTimeout=5000
         $stream.Write([byte[]]@(5,1,0),0,3)
         if($stream.ReadByte() -ne 5 -or $stream.ReadByte() -ne 0){throw 'Expected SOCKS5 negotiation failed'}
     } finally {$client.Dispose()}
+}
+function Assert-RebootServices([string]$Method,[string]$Root,[string]$ApprovedSHA256) {
+    if($Method -ceq 'dnscrypt'){
+        $service=@(Get-CimInstance -ClassName Win32_Service -Filter "Name='AccessWeaver-dnscrypt'" -ErrorAction Stop)
+        if($service.Count -ne 1 -or $service[0].Name -ine 'AccessWeaver-dnscrypt' -or
+           $service[0].State -cne 'Running' -or $service[0].StartMode -cne 'Auto' -or $service[0].ProcessId -le 0){
+            throw 'Expected automatic DNSCrypt service is not running'
+        }
+    }
+    $owner=Get-DNSRebootListenerOwner 'byedpi' $Root $ApprovedSHA256 1080 @('127.0.0.1')
+    Invoke-DNSRebootSocksProbe
+    if((Get-DNSRebootListenerOwner 'byedpi' $Root $ApprovedSHA256 1080 @('127.0.0.1')) -cne $owner){
+        throw 'ByeDPI listener owner changed during SOCKS5 verification'
+    }
 }
 
 $previousHome=$env:ACCESSWEAVER_HOME
@@ -367,9 +435,9 @@ try {
         Invoke-DNSRebootPreparation {
             [void](Invoke-TestWorkflow @{action='install';engine='byedpi';mode='service';bundlePath='C:\AccessWeaver-Test\components'})
             $applied=Invoke-TestWorkflow @{action='dns';dns=$DNS;bundlePath='C:\AccessWeaver-Test\components'}
-            Assert-RebootServices $DNS
+            Assert-RebootServices $DNS $machineRoot $current.binarySHA256
             Assert-DNSRebootConfigured $before (Read-DNSAcceptanceState) $DNS
-            Assert-DNSRebootActiveResolver $coverage $DNS
+            Assert-DNSRebootActiveResolver $coverage $DNS $machineRoot $current.binarySHA256
             Assert-DNSRebootConfigured $before (Read-DNSAcceptanceState) $DNS
             $current.dns=$before
             $current.snapshotSHA256=Get-DNSRebootDigest $snapshot 8MB
@@ -409,7 +477,7 @@ try {
         throw 'Interrupted DNS reboot verification requires a fresh checkpoint'
     }
     Save-DNSRebootRecord (Join-Path $private 'verification-started.json') @{schemaVersion=7}
-    $outcome=[ordered]@{schemaVersion=10;qualificationID=$saved.qualificationID;method=$saved.method;architecture=$current.architecture;binarySHA256=$current.binarySHA256;
+    $outcome=[ordered]@{schemaVersion=11;qualificationID=$saved.qualificationID;method=$saved.method;architecture=$current.architecture;binarySHA256=$current.binarySHA256;
         requiredOriginalMode=$saved.requiredOriginalMode;originalModeCoverage=$coverage;
         fixtureSHA256=$current.fixtureSHA256;oracleSHA256=$current.oracleSHA256;
         rebootVerified=$true;servicesVerified=$false;configuredStateVerified=$false;
@@ -417,13 +485,13 @@ try {
         originalStateRestored=$false;originalResolverVerified=$false;snapshotRetired=$false;restorationReceiptVerified=$false;
         servicesRemoved=$false;passed=$false;stage='services';cleanupStage='not-started';teardownStage='not-started'}
     try {
-        Wait-DNSRebootObservation {Assert-RebootServices $saved.method}
+        Wait-DNSRebootObservation {Assert-RebootServices $saved.method $machineRoot $current.binarySHA256}
         $outcome.servicesVerified=$true
         $outcome.stage='configured-state'
         Wait-DNSRebootObservation {Assert-DNSRebootConfigured $saved.dns (Read-DNSAcceptanceState) $saved.method}
         $outcome.configuredStateVerified=$true
         $outcome.stage='resolver'
-        Wait-DNSRebootObservation {Assert-DNSRebootActiveResolver $coverage $saved.method}
+        Wait-DNSRebootObservation {Assert-DNSRebootActiveResolver $coverage $saved.method $machineRoot $current.binarySHA256}
         $outcome.stage='configured-readback'
         $outcome.configuredStateVerified=$false
         Assert-DNSRebootConfigured $saved.dns (Read-DNSAcceptanceState) $saved.method

@@ -7,17 +7,17 @@ if($errors.Count){throw 'DNS reboot fixture failed parsing'}
 foreach($name in @('Assert-DNSRebootAdmission','Save-DNSRebootRecord','Open-DNSRebootInput','Read-DNSRebootRecord',
         'Get-DNSRebootDigest','Assert-DNSRebootControllerArchitecture','Open-ApprovedDNSRebootController','Get-DNSRebootJournalID','Assert-DNSRebootJournal',
         'Get-DNSRebootCoverage','Assert-DNSRebootConfigured','Assert-RebootResolver','Assert-DNSRebootActiveResolver','Wait-DNSRebootObservation','Test-DNSRebootServicesRemoved',
-        'Invoke-DNSRebootPreparation')){
+        'Invoke-DNSRebootPreparation','Get-DNSRebootListenerOwner','Assert-RebootServices')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
     if($nodes.Count -ne 1){throw 'Expected one DNS reboot evidence function'}
-    if($name -cin @('Get-DNSRebootCoverage','Assert-DNSRebootConfigured','Assert-RebootResolver','Assert-DNSRebootActiveResolver','Wait-DNSRebootObservation','Test-DNSRebootServicesRemoved')){
+    if($name -cin @('Get-DNSRebootCoverage','Assert-DNSRebootConfigured','Assert-RebootResolver','Assert-DNSRebootActiveResolver','Wait-DNSRebootObservation','Test-DNSRebootServicesRemoved','Get-DNSRebootListenerOwner','Assert-RebootServices')){
         foreach($command in $nodes[0].FindAll({param($node)$node -is [Management.Automation.Language.CommandAst]},$true)){
             $callback=$command.InvocationOperator -eq [Management.Automation.Language.TokenKind]::Ampersand -and
                 $command.CommandElements[0] -is [Management.Automation.Language.VariableExpressionAst] -and
                 $command.CommandElements[0].VariablePath.UserPath -ceq 'Observe'
-            if(-not $callback -and $command.GetCommandName() -cnotin @('Clear-DnsClientCache','Resolve-DnsName','Assert-RebootResolver','Start-Sleep','Get-Service','ForEach-Object','Where-Object','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceConfigured')){
+            if(-not $callback -and $command.GetCommandName() -cnotin @('Clear-DnsClientCache','Resolve-DnsName','Assert-RebootResolver','Start-Sleep','Get-Service','ForEach-Object','Where-Object','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceConfigured','Get-DNSRebootListenerOwner','Get-CimInstance','Join-Path','Get-DNSRebootDigest','Read-DNSRebootRecord','Get-NetTCPConnection','Get-NetUDPEndpoint','Select-Object','Invoke-DNSRebootSocksProbe')){
                 throw 'DNS reboot observation has an unexpected command boundary'
             }
         }
@@ -248,11 +248,122 @@ foreach($invalid in @(
     Refuse {Assert-DNSRebootConfigured $baseline $configured 'dnscrypt'}
 }
 
+# Exercise socket ownership with closed CIM, config, and endpoint fixtures.
+& {
+    $machineRoot=Join-Path ([IO.Path]::GetTempPath()) 'inert-dns-reboot-machine'
+    $pin='A'*64
+    $servicesPath=Join-Path $machineRoot 'services'
+    $serviceHostPath=Join-Path $servicesPath ('host-'+$pin.ToLowerInvariant()+'.exe')
+    $enginePath=Join-Path $machineRoot 'dnscrypt-proxy.exe'
+    $configPath=Join-Path $servicesPath 'dnscrypt.json'
+    $hostTime=[datetime]::UtcNow
+    $inventory=@{
+        hash=$pin
+        service=@{Name='AccessWeaver-dnscrypt';State='Running';StartMode='Auto';ProcessId=50
+            PathName='"'+$serviceHostPath+'" service-host "'+$configPath+'" --instance='+('1'*32)}
+        hostProcess=@{ProcessId=50;ExecutablePath=$serviceHostPath;CreationDate=$hostTime}
+        child=@{ProcessId=51;ParentProcessId=50;ExecutablePath=$enginePath;CreationDate=$hostTime.AddSeconds(1)}
+        tcp=@(@{LocalAddress='127.0.0.1';OwningProcess=51},@{LocalAddress='::1';OwningProcess=51})
+        udp=@(@{LocalAddress='127.0.0.1';OwningProcess=51},@{LocalAddress='::1';OwningProcess=51})
+    }
+    function Get-CimInstance {
+        [CmdletBinding()]param([string]$ClassName,[string]$Filter)
+        if($ErrorActionPreference -ne 'Stop'){throw 'CIM must fail closed'}
+        switch -CaseSensitive ($ClassName+' '+$Filter) {
+            "Win32_Service Name='AccessWeaver-dnscrypt'" {return [pscustomobject]$inventory.service}
+            'Win32_Process ProcessId=50' {return [pscustomobject]$inventory.hostProcess}
+            'Win32_Process ProcessId=51' {return [pscustomobject]$inventory.child}
+            default {throw 'Unexpected service or process query'}
+        }
+    }
+    function Get-DNSRebootDigest([string]$Path,[long]$Maximum) {
+        if($Path -cne $serviceHostPath -or $Maximum -ne 128MB){throw 'Unexpected service host read'}
+        return $inventory.hash
+    }
+    function Read-DNSRebootRecord([string]$Path,[int]$Maximum) {
+        if($Path -cne $configPath -or $Maximum -ne 1MB){throw 'Unexpected service config read'}
+        return @{record=@{name='AccessWeaver-dnscrypt';binary=$enginePath}}
+    }
+    function Get-NetTCPConnection {
+        [CmdletBinding()]param([string]$State,[uint16]$LocalPort)
+        if($State -cne 'Listen' -or $LocalPort -ne 53 -or $ErrorActionPreference -ne 'Stop'){throw 'Unexpected TCP inventory'}
+        return ($inventory.tcp | ForEach-Object {[pscustomobject]$_})
+    }
+    function Get-NetUDPEndpoint {
+        [CmdletBinding()]param([uint16]$LocalPort)
+        if($LocalPort -ne 53 -or $ErrorActionPreference -ne 'Stop'){throw 'Unexpected UDP inventory'}
+        return ($inventory.udp | ForEach-Object {[pscustomobject]$_})
+    }
+    function Observe-Owner {
+        Get-DNSRebootListenerOwner 'dnscrypt' $machineRoot $pin 53 @('127.0.0.1','::1') -IncludeUDP
+    }
+    $expected='50:{0}:51:{1}' -f $inventory.hostProcess.CreationDate.Ticks,$inventory.child.CreationDate.Ticks
+    if((Observe-Owner) -cne $expected){throw 'DNSCrypt owner identity does not bind both processes'}
+    foreach($case in @(
+        @{record=$inventory.service;property='StartMode';value='Manual'},
+        @{record=$inventory.service;property='PathName';value='"unrelated.exe"'},
+        @{record=$inventory.hostProcess;property='ExecutablePath';value=$enginePath},
+        @{record=$inventory;property='hash';value=('B'*64)},
+        @{record=$inventory.child;property='ParentProcessId';value=52},
+        @{record=$inventory.child;property='CreationDate';value=$hostTime.AddSeconds(-1)},
+        @{record=$inventory.child;property='ExecutablePath';value=$serviceHostPath},
+        @{record=$inventory.tcp[0];property='OwningProcess';value=52},
+        @{record=$inventory.udp[1];property='OwningProcess';value=52},
+        @{record=$inventory.udp[0];property='OwningProcess';value=0},
+        @{record=$inventory;property='tcp';value=@($inventory.tcp[0])},
+        @{record=$inventory;property='udp';value=@($inventory.udp[0],$inventory.udp[0],$inventory.udp[1])},
+        @{record=$inventory;property='udp';value=($inventory.udp+@(@{LocalAddress='::';OwningProcess=52}))}
+    )){
+        $previous=$case.record[$case.property]
+        $case.record[$case.property]=$case.value
+        try {Refuse {Observe-Owner}} finally {$case.record[$case.property]=$previous}
+    }
+    if((Observe-Owner) -cne $expected){throw 'Restored socket evidence no longer matches'}
+}
+
+# Require a stable managed SOCKS owner on both sides of the mocked handshake.
+& {
+    $sequence=[Collections.Generic.List[string]]::new()
+    $owners=@('owned-a','owned-a')
+    $failSocks=$false
+    function Get-DNSRebootListenerOwner([string]$Engine,[string]$Root,[string]$ApprovedSHA256,[uint16]$Port,[string[]]$Addresses){
+        if($Engine -cne 'byedpi' -or $Root -cne 'inert' -or $ApprovedSHA256 -cne ('A'*64) -or
+           $Port -ne 1080 -or ($Addresses -join ',') -cne '127.0.0.1'){throw 'Unexpected SOCKS ownership check'}
+        $index=if($sequence.Count -eq 0){0}else{1}
+        $sequence.Add('owner')
+        return $owners[$index]
+    }
+    function Invoke-DNSRebootSocksProbe {
+        $sequence.Add('handshake')
+        if($failSocks){throw 'Synthetic SOCKS refusal'}
+    }
+    Assert-RebootServices 'doh' 'inert' ('A'*64)
+    if(($sequence -join ',') -cne 'owner,handshake,owner'){throw 'SOCKS handshake was not bracketed by ownership reads'}
+    $sequence.Clear()
+    $owners[1]='other-owner'
+    Refuse {Assert-RebootServices 'doh' 'inert' ('A'*64)}
+    if(($sequence -join ',') -cne 'owner,handshake,owner'){throw 'SOCKS owner change did not reach readback'}
+    $sequence.Clear()
+    $failSocks=$true
+    Refuse {Assert-RebootServices 'doh' 'inert' ('A'*64)}
+    if(($sequence -join ',') -cne 'owner,handshake'){throw 'Failed SOCKS handshake was credited'}
+}
+
+
+
 # Run the actual observation functions with no resolver or service access.
 & {
     $state=@{flushes=0;requests=[Collections.Generic.List[string]]::new();waits=0;attempts=0;
         cacheFails=$false;serviceFails=$false;services=@();answers=@{};failedListener='';
-        servers=[Collections.Generic.List[string]]::new()}
+        servers=[Collections.Generic.List[string]]::new();ownershipChecks=[Collections.Generic.List[string]]::new();owner='owned';replaceOnServer=''}
+    function Get-DNSRebootListenerOwner([string]$Engine,[string]$Root,[string]$ApprovedSHA256,[uint16]$Port,
+        [string[]]$Addresses,[switch]$IncludeUDP){
+        if($Engine -cne 'dnscrypt' -or $Root -cne 'inert' -or $ApprovedSHA256 -cne ('A'*64) -or
+           $Port -ne 53 -or -not $IncludeUDP){throw 'Unexpected DNSCrypt ownership check'}
+        $state.ownershipChecks.Add(($Addresses -join ','))
+        return $state.owner
+    }
+
     function Clear-DnsClientCache {
         [CmdletBinding()]param()
         if($ErrorActionPreference -ne 'Stop'){throw 'DNS cache clear must fail closed'}
@@ -266,6 +377,7 @@ foreach($invalid in @(
         $state.requests.Add($Type)
         $state.servers.Add($Server)
         if($Server -and $Server -ceq $state.failedListener){throw 'Synthetic listener failure'}
+        if($Server -and $Server -ceq $state.replaceOnServer -and $Type -ceq 'AAAA'){$state.owner='replacement'}
         $state.answers[$Type]
     }
     function Get-Service {
@@ -316,22 +428,33 @@ foreach($invalid in @(
     $state.answers.AAAA=@([pscustomobject]$answer6)
     $coverage=[ordered]@{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0;'static-ipv6'=1}
     $state.servers.Clear()
-    Assert-DNSRebootActiveResolver $coverage 'dnscrypt'
+    Assert-DNSRebootActiveResolver $coverage 'dnscrypt' 'inert' ('A'*64)
     if(($state.servers -join ',') -cne ',,127.0.0.1,127.0.0.1,::1,::1'){
         throw 'Dual-family DNSCrypt verification did not query both loopback listeners'
     }
+    if(($state.ownershipChecks -join ';') -cne '127.0.0.1,::1;127.0.0.1,::1'){
+        throw 'DNSCrypt queries were not bracketed by dual-family TCP and UDP ownership checks'
+    }
+    $state.replaceOnServer='::1'
+    $state.servers.Clear()
+    Refuse {Assert-DNSRebootActiveResolver $coverage 'dnscrypt' 'inert' ('A'*64)}
+    if($state.owner -cne 'replacement' -or ($state.servers -join ',') -cne ',,127.0.0.1,127.0.0.1,::1,::1'){
+        throw 'DNSCrypt owner replacement was not verified after receiving both loopback answers'
+    }
+    $state.replaceOnServer=''
+    $state.owner='owned'
     foreach($listener in @('127.0.0.1','::1')){
         $state.failedListener=$listener
-        Refuse {Assert-DNSRebootActiveResolver $coverage 'dnscrypt'}
+        Refuse {Assert-DNSRebootActiveResolver $coverage 'dnscrypt' 'inert' ('A'*64)}
     }
     $state.servers.Clear()
-    Assert-DNSRebootActiveResolver $coverage 'doh'
+    Assert-DNSRebootActiveResolver $coverage 'doh' 'inert' ('A'*64)
     if($state.servers.Count -ne 2 -or ($state.servers -join ',') -cne ','){
         throw 'DoH verification must use the ordinary resolver'
     }
     $state.servers.Clear()
     $coverage['static-ipv6']=0
-    Assert-DNSRebootActiveResolver $coverage 'dnscrypt'
+    Assert-DNSRebootActiveResolver $coverage 'dnscrypt' 'inert' ('A'*64)
     if(($state.servers -join ',') -cne ',,127.0.0.1,127.0.0.1'){
         throw 'IPv4-only DNSCrypt verification queried an unassigned listener'
     }
@@ -339,7 +462,7 @@ foreach($invalid in @(
     $state.failedListener='127.0.0.1'
     $coverage['dhcp-ipv4']=0
     $coverage['dhcp-ipv6']=1
-    Assert-DNSRebootActiveResolver $coverage 'dnscrypt'
+    Assert-DNSRebootActiveResolver $coverage 'dnscrypt' 'inert' ('A'*64)
     if(($state.servers -join ',') -cne ',,::1,::1'){
         throw 'IPv6-only DNSCrypt verification queried an unassigned listener'
     }
@@ -508,11 +631,13 @@ $root=[IO.Path]::Combine([IO.Path]::GetTempPath(),('aw-dns-reboot-publication-'+
 [void][IO.Directory]::CreateDirectory($root)
 $shared=Join-Path $root 'share'
 $report=Join-Path $root 'reboot-results.json'
-$record=@{schemaVersion=10;architecture='amd64';qualificationID=('a'*32);method='doh';binarySHA256=('A'*64);fixtureSHA256=('B'*64);oracleSHA256=('C'*64)
+$record=@{schemaVersion=11;architecture='amd64';qualificationID=('a'*32);method='doh';binarySHA256=('A'*64);fixtureSHA256=('B'*64);oracleSHA256=('C'*64)
     requiredOriginalMode='static-ipv6';originalModeCoverage=@{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0;'static-ipv6'=1}
     rebootVerified=$true;servicesVerified=$true;configuredStateVerified=$true;resolverVerified=$true
     journalBindingVerified=$true;journalRecoveryAccepted=$true;originalStateRestored=$true;originalResolverVerified=$true
     snapshotRetired=$true;restorationReceiptVerified=$true;servicesRemoved=$true;passed=$true;stage='complete';cleanupStage='recovered';teardownStage='complete'}
+$prior=$record.Clone();$prior.schemaVersion=10
+Refuse {Assert-DNSRebootPublicReport (Encode-Report $prior) $pin $qualificationID $method $originalMode $fixturePin $oraclePin 'amd64'}
 $legacy=$record.Clone();$legacy.schemaVersion=9;$legacy.Remove('architecture')
 $pin=$record.binarySHA256.ToLowerInvariant()
 $qualificationID=$record.qualificationID

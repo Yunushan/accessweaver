@@ -43,7 +43,7 @@ function Assert-DNSRebootPublicReport([byte[]]$Data,[string]$ApprovedSHA256,[str
     $keys=@('schemaVersion','qualificationID','method','architecture','requiredOriginalMode','originalModeCoverage','stage','cleanupStage','teardownStage')+$flags+$digests
     if($record -isnot [pscustomobject] -or @($record.PSObject.Properties).Count -ne $keys.Count -or
         @($record.PSObject.Properties.Name | Where-Object {$_ -cnotin $keys}).Count -ne 0 -or
-        ($record.schemaVersion -isnot [int] -and $record.schemaVersion -isnot [long]) -or $record.schemaVersion -ne 10 -or
+        ($record.schemaVersion -isnot [int] -and $record.schemaVersion -isnot [long]) -or $record.schemaVersion -ne 11 -or
         $record.qualificationID -isnot [string] -or $record.qualificationID -cnotmatch '\A[a-f0-9]{32}\z' -or
         $record.method -isnot [string] -or $record.method -cnotin @('doh','dnscrypt') -or
         $record.architecture -isnot [string] -or $record.architecture -cnotin @('amd64','arm64') -or
