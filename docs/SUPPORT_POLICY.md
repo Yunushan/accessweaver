@@ -19,7 +19,7 @@ For a suspected vulnerability, follow [SECURITY.md](../SECURITY.md), including i
 For an ordinary development report, include:
 
 - Expected and observed behavior, reproducible steps and whether a safe workaround exists.
-- AccessWeaver version and commit from existing build metadata, plus OS version and architecture.
+- AccessWeaver version and commit from existing build metadata or trusted endpoint inventory, plus OS version and architecture. Enter `unknown` for any build value you cannot verify.
 - The known engine name, version and operating mode when an external engine is involved.
 - A source-known failure code if one is available, and which independent observation supports a traffic or recovery claim.
 

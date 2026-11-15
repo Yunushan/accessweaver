@@ -38,8 +38,18 @@ body:
 - type: input
   id: platform
   attributes:
-    label: OS, architecture and AccessWeaver version
-    placeholder: Windows 11 arm64, AccessWeaver 0.1.0-alpha
+    label: OS version and architecture
+    placeholder: Windows 11 arm64
+  validations:
+    required: true
+- type: input
+  id: build
+  attributes:
+    label: AccessWeaver version and commit
+    description: >-
+      Copy only the version and commit from existing build metadata or trusted endpoint inventory.
+      Enter unknown for any value you cannot verify.
+    placeholder: 0.1.0-alpha, commit unknown
   validations:
     required: true
 - type: textarea
