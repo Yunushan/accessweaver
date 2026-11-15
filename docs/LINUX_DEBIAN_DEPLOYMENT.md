@@ -88,4 +88,16 @@ bash scripts/test-linux-package-candidate.sh amd64 "$(git rev-parse HEAD)" /var/
 
 The [exact-source AMD64 rehearsal](qualification/227b43d8500e-linux-package-candidate.json) ran this entry point on Ubuntu 26.04 WSL. Both package routes installed the same executable bytes for the two fixture versions and preserved synthetic policy and profile files. The architecture check refused an ARM64 report on that AMD64 host. The [packaged managed-state evidence](qualification/16632c4b2a7f-linux-packaged-managed-policy.json) verifies both package routes on Ubuntu 26.04 WSL AMD64 with two versions built from distinct source commits.
 
+### Live engine maintenance
+
+The direct package probe accepts a separately approved static native `ciadpi` executable. Obtain its SHA-256 from your approved engine record. With the same archive arguments shown above, add these options.
+
+```sh
+--byedpi APPROVED_CIADPI --byedpi-sha256 APPROVED_CIADPI_SHA256
+```
+
+The probe creates a private loopback network and PID namespace. It uses a signed managed launch approval and independent SOCKS5 traffic to a loopback origin. At each stage it stops the installed controller before any package change, then checks that its exact vendor child exited, the listener closed and a connected client disconnected. Stages cover the older package, the upgrade, explicit rollback and reinstall after purge.
+
+On Ubuntu 26.04 WSL AMD64, all four stages passed with [ByeDPI v0.17.3](https://github.com/hufrea/byedpi/releases/tag/v0.17.3) and two AccessWeaver releases built from distinct source commits. The supported maintenance sequence stops the controller before touching the package. [Live package test evidence](qualification/16632c4b2a7f-linux-packaged-byedpi.json).
+
 Production rollout still requires results for the approved release packages and native endpoint architectures. It also requires organization signing and hosting, reboot and active-engine checks, and validation through the organization's endpoint-management tools.

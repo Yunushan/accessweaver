@@ -23,7 +23,7 @@ def fingerprint(path):
 
 
 class ManagedPackageFixture:
-    def __init__(self, root):
+    def __init__(self, root, byedpi=None):
         self.root = root.resolve(strict=True)
         require(self.root != Path("/") and self.root.stat().st_uid == 0, "Expected an owned private package root")
         work = root / "managed-fixture"
@@ -39,16 +39,33 @@ class ManagedPackageFixture:
         home.mkdir(mode=0o700, parents=True)
         os.chown(home, UID, UID)
         engine = work / "inert-engine"
-        engine.write_bytes(b"Inert managed package acceptance fixture\n")
-        engine.chmod(0o644)
+        if byedpi is not None:
+            engine = work / "bin" / "ciadpi"
+            engine.parent.mkdir(mode=0o755)
+            (root / "dev").mkdir(mode=0o755)
+            null = root / "dev/null"
+            os.mknod(null, stat.S_IFCHR | 0o666, os.makedev(1, 3))
+            null.chmod(0o666)
+        engine.write_bytes(byedpi if byedpi is not None else b"Inert managed package acceptance fixture\n")
+        engine.chmod(0o755 if byedpi is not None else 0o644)
+        self.engine = engine
         profile = {"version": 1, "id": PROFILE_ID, "name": "Managed package fixture", "engine": "byedpi",
-                   "binary": "/managed-fixture/inert-engine", "sha256": fingerprint(engine)[0], "args": [],
+                   "binary": f"/{engine.relative_to(root).as_posix()}", "sha256": fingerprint(engine)[0], "args": [],
                    "routing": {"includeDomains": [], "excludeDomains": [], "applications": []},
-                   "probe": {"host": "localhost", "port": 1080, "tls": False, "timeoutSeconds": 2}}
-        self.cli("import", self.profile_input(work, profile), ordinary=True)
+                   "probe": {"host": "127.0.0.1", "port": 1080, "tls": False, "timeoutSeconds": 2}}
+        profile_input = self.profile_input(work, profile)
+        self.cli("import", profile_input, ordinary=True)
         self.profile = json.loads(self.cli("show", PROFILE_ID, ordinary=True))
         require(self.profile["id"] == PROFILE_ID and self.profile["sha256"] == profile["sha256"]
                 and self.profile_path.is_file(), "Installed command did not create the expected profile")
+        self.launches = []
+        self.denied_launch = PROFILE_ID
+        if byedpi is not None:
+            launch = json.loads(self.cli("managed", "digest-profile", profile_input))["inputSHA256"]
+            self.launches = [{"engine": "byedpi", "inputSHA256": launch, "binarySHA256": profile["sha256"]}]
+            self.denied_launch = "unapproved-live-package-fixture"
+            substitute = dict(profile, id=self.denied_launch, args=["--split", "2"])
+            self.cli("import", self.profile_input(work, substitute), ordinary=True)
         profile["id"] = "refused-package-fixture"
         self.refused_profile = self.profile_input(work, profile)
 
@@ -76,9 +93,12 @@ class ManagedPackageFixture:
         path.chmod(0o644)
         return f"/managed-fixture/{path.name}"
 
-    def cli(self, *args, ordinary=False, rejection=None):
+    def command(self, *args, ordinary=False):
         credentials = ["--userspec=+65534:+65534", "--groups="] if ordinary else []
-        result = subprocess.run(["chroot", *credentials, self.root, "/usr/bin/accessweaver", *args],
+        return ["chroot", *credentials, self.root, "/usr/bin/accessweaver", *args]
+
+    def cli(self, *args, ordinary=False, rejection=None):
+        result = subprocess.run(self.command(*args, ordinary=ordinary),
                                 capture_output=True, timeout=30, env=ENV)
         if rejection is None:
             require(result.returncode == 0, f"Installed {args[0]} failed: "
@@ -94,7 +114,7 @@ class ManagedPackageFixture:
                 "issuedAt": (now - timedelta(minutes=1)).isoformat(),
                 "expiresAt": (now + timedelta(minutes=30)).isoformat(),
                 "allowDownloads": False, "allowDiagnostics": False, "allowProfileChanges": False,
-                "launches": [], "workflows": []}
+                "launches": self.launches, "workflows": []}
         policy = self.private / f"policy-{revision}.json"
         policy.write_text(json.dumps(data), encoding="utf-8")
         envelope = f"/managed-fixture/envelope-{revision}.json"
@@ -126,7 +146,7 @@ class ManagedPackageFixture:
         require(json.loads(self.cli("show", PROFILE_ID, ordinary=True)) == self.profile,
                 "Ordinary installed CLI did not read the same real user profile")
         self.cli("import", self.refused_profile, ordinary=True, rejection=b"profile changes are disabled")
-        self.cli("run", PROFILE_ID, ordinary=True, rejection=b"launch inputs are not approved")
+        self.cli("run", self.denied_launch, ordinary=True, rejection=b"launch inputs are not approved")
         blocked = self.profile_path.with_name("refused-package-fixture.json")
         require(not blocked.exists() and self.state() == prior,
                 "Blocked operation changed enrolled policy or the user profile inventory")
