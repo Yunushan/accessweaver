@@ -12,6 +12,7 @@ from verify_windows_installer_provenance import (
     validate_post_restoration_refusal, validate_restoration_controller_refusals, validate_setup_marker_replacement,
     validate_setup_uninstall_registration_refusal, validate_setup_upgrade_baseline, validate_uninstall_license_refusal,
     validate_native_documentation_refusals, validate_inno_runtime_notice, validate_previous_version_rollback,
+    validate_setup_retirement_flush,
 )
 from verify_windows_installer_provenance import BUNDLE_NAME,DEFAULT_VERSIONS,WORKFLOW,check_rejections,stage,subject_names,validate_build,verification_command,verify
 
@@ -70,6 +71,18 @@ class SetupCompletionRefusalTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, "refusal and recovery"):
                 validate_setup_completion_refusal({**record, **invalid})
 
+
+    def test_retirement_flush_requires_original_marker_and_successful_retry(self):
+        record = {"fixtureSHA256": "a" * 64, "exitCode": 1603, "elapsedMilliseconds": 100,
+                  "deadlineMilliseconds": 180000, "deletionObserved": True, "originalMarkerRestored": True,
+                  "managedDetectionRefused": True, "profilePreserved": True, "unrelatedStatePreserved": True,
+                  "matchingRetryRetiredMarker": True}
+        self.assertEqual(validate_setup_retirement_flush(record), {"setupRetirementFlushRecoveryVerified": True})
+        for invalid in ({"exitCode": 0}, {"elapsedMilliseconds": 180000}, {"fixtureSHA256": False},
+                        {"deletionObserved": False}, {"originalMarkerRestored": 1}, {"managedDetectionRefused": False},
+                        {"matchingRetryRetiredMarker": False}, {"actualPendingMarker": "fixture"}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                validate_setup_retirement_flush({**record, **invalid})
 
     def test_managed_upgrade_requires_stale_refusal_and_matching_upgrade(self):
         record = {

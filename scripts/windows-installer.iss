@@ -170,6 +170,57 @@ begin
     (AWOrdinal(Directory, Destination) = 0) and (ApprovalPin = AWPendingApprovalPin);
 end;
 
+function AWPendingInstallValue(const Destination: String): String;
+begin
+  Result := '{#ReleaseVersion}|' + Destination;
+  if AWPendingApprovalPin <> '' then Result := Result + '|' + AWPendingApprovalPin;
+end;
+
+function AWPendingInstallAbsent: Boolean;
+var Version, Directory, ApprovalPin: String;
+begin
+  Result := (AWReadPendingVersion(Version, Directory, ApprovalPin) = '') and (Version = '');
+end;
+
+function AWRetirePendingInstall(const Destination: String): Boolean;
+begin
+  Result := False;
+  if not AWLifecycleOwned or not AWPendingInstallMatches(Destination) then begin
+    Log('AccessWeaver pending installation record changed or could not be verified. Setup did not clear it.');
+    Exit;
+  end;
+  if not RegDeleteValue(HKLM64, AWLifecycleRegistry, AWPendingInstall) then begin
+    Log('Cannot delete the AccessWeaver pending installation record.');
+    Exit;
+  end;
+  if AWFlushLifecycleRecord then begin
+    Result := AWPendingInstallAbsent;
+    if not Result then Log('AccessWeaver could not verify absence of the pending installation record after retirement.');
+    Exit;
+  end;
+
+  { The lifecycle lock keeps other AccessWeaver installers and the detector
+    out until retirement succeeds or the original recovery record is restored. }
+  Log('Cannot flush retirement of the AccessWeaver pending installation record.');
+  if not AWPendingInstallAbsent then begin
+    Log('AccessWeaver pending installation record changed or could not be verified. Setup did not replace it.');
+    Exit;
+  end;
+  if not RegWriteStringValue(HKLM64, AWLifecycleRegistry, AWPendingInstall, AWPendingInstallValue(Destination)) then begin
+    Log('Cannot restore the AccessWeaver pending installation record after the failed flush.');
+    Exit;
+  end;
+  if not AWFlushLifecycleRecord then begin
+    Log('Cannot flush the restored AccessWeaver pending installation record.');
+    Exit;
+  end;
+  if not AWPendingInstallMatches(Destination) then begin
+    Log('Cannot verify the restored AccessWeaver pending installation record.');
+    Exit;
+  end;
+  Log('AccessWeaver pending installation record restored after retirement flush failed.');
+end;
+
 function AWPendingSetupPreflight(const Destination: String): String;
 var Version, Directory, ApprovalPin: String; Ordering: Integer;
 begin
@@ -627,11 +678,7 @@ begin
     AWPendingRetirementFailed := True;
     if not Verified then
       Log('AccessWeaver installed payload or registration verification failed. Pending installation record retained.')
-    else if not AWPendingInstallMatches(Destination) then
-      Log('AccessWeaver pending installation record changed or could not be verified. Setup did not clear it.')
-    else if not RegDeleteValue(HKLM64, AWLifecycleRegistry, AWPendingInstall) or not AWFlushLifecycleRecord then
-      Log('Cannot retire the AccessWeaver pending installation record.')
-    else begin
+    else if AWRetirePendingInstall(Destination) then begin
       AWPendingRetirementFailed := False;
       Log('AccessWeaver installed payload and registration verified. Pending installation record retired.');
     end;
@@ -648,7 +695,7 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
-var Failure, Destination, RecordValue: String;
+var Failure, Destination: String;
 begin
   if CurStep = ssInstall then begin
     if not AWLifecycleOwned then RaiseException('The AccessWeaver installation lock is not held.');
@@ -662,9 +709,7 @@ begin
     if Failure = '' then Failure := AWPayloadReplacementPreflight(Destination);
     if Failure = '' then Failure := AWApprovedUpgradePreflight(Destination, AWPendingApprovalPin);
     if Failure <> '' then RaiseException(Failure);
-    RecordValue := '{#ReleaseVersion}|' + Destination;
-    if AWPendingApprovalPin <> '' then RecordValue := RecordValue + '|' + AWPendingApprovalPin;
-    if not RegWriteStringValue(HKLM64, AWLifecycleRegistry, AWPendingInstall, RecordValue) or
+    if not RegWriteStringValue(HKLM64, AWLifecycleRegistry, AWPendingInstall, AWPendingInstallValue(Destination)) or
       not AWFlushLifecycleRecord then
       RaiseException('Cannot persist the AccessWeaver pending installation record.');
     if not AWPendingInstallMatches(Destination) then

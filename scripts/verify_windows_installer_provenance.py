@@ -24,7 +24,8 @@ RELEASE=re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A
 SHA=re.compile(r"[a-f0-9]{64}")
 ROLLBACK_REPORT_SCHEMA = 53
 DOCUMENTATION_COMPLETION_REPORT_SCHEMA = 54
-REPORT_SCHEMAS = range(11, DOCUMENTATION_COMPLETION_REPORT_SCHEMA + 1)
+RETIREMENT_FLUSH_REPORT_SCHEMA = 55
+REPORT_SCHEMAS = range(11, RETIREMENT_FLUSH_REPORT_SCHEMA + 1)
 PHASES=["baseline","after-install","after-upgrade","after-reinstall","after-active-setup-uninstall","after-lifecycle-locks","after-refused-downgrade","after-version-policy","after-registry-read-boundaries","after-registry-view-policy","after-registry-access-policy","after-restoration-launch-failures","after-restoration-ownership-contracts","before-uninstall","after-uninstall"]
 
 def require(ok,message):
@@ -214,6 +215,20 @@ def validate_setup_upgrade_baseline(value, *, check_recovery=False, check_abrupt
                 "Managed Setup abrupt termination was not observed")
         verified["setupUpgradeAbruptTerminationVerified"] = True
     return verified
+
+
+def validate_setup_retirement_flush(value):
+    flags = {"deletionObserved", "originalMarkerRestored", "managedDetectionRefused", "profilePreserved",
+             "unrelatedStatePreserved", "matchingRetryRetiredMarker"}
+    require(type(value) is dict and value.keys() == flags | {
+        "fixtureSHA256", "exitCode", "elapsedMilliseconds", "deadlineMilliseconds"
+    }, "Incomplete Setup retirement flush recovery evidence")
+    require(isinstance(value["fixtureSHA256"], str) and SHA.fullmatch(value["fixtureSHA256"])
+            and type(value["exitCode"]) is int and value["exitCode"] == 1603
+            and type(value["deadlineMilliseconds"]) is int and value["deadlineMilliseconds"] == 180000
+            and type(value["elapsedMilliseconds"]) is int and 0 <= value["elapsedMilliseconds"] < 180000
+            and all(value[key] is True for key in flags), "Setup retirement flush recovery was not verified")
+    return {"setupRetirementFlushRecoveryVerified": True}
 
 
 def validate_setup_uninstall_registration_refusal(value):
@@ -523,6 +538,8 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
         setup_readback.update(validate_setup_completion_refusal(documentation_refusal, documentation=True))
         require(documentation_refusal["fixtureSHA256"] != report["setupCompletionRefusal"]["fixtureSHA256"],
                 "Documentation and SBOM completion refusal require different fixture installers")
+    if report["schemaVersion"] >= RETIREMENT_FLUSH_REPORT_SCHEMA:
+        setup_readback.update(validate_setup_retirement_flush(report.get("setupRetirementFlush")))
     if report["schemaVersion"] >= 32:
         setup_readback.update(validate_setup_marker_replacement(
             report.get("setupMarkerReplacement"), check_subject_guards=report["schemaVersion"] >= 33,
