@@ -1139,8 +1139,11 @@ test('desktop performance meets published Linux controller and browser budgets',
  const soak=process.env.ACCESSWEAVER_BROWSER_SOAK==='1';
  if(soak)expect(require('./browser-soak.cjs').allowed()).toBe(true);
  test.setTimeout(soak?18*60_000:120000);
- await runDesktopPerformance(browserOwner.page,core,testInfo,browserOwner.controller);
- if(soak)await require('./browser-soak.cjs').runSoak(browserOwner.page,core,testInfo,browserOwner.controller);
+ const baseline=await runDesktopPerformance(browserOwner.page,core,testInfo,browserOwner.controller);
+ if(soak&&baseline.workloadComplete){
+  await require('./browser-soak.cjs').runSoak(browserOwner.page,core,testInfo,browserOwner.controller,baseline.outcome==='passed');
+ }
+ expect(baseline.outcome,'Desktop performance contract failed at '+baseline.stage).toBe('passed');
 });
 
 // Ordinary loopback HTTP serves source assets and synthetic replies only.

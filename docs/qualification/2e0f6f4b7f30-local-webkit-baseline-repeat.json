@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 1,
+  "scope": "Offline source-built Linux AMD64 WebKit short baseline preceding an instrumented soak",
+  "sourceCommit": "2e0f6f4b7f307cec00df0d4396b2da7573d50e3f",
+  "sourceSHA256": {
+    "scripts/browser-tests/job-cpu.cjs": "4812d6387bcec43bc84855eef4f223000440fb2e7d15f1ca7a7fe31a85980b37",
+    "scripts/check-native-environment.cjs": "cf56a8253f0444ec6cb8c8bf92249151165d8bd4061985c8a0e8df0df2aea562",
+    "scripts/browser-tests/check-image-environment.cjs": "e19b4bf61bc94d045e2566f0353a04e267e45d404aae4fabfae63dcec87f460b",
+    "scripts/browser-tests/browser-native-binary.cjs": "8194f82559f9b7f32b43d74c3d3c0df6bf00b48e34c23bb3e8ed3132f82db972",
+    "scripts/browser-tests/package-lock.json": "8be62d9880021ca910c493d5540682379b6bc5f0b907707a7579dc4f74fbbd6a",
+    ".github/workflows/browser.yml": "c4979a03afd26c51385edbfe32ae697950e151c3e064c26a043f464684b9b4a9",
+    "scripts/browser-tests/browser-timing.cjs": "a080b95e0fa6531fac4292d87ab9def17e41c22ff2d3811bdd58ef99b64ce7ec",
+    "scripts/browser-tests/browser-timing.test.cjs": "0018acb94ce5b312be06ba73cb57dd6fa8945a51ac8635d4408c0b9ad4b7ad2f",
+    "internal/profile/testdata/timestamps.json": "2009c2b8f7b48e28fd62586809dabff9029c8b386227093345c225dbabb39ffe",
+    "scripts/browser-tests/browser-memory.cjs": "6e3e73268803a6aa43794f62a40bd04a652a06c3d87d7396a1b16ddb5910fc03",
+    "scripts/browser-tests/browser-resources.cjs": "5aeab55a5dd67264a96baf34b264815fb80bcdf9c2ad086b22613ca675c1e5e1",
+    "web/app.js": "1e0e15c79ea486383deb45cd5072cd49a85699bc62fd7e504c219887b41fc32e",
+    "web/index.html": "5682e309e6dd03d7f0cc1489cf43a6cc7e4535a4dcc31a2bb138562b3701dee5",
+    "web/app.css": "6391cf2d9213fcf49e0cfc27271f5f8aeee4b99c64abbb754159148d50c394f3",
+    "web/locales.js": "ea6f2360041e9da71ee62645049e53180b71c5a14639f248a37b9fb972cc1077",
+    "web/system.js": "b2328e2b085c2d15d8471db0baebd83cf85267eb2c9a482428d2d870226bae3f",
+    "scripts/browser-tests/desktop.spec.cjs": "68a2ecbb7bfd61e568afe75aa8ae583a1d909af87992e78d37e0cc6674b304b8",
+    "scripts/browser-tests/desktop-performance.cjs": "4b7afaeb304f23ceff071c943f290ab3d8954b45d07cd24dc5d7fd67ead92f49",
+    "scripts/browser-tests/performance-budgets.json": "97e105bb42966d2b4a0cf4b8505385dbaab1aa1a4afab9670be4f8ee9785160e",
+    "scripts/browser-tests/playwright.config.cjs": "fb951bf6f1eca621cb69eab2d46517b1a57a3779714142879d8f4f93cc719fa9",
+    "scripts/browser-tests/job-cpu.test.cjs": "e2a193cc51c2ee2b0e8c3ac3cb83ef57dbb9c32430232bcdd2c780c3c097d67b",
+    "scripts/browser-tests/soak.config.cjs": "7f2abf43c8ab0ff40332042a3f497297f528508ce69203140bbed34332570e39",
+    "internal/uiaccess/launcher.go": "051be5ba8dffe85ba1278b181998b28d6d7bbdd7ebd1dd87ce443a0768d14675",
+    "internal/api/server.go": "78739ec3254d72aa75343dcd4c9dd25ce9022d69cd8445607afdbf54e1a67adf",
+    ".github/workflows/browser-soak.yml": "58e97b7cebfee1716e4dd65de001c4453f47ef8fba7bbdb6883d4f92aa4bfe63"
+  },
+  "binarySHA256": "3137d6d45b01bc1367e81069b6e8a18ca5d654b38f41ce73b02518d12855ce2d",
+  "image": "mcr.microsoft.com/playwright@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f",
+  "reportsSHA256": {
+    "image": "d2902470cbfac28ec8574935f42cbed871942e3ee0c098d4fa9250865e7b6bf3",
+    "performance": "b17a702365962c1d9b2264abf7f38619180435b3064b26a31c15b0e94758584d",
+    "timing": "1c031928eef4d7952d19af8e4373b447f196c1f633d4069602ef55c786fba6db"
+  },
+  "baseline": {
+    "environment": {
+      "platform": "linux",
+      "architecture": "x64",
+      "node": "v26.8.2",
+      "playwright": "1.64.1",
+      "cpuCount": 16,
+      "pageBytes": 4096,
+      "clockTicksPerSecond": 100
+    },
+    "counts": {
+      "reload": 5,
+      "navigation": 24,
+      "editor": 10,
+      "burstRequests": 96,
+      "loadRequests": 240,
+      "resourceSamples": 310,
+      "loadMilliseconds": 60002,
+      "browserResourceSamples": 80,
+      "browserObservedExits": 0,
+      "browserCpuMilliseconds": 60660,
+      "browserFailureStage": 0,
+      "jobCpuMilliseconds": 60654,
+      "jobCpuFailureStage": 0
+    },
+    "metrics": {
+      "controllerStartupMs": 31.536427999999887,
+      "dashboardReadyMs": 3113.179017,
+      "reloadP95Ms": 255.93245899999965,
+      "navigationP95Ms": 450.29323699999804,
+      "editorP95Ms": 488.9014270000007,
+      "apiP95Ms": 62,
+      "burstRequestsPerSecond": 93.563730511077,
+      "loadRequestsPerSecond": 3.9998095597339716,
+      "loadCpuPercentOneCore": 4.633112740025184,
+      "sampledPeakRssBytes": 18116608,
+      "sampledPeakDescriptors": 13,
+      "sampledPeakThreads": 17,
+      "cooldownRssGrowthBytes": 860160,
+      "cooldownDescriptorGrowth": -2,
+      "cooldownThreadGrowth": 5,
+      "browserSampledPeakRssBytes": 763568128,
+      "browserSampledPeakDescriptors": 101,
+      "browserSampledPeakThreads": 100,
+      "browserSampledPeakProcesses": 5,
+      "browserObservedLoadCpuPercentOneCore": 12.182519733046735,
+      "browserCooldownRssGrowthBytes": 44142592,
+      "browserCooldownDescriptorGrowth": 5,
+      "browserCooldownThreadGrowth": -12,
+      "browserCooldownProcessGrowth": 0,
+      "jobLoadCpuPercentOneCore": 29.74638532944888
+    },
+    "violations": [
+      "dashboardReadyMs"
+    ],
+    "outcome": "failed"
+  },
+  "shortTiming": {
+    "dashboard": {
+      "navigationMs": 23.927816000000348,
+      "applicationMs": 2843.9795549999994,
+      "paintMs": 245.27164600000015
+    },
+    "editor": [
+      {
+        "actionMs": 246.60585900000115,
+        "visibilityMs": 16.369737999999415,
+        "paintMs": 225.92583000000013,
+        "totalMs": 488.9014270000007
+      },
+      {
+        "actionMs": 209.60917300000074,
+        "visibilityMs": 12.08150999999998,
+        "paintMs": 41.05261000000064,
+        "totalMs": 262.74329300000136
+      },
+      {
+        "actionMs": 214.7455429999991,
+        "visibilityMs": 9.139140000001134,
+        "paintMs": 38.63588999999956,
+        "totalMs": 262.5205729999998
+      },
+      {
+        "actionMs": 223.75274100000024,
+        "visibilityMs": 13.602909000001091,
+        "paintMs": 38.471064999999726,
+        "totalMs": 275.82671500000106
+      },
+      {
+        "actionMs": 188.4416170000004,
+        "visibilityMs": 11.298491999999897,
+        "paintMs": 42.506240000000616,
+        "totalMs": 242.24634900000092
+      },
+      {
+        "actionMs": 204.31577900000048,
+        "visibilityMs": 20.044373000000633,
+        "paintMs": 50.14830400000028,
+        "totalMs": 274.5084560000014
+      },
+      {
+        "actionMs": 204.99503200000072,
+        "visibilityMs": 9.772429000000557,
+        "paintMs": 44.09448199999861,
+        "totalMs": 258.8619429999999
+      },
+      {
+        "actionMs": 159.7796729999991,
+        "visibilityMs": 14.751156000000265,
+        "paintMs": 26.838432000000466,
+        "totalMs": 201.36926099999982
+      },
+      {
+        "actionMs": 189.33846799999992,
+        "visibilityMs": 11.518133999999918,
+        "paintMs": 35.72464500000024,
+        "totalMs": 236.58124700000008
+      },
+      {
+        "actionMs": 210.48538100000042,
+        "visibilityMs": 10.398514999998952,
+        "paintMs": 45.12026100000003,
+        "totalMs": 266.0041569999994
+      }
+    ],
+    "readyCallbackDelivery": {
+      "status": "ready",
+      "firstReadyMs": 790,
+      "readyPaintMs": 2794,
+      "maxFrameGapMs": 2242,
+      "frameCount": 3,
+      "framesAfterReady": 2
+    }
+  },
+  "sustainedWorkloadStarted": false,
+  "productionQualificationComplete": false
+}

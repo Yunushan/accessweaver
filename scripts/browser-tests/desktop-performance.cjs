@@ -121,10 +121,12 @@ async function runDesktopPerformance(page,core,testInfo,browserChild){
  }finally{
   sampling=false;if(sampleTask)await sampleTask;if(browserTask)await browserTask;await browserQueue;if(jobCpu)try{await jobCpu.close()}catch(error){counts.jobCpuFailureStage=jobCpuFailure(error);value.stage='job-cpu';value.failureKind=classifyFailure(error)}if(samplingError){value.stage='resources';value.failureKind=samplingError;}
  }
- let outcome=value.stage==='complete'&&value.failureKind==='none'&&violations(value).length===0?'passed':'failed';
+ const limitsMissed=violations(value);
+ const workloadComplete=value.stage==='complete'&&value.failureKind==='none'&&!limitsMissed.includes('workload');
+ let outcome=workloadComplete&&limitsMissed.length===0?'passed':'failed';
  if(process.env.GITHUB_ACTIONS==='true')outcome=await writePerformanceReport(path.resolve(__dirname,'../..'),testInfo.project.name,core.build.commit,core.binarySha256,environment,value);
  if(process.env.GITHUB_ACTIONS==='true')await writeMemoryReport(path.resolve(__dirname,'../..'),core.build.commit,core.binarySha256,testInfo.project.name,process.env.ACCESSWEAVER_EXPECT_GOARCH,memoryPoints);
  if(process.env.GITHUB_ACTIONS==='true'&&process.env.ACCESSWEAVER_BROWSER_SOAK==='1')await Timing.writeReport(path.resolve(__dirname,'../..'),core.build.commit,core.binarySha256,testInfo.project.name,process.env.ACCESSWEAVER_EXPECT_GOARCH,value.stage,value.failureKind,timing);
- assert.equal(outcome,'passed','Desktop performance contract failed at '+value.stage);
+ return {outcome,stage:value.stage,workloadComplete};
 }
 module.exports={waitUntil,failureKinds,classifyFailure,dashboardReady,budgets,performanceCaseName,metricNames,countNames,stages,sources,parseStat,percentile,cpuPercent,violations,validateValue,seedPerformanceProfiles,liveChild,writePerformanceReport,runDesktopPerformance,sampleController,requestBatch,paint,measureEditorOpen};
