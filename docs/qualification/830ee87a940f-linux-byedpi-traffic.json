@@ -1,0 +1,73 @@
+{
+  "sourceCommit": "830ee87a940ffaecc337ab37ae2ab38236e4e0e2",
+  "sourceTree": "3278dcd3b65fd70d8687a372b1040d512684741a",
+  "goVersion": "go version go1.27.4 linux/amd64",
+  "controllerSHA256": "47334f84ddbed7fef9cf662ea04361f6e55ee3cc2afc3b562304984c33dd1a17",
+  "engineRelease": "v0.17.3",
+  "engineArchiveURL": "https://github.com/hufrea/byedpi/releases/download/v0.17.3/byedpi-17.3-x86_64.tar.gz",
+  "engineArchiveSHA256": "98f73c32eacb571ebd88d790f6376ed9e70f02d44c1fe862472ecea75cd7117d",
+  "engineSHA256": "c70e87c6168af1832b21641a98bb53e3500b1daf6a5df8bfd22fac4a9294abda",
+  "schemaVersion": 1,
+  "scope": "Linux AMD64 real ByeDPI local traffic and lifecycle",
+  "ordinaryUser": true,
+  "zeroLinuxCapabilities": true,
+  "loopbackOnlyNetworkNamespace": true,
+  "tlsTargetLocal": true,
+  "probeClients": "Python sockets",
+  "probeSourceSHA256": "f7619d26519a7290f8e617d39d5a0c613ed2cd1f8546b892c85bb7e1c11b46b6",
+  "tests": [
+    {
+      "name": "duplicate-foreground-run-refused",
+      "passed": true
+    },
+    {
+      "name": "direct-tls-ipv4-control",
+      "passed": true
+    },
+    {
+      "name": "socks-connect-tls-ipv4",
+      "passed": true
+    },
+    {
+      "name": "direct-tls-ipv6-control",
+      "passed": true
+    },
+    {
+      "name": "socks-connect-tls-ipv6",
+      "passed": true
+    },
+    {
+      "name": "socks-connect-tls-localhost-domain",
+      "passed": true
+    },
+    {
+      "name": "socks-udp-associate-ipv4",
+      "passed": true
+    },
+    {
+      "name": "socks-udp-associate-ipv6",
+      "passed": true
+    },
+    {
+      "name": "sigterm-reaps-engine-and-closes-listener",
+      "passed": true
+    },
+    {
+      "name": "controller-starts-owned-upstream-engine",
+      "passed": true
+    },
+    {
+      "name": "engine-crash-observed-and-controller-lock-released",
+      "passed": true
+    },
+    {
+      "name": "mismatched-engine-digest-refused-without-listener",
+      "passed": true
+    }
+  ],
+  "allChecksPassed": true,
+  "productionQualificationComplete": false,
+  "host": "Ubuntu WSL",
+  "probeSource": "scripts/test-linux-byedpi-traffic.py",
+  "namespacePreparation": "Loopback enabled in a transient network namespace before dropping to the ordinary account. The preliminary user-namespace attempt was refused during profile import because root ownership was unmapped."
+}

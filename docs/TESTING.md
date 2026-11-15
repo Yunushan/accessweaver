@@ -140,6 +140,14 @@ Run on a disposable VM/device first. Obtain engines from their official upstream
 
 For a SOCKS engine, test through the target application's configured proxy and its DNS behavior. For packet mode, independently confirm traffic reaches the relevant OS hook. A successful direct `doctor` result or `state: running` is not a substitute.
 
+### Local ByeDPI traffic and lifecycle
+
+The [Linux AMD64 receipt](qualification/830ee87a940f-linux-byedpi-traffic.json) records a clean source build and the exact published ByeDPI v0.17.3 Linux asset. The fixture reached real IPv4 and IPv6 loopback targets over SOCKS5 TCP/TLS and UDP. It also tested the SOCKS5 domain form with `localhost`, direct TLS controls, duplicate-run refusal, SIGTERM and engine-crash cleanup, and refusal of a mismatched executable digest. [ByeDPI release](https://github.com/hufrea/byedpi/releases/tag/v0.17.3).
+
+Build the selected Linux candidate and stage it as `accessweaver` in a private fixture directory. Verify the upstream archive against its published SHA-256, extract the matching ELF member as `ciadpi`, and make both files executable. Put the observed digests and source identity in `prep.json` using the fields from `sourceCommit` through `engineSHA256` in the receipt. Run `scripts/test-linux-byedpi-traffic.py PRIVATE_FIXTURE_DIRECTORY` with Python 3 and OpenSSL available. The runner requires an ordinary user without Linux capabilities or privilege gain and a disposable network namespace with only loopback enabled. Prepare the namespace before dropping privileges. Preserve the original UID mapping so AccessWeaver can verify root-owned machine paths. The runner exclusively writes `traffic-report.json`.
+
+The domain probe uses the local `localhost` mapping. Live DNS transport, browser and Discord traffic, routing rules, vendor network recovery, and other platforms still require their own tests.
+
 ## Release packaging
 
 ```bash
