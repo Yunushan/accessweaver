@@ -140,6 +140,58 @@ if($combined -isnot [AggregateException] -or $combined.InnerExceptions.Count -ne
 $bootstrap=Join-Path $PSScriptRoot 'vmware-test-bootstrap.ps1'
 $bootstrapAst=[Management.Automation.Language.Parser]::ParseFile($bootstrap,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'VMware bootstrap failed parsing'}
+foreach($name in @('Read-ApprovedDNSRebootResume','New-DNSRebootStartupArguments')){
+    $function=@($bootstrapAst.EndBlock.Statements | Where-Object {
+        $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
+    })
+    if($function.Count -ne 1){throw 'Missing VMware startup verifier guard'}
+    . ([scriptblock]::Create($function[0].Extent.Text))
+}
+# Run the exact scheduled command with an inert verifier before and after replacement.
+& {
+    $path=Join-Path ([IO.Path]::GetTempPath()) ("accessweaver-startup's-"+[guid]::NewGuid().ToString('N')+'.ps1')
+    $inert='param($ExecutableName,$ExecutableSHA256,$QualificationID,$DNS,$RequiredOriginalMode,$FixtureSHA256,$OracleSHA256)' + [Environment]::NewLine +
+        '@($ExecutableName,$ExecutableSHA256,$QualificationID,$DNS,$RequiredOriginalMode,$FixtureSHA256,$OracleSHA256) -join ''|'''
+    $options=@{
+        ResumePath=$path
+        ExecutableName='accessweaver-01.exe'
+        ExecutableSHA256='1'*64
+        QualificationID='2'*32
+        DNS='dnscrypt'
+        RequiredOriginalMode='static-ipv6'
+        FixtureSHA256='3'*64
+        OracleSHA256='4'*64
+    }
+    try {
+        [IO.File]::WriteAllText($path,$inert,[Text.UTF8Encoding]::new($true))
+        $options.ResumeSHA256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+        $approved=Read-ApprovedDNSRebootResume $path $options.ResumeSHA256
+        if($approved -isnot [scriptblock]){throw 'Preparation did not verify the verifier without invoking it'}
+        $arguments=New-DNSRebootStartupArguments @options
+        if($arguments -cnotmatch '\A-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ([A-Za-z0-9+/=]+)\z'){
+            throw 'Task action must launch its fixed verifier guard'
+        }
+        $bytes=[Convert]::FromBase64String($Matches[1])
+        $command=[scriptblock]::Create([Text.Encoding]::Unicode.GetString($bytes))
+        $expected=@('accessweaver-01.exe',('1'*64),('2'*32),'dnscrypt','static-ipv6',('3'*64),('4'*64)) -join '|'
+        if((& $command) -cne $expected){throw 'Scheduled command did not pass the exact pinned qualification inputs'}
+        $stock=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        $argv=$arguments.Split(' ')
+        $observed=& $stock @argv
+        if($LASTEXITCODE -ne 0 -or $observed -cne $expected){
+            throw 'Windows PowerShell could not launch the approved startup verifier with the scheduled arguments'
+        }
+
+        [IO.File]::WriteAllText($path,'$script:replacementVerifierRan=$true')
+        $script:replacementVerifierRan=$false
+        Refuse {Read-ApprovedDNSRebootResume $path $options.ResumeSHA256}
+        Refuse {& $command}
+        if($script:replacementVerifierRan){throw 'The replaced startup verifier ran before its digest was checked'}
+        Refuse {New-DNSRebootStartupArguments @options -UnexpectedArgument 'ignored'}
+        [IO.File]::Delete($path)
+        Refuse {& $command}
+    } finally {[IO.File]::Delete($path)}
+}
 $stageCommands=@($bootstrapAst.FindAll({
     param($node)
     $node -is [Management.Automation.Language.CommandAst] -and
@@ -691,9 +743,24 @@ if((Assert-DNSRebootPublicReport $data $pin $qualificationID $method $originalMo
 }
 $startupCommand=$startup.EndBlock.Extent.Text
 if($startupCommand -cnotmatch '-Phase Verify -Executable \$binary -ExecutableSHA256 \$ExecutableSHA256 -QualificationID \$QualificationID -DNS \$DNS -RequiredOriginalMode \$RequiredOriginalMode -FixtureSHA256 \$FixtureSHA256 -OracleSHA256 \$OracleSHA256' -or
-   $body.Extent.Text -cnotmatch '-ExecutableSHA256 ''\+\$digest\+'' -QualificationID ''\+\$qualificationID\+'' -DNS ''\+\$method\+'' -RequiredOriginalMode ''\+\$originalMode\+'' -FixtureSHA256 ''\+\$fixtureDigest\+'' -OracleSHA256 ''\+\$oracleDigest' -or
+   $body.Extent.Text -cnotmatch 'New-DNSRebootStartupArguments @startupInputs' -or
    $stages[1].Extent.Text -cnotmatch '-DNS \$method -RequiredOriginalMode \$originalMode -QualificationID \$qualificationID -FixtureSHA256 \$fixtureDigest -OracleSHA256 \$oracleDigest'){
     throw 'Scheduled reboot verification does not inherit the approved controller and script digests, qualification ID, DNS method and original adapter mode'
+}
+$startupBindings=@{
+    ResumePath='resumePath';ResumeSHA256='resumeDigest';ExecutableName='executable';ExecutableSHA256='digest'
+    QualificationID='qualificationID';DNS='method';RequiredOriginalMode='originalMode'
+    FixtureSHA256='fixtureDigest';OracleSHA256='oracleDigest'
+}
+foreach($field in $startupBindings.Keys){
+    if($body.Extent.Text -cnotmatch ('\b'+[regex]::Escape($field+'=$'+$startupBindings[$field])+'\b')){
+        throw ('Scheduled reboot verification lost the prepared argument '+$field)
+    }
+}
+$approval=$body.Extent.Text.IndexOf('Read-ApprovedDNSRebootResume $resumePath $resumeDigest')
+$registration=$body.Extent.Text.IndexOf('Register-ScheduledTask -TaskName')
+if($approval -lt 0 -or $registration -lt 0 -or $approval -ge $registration){
+    throw 'The startup verifier must be approved before registering the task'
 }
 $script:verifications=0;$script:retirements=0
 $verify={

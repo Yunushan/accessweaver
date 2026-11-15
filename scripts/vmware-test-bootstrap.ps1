@@ -23,6 +23,54 @@ function Copy-TestTree([string]$source,[string]$destination) {
     & robocopy.exe $source $destination /E /R:2 /W:1 /NFL /NDL /NJH /NJS | Out-Null
     if($LASTEXITCODE -gt 7){throw ('Test file copy failed: '+$LASTEXITCODE)}
 }
+function Read-ApprovedDNSRebootResume {
+    [CmdletBinding()]
+    param([string]$Path,[string]$ExpectedSHA256)
+    $ErrorActionPreference='Stop'
+    $item=Get-Item -LiteralPath $Path -Force
+    if($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)){
+        throw 'DNS startup verifier must be an ordinary file'
+    }
+    $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        $length=$stream.Length
+        if($length -le 0 -or $length -gt 1MB){throw 'DNS startup verifier has an invalid size'}
+        $reader=[IO.BinaryReader]::new($stream,[Text.Encoding]::UTF8,$true)
+        try {$data=$reader.ReadBytes([int]$length)} finally {$reader.Dispose()}
+        if($data.Length -ne $length -or $stream.ReadByte() -ne -1){
+            throw 'DNS startup verifier changed during read'
+        }
+        $sha256=[Security.Cryptography.SHA256]::Create()
+        try {$observed=[BitConverter]::ToString($sha256.ComputeHash($data)).Replace('-','')} finally {$sha256.Dispose()}
+        if($observed -ine $ExpectedSHA256){throw 'DNS startup verifier differs from the approved source'}
+        $source=[Text.UTF8Encoding]::new($false,$true).GetString($data).TrimStart([char]0xFEFF)
+        return [scriptblock]::Create($source)
+    } finally {$stream.Dispose()}
+}
+function New-DNSRebootStartupArguments {
+    [CmdletBinding()]
+    param(
+        [string]$ResumePath,
+        [ValidatePattern('\A[A-Fa-f0-9]{64}\z')][string]$ResumeSHA256,
+        [ValidatePattern('\Aaccessweaver[a-zA-Z0-9-]*\.exe\z')][string]$ExecutableName,
+        [ValidatePattern('\A[A-Fa-f0-9]{64}\z')][string]$ExecutableSHA256,
+        [ValidatePattern('\A[0-9a-f]{32}\z')][string]$QualificationID,
+        [ValidateSet('doh','dnscrypt')][string]$DNS,
+        [ValidateSet('any','dhcp-ipv4','static-ipv4','dhcp-ipv6','static-ipv6')][string]$RequiredOriginalMode,
+        [ValidatePattern('\A[A-Fa-f0-9]{64}\z')][string]$FixtureSHA256,
+        [ValidatePattern('\A[A-Fa-f0-9]{64}\z')][string]$OracleSHA256
+    )
+    $quotedPath=$ResumePath.Replace("'","''")
+    $reader=(Get-Command Read-ApprovedDNSRebootResume -CommandType Function -ErrorAction Stop).Definition
+    $command=@"
+`$ErrorActionPreference='Stop'
+`$startup = & {
+$reader
+} '$quotedPath' '$ResumeSHA256'
+& `$startup -ExecutableName '$ExecutableName' -ExecutableSHA256 '$ExecutableSHA256' -QualificationID '$QualificationID' -DNS '$DNS' -RequiredOriginalMode '$RequiredOriginalMode' -FixtureSHA256 '$FixtureSHA256' -OracleSHA256 '$OracleSHA256'
+"@
+    return ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand '+[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command)))
+}
 function Copy-TestInputs([string]$executable,[switch]$DnsReboot) {
     if($executable -notmatch '^accessweaver[a-zA-Z0-9-]*\.exe$'){throw 'Unsupported controller filename'}
     $required=@($executable,'dns-acceptance-state.ps1')
@@ -75,12 +123,15 @@ try{
                     }
                     $fixtureDigest=$request.fixtureSHA256
                     $oracleDigest=$request.oracleSHA256
-                    foreach($scriptDigest in @($fixtureDigest,$oracleDigest)){
+                    $resumeDigest=$request.resumeSHA256
+                    foreach($scriptDigest in @($fixtureDigest,$oracleDigest,$resumeDigest)){
                         if($scriptDigest -isnot [string] -or $scriptDigest -cnotmatch '\A[A-Fa-f0-9]{64}\z'){
-                            throw 'Expected independently approved DNS reboot fixture and oracle SHA-256 values'
+                            throw 'Expected independently approved DNS reboot fixture, oracle and startup verifier SHA-256 values'
                         }
                     }
                     $fixturePath=Join-Path $local 'test-windows-reboot.ps1'
+                    $resumePath=Join-Path $local 'vmware-reboot-resume.ps1'
+                    [void](Read-ApprovedDNSRebootResume $resumePath $resumeDigest)
                     $method=if($request.dns){[string]$request.dns}else{'auto'}
                     if($method -cnotin @('auto','doh','dnscrypt')){throw 'Unknown DNS reboot method'}
                     if($method -ceq 'auto'){$method=if(Get-Command Get-DnsClientDohServerAddress -ErrorAction SilentlyContinue){'doh'}else{'dnscrypt'}}
@@ -90,7 +141,12 @@ try{
                     }
                     $originalMode=$originalMode.ToLowerInvariant()
                     $qualificationID=[guid]::NewGuid().ToString('N')
-                    $arguments='-NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\AccessWeaver-Test\vmware-reboot-resume.ps1 -ExecutableName '+$executable+' -ExecutableSHA256 '+$digest+' -QualificationID '+$qualificationID+' -DNS '+$method+' -RequiredOriginalMode '+$originalMode+' -FixtureSHA256 '+$fixtureDigest+' -OracleSHA256 '+$oracleDigest
+                    $startupInputs=@{
+                        ResumePath=$resumePath;ResumeSHA256=$resumeDigest;ExecutableName=$executable;ExecutableSHA256=$digest
+                        QualificationID=$qualificationID;DNS=$method;RequiredOriginalMode=$originalMode
+                        FixtureSHA256=$fixtureDigest;OracleSHA256=$oracleDigest
+                    }
+                    $arguments=New-DNSRebootStartupArguments @startupInputs
                     $action=New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Argument $arguments
                     $trigger=New-ScheduledTaskTrigger -AtStartup;$trigger.Delay='PT30S'
                     $settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -RestartCount 3 -RestartInterval ([TimeSpan]::FromMinutes(1))
