@@ -2547,21 +2547,35 @@ function Get-DNSDohPlaintextRule([string]$ID,[ValidateSet('TCP','UDP')][string]$
         $rule.Description -cne ('AccessWeaver DoH plaintext protection '+$ID) -or
         [string]$rule.Enabled -cne 'True' -or [string]$rule.Direction -cne 'Outbound' -or
         [string]$rule.Action -cne 'Block' -or [string]$rule.Profile -cne 'Any' -or
+        [string]$rule.LooseSourceMapping -cne 'False' -or [string]$rule.LocalOnlyMapping -cne 'False' -or
+        $rule.Platforms -or $rule.RemoteDynamicKeywordAddresses -or
         ($Store -ceq 'ActiveStore' -and [string]$rule.PolicyStoreSourceType -cne 'Local')){
         throw $failure
     }
-    $ports=@($rule | Get-NetFirewallPortFilter -ErrorAction Stop)
-    $addresses=@($rule | Get-NetFirewallAddressFilter -ErrorAction Stop)
-    $services=@($rule | Get-NetFirewallServiceFilter -ErrorAction Stop)
-    $applications=@($rule | Get-NetFirewallApplicationFilter -ErrorAction Stop)
+    $filterQuery=@{AssociatedNetFirewallRule=$rule;PolicyStore=$Store;ErrorAction='Stop';
+        WarningAction='SilentlyContinue';WarningVariable='+warnings'}
+    $ports=@(Get-NetFirewallPortFilter @filterQuery)
+    $addresses=@(Get-NetFirewallAddressFilter @filterQuery)
+    $services=@(Get-NetFirewallServiceFilter @filterQuery)
+    $applications=@(Get-NetFirewallApplicationFilter @filterQuery)
+    $interfaces=@(Get-NetFirewallInterfaceFilter @filterQuery)
+    $interfaceTypes=@(Get-NetFirewallInterfaceTypeFilter @filterQuery)
+    $security=@(Get-NetFirewallSecurityFilter @filterQuery)
+    if($warnings.Count){throw 'Managed DoH firewall filters could not be verified; retain the recovery snapshot'}
     $protocolNumber=if($Protocol -ceq 'TCP'){'6'}else{'17'}
     $expected=@((Get-DNSDohProviders).ServerAddress)
     if($ports.Count -ne 1 -or [string]$ports[0].Protocol -cnotin @($Protocol,$protocolNumber) -or
         ($ports[0].RemotePort -join ',') -cne '53' -or ($ports[0].LocalPort -join ',') -cne 'Any' -or
+        [string]$ports[0].DynamicTarget -cne 'Any' -or
         $addresses.Count -ne 1 -or ($addresses[0].LocalAddress -join ',') -cne 'Any' -or
         $services.Count -ne 1 -or $services[0].Service -ine 'Dnscache' -or
         $applications.Count -ne 1 -or $applications[0].Program -ine 'Any' -or
-        [string]$applications[0].Package -cnotin @('','Any')){
+        [string]$applications[0].Package -cnotin @('','Any') -or
+        $interfaces.Count -ne 1 -or ($interfaces[0].InterfaceAlias -join ',') -cne 'Any' -or
+        $interfaceTypes.Count -ne 1 -or ($interfaceTypes[0].InterfaceType -join ',') -cne 'Any' -or
+        $security.Count -ne 1 -or [string]$security[0].Authentication -cne 'NotRequired' -or
+        [string]$security[0].Encryption -cne 'NotRequired' -or [string]$security[0].OverrideBlockRules -cne 'False' -or
+        $security[0].LocalUser -cne 'Any' -or $security[0].RemoteUser -cne 'Any' -or $security[0].RemoteMachine -cne 'Any'){
         throw $failure
     }
     $remote=@($addresses[0].RemoteAddress)
@@ -2579,6 +2593,13 @@ function Get-DNSDohPlaintextRule([string]$ID,[ValidateSet('TCP','UDP')][string]$
     }
     return $rule
 }
+function Assert-DNSDohPlaintextRuleOwnership([string]$ID) {
+    if(-not $ID){return}
+    foreach($protocol in @('TCP','UDP')){
+        [void](Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore')
+        [void](Get-DNSDohPlaintextRule $ID $protocol 'ActiveStore')
+    }
+}
 function Assert-DNSDohPlaintextBlock([string]$ID) {
     Assert-DNSDohFirewallAvailable
     foreach($protocol in @('TCP','UDP')){
@@ -2591,6 +2612,7 @@ function Assert-DNSDohPlaintextBlock([string]$ID) {
 }
 function Enable-DNSDohPlaintextBlock([string]$ID,[string]$SnapshotSHA256) {
     Assert-DNSDohFirewallAvailable
+    Assert-DNSDohPlaintextRuleOwnership $ID
     foreach($protocol in @('TCP','UDP')){
         if(Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore'){continue}
         if(Get-DNSDohPlaintextRule $ID $protocol 'ActiveStore'){
@@ -2607,10 +2629,7 @@ function Enable-DNSDohPlaintextBlock([string]$ID,[string]$SnapshotSHA256) {
 }
 function Remove-DNSDohPlaintextBlock([string]$ID,[string]$SnapshotSHA256) {
     if(-not $ID){return}
-    foreach($protocol in @('TCP','UDP')){
-        [void](Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore')
-        [void](Get-DNSDohPlaintextRule $ID $protocol 'ActiveStore')
-    }
+    Assert-DNSDohPlaintextRuleOwnership $ID
     foreach($protocol in @('TCP','UDP')){
         $owned=Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore'
         if($owned){
@@ -2830,6 +2849,7 @@ function Configure-DNS([string]$method) {
     $original=if($hadSnapshot){$originalSnapshot.record}else{[pscustomobject]@{adapters=@();doh=@();dohManaged=$false}}
     $plaintextBlockID=Get-DNSDohPlaintextBlockID $original
     $ownsDoh=Test-DNSRecoveryOwnsDoh $original
+    Assert-DNSDohPlaintextRuleOwnership $plaintextBlockID
     $guardDoh=Test-DNSRecoveryUsesDohOwnership $original $ownsDoh
     $guardAdapters=Test-DNSRecoveryUsesAdapterOwnership $original
     if($hadSnapshot -and ($null -eq $original.adapters -or @($original.adapters).Count -eq 0)){throw 'Original DNS snapshot has no adapter records; no new DNS configuration was applied'}
@@ -3245,12 +3265,7 @@ function Restore-DNS([string]$ExpectedSHA256,$ResolverReload) {
     }
     $saved=$restoration.record
     $plaintextBlockID=Get-DNSDohPlaintextBlockID $saved
-    if($plaintextBlockID){
-        foreach($protocol in @('TCP','UDP')){
-            [void](Get-DNSDohPlaintextRule $plaintextBlockID $protocol 'PersistentStore')
-            [void](Get-DNSDohPlaintextRule $plaintextBlockID $protocol 'ActiveStore')
-        }
-    }
+    Assert-DNSDohPlaintextRuleOwnership $plaintextBlockID
     $usesAdapterOwnership=Test-DNSRecoveryUsesAdapterOwnership $saved
     $guardAdapters=[bool]($ExpectedSHA256 -and $usesAdapterOwnership)
     $trackExplicitRestore=$usesAdapterOwnership -and -not $ExpectedSHA256

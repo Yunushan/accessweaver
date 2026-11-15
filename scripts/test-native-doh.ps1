@@ -9,6 +9,14 @@ function Assert-NativeOrdinaryPath([string]$Path) {
         $next=Split-Path -Parent $current;if($next -eq $current){break};$current=$next
     }
 }
+function Assert-NativeDoHPlaintextRulesAbsent {
+    foreach($store in @('PersistentStore','ActiveStore')){
+        $warnings=@()
+        $rules=@(Get-NetFirewallRule -PolicyStore $store -ErrorAction Stop -WarningAction SilentlyContinue -WarningVariable warnings |
+            Where-Object {$_.Name -ilike 'AccessWeaver-DoH-Plaintext-*'})
+        if($warnings.Count -or $rules.Count){throw 'Managed DoH plaintext rules were not confirmed absent'}
+    }
+}
 function New-NativeDNSCryptBundle([string]$PrivateRoot,[string]$Architecture) {
     $script:componentStage='architecture'
     $pin=switch -CaseSensitive ($Architecture){
@@ -182,6 +190,7 @@ public static class AccessWeaverNativeDoHIdentity {
     $machineRoot=Join-Path $env:ProgramData 'AccessWeaver';Assert-NativeOrdinaryPath $machineRoot
     if(Test-Path -LiteralPath $machineRoot){throw 'Preexisting product machine state refused'}
     if(@(Get-Service -Name 'AccessWeaver*' -ErrorAction SilentlyContinue).Count -ne 0){throw 'Preexisting product services refused'}
+    Assert-NativeDoHPlaintextRulesAbsent
     $code='binary-guard'
     $Binary=[IO.Path]::GetFullPath($Binary);Assert-NativeOrdinaryPath $Binary
     $binaryItem=Get-Item -LiteralPath $Binary -Force -ErrorAction Stop;$workspace=[IO.Path]::GetFullPath($env:GITHUB_WORKSPACE).TrimEnd('\')+'\'
@@ -705,6 +714,8 @@ public static class AccessWeaverNativeDoHIdentity {
     if($ScenarioKind -cin @('service-loss','service-reactivation')){$scenarioPassed=($scenarioPassed -and $scenario.failureInjected -and $scenario.failedResolverVerified -and $script:failureServiceStopped -and $script:resolverProcessExited -and $script:failedResolverObserved)}
     if($ScenarioKind -ceq 'verification-failure'){$scenarioPassed=($rollbackScenario.outcome -ceq 'passed' -and -not $rollbackScenario.emergencyRestoreAttempted -and $script:rollbackSnapshotRemoved -and $script:rollbackServiceRemoved -and $script:configureExit -ne 0 -and $script:resolverVerificationRejected -and $script:configureElapsedMilliseconds -ge 90000 -and $script:restoreExit -eq -1 -and $script:cliCount -eq 2 -and $script:joined -eq 2 -and $snapshotRemoved -and $serviceRunning -and $serviceAutomatic -and $serviceRemoved -and $script:cleanupExit -eq 0 -and $script:installedComponentVerified -and $script:configuredDuringRejectedApply -and $script:forwarderResponses -gt 0 -and -not $script:forwarderFailed -and -not $script:overflow -and -not $script:captureFailed)}
     if($WireTransport){$scenarioPassed=($scenarioPassed -and $null -ne $wireSummary -and $wireSummary.outcome -ceq 'passed')}
+    $code='doh-firewall-cleanup'
+    Assert-NativeDoHPlaintextRulesAbsent
     $code='post-validation';$integrityVerified=$true
     if((Get-FileHash -LiteralPath $Binary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $BinarySHA256){$integrityVerified=$false;$code='binary-changed'}
     foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){$integrityVerified=$false;$code='source-changed'}}
