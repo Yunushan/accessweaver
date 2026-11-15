@@ -18,7 +18,7 @@ import tempfile
 
 from macos_deployment import DETACHED_MANIFEST
 from macos_installer import parse_release_version, version_parts
-from sbom import WINDOWS_BUILD_INFO_PROPERTY, prop_map, validate_digest
+from sbom import WINDOWS_BUILD_INFO_PROPERTY, WINDOWS_PAYLOAD_FINGERPRINT_PROPERTY, prop_map, validate_digest
 from verify_macos_installer_publisher import check_package_publisher, verify_packaged_deployment
 from verify_release import publish_staged_file as publish_staged_installer, release_file, require
 from verify_release_provenance import REPOSITORY, regular_file, validate_identity
@@ -158,6 +158,7 @@ def validate_release_sboms(root, files, commit, version, entries):
     documents = {}
     macos_detectors = []
     windows_build_info = {}
+    windows_payload_fingerprints = {}
     try:
         for subject in files:
             if subject["role"] not in ("installer", "payload"):
@@ -190,13 +191,18 @@ def validate_release_sboms(root, files, commit, version, entries):
                 require(isinstance(pin, str) and re.fullmatch(SHA256, pin),
                         "Malformed Windows installer SBOM build metadata digest")
                 windows_build_info[target] = pin
+            if WINDOWS_PAYLOAD_FINGERPRINT_PROPERTY in properties:
+                pin = properties[WINDOWS_PAYLOAD_FINGERPRINT_PROPERTY]
+                require(isinstance(pin, str) and re.fullmatch(SHA256, pin),
+                        "Malformed Windows installer staged payload digest")
+                windows_payload_fingerprints[target] = pin
         for entry in entries:
             if WINDOWS_BUILD_INFO in entry and entry["target"] in windows_build_info:
                 require(entry[WINDOWS_BUILD_INFO] == windows_build_info[entry["target"]],
                         "Windows reboot build metadata differs from the signed installer SBOM")
     except (AttributeError, KeyError, TypeError, RecursionError) as error:
         raise ValueError("Malformed signed release SBOM") from error
-    return len(documents), macos_detectors, windows_build_info
+    return len(documents), macos_detectors, windows_build_info, windows_payload_fingerprints
 
 
 def windows_subjects(subjects):
@@ -521,7 +527,7 @@ def prepare(directory, output, commit, ref, *, windows_reboot_evidence=(), requi
         if windows_reboot_evidence:
             entries = load_detection_evidence(directory, windows_reboot_evidence, files, version,
                                               include_lifecycle_sources=require_windows_lifecycle)
-        _, _, windows_build_info = validate_release_sboms(root, files, commit, version, entries)
+        _, _, windows_build_info, _ = validate_release_sboms(root, files, commit, version, entries)
         if require_windows_lifecycle:
             require_windows_lifecycle_evidence(entries, windows_build_info, commit, require_restoration_journals=True)
         manifest = encode_manifest(commit, ref, files, entries)
@@ -1101,16 +1107,21 @@ def hold_qualified_windows_publisher(qualification):
         yield path
 
 
-def detect_windows_upgrade(qualification, publisher_pin):
+def detect_windows_upgrade(qualification, publisher_pin, *, pending_approval=None):
     try:
         shell = windows_system_directory() / "WindowsPowerShell" / "v1.0" / "powershell.exe"
         with tempfile.TemporaryFile() as output, hold_qualified_windows_detector(qualification) as script:
+            arguments = [
+                shell, "-NoProfile", "-NonInteractive", "-File", script, "-UseRegisteredDirectory",
+                "-Version", qualification["version"], "-Architecture", qualification["target"].split("/")[1],
+                "-PayloadSHA256", qualification["payloadSHA256"], "-PayloadSBOMSHA256", qualification["payloadSBOMSHA256"],
+                "-BuildInfoSHA256", qualification[WINDOWS_BUILD_INFO], "-UninstallerSHA256", qualification["uninstallerSHA256"],
+                "-PayloadPublisherSHA256", publisher_pin,
+            ]
+            if pending_approval is not None:
+                arguments.extend(("-PendingApprovalSHA256", pending_approval))
             result = subprocess.run(
-                [shell, "-NoProfile", "-NonInteractive", "-File", script, "-UseRegisteredDirectory",
-                 "-Version", qualification["version"], "-Architecture", qualification["target"].split("/")[1],
-                 "-PayloadSHA256", qualification["payloadSHA256"], "-PayloadSBOMSHA256", qualification["payloadSBOMSHA256"],
-                 "-BuildInfoSHA256", qualification[WINDOWS_BUILD_INFO], "-UninstallerSHA256", qualification["uninstallerSHA256"],
-                 "-PayloadPublisherSHA256", publisher_pin],
+                arguments,
                 stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.DEVNULL, timeout=90,
                 env={**os.environ, "ACCESSWEAVER_REPORT_INSTALLER_RECOVERY": "1"},
             )
@@ -1129,7 +1140,9 @@ def detect_windows_upgrade(qualification, publisher_pin):
     if result.returncode == 1:
         if content in (b"AccessWeaver installation pending\r\n", b"AccessWeaver installation pending\n"):
             return "unverified", "installer-recovery-pending"
-        if content in (b"AccessWeaver managed upgrade pending\r\n", b"AccessWeaver managed upgrade pending\n"):
+        if pending_approval is not None and content in (
+            b"AccessWeaver managed upgrade pending\r\n", b"AccessWeaver managed upgrade pending\n",
+        ):
             return "unverified", "installer-managed-upgrade-pending"
         if not content:
             return "unverified", "detector-inspection-failed"
@@ -1140,7 +1153,9 @@ def require_pending_windows_upgrade(update, publisher_pin, policy):
     qualification = update["windowsUpgradeDetection"]
     require(WINDOWS_DETECTOR in qualification, "Windows retry after reboot requires a signed detector pin")
     require_current_revocation_policy(policy)
-    observation = detect_windows_upgrade(qualification, publisher_pin)
+    pending_approval = update.get("windowsPendingApprovalSHA256")
+    require(pending_approval, "Windows retry after reboot requires an authenticated staged payload fingerprint")
+    observation = detect_windows_upgrade(qualification, publisher_pin, pending_approval=pending_approval)
     require_current_revocation_policy(policy)
     require(observation == ("unverified", "installer-managed-upgrade-pending"),
             "Windows retry after reboot requires a verified pending installation marker for the requested release and directory")
@@ -1426,7 +1441,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     + WINDOWS_LIFECYCLE_SOURCE_FIELDS + (WINDOWS_RESTORATION_JOURNAL,) if field in entry
                 ) for entry in entries),
                 "Release subject or Windows detection evidence is revoked")
-        sboms_verified, macos_detectors, windows_build_info = validate_release_sboms(root, files, commit, version, entries)
+        sboms_verified, macos_detectors, windows_build_info, windows_payload_fingerprints = validate_release_sboms(root, files, commit, version, entries)
         require(not revoked_subjects.intersection(windows_build_info.values()),
                 "Windows installer SBOM build metadata is revoked")
         require(all(entry["detectorSHA256"] not in revoked_subjects for entry in macos_detectors),
@@ -1498,6 +1513,10 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                         or argument == resume_windows_upgrade_baseline_argument,
                         "Windows Setup baseline argument differs from the original approved upgrade")
                 update["windowsSetupBaselineArgument"] = argument
+                fingerprint = windows_payload_fingerprints.get(target)
+                if fingerprint:
+                    setup_approval = "|".join((",".join(values), target.split("/")[1], fingerprint))
+                    update["windowsPendingApprovalSHA256"] = hashlib.sha256(setup_approval.encode("ascii")).hexdigest()
             if launch_staged_windows_setup:
                 try:
                     held.enter_context(hold_qualified_windows_detector(baseline))

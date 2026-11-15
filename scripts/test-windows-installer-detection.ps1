@@ -170,7 +170,9 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             @{mode='pending';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
             @{mode='managed-pending-match';code=1;count=0;hash=$hash},
             @{mode='managed-pending-match';code=1;count=1;hash=$hash;reportRecovery=$true;matchingPendingStatus=$true},
-            @{mode='managed-pending-match';code=1;count=1;hash=$hash;reportRecovery=$true;matchingPendingStatus=$true;registered=$true},
+            @{mode='managed-pending-match';code=1;count=1;hash=$hash;reportRecovery=$true;matchingPendingStatus=$true;registered=$true;approval=('a'*64)},
+            @{mode='managed-pending-match';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true;registered=$true;approval=('b'*64)},
+            @{mode='managed-pending-match';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true;registered=$true;withoutApproval=$true},
             @{mode='managed-pending-wrong-version';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
             @{mode='managed-pending-wrong-path';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
             @{mode='managed-pending-unmanaged';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
@@ -270,6 +272,10 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             if($case.buildInfo){$arguments+=@('-BuildInfoSHA256',$case.buildInfo)}
             if($case.publisher){$arguments+=@('-PayloadPublisherSHA256',$case.publisher)}
             if($case.inventory){$arguments+='-UpgradeInventory'}
+            if($case.mode -clike 'managed-pending-*' -and -not $case.withoutApproval){
+                $pin=if($case.approval){$case.approval}else{'a'*64}
+                $arguments+=@('-PendingApprovalSHA256',$pin)
+            }
             $output=@(& $stock @arguments 2>&1)
             if($LASTEXITCODE -ne $case.code -or $output.Count -ne $case.count){
                 $label=if($case.label){$case.label}else{$case.mode}

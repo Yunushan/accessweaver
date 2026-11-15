@@ -10,7 +10,8 @@ param(
     [string]$PayloadPublisherSHA256 = '',
     [switch]$UpgradeInventory,
     [string]$BuildInfoSHA256 = '',
-    [switch]$UseRegisteredDirectory
+    [switch]$UseRegisteredDirectory,
+    [string]$PendingApprovalSHA256 = ''
 )
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
@@ -285,6 +286,7 @@ namespace AccessWeaver
 }
 
 function Test-AccessWeaverManagedUpgradePending([string]$directory) {
+    if(-not $PendingApprovalSHA256){return $false}
     try {
         if(-not ('AccessWeaver.InstallerPendingRecord' -as [type])){
             Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
@@ -330,7 +332,7 @@ namespace AccessWeaver
 
         $fields=$record.Split('|')
         if($fields.Count -ne 3 -or -not [string]::Equals($fields[0],$Version,[StringComparison]::Ordinal) -or
-           $fields[2] -cnotmatch '\A[0-9a-f]{64}\z'){return $false}
+           $fields[2] -cne $PendingApprovalSHA256){return $false}
 
         $registration=Read-AccessWeaverRegistration Registry64
         if($null -eq $registration -or $null -ne (Read-AccessWeaverRegistration Registry32)){return $false}
@@ -507,6 +509,7 @@ try {
        ($PayloadSBOMSHA256 -and $PayloadSBOMSHA256 -notmatch '\A[a-fA-F0-9]{64}\z') -or
        ($BuildInfoSHA256 -and $BuildInfoSHA256 -notmatch '\A[a-fA-F0-9]{64}\z') -or
        ($PayloadPublisherSHA256 -and $PayloadPublisherSHA256 -notmatch '\A[a-fA-F0-9]{64}\z') -or
+       ($PendingApprovalSHA256 -and $PendingApprovalSHA256 -cnotmatch '\A[a-f0-9]{64}\z') -or
        ($UpgradeInventory -and (-not $PayloadSBOMSHA256 -or -not $PayloadPublisherSHA256)) -or
        ($UninstallerSHA256 -and $UninstallerSHA256 -notmatch '\A[a-fA-F0-9]{64}\z')){
         throw 'Expected pinned Windows payload identity and a matching 64-bit host'

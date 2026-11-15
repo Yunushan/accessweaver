@@ -74,12 +74,10 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 components = [payloads[target]]
             self.write_sbom(name, root, components)
 
-    def set_windows_build_info_pin(self, architecture, pin):
+    def add_windows_installer_property(self, architecture, name, value):
         sidecar = self.candidate / f"accessweaver-{VERSION}-windows-{architecture}-setup.exe.cdx.json"
         document = json.loads(sidecar.read_bytes())
-        document["metadata"]["component"]["properties"].append(
-            {"name": release.WINDOWS_BUILD_INFO_PROPERTY, "value": pin}
-        )
+        document["metadata"]["component"]["properties"].append({"name": name, "value": value})
         sidecar.write_text(json.dumps(document), encoding="utf-8")
 
     def sbom_root(self, name, target):
@@ -283,7 +281,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
     def windows_lifecycle_reports(self, pins, *, schema=14):
         evidence = {}
         for arch in ("amd64", "arm64"):
-            self.set_windows_build_info_pin(arch, "6" * 64)
+            self.add_windows_installer_property(arch, release.WINDOWS_BUILD_INFO_PROPERTY, "6" * 64)
             evidence[arch, "clean"] = self.write_reboot_report(
                 f"{arch}-clean.json", architecture=arch, schemaVersion=schema, **pins)
             evidence[arch, "upgrade"] = self.write_reboot_report(
@@ -399,7 +397,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
 
     def test_prepare_binds_windows_reboot_build_metadata_to_the_installer_sbom(self):
         output = self.root / release.MANIFEST
-        self.set_windows_build_info_pin("amd64", "6" * 64)
+        self.add_windows_installer_property("amd64", release.WINDOWS_BUILD_INFO_PROPERTY, "6" * 64)
         for pin in ("a" * 64, "6" * 64):
             evidence = self.write_reboot_report("bound.json", schemaVersion=11, buildInfoSHA256=pin)
             if pin != "6" * 64:
@@ -412,7 +410,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 self.assertEqual(entry["buildInfoSHA256"], pin)
                 self.assertEqual(entry["detectorSHA256"], "1" * 64)
 
-        self.set_windows_build_info_pin("arm64", 1)
+        self.add_windows_installer_property("arm64", release.WINDOWS_BUILD_INFO_PROPERTY, 1)
         with self.assertRaisesRegex(ValueError, "Malformed Windows installer SBOM build metadata"):
             release.prepare(self.candidate, self.root / "unused" / release.MANIFEST, COMMIT, REF)
 
@@ -828,7 +826,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
         key, pem, approved = certificate("Disposable approval fixture")
         pin = release.digest(approved)
         _, _, stranger = certificate("Unapproved fixture")
-        self.set_windows_build_info_pin("arm64", "6" * 64)
+        self.add_windows_installer_property("arm64", release.WINDOWS_BUILD_INFO_PROPERTY, "6" * 64)
+        self.add_windows_installer_property("amd64", release.WINDOWS_PAYLOAD_FINGERPRINT_PROPERTY, "7" * 64)
         prepared = self.root / release.MANIFEST
         release.prepare(self.candidate, prepared, COMMIT, REF)
         manifest = self.candidate / release.MANIFEST
@@ -1413,6 +1412,9 @@ class SignedReleaseManifestTests(unittest.TestCase):
         staged_path = staging / selected["managedUpdate"]["installer"]
         before = staged_path.stat()
         original_baseline = selected["managedUpdate"]["windowsSetupBaselineArgument"]
+        approval_material = original_baseline.removeprefix(release.WINDOWS_SETUP_BASELINE_PREFIX) + "|amd64|" + "7" * 64
+        expected_approval = hashlib.sha256(approval_material.encode("ascii")).hexdigest()
+        self.assertEqual(selected["managedUpdate"]["windowsPendingApprovalSHA256"], expected_approval)
         retry_cli = command[:command.index("--current-version")] + [
             "--windows-upgrade-inventory", str(inventory_path), inventory_options["windows_upgrade_inventory"][1],
             "--stage-directory", str(staging), "--resume-windows-upgrade-setup-sha256", original_setup_pin.upper(),
@@ -2112,6 +2114,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
                             boot.side_effect = None
                             detect.side_effect = None
                     stage.assert_not_called()
+                    self.assertTrue(detect.call_args_list)
+                    self.assertTrue(all(call.kwargs.get("pending_approval") == expected_approval for call in detect.call_args_list))
                 launch.assert_not_called()
 
                 pending_status = ("unverified", "installer-managed-upgrade-pending")
@@ -2141,7 +2145,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 arrival = b"retained original result"
                 observed = iter((False, True))
 
-                def detect_with_late_result(*args):
+                def detect_with_late_result(_qualification, _publisher, *, pending_approval):
+                    self.assertEqual(pending_approval, expected_approval)
                     if next(observed):
                         completed_receipt.write_bytes(arrival)
                     return pending_status
@@ -2560,15 +2565,21 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
             with self.subTest(code=code, content=content), patch.object(release.subprocess, "run", side_effect=run) as call, \
                     patch.object(release, "windows_system_directory", return_value=self.root):
                 expected = ("unverified", reason) if reason else ("detected", None)
-                self.assertEqual(release.detect_windows_upgrade(qualification, publisher), expected)
+                pending_approval = "f" * 64 if reason == "installer-managed-upgrade-pending" else None
+                self.assertEqual(release.detect_windows_upgrade(qualification, publisher, pending_approval=pending_approval), expected)
                 arguments = call.call_args.args[0]
                 self.assertEqual(arguments[5:], [
                     "-UseRegisteredDirectory", "-Version", VERSION, "-Architecture", "arm64",
                     "-PayloadSHA256", "a" * 64, "-PayloadSBOMSHA256", "b" * 64, "-BuildInfoSHA256",
                     "c" * 64, "-UninstallerSHA256", "d" * 64, "-PayloadPublisherSHA256", publisher,
-                ])
+                ] + (["-PendingApprovalSHA256", pending_approval] if pending_approval else []))
                 self.assertEqual(call.call_args.kwargs["timeout"], 90)
                 self.assertEqual(call.call_args.kwargs["env"]["ACCESSWEAVER_REPORT_INSTALLER_RECOVERY"], "1")
+        with patch.object(release, "windows_system_directory", return_value=self.root), \
+                patch.object(release.subprocess, "run", side_effect=lambda argv, *, stdout, **options: (
+                    stdout.write(b"AccessWeaver managed upgrade pending\n"), subprocess.CompletedProcess(argv, 1)
+                )[1]):
+            self.assertEqual(release.detect_windows_upgrade(qualification, publisher), ("unverified", "detector-result-invalid"))
         for error, reason in (
             (subprocess.TimeoutExpired("detector", 90), "detector-timeout"),
             (OSError("detector could not start"), "detector-unavailable"),
@@ -2578,6 +2589,13 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
                 self.assertEqual(release.detect_windows_upgrade(qualification, publisher), ("unverified", reason))
 
     @unittest.skipUnless(os.name == "nt", "requires native Windows file sharing")
+    def test_pending_retry_refuses_release_without_authenticated_payload_fingerprint(self):
+        update = {"windowsUpgradeDetection": {release.WINDOWS_DETECTOR: "a" * 64}}
+        with patch.object(release, "detect_windows_upgrade") as detect:
+            with self.assertRaisesRegex(ValueError, "requires an authenticated staged payload fingerprint"):
+                release.require_pending_windows_upgrade(update, "b" * 64, self.policy)
+            detect.assert_not_called()
+
     def test_windows_staging_detector_pins_script_through_execution(self):
         script = self.root / "detect-windows-installer.ps1"
         script.write_bytes(b"inert reviewed detector")

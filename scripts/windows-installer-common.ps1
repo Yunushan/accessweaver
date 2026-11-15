@@ -55,7 +55,27 @@ function Assert-InstallerPEArchitecture([string]$Binary, [string]$Arch) {
     if($machine -ne $expectedMachine){throw 'Installer payload PE machine does not match its requested architecture'}
 }
 
-function Assert-InstallerPackageDirectories([string]$Root,[string]$SetupScript,[string]$PreprocessedScript) {
+function Get-InstallerCompiledPayloadFingerprint([string]$CompiledFingerprint) {
+    $entries=[Collections.Generic.List[string]]::new()
+    foreach($line in [regex]::Matches($CompiledFingerprint,"(?m)^[ \t]*Entries\.Add\('((?:[^'\r\n]|'')+)'\);[ \t]*\r?$")){
+        $entry=$line.Groups[1].Value.Replace("''","'")
+        $fields=$entry.Split('|')
+        if($fields.Count -ne 3 -or -not $fields[0] -or
+            $fields[1] -cnotmatch '\A[0-9]+\z' -or $fields[2] -cnotmatch '\A[a-fA-F0-9]{64}\z'){
+            throw 'Compiled installer fingerprint contains an unsupported package path'
+        }
+        $entries.Add($entry)
+    }
+    if(-not $entries.Count){throw 'Compiled installer payload fingerprint is empty'}
+    # Setup hashes the ordinal list as UTF-8 with a trailing Windows line break.
+    $entries.Sort([StringComparer]::Ordinal)
+    $contents=($entries -join "`r`n")+"`r`n"
+    $sha=[Security.Cryptography.SHA256]::Create()
+    try {return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($contents)))).Replace('-','').ToLowerInvariant()}
+    finally {$sha.Dispose()}
+}
+
+function Assert-InstallerPackageDirectories([string]$Root,[string]$SetupScript,[string]$PreprocessedScript,[ref]$PayloadFingerprint) {
     $source=[IO.File]::ReadAllText($SetupScript)
     $preflight=[regex]::Match($source,'(?ms)^function AWCheckPackageDirectories\(.*?^end;')
     if(-not $preflight.Success){throw 'Installer package directory preflight is missing'}
@@ -123,6 +143,7 @@ function Assert-InstallerPackageDirectories([string]$Root,[string]$SetupScript,[
             }
         }
     }
+    if($PayloadFingerprint){$PayloadFingerprint.Value=Get-InstallerCompiledPayloadFingerprint $compiledFingerprint.Value}
 }
 
 function Assert-InstallerSetupScript([string]$Path, [string]$TargetArch, [string]$Version, [switch]$OrganizationSigning) {

@@ -283,8 +283,19 @@ function Assert-DetectorRefusal([string]$Phase,[switch]$VerifyMatchingPendingSta
         Require ($LASTEXITCODE -eq 1 -and $output.Count -eq 0) 'Managed detection reported a result during a lifecycle inspection refusal'
         if($VerifyMatchingPendingStatus){
             $env:ACCESSWEAVER_REPORT_INSTALLER_RECOVERY='1'
-            $output=@(& $detector @arguments 2>&1)
+            $sidecar=Join-Path $project ('build\'+$expected.installerName+'.cdx.json')
+            $sbom=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($sidecar))
+            $fingerprint=@($sbom.metadata.component.properties | Where-Object name -CEQ 'accessweaver:windows-staged-payload-sha256')
+            Require ($fingerprint.Count -eq 1 -and $fingerprint[0].value -cmatch '\A[a-f0-9]{64}\z') 'Installer SBOM has no compiled payload fingerprint'
+            $material=$baselineArgument.Substring('/AWUpgradeFrom='.Length)+'|'+$Architecture+'|'+$fingerprint[0].value
+            $sha=[Security.Cryptography.SHA256]::Create()
+            try {$pin=([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::ASCII.GetBytes($material)))).Replace('-','').ToLowerInvariant()}
+            finally {$sha.Dispose()}
+            $output=@(& $detector @arguments -PendingApprovalSHA256 $pin 2>&1)
             Require ($LASTEXITCODE -eq 1 -and $output.Count -eq 1 -and $output[0] -ceq 'AccessWeaver managed upgrade pending') 'Managed detection did not report the matching pending upgrade'
+            $otherPin=if($pin[0] -ceq '0'){'1'+$pin.Substring(1)}else{'0'+$pin.Substring(1)}
+            $output=@(& $detector @arguments -PendingApprovalSHA256 $otherPin 2>&1)
+            Require ($LASTEXITCODE -eq 1 -and $output.Count -eq 1 -and $output[0] -ceq 'AccessWeaver installation pending') 'Managed detection accepted a different approval digest'
             $observation.matchingPendingStatusReported=$true
         }
     } finally {$env:ACCESSWEAVER_REPORT_INSTALLER_RECOVERY=$previous}

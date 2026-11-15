@@ -265,9 +265,10 @@ def fixture_identity(binary,module_root,go):
 
 
 WINDOWS_BUILD_INFO_PROPERTY = "accessweaver:windows-build-info-sha256"
+WINDOWS_PAYLOAD_FINGERPRINT_PROPERTY = "accessweaver:windows-staged-payload-sha256"
 
 
-def installer(binary,payload,compiler,compiler_version,compiler_license,notices,*,build_info_sha256=None):
+def installer(binary,payload,compiler,compiler_version,compiler_license,notices,*,build_info_sha256=None,payload_fingerprint=None):
     require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+",compiler_version),"Expected the measured Inno Setup compiler version")
     result=copy.deepcopy(payload)
     application=result["metadata"]["component"]
@@ -290,6 +291,9 @@ def installer(binary,payload,compiler,compiler_version,compiler_license,notices,
     if build_info_sha256 is not None:
         require(re.fullmatch(r"[a-f0-9]{64}",build_info_sha256),"Invalid Windows build metadata SHA-256")
         root["properties"].append({"name":WINDOWS_BUILD_INFO_PROPERTY,"value":build_info_sha256})
+    if payload_fingerprint is not None:
+        require(re.fullmatch(r"[a-f0-9]{64}",payload_fingerprint),"Invalid Windows staged payload SHA-256")
+        root["properties"].append({"name":WINDOWS_PAYLOAD_FINGERPRINT_PROPERTY,"value":payload_fingerprint})
     result["metadata"]["component"]=root
     result["serialNumber"]="urn:uuid:"+str(uuid.uuid5(uuid.NAMESPACE_URL,"accessweaver-installer:"+sha(contents)))
     result["dependencies"].extend([{"ref":"application","dependsOn":["payload-application","inno-setup"]},{"ref":"inno-setup","dependsOn":[]}])
@@ -345,6 +349,7 @@ def main():
     parser.add_argument("--compiler-version")
     parser.add_argument("--compiler-license",type=Path)
     parser.add_argument("--windows-build-info-sha256")
+    parser.add_argument("--windows-staged-payload-sha256")
     parser.add_argument("--notices",type=Path,required=True)
     parser.add_argument("--out",type=Path,required=True)
     parser.add_argument("--go",default="go")
@@ -352,9 +357,11 @@ def main():
     if args.payload_sbom:
         require(args.compiler and args.compiler_version and args.compiler_license,"Installer SBOM requires compiler and notice evidence")
         document=installer(args.binary,json.loads(read_file(args.payload_sbom,16<<20)),args.compiler,args.compiler_version,args.compiler_license,args.notices,
-                           build_info_sha256=args.windows_build_info_sha256)
+                           build_info_sha256=args.windows_build_info_sha256,
+                           payload_fingerprint=args.windows_staged_payload_sha256)
     else:
-        require(args.windows_build_info_sha256 is None,"Windows build metadata SHA-256 requires an installer SBOM")
+        require(args.windows_build_info_sha256 is None and args.windows_staged_payload_sha256 is None,
+                "Windows build and staged payload digests require an installer SBOM")
         require(args.module_root and args.main,"Binary SBOM requires source module/main package")
         require(args.identity or args.fixture,"A build identity is required")
         identity=fixture_identity(args.binary,args.module_root,args.go) if args.fixture else json.loads(read_file(args.identity,1<<20))

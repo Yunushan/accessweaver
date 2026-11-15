@@ -213,7 +213,7 @@ Assert ($prepare.Contains("AWApprovedUpgradePreflight(ExpandConstant('{app}'), A
     $copy -cmatch '(?s)AWApprovedUpgradePreflight\(Destination, AWPendingApprovalPin\).*RaiseException\(Failure\).*RegWriteStringValue\(HKLM64, AWLifecycleRegistry, AWPendingInstall, AWPendingInstallValue\(Destination\)\)') 'Managed upgrades must recheck the baseline before pending record publication'
 Assert ($approvedUpgrade -cmatch '(?s)ParamCount.*if Present then Exit.*AWCompare.*Ordering <= 0.*AWLockInstallationDirectory.*AWVerifyInstalledFile.*PayloadPin.*AWVerifyInstalledFile.*SBOMPin.*AWVerifyInstalledFile.*BuildPin.*AWOrdinal\(Version, Installed\)') 'Managed upgrade baseline must verify one strict prior version and all three installed pins'
 $fingerprint=[regex]::Match($installerSource,'(?ms)^function AWStagedPayloadDigest:.*?^end;').Value
-Assert ($fingerprint -cmatch '(?s)AWEmitStagedDirectoryChecks.*AWOrdinal\(Entries\[J - 1\], Entry\).*Entries\[J\] := Entry.*GetSHA256OfString\(Entries.Text\)' -and
+Assert ($fingerprint -cmatch '(?s)AWEmitStagedDirectoryChecks.*AWOrdinal\(Entries\[J - 1\], Entry\).*Entries\[J\] := Entry.*GetSHA256OfString\(Utf8Encode\(Entries.Text\)\)' -and
     $installerSource.Contains("Entries.Add('{#AWStagedLiteral}|{#FileSize(AWStagedPath)}|{#GetSHA256OfFile(AWStagedPath)}');") -and
     $approvedUpgrade -cmatch '(?s)\{#TargetArch\}.*AWStagedPayloadDigest.*GetSHA256OfString.*PendingPin = ApprovalPin.*AWOrdinal\(PendingVersion.*AWIsInstallationDirectory\(Destination, PendingDirectory\).*resumed from its pending installation record') 'Managed retry must match the committed approval, entire staged payload and destination'
 $tempRecovery=[regex]::Match($installerSource,'(?ms)^function AWPrepareManagedTempRecovery\(.*?^end;').Value
@@ -281,7 +281,16 @@ try {
     Assert $refused 'Compiled installer without the nested upgrade fingerprint entry was accepted'
     $fingerprintEntry="  Entries.Add('docs\qualification\fixture''s report.json|2|$digest');"
     [IO.File]::WriteAllText($compiled,$completedWithFingerprint.Replace($fingerprintHeader,$fingerprintHeader+$nl+$fingerprintEntry))
-    Assert-InstallerPackageDirectories $layout $setupScript $compiled
+    $verifiedFingerprint=''
+    Assert-InstallerPackageDirectories $layout $setupScript $compiled ([ref]$verifiedFingerprint)
+    Assert ($verifiedFingerprint -cmatch '\A[a-f0-9]{64}\z') 'Installer validation did not export its compiled payload fingerprint'
+    $fingerprintVector=@(
+        ("  Entries.Add('docs\assets\a.txt|9|"+('0'*64)+"');"),
+        ("  Entries.Add('docs\assets\B.txt|0|"+('f'*64)+"');")
+    ) -join $nl
+    Assert ((Get-InstallerCompiledPayloadFingerprint $fingerprintVector) -ceq '3d04356a3fe4532832d311d4cfd0ce8dc89f84eec2b89e04b75ed3b84c024630') 'Compiled fingerprint must match Setup ordinal ordering and CRLF bytes'
+    $localizedFixture="  Entries.Add('docs\qualification\"+[char]0x130+"stanbul.md|4|"+('a'*64)+"');"
+    Assert ((Get-InstallerCompiledPayloadFingerprint $localizedFixture) -ceq '280f5d3166a0ec511eaf280d3d3a0b9230de59912bb6e1eef69c1db938b36a03') 'Localized staged paths must be fingerprinted as UTF-8'
     [IO.File]::WriteAllText($compiled,([IO.File]::ReadAllText($compiled).Replace('; BeforeInstall: AWCheckPackageCopyDestination','')))
     Reject {Assert-InstallerPackageDirectories $layout $setupScript $compiled} 'Compiled installer without a per-file copy guard was accepted'
     $uncovered=Join-Path $layout 'docs\qualification\new'

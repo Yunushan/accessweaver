@@ -129,7 +129,8 @@ try {
         }
     } finally {$noticeGuard.Dispose()}
     $null=Assert-InstallerSetupScript $preprocessed $TargetArch $Version -OrganizationSigning:$organizationSigning
-    Assert-InstallerPackageDirectories $stage $setupScript $preprocessed
+    $payloadFingerprint=''
+    Assert-InstallerPackageDirectories $stage $setupScript $preprocessed ([ref]$payloadFingerprint)
     $compilerOutput | Write-Output
     $actualVersion=[regex]::Match(($compilerOutput -join "`n"),'(?im)^Compiler engine version:\s*Inno Setup\s+(\d+\.\d+\.\d+)\b')
     if(-not $actualVersion.Success){throw 'Could not identify installer compiler version'}
@@ -139,7 +140,7 @@ try {
         Assert-WindowsPublisherSignature (Microsoft.PowerShell.Security\Get-AuthenticodeSignature -LiteralPath $artifact) $PublisherCertificateSHA256
     }
     if((Get-FileHash -LiteralPath $buildInfoPath -Algorithm SHA256).Hash -ine $buildInfoDigest){throw 'Installer build metadata changed during compilation'}
-    & python (Join-Path $project 'scripts\sbom.py') --binary $artifact --payload-sbom $payloadSBOM --windows-build-info-sha256 $buildInfoDigest --compiler $Compiler --compiler-version $actualVersion.Groups[1].Value --compiler-license $compilerLicense --notices (Join-Path $stage 'licenses') --out ($artifact+'.cdx.json')
+    & python (Join-Path $project 'scripts\sbom.py') --binary $artifact --payload-sbom $payloadSBOM --windows-build-info-sha256 $buildInfoDigest --windows-staged-payload-sha256 $payloadFingerprint --compiler $Compiler --compiler-version $actualVersion.Groups[1].Value --compiler-license $compilerLicense --notices (Join-Path $stage 'licenses') --out ($artifact+'.cdx.json')
     if($LASTEXITCODE -ne 0){throw 'Installer SBOM generation failed'}
     if((Get-FileHash -LiteralPath $runtimeNoticePath -Algorithm SHA256).Hash -ine $noticeDigest){
         throw 'Installer SBOM notice differs from the staged notice used during compilation'

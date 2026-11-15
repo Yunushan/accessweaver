@@ -758,7 +758,7 @@ begin
       end;
       Entries[J] := Entry;
     end;
-    Result := GetSHA256OfString(Entries.Text);
+    Result := GetSHA256OfString(Utf8Encode(Entries.Text));
   finally
     Entries.Free;
   end;
