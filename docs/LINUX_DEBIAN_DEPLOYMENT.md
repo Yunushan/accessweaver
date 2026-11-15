@@ -135,4 +135,6 @@ The [live-session reboot evidence](qualification/16632c4b2a7f-linux-package-acti
 
 An Ubuntu Minimal 24.04 ARM64 guest on an AMD64 host passed the same active-session test under QEMU TCG using the optionally prepared image. The two boots verified the installed ARM64 packages, retained machine policy and profile, fresh loopback traffic, rollback and purge. The current probe also passed an AMD64 KVM regression. [ARM64 reboot and AMD64 regression evidence](qualification/16632c4b2a7f-linux-package-arm64-reboot.json).
 
+The qualification packages built from source fc603251a130 passed upgrade, reboot, explicit rollback and purge with a managed ByeDPI session active at reboot. The AMD64 guest used KVM, and the ARM64 guest used QEMU emulation on the same AMD64 host. Both guests verified fresh loopback traffic after reboot and preserved the enrolled policy revision and the ordinary-user profile. [Current-candidate reboot evidence](qualification/fc603251a130-linux-package-reboot.json).
+
 Production rollout still requires results for the approved release packages and native endpoint architectures. It also requires organization signing and hosting, reboot and active-engine checks, and validation through the organization's endpoint-management tools.
