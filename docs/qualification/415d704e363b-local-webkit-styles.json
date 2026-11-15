@@ -818,6 +818,103 @@
         "violations": []
       }
     ],
+    "fullFunctional": {
+      "scope": "local-offline-linux-amd64",
+      "node": "v26.13.0",
+      "go": "go1.27.4",
+      "performanceCaseExecutedSeparately": 52,
+      "browsers": [
+        {
+          "browser": "webkit",
+          "version": "27.2",
+          "passed": 56,
+          "failed": 0,
+          "skipped": 0,
+          "retries": 0,
+          "durationMs": 377209
+        },
+        {
+          "browser": "firefox",
+          "version": "157.0",
+          "passed": 56,
+          "failed": 0,
+          "skipped": 0,
+          "retries": 0,
+          "durationMs": 453719
+        },
+        {
+          "browser": "chromium",
+          "version": "156.0.8078.80",
+          "passed": 56,
+          "failed": 0,
+          "skipped": 0,
+          "retries": 0,
+          "durationMs": 267779
+        }
+      ]
+    },
+    "hostedNodePerformance": {
+      "closedReport": true,
+      "reportSHA256": "5cae031611ef81fa564a2eea0278f00679ca2031484af40dd1462224d32fec67",
+      "outcome": "failed",
+      "stage": "complete",
+      "failureKind": "none",
+      "environment": {
+        "platform": "linux",
+        "architecture": "x64",
+        "node": "v26.8.2",
+        "playwright": "1.64.1",
+        "cpuCount": 16,
+        "pageBytes": 4096,
+        "clockTicksPerSecond": 100
+      },
+      "violations": [
+        "dashboardReadyMs"
+      ],
+      "metrics": {
+        "controllerStartupMs": 31.28459500000008,
+        "dashboardReadyMs": 3334.4992320000006,
+        "reloadP95Ms": 202.31798999999955,
+        "navigationP95Ms": 380.7326039999971,
+        "editorP95Ms": 419.9291369999992,
+        "apiP95Ms": 42,
+        "burstRequestsPerSecond": 102.67905242148747,
+        "loadRequestsPerSecond": 3.9998684420603485,
+        "loadCpuPercentOneCore": 3.5665493608371444,
+        "sampledPeakRssBytes": 16949248,
+        "sampledPeakDescriptors": 14,
+        "sampledPeakThreads": 10,
+        "cooldownRssGrowthBytes": 2322432,
+        "cooldownDescriptorGrowth": -2,
+        "cooldownThreadGrowth": 0,
+        "browserSampledPeakRssBytes": 772382720,
+        "browserSampledPeakDescriptors": 101,
+        "browserSampledPeakThreads": 101,
+        "browserSampledPeakProcesses": 5,
+        "browserObservedLoadCpuPercentOneCore": 10.779710522222437,
+        "browserCooldownRssGrowthBytes": 114360320,
+        "browserCooldownDescriptorGrowth": 5,
+        "browserCooldownThreadGrowth": -4,
+        "browserCooldownProcessGrowth": 0,
+        "jobLoadCpuPercentOneCore": 26.01333904331316
+      },
+      "counts": {
+        "reload": 5,
+        "navigation": 24,
+        "editor": 10,
+        "burstRequests": 96,
+        "loadRequests": 240,
+        "resourceSamples": 306,
+        "loadMilliseconds": 60001,
+        "browserResourceSamples": 80,
+        "browserObservedExits": 0,
+        "browserCpuMilliseconds": 61040,
+        "browserFailureStage": 0,
+        "jobCpuMilliseconds": 61036,
+        "jobCpuFailureStage": 0
+      },
+      "exitCode": 1
+    },
     "hostedRunIDs": {
       "browser": 43686376980,
       "sustained": 43686376817
