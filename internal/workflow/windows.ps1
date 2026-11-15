@@ -2365,6 +2365,75 @@ function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds=30,
     } while($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds)
     throw $FailureMessage
 }
+function Get-ManagedDNSCryptListenerOwner([string[]]$Servers,[string]$Binary,$Entry) {
+    if(-not $Servers.Count -or @($Servers | Where-Object {$_ -cnotin @('127.0.0.1','::1')}).Count){
+        throw 'Expected managed DNSCrypt loopback addresses'
+    }
+
+    $service=Read-ManagedServiceRegistration 'AccessWeaver-dnscrypt'
+    $hostID=$service.ProcessId
+    $hostCommand=[regex]::Match($service.PathName,'\A"([^"\r\n]+)" service-host ')
+    if($service.State -cne 'Running' -or $hostID -isnot [uint32] -or $hostID -eq 0 -or
+        -not $hostCommand.Success -or (Get-ManagedServiceCommandDigest $service.PathName) -cne $Entry.commandSHA256){
+        throw 'Managed DNSCrypt service identity could not be verified'
+    }
+    $hostProcess=@(Get-CimInstance -ClassName Win32_Process -Filter ("ProcessId="+$hostID) -ErrorAction Stop)
+    if($hostProcess.Count -ne 1 -or $hostProcess[0].ProcessId -ne $hostID -or
+        $hostProcess[0].ExecutablePath -ine $hostCommand.Groups[1].Value -or $hostProcess[0].CreationDate -isnot [datetime]){
+        throw 'Running DNSCrypt service host could not be verified'
+    }
+
+    $listenerID=[uint32]0
+    foreach($protocol in @('TCP','UDP')){
+        $endpoints=if($protocol -ceq 'TCP'){
+            Get-NetTCPConnection -State Listen -LocalPort 53 -ErrorAction Stop
+        }else{
+            Get-NetUDPEndpoint -LocalPort 53 -ErrorAction Stop
+        }
+        $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach($endpoint in $endpoints){
+            $address=$null
+            if($endpoint.LocalPort -ne 53 -or $endpoint.LocalAddress -isnot [string] -or
+                -not [Net.IPAddress]::TryParse($endpoint.LocalAddress,[ref]$address)){
+                throw 'DNSCrypt port ownership could not be verified'
+            }
+            if($address.IsIPv4MappedToIPv6){$address=$address.MapToIPv4()}
+            $local=$address.ToString()
+            if($local -cin @('0.0.0.0','::')){throw 'Wildcard DNS listener makes loopback ownership ambiguous'}
+            if($local -cnotin $Servers){continue}
+            $processID=$endpoint.OwningProcess
+            if(-not $seen.Add($local) -or $processID -isnot [uint32] -or $processID -eq 0 -or
+                ($listenerID -ne 0 -and $listenerID -ne $processID)){
+                throw 'Managed DNSCrypt listeners do not have one observable process owner'
+            }
+            $listenerID=$processID
+        }
+        if($seen.Count -ne $Servers.Count){throw 'Expected TCP and UDP on every required DNSCrypt loopback address'}
+    }
+
+    $process=@(Get-CimInstance -ClassName Win32_Process -Filter ("ProcessId="+$listenerID) -ErrorAction Stop)
+    if($process.Count -ne 1 -or $process[0].ProcessId -ne $listenerID -or
+        $process[0].ParentProcessId -ne $hostID -or $process[0].ExecutablePath -ine $Binary -or
+        $process[0].CreationDate -isnot [datetime] -or $process[0].CreationDate -lt $hostProcess[0].CreationDate){
+        throw 'DNSCrypt listener does not belong to the managed service child'
+    }
+    return '{0}:{1}:{2}:{3}' -f $hostID,$hostProcess[0].CreationDate.Ticks,$listenerID,$process[0].CreationDate.Ticks
+}
+function Wait-ManagedDNSCryptListeners([string[]]$Servers,[string]$Binary,$Entry,[int]$TimeoutSeconds=30,
+        [string]$FailureMessage='DNSCrypt loopback readiness could not be verified before adapter configuration') {
+    $timer=[Diagnostics.Stopwatch]::StartNew()
+    do {
+        try {
+            $owner=Get-ManagedDNSCryptListenerOwner $Servers $Binary $Entry
+            # Repeat all probes together when any answer or the observed owner changes.
+            Wait-DNSCryptListeners $Servers -TimeoutSeconds 0 -RequireBothAddressTypes
+            if((Get-ManagedDNSCryptListenerOwner $Servers $Binary $Entry) -ceq $owner){return}
+        }catch{}
+        if($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds){break}
+        Start-Sleep -Milliseconds 500
+    } while($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds)
+    throw $FailureMessage
+}
 function Get-EffectiveDNSCryptListeners {
     $clients=@(Read-DNSClientInventory)
     if(-not $clients.Count){throw 'Effective DNS settings could not be inspected after resolver recovery'}
@@ -2822,7 +2891,7 @@ function Configure-DNS([string]$method) {
                 $resolver=Install-EngineService 'dnscrypt' $binary @('-config',$config) -DeferAutomaticStartup
             }
             # SCM can report Running before the replacement listener is usable.
-            Wait-DNSCryptListeners $listeners -RequireBothAddressTypes
+            Wait-ManagedDNSCryptListeners $listeners $binary $resolver
             Assert-DNSCryptConfiguration $config $publishedConfigSHA256
             # Verify automatic startup before adding any loopback DNS dependency.
             if((Assert-RecordedServiceBinding $resolver) -ne 0){throw 'DNSCrypt service disappeared before enabling automatic startup'}
@@ -2903,7 +2972,7 @@ function Configure-DNS([string]$method) {
         if($method -ceq 'dnscrypt'){
             # The ordinary resolver can succeed through one listener while
             # another cannot answer both address record types.
-            Wait-DNSCryptListeners $listeners -RequireBothAddressTypes -TimeoutSeconds 5 -FailureMessage 'DNSCrypt loopback readiness could not be verified after adapter configuration'
+            Wait-ManagedDNSCryptListeners $listeners $binary $resolver -TimeoutSeconds 5 -FailureMessage 'DNSCrypt loopback readiness could not be verified after adapter configuration'
         }
         # A DNS answer could have come through settings that changed during the probe.
         Assert-ConfiguredDNSServers $adapters $records $servers
