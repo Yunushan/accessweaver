@@ -175,11 +175,13 @@ foreach($name in @('Read-ApprovedDNSRebootResume','New-DNSRebootStartupArguments
         $command=[scriptblock]::Create([Text.Encoding]::Unicode.GetString($bytes))
         $expected=@('accessweaver-01.exe',('1'*64),('2'*32),'dnscrypt','static-ipv6',('3'*64),('4'*64)) -join '|'
         if((& $command) -cne $expected){throw 'Scheduled command did not pass the exact pinned qualification inputs'}
-        $stock=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-        $argv=$arguments.Split(' ')
-        $observed=& $stock @argv
-        if($LASTEXITCODE -ne 0 -or $observed -cne $expected){
-            throw 'Windows PowerShell could not launch the approved startup verifier with the scheduled arguments'
+        if([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT){
+            $stock=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+            $argv=$arguments.Split(' ')
+            $observed=& $stock @argv
+            if($LASTEXITCODE -ne 0 -or $observed -cne $expected){
+                throw 'Windows PowerShell could not launch the approved startup verifier with the scheduled arguments'
+            }
         }
 
         [IO.File]::WriteAllText($path,'$script:replacementVerifierRan=$true')
