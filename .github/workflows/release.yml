@@ -19,6 +19,7 @@ on:
       - scripts/core-test-catalog/**
       - scripts/build-all.sh
       - scripts/package-release.sh
+      - scripts/package-hosted-release.sh
       - scripts/release_archive.py
       - scripts/verify_release.py
       - scripts/check-native-environment.cjs
@@ -447,12 +448,7 @@ jobs:
             label="$GITHUB_REF_NAME"
             export BUILD_VERSION="${GITHUB_REF_NAME#v}"
           fi
-          bash scripts/package-release.sh "$label"
-          python3 scripts/verify-release.py "dist/$label" --check-go-metadata --execute-native --require-update-build
-          cp "dist/$label/SHA256SUMS.txt" "$RUNNER_TEMP/first-package-checksums.txt"
-          bash scripts/package-release.sh "$label"
-          python3 scripts/verify-release.py "dist/$label" --check-go-metadata --execute-native --require-update-build
-          cmp "$RUNNER_TEMP/first-package-checksums.txt" "dist/$label/SHA256SUMS.txt"
+          bash scripts/package-hosted-release.sh package "$label" "$GITHUB_SHA" "$GO_VERSION"
           echo "directory=dist/$label" >> "$GITHUB_OUTPUT"
           echo "label=$label" >> "$GITHUB_OUTPUT"
       - name: Attest every archive, manifest and checksum file
@@ -536,14 +532,9 @@ jobs:
           GOTOOLCHAIN: local
           PACKAGE_DIRECTORY: ${{ needs.package.outputs.directory }}
         run: |
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test -z "$(git status --porcelain)"
-          export GOCACHE="$(mktemp -d "$RUNNER_TEMP/accessweaver-build-cache.XXXXXXXX")"
-          export GOMODCACHE="$(mktemp -d "$RUNNER_TEMP/accessweaver-module-cache.XXXXXXXX")"
           label="${PACKAGE_DIRECTORY#dist/}"
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then export BUILD_VERSION="${GITHUB_REF_NAME#v}"; fi
-          bash scripts/package-release.sh "$label"
-          python3 scripts/verify-release.py "$PACKAGE_DIRECTORY" --check-go-metadata
+          bash scripts/package-hosted-release.sh rebuild "$label" "$GITHUB_SHA" "$GO_VERSION"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           artifact-ids: ${{ needs.package.outputs.artifact_id || '0' }}
