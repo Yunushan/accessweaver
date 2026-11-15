@@ -166,7 +166,8 @@
             "docs/qualification/16632c4b2a7f-linux-packaged-managed-policy.json",
             "docs/qualification/16632c4b2a7f-linux-packaged-byedpi.json",
             "docs/qualification/16632c4b2a7f-linux-package-reboot.json",
-            "docs/qualification/16632c4b2a7f-linux-package-active-reboot.json"
+            "docs/qualification/16632c4b2a7f-linux-package-active-reboot.json",
+            "docs/qualification/16632c4b2a7f-linux-package-arm64-reboot.json"
           ]
         }
       ]
@@ -598,7 +599,8 @@
             "docs/qualification/16632c4b2a7f-linux-packaged-managed-policy.json",
             "docs/qualification/16632c4b2a7f-linux-packaged-byedpi.json",
             "docs/qualification/16632c4b2a7f-linux-package-reboot.json",
-            "docs/qualification/16632c4b2a7f-linux-package-active-reboot.json"
+            "docs/qualification/16632c4b2a7f-linux-package-active-reboot.json",
+            "docs/qualification/16632c4b2a7f-linux-package-arm64-reboot.json"
           ]
         },
         {

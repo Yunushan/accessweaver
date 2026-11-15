@@ -78,7 +78,7 @@ On ARM64, pass `--arch arm64`, two ARM64 archives and one AMD64 archive. The pro
 
 The [signed APT probe](../scripts/test-linux-apt-repository.py) uses disposable Ed25519 keys, a loopback HTTP repository and private APT and dpkg state. It requires two approved versions for each architecture and a SHA-256 pin for each `.deb`. It checks by-hash retrieval, ordinary-user execution, installation, upgrade, purge and reinstall. Both probes read the same real imported profile through the installed controller and require it to refuse unapproved profile writes and engine starts. The fixture uses an inert engine file and temporary policy keys. APT must refuse the wrong scoped key, expired metadata, and altered signatures, indexes or package bytes. [Ubuntu WSL APT evidence](qualification/4caa86d5b6d0-linux-apt-repository.json).
 
-The [native lifecycle workflow](../.github/workflows/linux-package-lifecycle.yml) runs the two probes on separate GitHub-hosted Ubuntu 24.04 AMD64 and ARM64 jobs. It builds two fixture versions from the exact source under test. It verifies that both probes consumed the same package bytes and installed the same native binaries. Each successful job uploads a source-bound digest summary and the two probe reports. Check both results for the candidate commit. [GitHub-hosted runner labels](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+The [native lifecycle workflow](../.github/workflows/linux-package-lifecycle.yml) runs the two probes on separate GitHub-hosted Ubuntu 24.04 AMD64 and ARM64 jobs. Each architecture has its own scheduling group per ref. It builds two fixture versions from the exact source under test. It verifies that both probes consumed the same package bytes and installed the same native binaries. Each successful job uploads a source-bound digest summary and the two probe reports. Check both results for the candidate commit. [GitHub-hosted runner labels](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 
 On a disposable supported Linux host with the repository's Go toolchain, Python 3.11 or later, Debian package tools, GnuPG, OpenSSL and administrator access for the isolated probes, run the same entry point from the clean candidate checkout.
 
@@ -102,7 +102,7 @@ On Ubuntu 26.04 WSL AMD64, all four stages passed with [ByeDPI v0.17.3](https://
 
 ### Reboot validation
 
-The [offline QEMU reboot probe](../scripts/test-linux-package-reboot.py) takes an authenticated Ubuntu Minimal AMD64 QCOW2 image, trusted OVMF firmware, and two approved AccessWeaver AMD64 `.deb` files from increasing versions. Verify the image with Canonical’s signing key and authenticated SHA-256 before running the probe. The guest uses a private copy-on-write disk and a restricted virtual link with no default route. Install QEMU, `qemu-img`, `genisoimage` and Debian package tools on the test host. [Canonical image verification](https://ubuntu.com/docs/public-images/public-images-how-to/verify-image-checksum/).
+The [offline QEMU reboot probe](../scripts/test-linux-package-reboot.py) takes an authenticated Ubuntu Minimal QCOW2 image, matching UEFI firmware, and two approved AccessWeaver `.deb` files from increasing versions for the selected architecture. Verify the image with Canonical’s signing key and authenticated SHA-256 before running the probe. The guest uses a private copy-on-write disk and a restricted virtual link with no default route. Install QEMU, `qemu-img`, `genisoimage` and Debian package tools on the test host. [Canonical image verification](https://ubuntu.com/docs/public-images/public-images-how-to/verify-image-checksum/).
 
 ```sh
 python3 -B scripts/test-linux-package-reboot.py \
@@ -113,12 +113,24 @@ python3 -B scripts/test-linux-package-reboot.py \
   --firmware-vars /usr/share/OVMF/OVMF_VARS_4M.fd
 ```
 
+For ARM64, add `--arch arm64` and provide the ARM64 image, ARM64 packages and AAVMF firmware. The driver uses QEMU's Arm `virt` board and the guest receipts include the architecture verified by both the kernel and dpkg. An AMD64 host can execute the ARM64 guest with TCG. Set `--boot-timeout 600` for slow emulated boots. The optional `--accel kvm` requires matching host and guest architectures. [QEMU Arm virt platform](https://www.qemu.org/docs/master/system/arm/virt.html).
+
+If cloud-init consumes the boot allowance under TCG, the [offline preparation tool](../scripts/prepare-linux-package-reboot-image.py) can provision the test service on a fresh copy of the approved Ubuntu image. It requires `sfdisk`, `debugfs`, `dd` and `qemu-img`. Use the printed `preparedImageSHA256` as the reboot probe's image digest. This optional bootstrap still exercises the same installed packages, policy and two guest kernel boots.
+
+```sh
+python3 -B scripts/prepare-linux-package-reboot-image.py \
+  --image AUTHENTICATED_UBUNTU_QCOW2 --image-sha256 AUTHENTICATED_IMAGE_SHA256 \
+  --output PREPARED_GUEST_QCOW2
+```
+
 The first boot installs and upgrades the controller, creates a real ordinary-user profile, installs a signed machine policy and advances it to revision 2. The guest requests a reboot. The driver verifies a second kernel boot on the same disk and checks that the installed controller, signed revision, policy protection and profile are intact. The second boot also rolls back the controller, rejects an older policy replay and purges the package while retaining user and policy state.
 
-To reboot with an active managed ByeDPI session, add `--byedpi APPROVED_CIADPI --byedpi-sha256 APPROVED_CIADPI_SHA256` using the approved static AMD64 executable. Before requesting reboot, the guest holds a real SOCKS5 connection open to a loopback origin and verifies traffic in both directions. After a new kernel boot, it checks for a stale ByeDPI process and listener, then explicitly launches the engine under the retained approval. It verifies fresh traffic and clean controller shutdown before rollback.
+To reboot with an active managed ByeDPI session, add `--byedpi APPROVED_CIADPI --byedpi-sha256 APPROVED_CIADPI_SHA256` using an approved static executable matching the guest architecture. Before requesting reboot, the guest holds a real SOCKS5 connection open to a loopback origin and verifies traffic in both directions. After a new kernel boot, it checks for a stale ByeDPI process and listener, then explicitly launches the engine under the retained approval. It verifies fresh traffic and clean controller shutdown before rollback.
 
 A hardware-assisted Ubuntu Minimal 24.04 AMD64 guest passed both boots with its document filters in place. The test used two historical controller builds repackaged with the corrected metadata paths. It verified the SBOM against the installed executable and exercised rollback and purge after reboot. [Reboot and package-layout evidence](qualification/16632c4b2a7f-linux-package-reboot.json).
 
 The [live-session reboot evidence](qualification/16632c4b2a7f-linux-package-active-reboot.json) verified the same approved package and image bytes with pinned ByeDPI v0.17.3. The test used loopback traffic, disposable signing keys and an explicit post-reboot launch by the ordinary user.
+
+An Ubuntu Minimal 24.04 ARM64 guest on an AMD64 host passed the same active-session test under QEMU TCG using the optionally prepared image. The two boots verified the installed ARM64 packages, retained machine policy and profile, fresh loopback traffic, rollback and purge. The current probe also passed an AMD64 KVM regression. [ARM64 reboot and AMD64 regression evidence](qualification/16632c4b2a7f-linux-package-arm64-reboot.json).
 
 Production rollout still requires results for the approved release packages and native endpoint architectures. It also requires organization signing and hosting, reboot and active-engine checks, and validation through the organization's endpoint-management tools.

@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import stat
 import subprocess
+import termios
 import time
 
 import linux_package_reboot_traffic as traffic
@@ -19,6 +20,7 @@ PROFILE = HOME / ".config/AccessWeaver/profiles" / (PROFILE_ID + ".json")
 POLICY = Path("/etc/accessweaver")
 AUTHORITY = (POLICY / "installation.json", POLICY / "acceptance.json", Path("/etc/.accessweaver-policy.lock"))
 CORE = Path("/usr/bin/accessweaver")
+GUEST_ARCH = {"x86_64": ("amd64", "/dev/ttyS1"), "aarch64": ("arm64", "/dev/ttyAMA1")}
 DATA = Path("/usr/share/accessweaver")
 COPYRIGHT = Path("/usr/share/doc/accessweaver/copyright")
 ENV = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C", "TZ": "UTC", "HOME": str(HOME)}
@@ -60,7 +62,7 @@ def state():
     return [fingerprint(path) for path in (*AUTHORITY, PROFILE)]
 
 
-def package_version():
+def package_version(arch):
     status = command("dpkg-query", "-W", "-f", "${Status}\t${Version}", "accessweaver").decode("ascii")
     fields = status.split("\t")
     require(len(fields) == 2 and fields[0] == "install ok installed", "package-registration-missing")
@@ -78,7 +80,7 @@ def package_version():
     runtime = json.loads(cli("version", "--json", ordinary=True))
     metadata = json.loads((DATA / "BUILD-INFO.json").read_bytes())
     sbom = json.loads((DATA / "SBOM.cdx.json").read_bytes())
-    require(runtime == metadata and runtime["arch"] == "amd64"
+    require(runtime == metadata and runtime["arch"] == arch
             and sbom["metadata"]["component"]["hashes"] == [{"alg": "SHA-256", "content": digest(CORE)}]
             and (DATA / "THIRD_PARTY.md").is_file() and (DATA / "licenses/Go-runtime-LICENSE").is_file()
             and COPYRIGHT.is_file(), "package-operational-metadata-mismatch")
@@ -109,15 +111,21 @@ def sign(revision, private, launches):
 
 
 def receipt(phase, **fields):
-    with open("/dev/ttyS1", "w", encoding="ascii") as serial:
-        serial.write("\nACCESSWEAVER-BOOT-V1 " + json.dumps(dict(phase=phase, **fields),
+    arch, port = GUEST_ARCH[os.uname().machine]
+    # An unused guest UART can start with hardware carrier detection enabled.
+    descriptor = os.open(port, os.O_WRONLY | os.O_NOCTTY | os.O_NONBLOCK)
+    with os.fdopen(descriptor, "w", encoding="ascii") as serial:
+        settings = termios.tcgetattr(descriptor)
+        settings[2] |= termios.CLOCAL
+        termios.tcsetattr(descriptor, termios.TCSANOW, settings)
+        serial.write("\nACCESSWEAVER-BOOT-V1 " + json.dumps(dict(phase=phase, guestArchitecture=arch, **fields),
                                                             separators=(",", ":")) + "\n")
 
 
-def before_reboot(boot, checkpoint, engine_sha):
+def before_reboot(boot, checkpoint, engine_sha, arch):
     require(not POLICY.exists(), "test-image-already-enrolled")
     command("dpkg", "--install", SEED / "older.deb")
-    old = package_version()
+    old = package_version(arch)
     WORK.mkdir(mode=0o755, exist_ok=True)
     private = WORK / "private"
     private.mkdir(mode=0o700)
@@ -154,7 +162,7 @@ def before_reboot(boot, checkpoint, engine_sha):
     verify_installed(1, key_id, saved)
     prior = state()
     command("dpkg", "--refuse-downgrade", "--install", SEED / "newer.deb")
-    new = package_version()
+    new = package_version(arch)
     command("dpkg", "--compare-versions", old, "lt", new)
     verify_installed(1, key_id, saved)
     require(state() == prior, "upgrade-modified-enrollment-or-profile")
@@ -188,14 +196,14 @@ def before_reboot(boot, checkpoint, engine_sha):
     command("systemctl", "--no-block", "reboot")
 
 
-def after_reboot(boot, checkpoint, engine_sha):
+def after_reboot(boot, checkpoint, engine_sha, arch):
     record = json.loads(checkpoint.read_bytes())
     require(boot != record["boot"], "guest-kernel-did-not-reboot")
     require(engine_sha == record["engineSHA256"], "reboot-engine-configuration-changed")
     if engine_sha:
         traffic.assert_restart_idle(SEED)
         require(digest(traffic.ENGINE) == engine_sha, "reboot-changed-byedpi-input")
-    require(package_version() == record["newer"] and digest(CORE) == record["controllerSHA256"],
+    require(package_version(arch) == record["newer"] and digest(CORE) == record["controllerSHA256"],
             "reboot-changed-installed-package")
     verify_installed(2, record["keyId"], record["profile"])
     require(state() == record["state"], "reboot-changed-policy-or-profile")
@@ -206,7 +214,7 @@ def after_reboot(boot, checkpoint, engine_sha):
         require(state() == record["state"], "recovered-engine-changed-policy-or-profile")
         extra["liveEngine"] = {name: True for name in sorted(traffic.AFTER)}
     command("dpkg", "--force-downgrade", "--install", SEED / "older.deb")
-    require(package_version() == record["older"], "rollback-version-mismatch")
+    require(package_version(arch) == record["older"], "rollback-version-mismatch")
     verify_installed(2, record["keyId"], record["profile"])
     cli("managed", "update", WORK / "private/envelope-1.json", rejection=b"newer than the minimum revision")
     require(state() == record["state"], "rollback-or-policy-replay-changed-state")
@@ -230,7 +238,11 @@ def main():
             and not json.loads(command("ip", "-j", "route", "show", "default"))
             and not json.loads(command("ip", "-j", "-6", "route", "show", "default")),
             "refused-non-isolated-guest")
-    pins = json.loads((SEED / "packages.json").read_bytes())
+    manifest = json.loads((SEED / "packages.json").read_bytes())
+    arch = GUEST_ARCH[os.uname().machine][0]
+    require(manifest["architecture"] == arch and command("dpkg", "--print-architecture").strip() == arch.encode("ascii"),
+            "guest-kernel-and-dpkg-architecture-mismatch")
+    pins = manifest["files"]
     engine_sha = pins.get("ciadpi")
     expected = {"older.deb", "newer.deb"} | ({"ciadpi"} if engine_sha else set())
     require(set(pins) == expected, "unexpected-guest-input-inventory")
@@ -239,9 +251,9 @@ def main():
     boot = digest(Path("/proc/sys/kernel/random/boot_id"))
     checkpoint = WORK / "checkpoint.json"
     if checkpoint.exists():
-        after_reboot(boot, checkpoint, engine_sha)
+        after_reboot(boot, checkpoint, engine_sha, arch)
     else:
-        before_reboot(boot, checkpoint, engine_sha)
+        before_reboot(boot, checkpoint, engine_sha, arch)
 
 
 if __name__ == "__main__":

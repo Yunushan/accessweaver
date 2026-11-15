@@ -33,6 +33,11 @@ mount -t iso9660 -o ro,nodev,nosuid,noexec /dev/disk/by-label/cidata /run/access
 exec /usr/bin/python3 -B /run/accessweaver-seed/guest.py
 """
 SHA256 = re.compile(r"[a-f0-9]{64}")
+HOST_ARCHITECTURES = {"x86_64": "amd64", "aarch64": "arm64"}
+TARGETS = {
+    "amd64": ("qemu-system-x86_64", "q35", "max"),
+    "arm64": ("qemu-system-aarch64", "virt,gic-version=3", "cortex-a72"),
+}
 
 
 def run(*args, timeout=60):
@@ -75,9 +80,10 @@ def package_info(path, expected_arch):
     return fields["Version"]
 
 
-def seed_guest(seed, packages, engine_sha):
+def seed_guest(seed, packages, engine_sha, arch):
     config = {
-        "ssh_pwauth": False, "disable_root": True, "package_update": False, "package_upgrade": False,
+        "ssh_pwauth": False, "disable_root": True, "ssh_genkeytypes": ["ed25519"],
+        "ssh_quiet_keygen": True, "package_update": False, "package_upgrade": False,
         "write_files": [
             {"path": "/etc/systemd/system/accessweaver-reboot-qualification.service",
              "permissions": "0644", "content": UNIT},
@@ -96,7 +102,7 @@ def seed_guest(seed, packages, engine_sha):
     }}}
     (seed / "network-config").write_text(json.dumps(network) + "\n", encoding="ascii")
     pins = dict(packages, ciadpi=engine_sha) if engine_sha else packages
-    (seed / "packages.json").write_text(json.dumps(pins), encoding="ascii")
+    (seed / "packages.json").write_text(json.dumps({"architecture": arch, "files": pins}), encoding="ascii")
     shutil.copyfile(GUEST, seed / "guest.py")
     traffic_source = Path(traffic.__file__)
     shutil.copyfile(traffic_source, seed / traffic_source.name)
@@ -131,8 +137,8 @@ def exercise(args, temporary):
     run(args.qemu_img, "create", "-f", "qcow2", "-F", "qcow2", "-b", base, overlay)
     firmware = temporary / "firmware.fd"
     variables = temporary / "variables.fd"
-    template_pins = {"code": stage(args.firmware_code, firmware, 16 << 20),
-                     "initialVariables": stage(args.firmware_vars, variables, 16 << 20)}
+    template_pins = {"code": stage(args.firmware_code, firmware, 64 << 20),
+                     "initialVariables": stage(args.firmware_vars, variables, 64 << 20)}
     firmware.chmod(0o444)
 
     seed = temporary / "seed"
@@ -142,19 +148,22 @@ def exercise(args, temporary):
     for label, source, pin in (("older", args.old, args.old_sha256), ("newer", args.new, args.new_sha256)):
         name = label + ".deb"
         packages[name] = stage(source, seed / name, MAX_FILE, pin)
-        versions[label] = package_info(seed / name, "amd64")
+        versions[label] = package_info(seed / name, args.arch)
     run("dpkg", "--compare-versions", versions["older"], "lt", versions["newer"])
     engine_sha = None
     if args.byedpi is not None:
         engine_sha = stage(args.byedpi, seed / "ciadpi", 16 << 20, args.byedpi_sha256)
-    seed_guest(seed, packages, engine_sha)
+    seed_guest(seed, packages, engine_sha, args.arch)
     iso = temporary / "seed.iso"
     run(args.genisoimage, "-quiet", "-V", "cidata", "-J", "-r", "-o", iso, seed)
+    _, machine, emulated_cpu = TARGETS[args.arch]
     system = [
-        args.qemu, "-nodefaults", "-machine", f"q35,accel={args.accel}", "-smp", "2", "-m", "1536",
-        "-cpu", "host" if args.accel == "kvm" else "max", "-monitor", "none",
+        args.qemu, "-nodefaults", "-machine", f"{machine},accel={args.accel}", "-smp", "2", "-m", "1536",
+        "-cpu", "host" if args.accel == "kvm" else emulated_cpu, "-monitor", "none",
         "-netdev", "user,id=sealed,restrict=on,ipv6=off",
         "-device", "virtio-net-pci,netdev=sealed,mac=52:54:00:ac:ce:55,romfile=",
+        "-object", "rng-random,id=guest-rng,filename=/dev/urandom",
+        "-device", "virtio-rng-pci,rng=guest-rng",
         "-display", "none", "-no-reboot", "-smbios", "type=1,manufacturer=QEMU,product=AccessWeaver-Isolated-Guest,serial=ds=nocloud;",
         "-drive", f"if=pflash,format=raw,unit=0,file={firmware},readonly=on",
         "-drive", f"if=pflash,format=raw,unit=1,file={variables}",
@@ -164,7 +173,7 @@ def exercise(args, temporary):
     if args.qemu_data is not None:
         system.extend(["-L", args.qemu_data])
     first, second = (boot(system, temporary, index, args.boot_timeout) for index in (1, 2))
-    startup_fields = {"phase", "bootSHA256", "installedVersion", "acceptedRevision", "controllerSHA256"}
+    startup_fields = {"phase", "guestArchitecture", "bootSHA256", "installedVersion", "acceptedRevision", "controllerSHA256"}
     recovery_fields = {"rollbackVersion", "rollbackKeptCurrentPolicy", "replayRefused", "purgePreservedState"}
     if engine_sha:
         startup_fields.add("liveEngine")
@@ -176,6 +185,7 @@ def exercise(args, temporary):
     require(set(first) == startup_fields and set(second) == startup_fields | recovery_fields
             and first["phase"] == "before-reboot" and second["phase"] == "after-reboot"
             and all(SHA256.fullmatch(receipt["bootSHA256"]) and SHA256.fullmatch(receipt["controllerSHA256"])
+                    and receipt["guestArchitecture"] == args.arch
                     and receipt["installedVersion"] == versions["newer"] and receipt["acceptedRevision"] == 2
                     for receipt in (first, second))
             and first["bootSHA256"] != second["bootSHA256"]
@@ -184,8 +194,8 @@ def exercise(args, temporary):
             and all(second[name] is True for name in recovery_fields - {"rollbackVersion"}),
             "Unexpected pre-reboot and reboot evidence")
     require(digest(base) == args.image_sha256, "Approved guest base snapshot changed")
-    report = {"schemaVersion": 1, "scope": "Offline Ubuntu Linux AMD64 QEMU guest kernel restart and Debian lifecycle",
-            "guestArchitecture": "amd64", "emulation": args.accel, "imageSHA256": args.image_sha256,
+    report = {"schemaVersion": 1, "scope": "Offline Ubuntu Linux QEMU guest kernel restart and Debian lifecycle",
+            "guestArchitecture": args.arch, "hostArchitecture": HOST_ARCHITECTURES[os.uname().machine], "emulation": args.accel, "imageSHA256": args.image_sha256,
             "firmwareSHA256": template_pins, "packagesSHA256": packages,
             "driverSHA256": digest(Path(__file__)), "guestProbeSHA256": digest(GUEST),
             "qemuVersion": run(args.qemu, "--version").splitlines()[0].decode("ascii"),
@@ -205,18 +215,23 @@ def main():
     for key in ("image", "old", "new"):
         parser.add_argument(f"--{key}", type=Path, required=True)
         parser.add_argument(f"--{key}-sha256", required=True)
-    parser.add_argument("--byedpi", type=Path, help="Approved native static AMD64 ByeDPI executable")
+    parser.add_argument("--arch", choices=TARGETS, default="amd64")
+    parser.add_argument("--byedpi", type=Path, help="Approved static ByeDPI executable matching the guest")
     parser.add_argument("--byedpi-sha256", help="Approved SHA-256 for --byedpi")
     parser.add_argument("--firmware-code", type=Path, required=True)
     parser.add_argument("--firmware-vars", type=Path, required=True)
-    parser.add_argument("--qemu", default="qemu-system-x86_64")
+    parser.add_argument("--qemu")
     parser.add_argument("--qemu-img", default="qemu-img")
     parser.add_argument("--genisoimage", default="genisoimage")
     parser.add_argument("--qemu-data", type=Path)
     parser.add_argument("--accel", choices=("tcg", "kvm"), default="tcg")
     parser.add_argument("--boot-timeout", type=int, default=240)
     args = parser.parse_args()
-    require(sys.platform == "linux" and os.uname().machine == "x86_64", "Expected a Linux AMD64 QEMU host")
+    host = HOST_ARCHITECTURES.get(os.uname().machine) if sys.platform == "linux" else None
+    require(host is not None, "Expected a Linux AMD64 or ARM64 QEMU host")
+    require(args.accel != "kvm" or args.arch == host, "KVM requires the guest and host architectures to match")
+    if args.qemu is None:
+        args.qemu = TARGETS[args.arch][0]
     require(30 <= args.boot_timeout <= 600 and all(SHA256.fullmatch(pin) for pin in
             (args.image_sha256, args.old_sha256, args.new_sha256)), "Expected approved SHA-256 pins and a bounded boot time")
     require((args.byedpi is None) == (args.byedpi_sha256 is None)

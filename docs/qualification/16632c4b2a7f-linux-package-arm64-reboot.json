@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "scope": "Offline Ubuntu Linux QEMU guest kernel restart and Debian lifecycle",
+  "guestArchitecture": "arm64",
+  "hostArchitecture": "amd64",
+  "emulation": "tcg",
+  "imageSHA256": "4b8bb9cf5476faca5079ad23b3664ccb14faeed311ffc739a3655fd5b3e014f0",
+  "firmwareSHA256": {
+    "code": "de01af793c9ff318ac206d8c12e404a2e89baa39bd10e12ed0437a2f69fe012a",
+    "initialVariables": "b3b855c5a80310168051164986855692d1bdb06e67619856177965cd87c6774f"
+  },
+  "packagesSHA256": {
+    "older.deb": "5ff1f425961461c210933d2ef387de33f62eadd42a2a70a1ce0eccc062b361d8",
+    "newer.deb": "a792607f270c9c78633e25f9594a73db18c391c189d85e4811e121f9df1d4935"
+  },
+  "driverSHA256": "9a17950f2a3ca31ba6fddc5e002b6bbd70cea9a5ccd0ec1ca318d124bee2ca21",
+  "guestProbeSHA256": "52b782eb0489c2aa702867775879896a196c5444c4b094fecf7d4f150182c65b",
+  "qemuVersion": "QEMU emulator version 10.2.1 (Debian 1:10.2.1+ds-1ubuntu3.3)",
+  "guestExternalNetworkDisabled": true,
+  "firstBoot": {
+    "phase": "before-reboot",
+    "guestArchitecture": "arm64",
+    "bootSHA256": "0939a37e5c1c0ca76f71aa3c2f04998ba877e47d00aeceda59509afb8aa5a193",
+    "installedVersion": "0.1.0~alpha.1",
+    "acceptedRevision": 2,
+    "controllerSHA256": "8ffe472a972e8ef04b8bd57c62b261314747715f9826462e8beea62f1e7537c0",
+    "liveEngine": {
+      "connectedWhenRebootRequested": true,
+      "ordinaryControllerAndVendor": true,
+      "routedBytesVerified": true
+    }
+  },
+  "secondBoot": {
+    "phase": "after-reboot",
+    "guestArchitecture": "arm64",
+    "bootSHA256": "bb61ac1fe425468eddafb45a47d56a02dc447dbb974812248b92d2fe50c0e8ad",
+    "installedVersion": "0.1.0~alpha.1",
+    "acceptedRevision": 2,
+    "controllerSHA256": "8ffe472a972e8ef04b8bd57c62b261314747715f9826462e8beea62f1e7537c0",
+    "rollbackVersion": "0.1.0~alpha",
+    "rollbackKeptCurrentPolicy": true,
+    "replayRefused": true,
+    "purgePreservedState": true,
+    "liveEngine": {
+      "oldEngineAndListenerAbsent": true,
+      "ownedEngineAndClientStopped": true,
+      "restoredApprovalRoutedBytes": true
+    }
+  },
+  "productionQualificationComplete": false,
+  "liveByedpi": {
+    "engineSHA256": "a1a27de042a46084c78db34cfd9ca2a0dff7c9b3d0574942480f268d54569ca4",
+    "trafficProbeSHA256": "73eb75ed481753f29c6eef6cfa34c3d133c97f7dbaaaf2f1836d5587ec832c34",
+    "sharedNetworkProbeSHA256": "e6a738ff9a57782c1c3673469367ba815909f42992ad4fdba56fc7f1bb5a3f01"
+  },
+  "sourceCommit": "16632c4b2a7f14c300b2eae4e9cdf33325c7edf1",
+  "payloadSourceCommits": {
+    "0.1.0~alpha": "77a884e7c213d7b5bde3cc2347acdffc2fa0e6d0",
+    "0.1.0~alpha.1": "16632c4b2a7f14c300b2eae4e9cdf33325c7edf1"
+  },
+  "host": "Ubuntu 26.04 WSL AMD64",
+  "guest": "Ubuntu Minimal 24.04 ARM64",
+  "guestImageSource": "https://cloud-images.ubuntu.com/minimal/releases/noble/release/",
+  "guestImageSigningFingerprint": "D2EB44626FDDC30B513D5BB71A5D6C4C7DB87C81",
+  "guestImageSignatureVerified": true,
+  "imagePreparation": {
+    "schemaVersion": 1,
+    "authenticatedImageSHA256": "3dc8370d923978d4b610fa7964d1b36ba040eefb43198809ca5bc8ac51777b18",
+    "preparedImageSHA256": "4b8bb9cf5476faca5079ad23b3664ccb14faeed311ffc739a3655fd5b3e014f0",
+    "preparationSourceSHA256": "95282a7dfb18708bda4494d20346e8aee15fa9114d7c1e071af511596716cebc",
+    "wrongSourceDigestRefused": true,
+    "existingDestinationPreserved": true
+  },
+  "engineRelease": "v0.17.3",
+  "engineArchiveSource": "https://github.com/hufrea/byedpi/releases/download/v0.17.3/byedpi-17.3-aarch64.tar.gz",
+  "engineArchiveSHA256": "d5806504e159e8119ede5af1164a609251b0520cd4483a7db611b6d238b9404b",
+  "guestTransport": "isolated loopback",
+  "temporaryPolicySigningKeys": true,
+  "basePackageEvidence": "docs/qualification/16632c4b2a7f-linux-package-reboot.json",
+  "amd64ProbeRegression": {
+    "guestArchitecture": "amd64",
+    "hostArchitecture": "amd64",
+    "emulation": "kvm",
+    "imageSHA256": "406630c08b5e545fcc7209854b129d47e3af822db128c9f19336593b5a2d3fe0",
+    "newerPackageSHA256": "67af3300bd19a5c4a2749c2282b77a2e5a327e2fea471d1a4b9ab1c4e3a62c81",
+    "controllerSHA256": "b1768f66147a9bdeadcd1daa178bd32cd62db99ffba86f5ee635e61b0d6f1142",
+    "bootSHA256": [
+      "b731a98a66bdf3165e6583f3a4214930585572a73d7fee74855a843b689a551c",
+      "6dcd4a9cf809a65ee83d589c7db49280062d1544a53533e733c9c8089264d650"
+    ],
+    "liveEngine": {
+      "oldEngineAndListenerAbsent": true,
+      "ownedEngineAndClientStopped": true,
+      "restoredApprovalRoutedBytes": true
+    },
+    "rollbackKeptCurrentPolicy": true,
+    "replayRefused": true,
+    "purgePreservedState": true
+  }
+}
