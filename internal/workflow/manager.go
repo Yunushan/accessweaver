@@ -106,7 +106,7 @@ func Catalog() []Operation {
 		{"auto-install", "Find and install a Zapret strategy", []string{"Run blockcheck at the selected scan level", "Select a reported common strategy, preferring HTTPS", "Install it as a managed service and retain the complete scan evidence"}},
 		{"hostlist", "Save or toggle a live hostlist", []string{"Validate domain names", "Atomically replace the active and preserved lists for the selected managed engine"}},
 		{"dns", "Configure encrypted DNS", []string{"Snapshot adapter DNS and native DoH settings before changing them", "Configure DNSCrypt or native Windows DoH", "Verify the selected resolver responds"}},
-		{"dns-restore", "Restore saved DNS settings", []string{"Restore the original adapter DNS and DoH snapshot"}},
+		{"dns-restore", "Restore saved DNS settings", []string{"Restore the original adapter DNS and DoH snapshot", "Remove AccessWeaver's DoH firewall rules if present"}},
 		{"refresh", "Configure periodic WireSock reconnect", []string{"Create or remove the AccessWeaver scheduled reconnect task"}},
 		{"remove", "Remove a managed access method", []string{"Restore owned Drover files before removing ByeDPI and its dependent proxy service", "Remove the owned reconnect task before removing the WireSock profile"}},
 		{"vendor-uninstall", "Uninstall the WireSock vendor product", []string{"Remove the managed WireSock profile and reconnect task", "Run the registered, publisher-verified vendor uninstaller", "Verify removal or report that a reboot is required"}},
@@ -208,6 +208,9 @@ func (m *Manager) Preview(r Request) (Plan, error) {
 	}
 	if r.Action == "config" || r.Action == "install" && r.Engine == "wiresock" {
 		p.Warnings = append(p.Warnings, "Generating WARP credentials uses wgcf and Cloudflare's service. Existing configPath avoids registration. Vendor terms apply.")
+	}
+	if r.DNS == "doh" && (r.Action == "dns" || r.Action == "install" || r.Action == "scan" || r.Action == "auto-install") {
+		p.Warnings = append(p.Warnings, "Windows DoH requires Windows Firewall. AccessWeaver blocks plaintext DNS Client traffic to Google and Quad9 until you restore DNS or switch to DNSCrypt.")
 	}
 	if r.Action == "app-remove" || r.Action == "app-reinstall" || r.Action == "app-repair" || r.Clean {
 		p.Warnings = append(p.Warnings, "Application removal or reinstall can sign you out. If the replacement installer fails after removal, run a fresh reviewed installation.")

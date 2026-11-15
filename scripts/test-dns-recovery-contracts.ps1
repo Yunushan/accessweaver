@@ -23,6 +23,9 @@ $ast=[Management.Automation.Language.Parser]::ParseFile($sourcePath,[ref]$tokens
 if($parseErrors.Count){throw 'DNS workflow source did not parse'}
 $selected=@('Assert-DNSCryptConfiguration','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Assert-DNSCryptServiceState','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Get-ManagedServiceCommandDigest','Assert-DNSMutationAdapter','Test-DNSRecoveryUsesAdapterOwnership','Test-DNSFamilyMatchesOriginal','Read-ObservedDNSFamily','Test-DNSFamilyNeedsRollback','Get-ActiveDNSAdapters','Assert-ConfiguredDNSDohPolicy','Get-DNSDohProviders','Test-DNSRecoveryUsesDohOwnership','Get-DNSOriginalDohEntry','Test-DNSDohEntriesEqual','Test-DNSRecoveryOwnsDoh','Get-DNSClientMutationRow','Read-DNSRecoveryFileBytes','Read-DNSRecoverySnapshot','Assert-DNSRecoverySnapshotUnchanged','Get-WorkflowRecoveryJournalLimit','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Assert-ConfiguredDNSServers','Assert-RestoredDNSFamily','Assert-RestoredDNSState','Get-StaticDNSServers','Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Assert-OriginalDNSModes','Read-OriginalDNSFamily','Read-OriginalDNSAdapter','Read-OriginalDNSNameServer','Get-DNSOverridePath','Read-DNSStaticOverride','Test-DNSAddressAnswer','Wait-OrdinaryDNSResolver','Wait-DNSCryptListeners','Get-ManagedDNSCryptListenerOwner','Wait-ManagedDNSCryptListeners','Get-EffectiveDNSCryptListeners','Assert-EffectiveDNSCryptListeners','Get-DNSCryptAdapterIdentities','Test-DNSCryptLoopbackAddress','Get-DNSCryptIndependentFamilies','Test-DNSCryptListenerNeeded','Assert-DNSCryptCanBeRemoved','Configure-DNS','Restore-DNS','Remove-Method','Remove-All')
 $allowed=@('Read-OwnedWireSockProfile','Remove-WireSockRefreshTask','Disconnect-OwnedWireSock','Native','Remove-ModernWireSockProfile','Restore-Drover','Get-ManagedFirewallRule','Remove-RecordedService','Remove-ManagedFirewallRule','Remove-Method','Under','Assert-DNSCryptConfiguration','Get-WorkflowFileHash','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Assert-DNSCryptServiceState','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Get-ManagedServiceCommandDigest','Get-CimInstance','Get-NetTCPConnection','Get-NetUDPEndpoint','Assert-DNSMutationAdapter','Test-DNSRecoveryUsesAdapterOwnership','Test-DNSFamilyMatchesOriginal','Read-ObservedDNSFamily','Test-DNSFamilyNeedsRollback','Get-ActiveDNSAdapters','Assert-ConfiguredDNSDohPolicy','Get-DNSDohProviders','Test-DNSRecoveryUsesDohOwnership','Get-DNSOriginalDohEntry','Test-DNSDohEntriesEqual','Test-DNSRecoveryOwnsDoh','Get-DNSClientMutationRow','Read-DNSRecoveryFileBytes','Read-DNSRecoverySnapshot','Assert-DNSRecoverySnapshotUnchanged','Get-WorkflowRecoveryJournalLimit','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Save-DNSRecoveryReceipt','Publish-WorkflowFile','No-Reparse','Get-Item','Assert-ConfiguredDNSServers','Assert-RestoredDNSFamily','Assert-RestoredDNSState','Get-StaticDNSServers','Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Assert-OriginalDNSModes','Read-OriginalDNSFamily','Read-OriginalDNSAdapter','Read-OriginalDNSNameServer','Get-DNSOverridePath','Read-DNSStaticOverride','Test-DNSAddressAnswer','Wait-OrdinaryDNSResolver','Wait-DNSCryptListeners','Get-ManagedDNSCryptListenerOwner','Wait-ManagedDNSCryptListeners','Get-EffectiveDNSCryptListeners','Assert-EffectiveDNSCryptListeners','Get-DNSCryptAdapterIdentities','Test-DNSCryptLoopbackAddress','Get-DNSCryptIndependentFamilies','Test-DNSCryptListenerNeeded','Assert-DNSCryptCanBeRemoved','Restore-DNS','Get-ItemProperty','Get-Command','Join-Path','Get-NetAdapter','Where-Object','ForEach-Object','Select-Object','Test-Path','Get-DnsClientServerAddress','Get-DnsClientDohServerAddress','Get-FileHash','Add-Member','ConvertTo-Json','Save-Journal','Ensure-Asset','Split-Path','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Get-Service','Restore-RecordedWorkflowFile','Install-EngineService','Set-Service','Start-Service','Restart-Service','Stop-Service','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress','Set-DnsClientServerAddress','Clear-DnsClientCache','Resolve-DnsName','Start-Sleep','Event','ConvertFrom-Json','Remove-Item','Remove-VerifiedDNSRecoverySnapshot')
+$dohFirewallFunctions=@('Get-DNSDohPlaintextBlockID','Assert-DNSDohFirewallAvailable','Get-DNSDohPlaintextRule','Assert-DNSDohPlaintextBlock','Enable-DNSDohPlaintextBlock','Remove-DNSDohPlaintextBlock')
+$selected+=$dohFirewallFunctions
+$allowed+=$dohFirewallFunctions+@('Get-NetFirewallProfile','Get-NetFirewallRule','Get-NetFirewallPortFilter','Get-NetFirewallAddressFilter','Get-NetFirewallServiceFilter','Get-NetFirewallApplicationFilter','New-NetFirewallRule','Remove-NetFirewallRule')
 foreach($name in $selected){
     $nodes=@($ast.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
     if($nodes.Count -ne 1){throw 'Required DNS function is unavailable'}
@@ -40,7 +43,7 @@ $ownerToken=[guid]::NewGuid().ToString('N')
 [IO.File]::WriteAllText($ownerMarker,$ownerToken,[Text.UTF8Encoding]::new($false))
 $script:checks=0;$script:caseNumber=0
 $script:contractOutcome='failed';$script:contractCode='unexpected-contract-error'
-$script:closedContractCodes=@('doh-preserves-listener-needed-during-probe','explicit-restore-refuses-concurrent-adapter-dns','dnscrypt-reload-retains-snapshot-until-listener-recovers','doh-restarts-listener-for-post-stop-dependency','doh-verifies-after-stopping-dnscrypt','configured-dns-rejects-client-drift-during-registry-read','configured-dns-rejects-topology-drift-during-registry-read','doh-reapply-verifies-without-redundant-setters','doh-keeps-listener-for-adapter-identity-drift','doh-keeps-listener-for-owned-inactive-adapter','doh-stops-listener-after-last-adapter-switch','doh-keeps-listener-for-excluded-adapter','dnscrypt-loopback-mapped-ipv4','dnscrypt-dependency-change-stable-adapter','doh-keeps-listener-for-stored-unexposed-family','doh-retires-listener-with-confirmed-absent-unexposed-key','doh-keeps-listener-for-original-static-dns','stored-dns-mismatch-before-effects','stored-dns-restore-retains-snapshot','configure-refuses-drift-during-resolver-query','configure-ignores-unselected-adapter-during-resolver-query','configure-doh-preserves-independent-policy','restore-doh-refuses-unowned-policy','restore-doh-resumes-partial-configuration','restore-doh-conditional-needs-capability','restore-doh-rejects-invalid-ownership','configure-doh-refuses-stale-reconfiguration','restore-doh-refuses-concurrent-policy','restore-doh-keeps-independent-policy','doh-only-recovery-records-effects','doh-noop-recovery-has-no-effects','rollback-keeps-independent-adapter-settings','rollback-skips-restored-adapter-family','restore-doh-repairs-stable-malformed-policy','configure-dnscrypt-loopback-readback','doh-keeps-old-resolver-until-verified','dns-service-ownership-before-effects','dns-service-binding-before-mutation','dnscrypt-preserves-independent-doh','first-doh-captures-global-policy','dnscrypt-keeps-existing-doh-originals','invalid-doh-recovery-scope','dnscrypt-restarts-verified-service','dnscrypt-recovers-original-after-stopped-activation-failure','dnscrypt-reuses-unchanged-configuration','dnscrypt-listeners-before-adapters','dnscrypt-listener-rechecks-both-families','dnscrypt-managed-listener-owner','dnscrypt-refuses-unowned-dns-before-adapter-switch','dnscrypt-restores-when-listener-owner-changes','dnscrypt-listener-refusal-preserves-adapter-state','dnscrypt-listener-refuses-invalid-answers','dnscrypt-listener-refuses-invalid-aaaa','dnscrypt-listener-refuses-missing-aaaa-before-adapters','dnscrypt-listener-retries-missing-aaaa','dnscrypt-verifies-all-listeners-after-adapter-switch','dnscrypt-recovers-after-late-listener-failure','ordinary-resolver-requires-address-answer','ordinary-resolver-retries-missing-aaaa','ordinary-resolver-rejects-invalid-aaaa','configure-restores-when-aaaa-is-missing','configure-adapter-readback-refuses','configure-adapter-readback-retains','configure-adapter-readback-retries','configure-adapter-readback-recovers','configure-post-policy-refuses','configure-post-policy-recovers','configure-policy-readback-before-adapters','configure-policy-refusal-retains-recovery','configure-policy-recovery-completes','configure-policy-query-before-verification','scope-capture-flat-ordered','scope-rebinds-current-adapter','scope-family-extension','scope-invalid-before-effects','scope-dhcp-reset-preserved','scope-global-and-ipv4-preserved','changed-adapter-retains-before-interface-read','capture-index-change-before-snapshot','capture-drift-before-snapshot','capture-drift-before-adapter-write','reconfigure-preserves-independent-adapter-dns','non-dns-adapter-not-targeted','single-family-capture-and-restore','new-family-originals-extended','family-extension-before-effects','client-inventory-before-effects','family-flags-preflight','owned-family-missing-retained','invalid-recovery-identities-before-inspection','restore-uses-refreshed-guid-index','changed-adapter-retains-before-dns-read','case-insensitive-down-adapter-restoration','reconfiguration-rotates-recovery-identity','existing-originals-never-recaptured','new-adapter-originals-persisted','extended-snapshot-restores-both-adapters','extension-failure-before-effects','invalid-configuration-preflight','configuration-uses-current-guid-index','source-uncovered-dns-write','absent','absent-entry-idempotence-and-unrelated-preservation','accessweaver-dns-contracts-','add','all-providers-no-plaintext-fallback','ambiguous-adapter','bad-doh','bad-flags','capture-inspection-failure-not-empty','case','confirmed-absent-entry-not-removed-again','confirmed-absent-mode-is-dhcp','current-doh-query-before-effects','dns','doh','duplicate-doh','empty-adapters','empty-static','exact-original-doh-restored','expected-refusal','false','fixture-cleanup-incomplete','guid-recovery-uses-current-index','invalid-recovery-preflight','legacy-no-doh-recovery-supported','malformed-mode-not-empty','missing-adapter','no-false-restored-event','none','original-snapshot-retained','partial-removal-retains-needed-recovery','profiles','recovery-retry-completes-after-confirmed-inspection','registry-error-not-dhcp','remove','snapshot-publication-binds-prior-bytes','snapshot-frame-refused','snapshot-preflight-change-refused','snapshot-journal-digest-refused','configure-interface-reuse-before-setter','restore-interface-reuse-before-setter','restore-retirement-requires-absence','restore-retirement-refuses-replaced-snapshot','restore-retirement-retains-after-state-drift','restore-retirement-retries-after-state-drift','restore-delayed-observation','restore-adapter-row-fence','restore-final-adapter-fence','restore-final-client-readback','restore-inspection-before-effects','saved-doh-needs-capability','set','snapshot-before-native-effects','journal-before-snapshot','snapshot-must-match-journal','activation-before-native-effects','receipt-before-retirement','source-doh-inspection-failed','source-doh-mutation-failed','source-registry-inspection-failed','source-snapshot-removal-failed','source-snapshot-write-failed','true','unexpected-contract-error','unknown-test-code')
+$script:closedContractCodes=@('doh-preserves-listener-needed-during-probe','explicit-restore-refuses-concurrent-adapter-dns','dnscrypt-reload-retains-snapshot-until-listener-recovers','doh-restarts-listener-for-post-stop-dependency','doh-verifies-after-stopping-dnscrypt','configured-dns-rejects-client-drift-during-registry-read','configured-dns-rejects-topology-drift-during-registry-read','doh-reapply-verifies-without-redundant-setters','doh-keeps-listener-for-adapter-identity-drift','doh-keeps-listener-for-owned-inactive-adapter','doh-stops-listener-after-last-adapter-switch','doh-keeps-listener-for-excluded-adapter','dnscrypt-loopback-mapped-ipv4','dnscrypt-dependency-change-stable-adapter','doh-keeps-listener-for-stored-unexposed-family','doh-retires-listener-with-confirmed-absent-unexposed-key','doh-keeps-listener-for-original-static-dns','stored-dns-mismatch-before-effects','stored-dns-restore-retains-snapshot','configure-refuses-drift-during-resolver-query','configure-ignores-unselected-adapter-during-resolver-query','configure-doh-preserves-independent-policy','restore-doh-refuses-unowned-policy','restore-doh-resumes-partial-configuration','restore-doh-conditional-needs-capability','restore-doh-rejects-invalid-ownership','configure-doh-refuses-stale-reconfiguration','restore-doh-refuses-concurrent-policy','restore-doh-keeps-independent-policy','doh-only-recovery-records-effects','doh-noop-recovery-has-no-effects','rollback-keeps-independent-adapter-settings','rollback-skips-restored-adapter-family','restore-doh-repairs-stable-malformed-policy','configure-dnscrypt-loopback-readback','doh-keeps-old-resolver-until-verified','dns-service-ownership-before-effects','dns-service-binding-before-mutation','dnscrypt-preserves-independent-doh','first-doh-captures-global-policy','dnscrypt-keeps-existing-doh-originals','invalid-doh-recovery-scope','dnscrypt-restarts-verified-service','dnscrypt-recovers-original-after-stopped-activation-failure','dnscrypt-reuses-unchanged-configuration','dnscrypt-listeners-before-adapters','dnscrypt-listener-rechecks-both-families','dnscrypt-managed-listener-owner','dnscrypt-refuses-unowned-dns-before-adapter-switch','dnscrypt-restores-when-listener-owner-changes','dnscrypt-listener-refusal-preserves-adapter-state','dnscrypt-listener-refuses-invalid-answers','dnscrypt-listener-refuses-invalid-aaaa','dnscrypt-listener-refuses-missing-aaaa-before-adapters','dnscrypt-listener-retries-missing-aaaa','dnscrypt-verifies-all-listeners-after-adapter-switch','dnscrypt-recovers-after-late-listener-failure','ordinary-resolver-requires-address-answer','ordinary-resolver-retries-missing-aaaa','ordinary-resolver-rejects-invalid-aaaa','configure-restores-when-aaaa-is-missing','configure-adapter-readback-refuses','configure-adapter-readback-retains','configure-adapter-readback-retries','configure-adapter-readback-recovers','configure-post-policy-refuses','configure-post-policy-recovers','configure-policy-readback-before-adapters','configure-policy-refusal-retains-recovery','configure-policy-recovery-completes','configure-policy-query-before-verification','scope-capture-flat-ordered','scope-rebinds-current-adapter','scope-family-extension','scope-invalid-before-effects','scope-dhcp-reset-preserved','scope-global-and-ipv4-preserved','changed-adapter-retains-before-interface-read','capture-index-change-before-snapshot','capture-drift-before-snapshot','capture-drift-before-adapter-write','reconfigure-preserves-independent-adapter-dns','non-dns-adapter-not-targeted','single-family-capture-and-restore','new-family-originals-extended','family-extension-before-effects','client-inventory-before-effects','family-flags-preflight','owned-family-missing-retained','invalid-recovery-identities-before-inspection','restore-uses-refreshed-guid-index','changed-adapter-retains-before-dns-read','case-insensitive-down-adapter-restoration','reconfiguration-rotates-recovery-identity','existing-originals-never-recaptured','new-adapter-originals-persisted','extended-snapshot-restores-both-adapters','extension-failure-before-effects','invalid-configuration-preflight','configuration-uses-current-guid-index','source-uncovered-dns-write','absent','absent-entry-idempotence-and-unrelated-preservation','accessweaver-dns-contracts-','add','all-providers-no-plaintext-fallback','ambiguous-adapter','bad-doh','bad-flags','capture-inspection-failure-not-empty','case','confirmed-absent-entry-not-removed-again','confirmed-absent-mode-is-dhcp','current-doh-query-before-effects','dns','doh','duplicate-doh','empty-adapters','empty-static','exact-original-doh-restored','expected-refusal','false','fixture-cleanup-incomplete','guid-recovery-uses-current-index','invalid-recovery-preflight','legacy-no-doh-recovery-supported','malformed-mode-not-empty','missing-adapter','no-false-restored-event','none','original-snapshot-retained','partial-removal-retains-needed-recovery','profiles','recovery-retry-completes-after-confirmed-inspection','registry-error-not-dhcp','remove','snapshot-publication-binds-prior-bytes','snapshot-frame-refused','snapshot-preflight-change-refused','snapshot-journal-digest-refused','configure-interface-reuse-before-setter','restore-interface-reuse-before-setter','restore-retirement-requires-absence','restore-retirement-refuses-replaced-snapshot','restore-retirement-retains-after-state-drift','restore-retirement-retries-after-state-drift','restore-delayed-observation','restore-adapter-row-fence','restore-final-adapter-fence','restore-final-client-readback','restore-inspection-before-effects','saved-doh-needs-capability','set','snapshot-before-native-effects','journal-before-snapshot','snapshot-must-match-journal','activation-before-native-effects','receipt-before-retirement','source-doh-inspection-failed','source-doh-mutation-failed','source-registry-inspection-failed','source-snapshot-removal-failed','source-snapshot-write-failed','true','unexpected-contract-error','unknown-test-code','doh-firewall-refuses-unavailable-service','doh-firewall-owned-protection','doh-firewall-keeps-identity','doh-firewall-preserves-foreign-rule','doh-firewall-recovery-cleans-rules','doh-firewall-refusal-keeps-recovery','doh-firewall-normalizes-host-addresses','dnscrypt-clears-doh-firewall')
 function Assert-DNS([bool]$Condition,[string]$Code){if(-not $Condition){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('DNS contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-DNS([scriptblock]$Operation,[string]$ExpectedMessage){
     $failed=$false
@@ -53,6 +56,7 @@ function New-DNSCase {
     [void][IO.Directory]::CreateDirectory([IO.Path]::Combine($root,'profiles'))
     [void][IO.Directory]::CreateDirectory((Join-Path $root 'components\dnscrypt'))
     $script:snapshot=Join-Path $root 'profiles/dns-original.json'
+    $script:dohFirewallRules=@{};$script:dohFirewallWrites=0;$script:dohFirewallFault=''
     $script:present=@{'Get-DnsClientDohServerAddress'=$true;'Set-DnsClientDohServerAddress'=$true;'Add-DnsClientDohServerAddress'=$true;'Remove-DnsClientDohServerAddress'=$true}
     $script:adapters=@([pscustomobject]@{Status='Up';InterfaceDescription='Fixture adapter';InterfaceGuid='{00000000-0000-0000-0000-000000000001}';ifIndex=77})
     $script:mode4='192.0.2.53';$script:mode6='absent';$script:registryFailure='';$script:emptyDnsRead=$false;$script:failDohRead=0;$script:dohReads=0
@@ -101,6 +105,61 @@ function Mutation-Count {return @($script:calls | Where-Object {$_.kind -in @('d
 # Every OS/state-changing command reachable from the selected functions is a
 # closed source fixture. Command discovery is mocked too; no module fallback.
 function Get-Command {[CmdletBinding()]param([string[]]$Name);foreach($item in $Name){if(-not $script:present.ContainsKey($item)){throw 'Unexpected DNS command discovery'};if($script:present[$item]){[pscustomobject]@{Name=$item;CommandType='Function'}}}}
+function Get-NetFirewallProfile {
+    [CmdletBinding()]param($PolicyStore)
+    if($PolicyStore -cne 'ActiveStore'){throw 'Unexpected firewall profile inspection'}
+    foreach($profile in @('Domain','Private','Public')){
+        [pscustomobject]@{Name=$profile;Enabled=($script:dohFirewallFault -ne 'disabled');AllowLocalFirewallRules='NotConfigured';DisabledInterfaceAliases=@('NotConfigured')}
+    }
+}
+function Get-NetFirewallRule {
+    [CmdletBinding()]param($PolicyStore,[switch]$TracePolicyStore)
+    if($PolicyStore -cnotin @('ActiveStore','PersistentStore') -or [bool]$TracePolicyStore -ne ($PolicyStore -ceq 'ActiveStore')){
+        throw 'Unexpected firewall rule inspection'
+    }
+    foreach($rule in $script:dohFirewallRules.Values){
+        $copy=$rule.Clone()
+        if($PolicyStore -ceq 'ActiveStore' -and $script:dohFirewallFault -ceq 'inactive'){$copy.EnforcementStatus='LocalFirewallRulesDisallowed'}
+        $copy
+    }
+}
+function New-NetFirewallRule {
+    [CmdletBinding()]param($Name,$DisplayName,$Description,$PolicyStore,$Direction,$Action,$Enabled,$Profile,$Protocol,$RemotePort,$RemoteAddress,$Service)
+    $saved=Read-DNSRecoverySnapshot
+    $id=$saved.record.dohPlaintextBlockID
+    if(-not $id -or $Name -cne ('AccessWeaver-DoH-Plaintext-'+$Protocol+'-'+$id) -or $Protocol -cnotin @('TCP','UDP') -or
+        $PolicyStore -cne 'PersistentStore' -or $Service -cne 'Dnscache' -or $script:dohFirewallRules.ContainsKey($Name)){
+        throw 'Unexpected firewall rule creation or missing recovery ownership'
+    }
+    if($script:dohFirewallFault -ceq 'second-write' -and $Protocol -ceq 'UDP'){throw 'Synthetic second DoH rule creation failure'}
+    $script:dohFirewallRules[$Name]=@{Name=$Name;Description=$Description;Direction=$Direction;Action=$Action;Enabled=$Enabled;
+        Profile=$Profile;Protocol=$Protocol;RemotePort=$RemotePort;RemoteAddress=$RemoteAddress;Service=$Service;Program='Any';
+        EnforcementStatus='Full';PolicyStoreSourceType='Local'}
+    $script:dohFirewallWrites++
+}
+function Get-NetFirewallPortFilter {
+    [CmdletBinding()]param([Parameter(ValueFromPipeline)]$Rule)
+    process {[pscustomobject]@{Protocol=$Rule.Protocol;RemotePort=$Rule.RemotePort;LocalPort='Any'}}
+}
+function Get-NetFirewallAddressFilter {
+    [CmdletBinding()]param([Parameter(ValueFromPipeline)]$Rule)
+    process {[pscustomobject]@{RemoteAddress=$Rule.RemoteAddress;LocalAddress='Any'}}
+}
+function Get-NetFirewallServiceFilter {
+    [CmdletBinding()]param([Parameter(ValueFromPipeline)]$Rule)
+    process {[pscustomobject]@{Service=$Rule.Service}}
+}
+function Get-NetFirewallApplicationFilter {
+    [CmdletBinding()]param([Parameter(ValueFromPipeline)]$Rule)
+    process {[pscustomobject]@{Program=$Rule.Program;Package=$null}}
+}
+function Remove-NetFirewallRule {
+    [CmdletBinding()]param([Parameter(ValueFromPipeline)]$Rule)
+    process {
+        if(-not $script:dohFirewallRules.ContainsKey($Rule.Name)){throw 'Unexpected firewall rule removal'}
+        $script:dohFirewallRules.Remove($Rule.Name)
+    }
+}
 function Get-NetAdapter {
     [CmdletBinding()]param([switch]$IncludeHidden)
     if($script:replaceSnapshotOnAdapterRead){
@@ -487,6 +546,9 @@ function Get-ManagedDNSCryptListenerOwner([string[]]$Servers,[string]$Binary,$En
 }
 function Get-Service {
     [CmdletBinding()]param($Name)
+    if($Name -cin @('MpsSvc','Dnscache')){
+        return [pscustomobject]@{Status=$(if($Name -ceq 'Dnscache' -and $script:dohFirewallFault -ceq 'client-stopped'){'Stopped'}else{'Running'})}
+    }
     if($Name -cne 'AccessWeaver-dnscrypt'){throw 'Unexpected service name'}
     if($script:resolverServicePresent){
         $startup=if($script:expectedResolverStartup){$script:expectedResolverStartup}else{'Automatic'}
@@ -720,6 +782,42 @@ function Stop-Service {
     if($script:loopbackAfterServiceStop){$script:dnsValues['88/IPv6']=@('::1')}
 }
 try {
+    foreach($requirement in @(
+        @{fault='disabled';message='Windows Firewall policy does not permit managed DoH plaintext protection'},
+        @{fault='client-stopped';message='Windows Firewall and DNS Client must be running for managed DoH'}
+    )){
+        New-DNSCase
+        $script:dohFirewallFault=$requirement.fault
+        Reject-DNS {Configure-DNS 'doh'} $requirement.message
+        Assert-DNS ((Mutation-Count) -eq 0 -and $script:dohFirewallWrites -eq 0 -and -not [IO.File]::Exists($snapshot)) 'doh-firewall-refuses-unavailable-service'
+    }
+    New-DNSCase
+    Configure-DNS 'doh'
+    $id=(Read-DNSRecoverySnapshot).record.dohPlaintextBlockID
+    Assert-DNS ($id -cmatch '\A[a-f0-9]{32}\z' -and $script:dohFirewallRules.Count -eq 2 -and $script:dohFirewallWrites -eq 2) 'doh-firewall-owned-protection'
+    Configure-DNS 'doh'
+    Assert-DNS ((Read-DNSRecoverySnapshot).record.dohPlaintextBlockID -ceq $id -and $script:dohFirewallWrites -eq 2) 'doh-firewall-keeps-identity'
+    $tcp='AccessWeaver-DoH-Plaintext-TCP-'+$id
+    $script:dohFirewallRules[$tcp].RemoteAddress=@('8.8.8.8/255.255.255.255','9.9.9.9/32','2001:4860:4860:0:0:0:0:8888/128','2620:fe::fe')
+    Assert-DNS ($null -ne (Get-DNSDohPlaintextRule $id 'TCP' 'ActiveStore')) 'doh-firewall-normalizes-host-addresses'
+    $script:dohFirewallRules[$tcp].Service='Unrelated'
+    $script:calls.Clear()
+    Reject-DNS {Restore-DNS} 'Managed DoH plaintext protection rule changed independently'
+    Assert-DNS ((Mutation-Count) -eq 0 -and $script:dohFirewallRules.Count -eq 2 -and [IO.File]::Exists($snapshot)) 'doh-firewall-preserves-foreign-rule'
+    $script:dohFirewallRules[$tcp].Service='Dnscache'
+    Restore-DNS
+    Assert-DNS ($script:dohFirewallRules.Count -eq 0 -and -not [IO.File]::Exists($snapshot)) 'doh-firewall-recovery-cleans-rules'
+    foreach($fault in @('inactive','second-write')){
+        New-DNSCase
+        $script:dohFirewallFault=$fault
+        Reject-DNS {Configure-DNS 'doh'}
+        $expectedCount=if($fault -ceq 'inactive'){2}else{1}
+        Assert-DNS ((Mutation-Count) -eq 0 -and $script:dohFirewallRules.Count -eq $expectedCount -and [IO.File]::Exists($snapshot)) 'doh-firewall-refusal-keeps-recovery'
+        $script:dohFirewallFault=''
+        Restore-DNS
+        Assert-DNS ($script:dohFirewallRules.Count -eq 0 -and -not [IO.File]::Exists($snapshot)) 'doh-firewall-recovery-cleans-rules'
+    }
+
     & {
         $hostPath='C:\Fixture\host.exe'
         $binary='C:\Fixture\dnscrypt-proxy.exe'
@@ -1314,6 +1412,7 @@ try {
         if($transition -ceq 'doh-to-dnscrypt'){
             Assert-DNS ($scope.dohManaged -eq $true -and $scope.doh[0].DohTemplate -ceq $originalDoh.DohTemplate -and
                 $script:dohReads -eq $readsBeforeCrypt) 'dnscrypt-keeps-existing-doh-originals'
+            Assert-DNS ($script:dohFirewallRules.Count -eq 0) 'dnscrypt-clears-doh-firewall'
         }else{
             Assert-DNS ($scope.dohManaged -is [bool] -and -not $scope.dohManaged -and @($scope.doh).Count -eq 0 -and
                 $script:dohReads -eq 0) 'dnscrypt-preserves-independent-doh'

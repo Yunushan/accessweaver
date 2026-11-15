@@ -2509,6 +2509,122 @@ function Get-DNSDohProviders {
         @{ServerAddress='2620:fe::fe';DohTemplate='https://[2620:fe::fe]/dns-query';AllowFallbackToUdp=$false;AutoUpgrade=$true}
     )
 }
+function Get-DNSDohPlaintextBlockID($Record) {
+    $property=$Record.PSObject.Properties['dohPlaintextBlockID']
+    if($null -eq $property){return ''}
+    if($property.Value -isnot [string] -or $property.Value -cnotmatch '\A[a-f0-9]{32}\z'){
+        throw 'DoH plaintext protection identity is invalid; retain the recovery snapshot'
+    }
+    return $property.Value
+}
+function Assert-DNSDohFirewallAvailable {
+    $warnings=@()
+    $profiles=@(Get-NetFirewallProfile -PolicyStore ActiveStore -ErrorAction Stop -WarningAction SilentlyContinue -WarningVariable warnings)
+    if($warnings.Count -ne 0 -or $profiles.Count -ne 3 -or @('Domain','Private','Public' | Where-Object {$_ -notin $profiles.Name}).Count -ne 0 -or
+        @($profiles | Where-Object {
+        [string]$_.Enabled -cne 'True' -or [string]$_.AllowLocalFirewallRules -cnotin @('True','NotConfigured') -or
+        @($_.DisabledInterfaceAliases | Where-Object {$_ -and $_ -cne 'NotConfigured'}).Count -ne 0
+        }).Count -ne 0){throw 'Windows Firewall policy does not permit managed DoH plaintext protection'}
+    foreach($name in @('MpsSvc','Dnscache')){
+        $service=Get-Service -Name $name -ErrorAction Stop
+        try {
+            if($service.Status -ne 'Running'){throw 'Windows Firewall and DNS Client must be running for managed DoH'}
+        } finally {if($service -is [IDisposable]){$service.Dispose()}}
+    }
+}
+function Get-DNSDohPlaintextRule([string]$ID,[ValidateSet('TCP','UDP')][string]$Protocol,
+        [ValidateSet('PersistentStore','ActiveStore')][string]$Store) {
+    if($ID -cnotmatch '\A[a-f0-9]{32}\z'){throw 'Invalid DoH plaintext protection identity'}
+    $name='AccessWeaver-DoH-Plaintext-'+$Protocol+'-'+$ID
+    $warnings=@()
+    $rows=@(Get-NetFirewallRule -PolicyStore $Store -TracePolicyStore:($Store -ceq 'ActiveStore') -ErrorAction Stop `
+        -WarningAction SilentlyContinue -WarningVariable warnings | Where-Object {$_.Name -ieq $name})
+    if($warnings.Count){throw 'Managed DoH firewall inventory could not be verified; retain the recovery snapshot'}
+    if($rows.Count -eq 0){return}
+    $rule=$rows[0]
+    $failure='Managed DoH plaintext protection rule changed independently; retain the recovery snapshot'
+    if($rows.Count -ne 1 -or $rule.Name -cne $name -or
+        $rule.Description -cne ('AccessWeaver DoH plaintext protection '+$ID) -or
+        [string]$rule.Enabled -cne 'True' -or [string]$rule.Direction -cne 'Outbound' -or
+        [string]$rule.Action -cne 'Block' -or [string]$rule.Profile -cne 'Any' -or
+        ($Store -ceq 'ActiveStore' -and [string]$rule.PolicyStoreSourceType -cne 'Local')){
+        throw $failure
+    }
+    $ports=@($rule | Get-NetFirewallPortFilter -ErrorAction Stop)
+    $addresses=@($rule | Get-NetFirewallAddressFilter -ErrorAction Stop)
+    $services=@($rule | Get-NetFirewallServiceFilter -ErrorAction Stop)
+    $applications=@($rule | Get-NetFirewallApplicationFilter -ErrorAction Stop)
+    $protocolNumber=if($Protocol -ceq 'TCP'){'6'}else{'17'}
+    $expected=@((Get-DNSDohProviders).ServerAddress)
+    if($ports.Count -ne 1 -or [string]$ports[0].Protocol -cnotin @($Protocol,$protocolNumber) -or
+        ($ports[0].RemotePort -join ',') -cne '53' -or ($ports[0].LocalPort -join ',') -cne 'Any' -or
+        $addresses.Count -ne 1 -or ($addresses[0].LocalAddress -join ',') -cne 'Any' -or
+        $services.Count -ne 1 -or $services[0].Service -ine 'Dnscache' -or
+        $applications.Count -ne 1 -or $applications[0].Program -ine 'Any' -or
+        [string]$applications[0].Package -cnotin @('','Any')){
+        throw $failure
+    }
+    $remote=@($addresses[0].RemoteAddress)
+    if($remote.Count -ne $expected.Count){throw $failure}
+    $observed=@(foreach($entry in $remote){
+        $parts=$entry -split '/',2
+        $address=$null
+        if(-not [Net.IPAddress]::TryParse($parts[0],[ref]$address)){throw $failure}
+        $hostMasks=if($address.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetwork){@('32','255.255.255.255')}else{@('128')}
+        if($parts.Count -eq 2 -and $parts[1] -cnotin $hostMasks){throw $failure}
+        $address.ToString()
+    })
+    foreach($address in $expected){
+        if(@($observed | Where-Object {$_ -ceq $address}).Count -ne 1){throw $failure}
+    }
+    return $rule
+}
+function Assert-DNSDohPlaintextBlock([string]$ID) {
+    Assert-DNSDohFirewallAvailable
+    foreach($protocol in @('TCP','UDP')){
+        $active=Get-DNSDohPlaintextRule $ID $protocol 'ActiveStore'
+        if(-not (Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore') -or
+            -not $active -or [string]$active.EnforcementStatus -cne 'Full'){
+            throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy'
+        }
+    }
+}
+function Enable-DNSDohPlaintextBlock([string]$ID,[string]$SnapshotSHA256) {
+    Assert-DNSDohFirewallAvailable
+    foreach($protocol in @('TCP','UDP')){
+        if(Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore'){continue}
+        if(Get-DNSDohPlaintextRule $ID $protocol 'ActiveStore'){
+            throw 'Managed DoH plaintext protection rule name already exists in effective policy'
+        }
+        Assert-DNSRecoverySnapshotUnchanged $SnapshotSHA256
+        $script:externalEffectsPending=$true
+        [void](New-NetFirewallRule -Name ('AccessWeaver-DoH-Plaintext-'+$protocol+'-'+$ID) -DisplayName 'AccessWeaver DoH plaintext protection' `
+            -Description ('AccessWeaver DoH plaintext protection '+$ID) -PolicyStore PersistentStore -Direction Outbound -Action Block `
+            -Enabled True -Profile Any -Protocol $protocol -RemotePort 53 -RemoteAddress @((Get-DNSDohProviders).ServerAddress) `
+            -Service Dnscache -ErrorAction Stop)
+    }
+    Assert-DNSDohPlaintextBlock $ID
+}
+function Remove-DNSDohPlaintextBlock([string]$ID,[string]$SnapshotSHA256) {
+    if(-not $ID){return}
+    foreach($protocol in @('TCP','UDP')){
+        [void](Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore')
+        [void](Get-DNSDohPlaintextRule $ID $protocol 'ActiveStore')
+    }
+    foreach($protocol in @('TCP','UDP')){
+        $owned=Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore'
+        if($owned){
+            Assert-DNSRecoverySnapshotUnchanged $SnapshotSHA256
+            $script:externalEffectsPending=$true
+            $owned | Remove-NetFirewallRule -ErrorAction Stop
+        }
+        if((Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore') -or
+            (Get-DNSDohPlaintextRule $ID $protocol 'ActiveStore')){
+            throw 'Managed DoH plaintext protection could not be removed; retain the recovery snapshot'
+        }
+    }
+}
+
 function Test-DNSRecoveryUsesDohOwnership($Record,[bool]$OwnsDoh) {
     $guard=$Record.PSObject.Properties['dohConditional']
     if($null -eq $guard){return $false}
@@ -2712,6 +2828,7 @@ function Configure-DNS([string]$method) {
     $originalSnapshot=Read-DNSRecoverySnapshot
     $hadSnapshot=$null -ne $originalSnapshot
     $original=if($hadSnapshot){$originalSnapshot.record}else{[pscustomobject]@{adapters=@();doh=@();dohManaged=$false}}
+    $plaintextBlockID=Get-DNSDohPlaintextBlockID $original
     $ownsDoh=Test-DNSRecoveryOwnsDoh $original
     $guardDoh=Test-DNSRecoveryUsesDohOwnership $original $ownsDoh
     $guardAdapters=Test-DNSRecoveryUsesAdapterOwnership $original
@@ -2758,6 +2875,11 @@ function Configure-DNS([string]$method) {
         }
     }
     if($method -eq 'doh'){
+        Assert-DNSDohFirewallAvailable
+        if(-not $plaintextBlockID){
+            $plaintextBlockID=[guid]::NewGuid().ToString('N')
+            $original | Add-Member -NotePropertyName dohPlaintextBlockID -NotePropertyValue $plaintextBlockID
+        }
         $providers=@(Get-DNSDohProviders)
         $baseline=@(Get-DnsClientDohServerAddress -ErrorAction Stop |
             Select-Object ServerAddress,DohTemplate,AllowFallbackToUdp,AutoUpgrade)
@@ -2899,6 +3021,7 @@ function Configure-DNS([string]$method) {
             Set-Service -Name $serviceName -StartupType Automatic -ErrorAction Stop
             Assert-DNSCryptServiceState $resolver
         } elseif($method -eq 'doh') {
+            Enable-DNSDohPlaintextBlock $plaintextBlockID $snapshotSHA256
             foreach($provider in $providers){
                 $address=$provider.ServerAddress
                 $expected=@($baseline | Where-Object {$_.ServerAddress -eq $address})
@@ -2961,6 +3084,7 @@ function Configure-DNS([string]$method) {
         if(-not $adapterReadbackVerified){throw 'Configured DNS servers could not be verified; retain the original DNS snapshot'}
         if($method -ceq 'doh'){
             Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy changed after adapter configuration; retain the original DNS snapshot'
+            Assert-DNSDohPlaintextBlock $plaintextBlockID
         }
         if(-not (Wait-OrdinaryDNSResolver 90)){
             if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'DNS recovery snapshot disappeared during verification'}
@@ -3015,7 +3139,12 @@ function Configure-DNS([string]$method) {
             Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy changed after stopping DNSCrypt; retain the original DNS snapshot'
             if(-not $listenerNeeded){Assert-DNSCryptServiceState $existingResolver -ManualStopped}
         }
-        if($method -ceq 'dnscrypt'){Assert-DNSCryptServiceState $resolver}
+        if($method -ceq 'dnscrypt'){
+            Assert-DNSCryptServiceState $resolver
+            Remove-DNSDohPlaintextBlock $plaintextBlockID $snapshotSHA256
+        }else{
+            Assert-DNSDohPlaintextBlock $plaintextBlockID
+        }
         Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
         if($method -ceq 'dnscrypt'){Assert-DNSCryptConfiguration $config $publishedConfigSHA256}
         Event ('Encrypted DNS configured: '+$method)
@@ -3115,6 +3244,13 @@ function Restore-DNS([string]$ExpectedSHA256,$ResolverReload) {
         if((Assert-RecordedServiceBinding $ResolverReload) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
     }
     $saved=$restoration.record
+    $plaintextBlockID=Get-DNSDohPlaintextBlockID $saved
+    if($plaintextBlockID){
+        foreach($protocol in @('TCP','UDP')){
+            [void](Get-DNSDohPlaintextRule $plaintextBlockID $protocol 'PersistentStore')
+            [void](Get-DNSDohPlaintextRule $plaintextBlockID $protocol 'ActiveStore')
+        }
+    }
     $usesAdapterOwnership=Test-DNSRecoveryUsesAdapterOwnership $saved
     $guardAdapters=[bool]($ExpectedSHA256 -and $usesAdapterOwnership)
     $trackExplicitRestore=$usesAdapterOwnership -and -not $ExpectedSHA256
@@ -3231,6 +3367,7 @@ function Restore-DNS([string]$ExpectedSHA256,$ResolverReload) {
         Assert-RestoredDNSState $plans $dohPlans $dohAvailable
         Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
     }
+    Remove-DNSDohPlaintextBlock $plaintextBlockID $snapshotSHA256
     Save-DNSRecoveryReceipt $snapshotSHA256
     # Receipt publication may overlap an adapter or policy change. The active
     # snapshot takes precedence over a receipt until retirement succeeds.
