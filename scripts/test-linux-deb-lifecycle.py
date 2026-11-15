@@ -14,7 +14,7 @@ import sys
 import tarfile
 import tempfile
 
-from linux_deb_payload import payload_hashes
+from linux_deb_payload import FULL_PACKAGE_DOCS, payload_hashes
 from linux_package_managed_fixture import ManagedPackageFixture
 import linux_package_traffic_fixture as traffic
 from verify_release import require
@@ -109,7 +109,7 @@ def exercise(work, arch, old, old_pin, new, new_pin, other, other_pin, byedpi=No
     dpkg = ("/usr/bin/dpkg", f"--root={root}", f"--admindir={database}")
 
     def install(path, version, payload, downgrade="--refuse-downgrade"):
-        run(*dpkg, downgrade, "--install", path)
+        run(*dpkg, *FULL_PACKAGE_DOCS, downgrade, "--install", path)
         install_state(root, version, payload)
         require(not run(*dpkg, "--verify", "accessweaver"), "dpkg failed installed file verification")
 

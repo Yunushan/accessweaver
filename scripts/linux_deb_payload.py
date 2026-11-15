@@ -7,6 +7,13 @@ import tarfile
 from verify_release import require
 
 
+# Keep the full package payload available to the isolated acceptance checks.
+FULL_PACKAGE_DOCS = (
+    "--path-include=/usr/share/doc/accessweaver",
+    "--path-include=/usr/share/doc/accessweaver/*",
+)
+
+
 def payload_hashes(package, env=None):
     recorded = {}
     with subprocess.Popen(["/usr/bin/dpkg-deb", "--fsys-tarfile", package],

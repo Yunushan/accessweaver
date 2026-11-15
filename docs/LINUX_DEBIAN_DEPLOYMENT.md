@@ -153,4 +153,6 @@ The [exact-source reboot qualification](qualification/03aa58615a16-debian-manage
 
 The [exact-package AMD64 APT and dpkg qualification](qualification/03aa58615a16-debian-apt-dpkg-lifecycle.json) matched the package and executable digests from the reboot run. Direct dpkg passed 12 checks, including downgrade refusal and explicit rollback. Loopback APT passed nine checks, including tampered package and metadata refusal, using disposable signing keys. Both paths preserved the enrolled policy and ordinary user's profile. The fixture routes APT logs into private storage and supports a restrictive `077` umask.
 
+The isolated APT and direct dpkg checks explicitly include optional AccessWeaver files under `/usr/share/doc/accessweaver` so they can verify the full installed package on distributions that filter documentation by default. The reboot checks exercise the distribution filters and verify the controller and operational metadata that managed endpoints require.
+
 Production rollout still requires results for the approved release packages and native endpoint architectures. It also requires organization signing and hosting, reboot and active-engine checks, and validation through the organization's endpoint-management tools.

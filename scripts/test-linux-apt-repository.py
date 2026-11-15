@@ -15,6 +15,7 @@ import sys
 import tempfile
 from threading import Thread
 
+from linux_deb_payload import FULL_PACKAGE_DOCS
 from linux_package_managed_fixture import ManagedPackageFixture
 from verify_release import require
 
@@ -77,6 +78,8 @@ def apt_client(work, url, keyring, fingerprint, arch):
         f"Types: deb\nURIs: {url}\nSuites: {SUITE}\nComponents: main\nArchitectures: {arch}\n"
         f"Signed-By: {keyring} {fingerprint}\n", encoding="ascii")
     options = work / "config.conf"
+    dpkg_options = " ".join(f'"{option}";' for option in (
+        f"--root={root}", f"--admindir={database}", *FULL_PACKAGE_DOCS))
     options.write_text(
         f'Dir::Etc "{config}";\nDir::State "{work / "state"}";\n'
         f'Dir::State::status "{status}";\nDir::Cache "{work / "cache"}";\nDir::Log "{logs}";\n'
@@ -86,7 +89,7 @@ def apt_client(work, url, keyring, fingerprint, arch):
         f'APT::Architecture "{arch}";\nAPT::Architectures {{ "{arch}"; }};\n'
         'APT::Update::Error-Mode "any";\nAcquire::Languages "none";\n'
         'Acquire::Retries "0";\nAcquire::http::Timeout "10";\nDPkg::Use-Pty "false";\n'
-        f'DPkg::Options {{ "--root={root}"; "--admindir={database}"; }};\n',
+        f"DPkg::Options {{ {dpkg_options} }};\n",
         encoding="ascii",
     )
     env = dict(ENV, APT_CONFIG=str(options))
