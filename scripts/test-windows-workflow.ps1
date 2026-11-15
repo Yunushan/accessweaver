@@ -2393,10 +2393,42 @@ try {
                 Assert ($rejected -and -not $script:externalEffectsPending -and [IO.File]::Exists($updater.Path)) ('Application removal preserves a residual '+$variant+' updater for review')
 
                 $rejected=$false
-                try{Confirm-AppRemoval $variant $fixtureApp}catch{$rejected=$_.Exception.Message -ceq 'Discord updater remains on disk; review the installation before retrying'}
-                Assert ($rejected -and $script:appRemovalEvents.Count -eq 2) ('Application removal with vendor exit refuses success when the '+$variant+' updater remains')
+                try{Wait-App $variant $false 0 $fixtureApp}catch{$rejected=$_.Exception.Message -ceq 'Discord updater remains on disk; review the installation before retrying'}
+                Assert ($rejected -and $script:appRemovalEvents.Count -eq 2) ('Application removal readback refuses success when the '+$variant+' updater remains at its deadline')
             } finally {[IO.File]::Delete($updater.Path)}
             Assert ((Remove-App $variant) -ceq $false -and -not $script:externalEffectsPending) ('Application removal confirms '+$variant+' absence after updater exit and removal')
+        }
+        foreach($variant in @('discord','discord-ptb')){
+            $updaterPath=Join-Path (Get-AppProcessBase $variant) 'Update.exe'
+            foreach($reappears in @($false,$true)){
+                & {
+                    function Start-Sleep([int]$Milliseconds) {
+                        if($Milliseconds -ne 500 -or $observation.waits -ne 0){throw 'Unexpected updater polling'}
+                        $observation.waits++
+                        [IO.File]::Delete($updaterPath)
+                    }
+                    function Get-Process {
+                        param($ErrorAction)
+                        if($ErrorAction -cne 'Stop'){throw 'Expected a complete fixture process query'}
+                        if($reappears){[IO.File]::WriteAllText($updaterPath,'inert updater')}
+                    }
+                    $observation=@{waits=0}
+                    $eventCount=$script:appRemovalEvents.Count
+                    [IO.File]::WriteAllText($updaterPath,'inert updater')
+                    try {
+                        if($reappears){
+                            $refused=$false
+                            try {Confirm-AppRemoval $variant $fixtureApp}catch{
+                                $refused=$_.Exception.Message -ceq 'Discord updater remains on disk; review the installation before retrying'
+                            }
+                            Assert ($refused -and $observation.waits -eq 1 -and $script:appRemovalEvents.Count -eq $eventCount) ('Application removal refuses a reappearing '+$variant+' updater after polling')
+                        }else{
+                            $removed=Confirm-AppRemoval $variant $fixtureApp
+                            Assert ($removed -ceq $true -and $observation.waits -eq 1 -and $script:appRemovalEvents.Count -eq ($eventCount+1)) ('Application removal waits for delayed '+$variant+' updater deletion before reporting success')
+                        }
+                    } finally {[IO.File]::Delete($updaterPath)}
+                }
+            }
         }
     } finally {$env:LOCALAPPDATA=$originalLocalAppData}
 } finally {
@@ -3228,7 +3260,8 @@ try{
                 throw 'Explorer launch did not use the selected client and durable journal'
             }
             $trace.Add('launch')
-            $fixtureProcessTimes.Add([DateTime]::UtcNow)
+            # The synthetic process starts at the recorded handoff boundary.
+            $fixtureProcessTimes.Add($handoffTime)
             if($fixtureLaunchFails){throw 'Inert Explorer handoff failure'}
         }
         function Start-Sleep([int]$Milliseconds){

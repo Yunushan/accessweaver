@@ -4152,16 +4152,22 @@ function Find-App([string]$variant) {
     throw 'Unknown application variant'
 }
 function Wait-App([string]$variant,[bool]$installed,[int]$seconds=120,[string]$previousImage) {
-    $deadline=[DateTime]::UtcNow.AddSeconds($seconds)
+    $timer=[Diagnostics.Stopwatch]::StartNew()
     do {
         $app=Find-App $variant
+        $updaterRemains=$false
         if($installed -and $app){
             No-Reparse $app
             if(Test-Path -LiteralPath $app -PathType Leaf -ErrorAction Stop){return $app}
         }elseif(-not $installed -and -not $app -and
-                 (-not $previousImage -or -not (Test-Path -LiteralPath $previousImage -ErrorAction Stop))){return}
+                 (-not $previousImage -or -not (Test-Path -LiteralPath $previousImage -ErrorAction Stop))){
+            $updaterRemains=$variant -in @('discord','discord-ptb') -and (Test-DiscordUpdaterPresent $variant)
+            if(-not $updaterRemains){return}
+        }
+        if($timer.Elapsed.TotalSeconds -ge $seconds){break}
         Start-Sleep -Milliseconds 500
-    }while([DateTime]::UtcNow -lt $deadline)
+    }while($timer.Elapsed.TotalSeconds -lt $seconds)
+    if($updaterRemains){throw 'Discord updater remains on disk; review the installation before retrying'}
     throw 'Application installation state did not reach the expected result; inspect installer logs'
 }
 function Get-SplitCordInstaller {
@@ -4581,14 +4587,19 @@ function Resume-SplitCordRemoval([string]$Command) {
     } finally {$guard.Dispose()}
     Confirm-AppRemoval 'splitcord' $app
 }
-function Assert-DiscordUpdaterAbsent([string]$variant) {
+function Test-DiscordUpdaterPresent([string]$variant) {
     $path=Join-Path (Get-AppProcessBase $variant) 'Update.exe'
     try {
         [void][IO.File]::GetAttributes($path)
+        return $true
     } catch [IO.FileNotFoundException], [IO.DirectoryNotFoundException] {
-        return
+        return $false
     }
-    throw 'Discord updater remains on disk; review the installation before retrying'
+}
+function Assert-DiscordUpdaterAbsent([string]$variant) {
+    if(Test-DiscordUpdaterPresent $variant){
+        throw 'Discord updater remains on disk; review the installation before retrying'
+    }
 }
 function Confirm-AppRemoval([string]$variant,[string]$app) {
     Wait-App $variant $false 60 $app
