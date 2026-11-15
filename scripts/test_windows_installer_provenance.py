@@ -51,6 +51,13 @@ class SetupCompletionRefusalTests(unittest.TestCase):
             "profilePreserved": True, "unrelatedFilePreserved": True, "genuineRetryVerified": True,
         }
         self.assertEqual(validate_setup_completion_refusal(record), {"setupCompletionRefusalVerified": True})
+        documentation = dict(record, sameSizeDocumentationChangeVerified=True, documentationRestored=True)
+        self.assertEqual(validate_setup_completion_refusal(documentation, documentation=True),
+                         {"setupDocumentationCompletionRefusalVerified": True})
+        for value in (record, {**documentation, "sameSizeDocumentationChangeVerified": False},
+                      {**documentation, "documentationRestored": False}):
+            with self.assertRaisesRegex(ValueError, "refusal and recovery"):
+                validate_setup_completion_refusal(value, documentation=True)
         for field in record:
             incomplete = {key: value for key, value in record.items() if key != field}
             with self.subTest(missing=field), self.assertRaisesRegex(ValueError, "refusal and recovery"):

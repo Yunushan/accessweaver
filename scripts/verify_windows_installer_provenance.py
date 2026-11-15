@@ -23,7 +23,8 @@ DEFAULT_VERSIONS=("0.1.0-alpha","0.1.1-alpha")
 RELEASE=re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?")
 SHA=re.compile(r"[a-f0-9]{64}")
 ROLLBACK_REPORT_SCHEMA = 53
-REPORT_SCHEMAS = range(11, ROLLBACK_REPORT_SCHEMA + 1)
+DOCUMENTATION_COMPLETION_REPORT_SCHEMA = 54
+REPORT_SCHEMAS = range(11, DOCUMENTATION_COMPLETION_REPORT_SCHEMA + 1)
 PHASES=["baseline","after-install","after-upgrade","after-reinstall","after-active-setup-uninstall","after-lifecycle-locks","after-refused-downgrade","after-version-policy","after-registry-read-boundaries","after-registry-view-policy","after-registry-access-policy","after-restoration-launch-failures","after-restoration-ownership-contracts","before-uninstall","after-uninstall"]
 
 def require(ok,message):
@@ -176,9 +177,11 @@ def validate_architecture_refusal(report, arch):
     return {"wrongArchitectureRefusalVerified": True}
 
 
-def validate_setup_completion_refusal(value):
+def validate_setup_completion_refusal(value, *, documentation=False):
     flags = {"refusalLogged", "installedFixtureVerified", "pendingMarkerRetained", "managedDetectionRefused",
              "machineStateUnchanged", "profilePreserved", "unrelatedFilePreserved", "genuineRetryVerified"}
+    if documentation:
+        flags.update(("sameSizeDocumentationChangeVerified", "documentationRestored"))
     require(isinstance(value, dict)
             and value.keys() == flags | {"fixtureSHA256", "exitCode", "elapsedMilliseconds", "deadlineMilliseconds"}
             and isinstance(value["fixtureSHA256"], str) and SHA.fullmatch(value["fixtureSHA256"])
@@ -186,7 +189,8 @@ def validate_setup_completion_refusal(value):
             and type(value["deadlineMilliseconds"]) is int and value["deadlineMilliseconds"] == 180000
             and type(value["elapsedMilliseconds"]) is int and 0 <= value["elapsedMilliseconds"] < 180000
             and all(value[key] is True for key in flags), "Setup completion refusal and recovery were not verified")
-    return {"setupCompletionRefusalVerified": True}
+    key = "setupDocumentationCompletionRefusalVerified" if documentation else "setupCompletionRefusalVerified"
+    return {key: True}
 
 
 def validate_setup_upgrade_baseline(value, *, check_recovery=False, check_abrupt_termination=False):
@@ -514,6 +518,11 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
         setup_readback["setupCompletionReadbackVerified"] = True
     if report["schemaVersion"] >= 26:
         setup_readback.update(validate_setup_completion_refusal(report.get("setupCompletionRefusal")))
+    if report["schemaVersion"] >= DOCUMENTATION_COMPLETION_REPORT_SCHEMA:
+        documentation_refusal = report.get("setupDocumentationCompletionRefusal")
+        setup_readback.update(validate_setup_completion_refusal(documentation_refusal, documentation=True))
+        require(documentation_refusal["fixtureSHA256"] != report["setupCompletionRefusal"]["fixtureSHA256"],
+                "Documentation and SBOM completion refusal require different fixture installers")
     if report["schemaVersion"] >= 32:
         setup_readback.update(validate_setup_marker_replacement(
             report.get("setupMarkerReplacement"), check_subject_guards=report["schemaVersion"] >= 33,

@@ -69,8 +69,16 @@ function Assert-InstallerPackageDirectories([string]$Root,[string]$SetupScript,[
     if($PreprocessedScript){
         $compiled=[IO.File]::ReadAllText($PreprocessedScript)
         $compiledReplacement=[regex]::Match($compiled,'(?ms)^function AWPayloadReplacementPreflight\(.*?^end;')
-        if(-not $compiledReplacement.Success -or $compiled -cnotmatch '(?m)^Source: .*; BeforeInstall: AWCheckPackageCopyDestination\s*$'){
-            throw 'Compiled installer package preflight or copy guard is missing'
+        $compiledCompletion=[regex]::Match($compiled,'(?ms)^function AWVerifyCompletedInstall\(.*?^end;')
+        if(-not $compiledReplacement.Success -or -not $compiledCompletion.Success -or
+            $compiled -cnotmatch '(?m)^Source: .*; BeforeInstall: AWCheckPackageCopyDestination\s*$'){
+            throw 'Compiled installer package preflight, copy guard, or completion verification is missing'
+        }
+        $releaseSubjects=@{
+            'accessweaver.exe'='Executable'
+            'BUILD-INFO.json'='BuildInfo'
+            'SBOM.cdx.json'='SBOM'
+            'licenses\Inno-Setup-License.txt'='RuntimeNotice'
         }
     }
     $rootItem=Get-Item -LiteralPath $Root -Force -ErrorAction Stop
@@ -95,6 +103,17 @@ function Assert-InstallerPackageDirectories([string]$Root,[string]$SetupScript,[
                 $literal=$relative.Replace("'","''")
                 if(-not $compiledReplacement.Value.Contains("AWCanReplaceInstalledFile(Destination + '\$literal')")){
                     throw ('Compiled installer omitted package-file replacement preflight: '+$relative)
+                }
+                $digest=(Get-FileHash -LiteralPath $entry.FullName -Algorithm SHA256 -ErrorAction Stop).Hash
+                $length=$entry.Length.ToString([Globalization.CultureInfo]::InvariantCulture)
+                $check=if($releaseSubjects.ContainsKey($relative)){
+                    $handle=$releaseSubjects[$relative]
+                    "if not AWVerifyInstalledFile(Destination + '\$literal', '$digest', $length, True, $handle) then Exit;"
+                }else{
+                    "if not AWVerifyAndHoldPackageFile(Destination + '\$literal', '$digest', $length, Held) then Exit;"
+                }
+                if($compiledCompletion.Value.IndexOf($check,[StringComparison]::OrdinalIgnoreCase) -lt 0){
+                    throw ('Compiled installer omitted the staged file identity at completion: '+$relative)
                 }
             }
         }

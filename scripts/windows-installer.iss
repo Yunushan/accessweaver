@@ -232,12 +232,12 @@ type
     Attributes, CreationLow, CreationHigh, AccessLow, AccessHigh, WriteLow, WriteHigh,
     VolumeSerial, SizeHigh, SizeLow, Links, IndexHigh, IndexLow: LongWord;
   end;
-  AWDirectoryHandles = array of LongWord;
+  AWNativeHandles = array of LongWord;
 
 function AWGetFileInfo(Handle: LongWord; var Info: AWFileInfo): Integer;
   external 'GetFileInformationByHandle@kernel32.dll stdcall';
 
-function AWLockInstallationDirectory(const Directory: String; var Held: AWDirectoryHandles): Boolean;
+function AWLockInstallationDirectory(const Directory: String; var Held: AWNativeHandles): Boolean;
 var Target: String; I, Count: Integer; Handle: LongWord; Info: AWFileInfo;
 begin
   Result := False;
@@ -314,7 +314,7 @@ begin
     (Info.SizeHigh = 0) and (Info.SizeLow > 0) and (Info.SizeLow <= 536870912);
 end;
 
-function AWCheckPackageDirectory(const Path: String; Hold: Boolean; var Held: AWDirectoryHandles): String;
+function AWCheckPackageDirectory(const Path: String; Hold: Boolean; var Held: AWNativeHandles): String;
 var Attributes, Code: LongWord;
 begin
   Result := AWInstallationPathPreflight(Path, True);
@@ -327,7 +327,7 @@ begin
   Result := 'The AccessWeaver package directory could not be verified.';
 end;
 
-function AWCheckPackageDirectories(const Destination: String; Hold: Boolean; var Held: AWDirectoryHandles): String;
+function AWCheckPackageDirectories(const Destination: String; Hold: Boolean; var Held: AWNativeHandles): String;
 begin
   Result := AWCheckPackageDirectory(Destination + '\licenses', Hold, Held);
   if Result = '' then Result := AWCheckPackageDirectory(Destination + '\docs', Hold, Held);
@@ -336,12 +336,61 @@ begin
 end;
 
 function AWPackageDirectoryPreflight(const Destination: String): String;
-var Unused: AWDirectoryHandles;
+var Unused: AWNativeHandles;
 begin
   Result := AWCheckPackageDirectories(Destination, False, Unused);
 end;
 
-function AWVerifyCompletedInstall(const Destination: String; var Held: AWDirectoryHandles;
+function AWVerifyAndHoldPackageFile(const Path, Digest: String; Size: Int64; var Held: AWNativeHandles): Boolean;
+var Handle: LongWord; Count: Integer;
+begin
+  Handle := $FFFFFFFF;
+  try
+    Result := AWVerifyInstalledFile(Path, Digest, Size, True, Handle);
+    if Result then begin
+      Count := GetArrayLength(Held);
+      SetArrayLength(Held, Count + 1);
+      Held[Count] := Handle;
+      Handle := $FFFFFFFF;
+    end;
+  finally
+    if Handle <> $FFFFFFFF then AWCloseNativeHandle(Handle);
+  end;
+end;
+
+{ Generate replacement and completion checks for the staged files in every package
+  directory. The build admits only the directories checked by Setup. }
+#dim AWStagedDirectories[5] { "", "licenses", "docs", "docs\assets", "docs\qualification" }
+#define AWStagedDirectoryIndex
+#define AWStagedPrefix
+#define AWStagedFind
+#define AWStagedResult
+#define AWStagedVerify False
+#sub AWEmitStagedFileCheck
+  #define AWStagedRelative AWStagedPrefix + FindGetFileName(AWStagedFind)
+  #define AWStagedName LowerCase(AWStagedRelative)
+  #if AWStagedName != "accessweaver.exe" && AWStagedName != "build-info.json" && AWStagedName != "sbom.cdx.json" && AWStagedName != "licenses\inno-setup-license.txt"
+    #define AWStagedLiteral StringChange(AWStagedRelative, "'", "''")
+    #if AWStagedVerify
+      #define AWStagedPath AddBackslash(BuildRoot) + AWStagedRelative
+      if not AWVerifyAndHoldPackageFile(Destination + '\{#AWStagedLiteral}', '{#GetSHA256OfFile(AWStagedPath)}', {#FileSize(AWStagedPath)}, Held) then Exit;
+    #else
+      if not AWCanReplaceInstalledFile(Destination + '\{#AWStagedLiteral}') then begin
+        Result := AWPackageFileReplacementFailure('{#AWStagedLiteral}');
+        Exit;
+      end;
+    #endif
+  #endif
+#endsub
+#sub AWEmitStagedDirectoryChecks
+  #expr AWStagedPrefix = AWStagedDirectories[AWStagedDirectoryIndex] == "" ? "" : AddBackslash(AWStagedDirectories[AWStagedDirectoryIndex])
+  #for {AWStagedFind = AWStagedResult = FindFirst(AddBackslash(BuildRoot) + AWStagedPrefix + "*", faReadOnly | faHidden | faSysFile | faArchive); AWStagedResult; AWStagedResult = FindNext(AWStagedFind)} AWEmitStagedFileCheck
+  #if AWStagedFind
+    #call FindClose(AWStagedFind)
+  #endif
+#endsub
+
+function AWVerifyCompletedInstall(const Destination: String; var Held: AWNativeHandles;
   var Executable, BuildInfo, SBOM, RuntimeNotice, Uninstaller, UninstallData: LongWord): Boolean;
 var Found64, Found32: Boolean;
     Version, Location, Version32, Location32, UninstallerPath: String;
@@ -355,6 +404,9 @@ begin
 #ifdef InnoRuntimeNoticeDigest
   if not AWVerifyInstalledFile(Destination + '\licenses\Inno-Setup-License.txt', '{#InnoRuntimeNoticeDigest}', {#InnoRuntimeNoticeBytes}, True, RuntimeNotice) then Exit;
 #endif
+  #expr AWStagedVerify = True
+  #for {AWStagedDirectoryIndex = 0; AWStagedDirectoryIndex < DimOf(AWStagedDirectories); AWStagedDirectoryIndex++} AWEmitStagedDirectoryChecks
+  #expr AWStagedVerify = False
   UninstallerPath := ExpandConstant('{uninstallexe}');
   if not AWIsInstallationDirectory(Destination, ExtractFileDir(UninstallerPath)) then Exit;
   if not AWOpenUninstallSubject(UninstallerPath, Uninstaller) then Exit;
@@ -388,31 +440,6 @@ begin
     if AWCloseNativeHandle(Handle) = 0 then Result := False;
   end;
 end;
-
-{ Generate destination preflight checks for the staged files in every package
-  directory. The build admits only the directories checked by Setup. }
-#dim AWStagedDirectories[5] { "", "licenses", "docs", "docs\assets", "docs\qualification" }
-#define AWStagedDirectoryIndex
-#define AWStagedPrefix
-#define AWStagedFind
-#define AWStagedResult
-#sub AWEmitStagedFileCheck
-  #define AWStagedRelative AWStagedPrefix + FindGetFileName(AWStagedFind)
-  #define AWStagedName LowerCase(AWStagedRelative)
-  #if AWStagedName != "accessweaver.exe" && AWStagedName != "build-info.json" && AWStagedName != "sbom.cdx.json" && AWStagedName != "licenses\inno-setup-license.txt"
-    if not AWCanReplaceInstalledFile(Destination + '\{#StringChange(AWStagedRelative, "'", "''")}') then begin
-      Result := AWPackageFileReplacementFailure('{#StringChange(AWStagedRelative, "'", "''")}');
-      Exit;
-    end;
-  #endif
-#endsub
-#sub AWEmitStagedDirectoryChecks
-  #expr AWStagedPrefix = AWStagedDirectories[AWStagedDirectoryIndex] == "" ? "" : AddBackslash(AWStagedDirectories[AWStagedDirectoryIndex])
-  #for {AWStagedFind = AWStagedResult = FindFirst(AddBackslash(BuildRoot) + AWStagedPrefix + "*", faReadOnly | faHidden | faSysFile | faArchive); AWStagedResult; AWStagedResult = FindNext(AWStagedFind)} AWEmitStagedFileCheck
-  #if AWStagedFind
-    #call FindClose(AWStagedFind)
-  #endif
-#endsub
 
 function AWPackageFileReplacementFailure(const Relative: String): String;
 begin
@@ -490,7 +517,7 @@ function AWApprovedUpgradePreflight(const Destination: String; var ApprovalPin: 
 var I, Ordering: Integer; Argument, Approval, Version, PayloadPin, SBOMPin, BuildPin,
     Installed, Location, OtherVersion, OtherLocation, PendingVersion, PendingDirectory, PendingPin: String;
     Present, Found64, Found32: Boolean;
-    Held: AWDirectoryHandles; Executable, BuildInfo, SBOM: LongWord;
+    Held: AWNativeHandles; Executable, BuildInfo, SBOM: LongWord;
 begin
   ApprovalPin := '';
   Result := AWReadPendingVersion(PendingVersion, PendingDirectory, PendingPin);
@@ -586,7 +613,7 @@ begin
 end;
 
 procedure AWCompleteInstallation(const Destination: String);
-var Held: AWDirectoryHandles; Executable, BuildInfo, SBOM, RuntimeNotice, Uninstaller, UninstallData: LongWord; I: Integer;
+var Held: AWNativeHandles; Executable, BuildInfo, SBOM, RuntimeNotice, Uninstaller, UninstallData: LongWord; I: Integer;
     Verified: Boolean;
 begin
   Executable := $FFFFFFFF; BuildInfo := $FFFFFFFF; SBOM := $FFFFFFFF;
@@ -738,7 +765,7 @@ end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var ResultCode, Controller: LongWord; Failure, Executable, Destination: String;
-    Held: AWDirectoryHandles; I: Integer;
+    Held: AWNativeHandles; I: Integer;
     Verified, Restored, HandlesClosed: Boolean;
 begin
   if CurUninstallStep <> usUninstall then Exit;

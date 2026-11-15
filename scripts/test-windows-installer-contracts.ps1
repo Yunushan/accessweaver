@@ -123,6 +123,9 @@ Assert ($uninstallRegistration -cmatch "AWOrdinal\(Version, '\{#ReleaseVersion\}
 Assert ($uninstallRegistration.Contains("AWReadRegistration(`$0100, True, ExpandConstant('{uninstallexe}'),")) 'Native uninstall must verify that both machine registration commands bind its original executable'
 $completion=[regex]::Match($installerSource,'(?ms)^function AWVerifyCompletedInstall\(.*?^end;').Value
 Assert ($completion -cmatch '(?s)AWLockInstallationDirectory\(Destination, Held\).*AWCheckPackageDirectories\(Destination, True, Held\).*AWVerifyInstalledFile') 'Setup completion must hold protected package directories before verifying files'
+$heldPackageFile=[regex]::Match($installerSource,'(?ms)^function AWVerifyAndHoldPackageFile\(.*?^end;').Value
+Assert ($completion -cmatch '(?s)AWCheckPackageDirectories\(Destination, True, Held\).*AWStagedVerify = True.*AWEmitStagedDirectoryChecks.*AWReadRegistration') 'Setup must verify all staged identities under the package directory guards'
+Assert ($heldPackageFile -cmatch '(?s)AWVerifyInstalledFile\(Path, Digest, Size, True, Handle\).*if Result then begin.*Held\[Count\] := Handle.*\$FFFFFFFF.*finally.*AWCloseNativeHandle\(Handle\)') 'Successful shipped file checks must retain the handle for marker retirement and failed checks must close it'
 $verifiedFile=[regex]::Match($installerSource,'(?ms)^function AWVerifyInstalledFileDigests\(.*?^end;').Value
 $retirement=[regex]::Match($installerSource,'(?ms)^procedure AWCompleteInstallation\(.*?^end;').Value
 $directoryLock=[regex]::Match($installerSource,'(?ms)^function AWLockInstallationDirectory\(.*?^end;').Value
@@ -238,10 +241,20 @@ try {
     $nl=[Environment]::NewLine
     $header=@('[Files]','Source: "C:\Fixture\*"; DestDir: "{app}"; BeforeInstall: AWCheckPackageCopyDestination',
         '[Code]','function AWPayloadReplacementPreflight(const Destination: String): String;','begin') -join $nl
-    [IO.File]::WriteAllText($compiled,$header+$nl+'end;'+$nl)
+    $completionHeader=@('end;','function AWVerifyCompletedInstall(const Destination: String): Boolean;','begin') -join $nl
+    [IO.File]::WriteAllText($compiled,$header+$nl+$completionHeader+$nl+'end;'+$nl)
     Reject {Assert-InstallerPackageDirectories $layout $setupScript $compiled} 'Compiled installer without the nested file preflight was accepted'
     $probe="  if not AWCanReplaceInstalledFile(Destination + '\docs\qualification\fixture''s report.json') then Exit;"
-    [IO.File]::WriteAllText($compiled,$header+$nl+$probe+$nl+'end;'+$nl)
+    $compiledPrefix=$header+$nl+$probe+$nl+$completionHeader+$nl
+    [IO.File]::WriteAllText($compiled,$compiledPrefix+'end;'+$nl)
+    Reject {Assert-InstallerPackageDirectories $layout $setupScript $compiled} 'Compiled installer without the nested completion check was accepted'
+    $digest=(Get-FileHash -LiteralPath $stagedDocument -Algorithm SHA256).Hash.ToLowerInvariant()
+    $verify="  if not AWVerifyAndHoldPackageFile(Destination + '\docs\qualification\fixture''s report.json', '$digest', 2, Held) then Exit;"
+    [IO.File]::WriteAllText($compiled,$compiledPrefix+$verify.Replace($digest,('f'*64))+$nl+'end;'+$nl)
+    Reject {Assert-InstallerPackageDirectories $layout $setupScript $compiled} 'Compiled installer with a mismatched staged file digest was accepted'
+    [IO.File]::WriteAllText($compiled,$compiledPrefix+$verify.Replace(', 2,',', 3,')+$nl+'end;'+$nl)
+    Reject {Assert-InstallerPackageDirectories $layout $setupScript $compiled} 'Compiled installer with a mismatched staged file length was accepted'
+    [IO.File]::WriteAllText($compiled,$compiledPrefix+$verify+$nl+'end;'+$nl)
     Assert-InstallerPackageDirectories $layout $setupScript $compiled
     [IO.File]::WriteAllText($compiled,([IO.File]::ReadAllText($compiled).Replace('; BeforeInstall: AWCheckPackageCopyDestination','')))
     Reject {Assert-InstallerPackageDirectories $layout $setupScript $compiled} 'Compiled installer without a per-file copy guard was accepted'
