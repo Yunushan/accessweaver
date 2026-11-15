@@ -4618,13 +4618,13 @@ function Assert-SplitCordMaintenancePaths([string]$App,[string]$Uninstaller) {
         throw 'SplitCord installation and uninstaller must be in protected machine storage'
     }
 }
-function Open-VerifiedAppExecutable([string]$Path,[string]$ExpectedDigest) {
+function Open-VerifiedAppExecutable([string]$Path,[string]$ExpectedDigest,[string]$Mismatch='Discord PTB changed before stable client cleanup; stable Discord was preserved') {
     No-Reparse $Path
     $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
     try {
         if($stream.Length -le 0 -or $stream.Length -gt 512MB -or
             (Get-FileHash -InputStream $stream -Algorithm SHA256 -ErrorAction Stop).Hash -ine $ExpectedDigest){
-            throw 'Discord PTB changed before stable client cleanup; stable Discord was preserved'
+            throw $Mismatch
         }
         return $stream
     } catch {
@@ -4698,6 +4698,11 @@ function Confirm-AppRemoval([string]$variant,[string]$app) {
     Event ('Application uninstalled: '+$variant)
     return $true
 }
+function Assert-AppRemovalTarget([string]$Variant,[string]$App,[string]$Uninstaller) {
+    if((Find-App $Variant) -ine $App){throw 'Application installation changed before uninstall launch'}
+    No-Reparse $App
+    if((Get-AppUninstaller $Variant $App).path -ine $Uninstaller){throw 'Application uninstaller changed before launch'}
+}
 function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDigest,[string]$expectedUninstallerDigest) {
     if($variant -eq 'splitcord'){Require-Admin}else{Require-DesktopUser}
     $app=Find-App $variant
@@ -4723,40 +4728,26 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
     if($expectedUninstallerDigest -and $digest -ine $expectedUninstallerDigest){
         throw 'Application uninstaller changed before removal'
     }
-    if($variant -eq 'splitcord'){Wait-SplitCordService $app 0 -AllowAbsentOrStopped}
-    Stop-AppProcesses $variant $app
-    if((Find-App $variant) -ine $app -or (Get-AppExecutableDigest $app) -ine $appDigest){
-        throw 'Application installation changed before uninstall launch'
-    }
-    $confirmed=Get-AppUninstaller $variant $app
-    if($confirmed.path -ine $uninstaller.path){throw 'Application uninstaller changed before launch'}
-    $guard=[IO.File]::Open($confirmed.path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    $guard=Open-VerifiedAppExecutable $uninstaller.path $digest 'Application uninstaller changed before launch'
     $clientGuard=$null
     try {
-        if($guard.Length -le 0 -or $guard.Length -gt 512MB -or
-            (Get-FileHash -InputStream $guard -Algorithm SHA256 -ErrorAction Stop).Hash -cne $digest){
-            throw 'Application uninstaller changed before launch'
-        }
+        $clientGuard=Open-VerifiedAppExecutable $app $appDigest 'Application installation changed before uninstall launch'
+        if($variant -eq 'splitcord'){Wait-SplitCordService $app 0 -AllowAbsentOrStopped}
+        Assert-AppRemovalTarget $variant $app $uninstaller.path
+        Stop-AppProcesses $variant $app -ExpectedUninstaller $uninstaller.path
+        Assert-AppRemovalTarget $variant $app $uninstaller.path
         $base=Get-AppProcessBase $variant
         $names=@(Get-AppProcessNames $base $app)
         if(-not (Test-AppProcessesExited $base $app $names)){
             throw 'Application process exit could not be verified before uninstall; close the client and retry'
         }
-        No-Reparse $app
-        $clientGuard=[IO.File]::Open($app,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
-        if($clientGuard.Length -le 0 -or $clientGuard.Length -gt 512MB -or
-            (Get-FileHash -InputStream $clientGuard -Algorithm SHA256 -ErrorAction Stop).Hash -cne $appDigest){
-            throw 'Application installation changed before uninstall launch'
-        }
         Save-ApplicationEffectBoundary
-        if((Find-App $variant) -ine $app){throw 'Application installation changed before uninstall launch'}
-        No-Reparse $app
-        if((Get-AppUninstaller $variant $app).path -ine $confirmed.path){throw 'Application uninstaller changed before launch'}
+        if($variant -eq 'splitcord'){Wait-SplitCordService $app 0 -AllowAbsentOrStopped}
+        Assert-AppRemovalTarget $variant $app $uninstaller.path
         if(-not (Test-AppProcessesExited $base $app $names)){
             throw 'Application process exit could not be verified before uninstall; close the client and retry'
         }
-        if($variant -eq 'splitcord'){Wait-SplitCordService $app 0 -AllowAbsentOrStopped}
-        [void](Native $confirmed.path $confirmed.arguments -Timeout $confirmed.timeout -StartGuard @($guard,$clientGuard))
+        [void](Native $uninstaller.path $uninstaller.arguments -Timeout $uninstaller.timeout -StartGuard @($guard,$clientGuard))
     } finally {
         if($null -ne $clientGuard){$clientGuard.Dispose()}
         $guard.Dispose()
@@ -4845,7 +4836,7 @@ function Wait-AppProcessesExited([string]$variant,[string]$app,[int]$seconds=10)
     } while($true)
     throw 'Application process exit could not be verified after uninstall'
 }
-function Stop-AppProcesses([string]$variant,[string]$app) {
+function Stop-AppProcesses([string]$variant,[string]$app,[string]$ExpectedUninstaller) {
     $base=Get-AppProcessBase $variant
     if(-not $base -and -not $app){
         $app=Find-App $variant
@@ -4900,6 +4891,9 @@ function Stop-AppProcesses([string]$variant,[string]$app) {
                         throw 'A matching application changed or could not be verified before stopping'
                     }
                 }
+            }
+            if($readyToStop.Count -gt 0 -and $ExpectedUninstaller){
+                Assert-AppRemovalTarget $variant $app $ExpectedUninstaller
             }
             foreach($process in $readyToStop){
                 # Terminating a user application is an external effect even if a

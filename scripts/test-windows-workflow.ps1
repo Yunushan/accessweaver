@@ -2054,6 +2054,16 @@ try {
     try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application is running in another Windows session'}
     Assert ($rejected -and $script:appStopCalls -eq 0 -and $script:appStopJournalWrites -eq 1 -and
         $script:externalEffectsPending) 'Application removal rechecks other sessions after journal publication before stopping a client'
+
+    $appStopRecords=@($script:appStopRecord)
+    $script:appStopRecord.HasExited=$false
+    $script:appStopCalls=0;$script:externalEffectsPending=$false
+    function Save-Journal {[IO.File]::WriteAllBytes($secondUninstaller,[byte[]]@(0))}
+    try {
+        $rejected=$false
+        try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'Expected exactly one SplitCord uninstaller'}
+        Assert ($rejected -and $script:appStopCalls -eq 0 -and $script:externalEffectsPending) 'Application removal rechecks the uninstaller after the stop journal and preserves the live client'
+    } finally {[IO.File]::Delete($secondUninstaller)}
 } finally {
     $r=$previousAppStopRequest
     Set-Item Function:Save-Journal $previousAppStopJournal
@@ -2066,7 +2076,7 @@ try {
 }
 # Verify vendor completion against the previous executable and a fresh process snapshot.
 $appRemovalSaved=@{}
-foreach($name in @('Require-Admin','Assert-SplitCordMaintenancePaths','Read-SplitCordMachineUninstallCommand','Find-App','Native','Event','Stop-AppProcesses','Wait-SplitCordService','Save-Journal')){
+foreach($name in @('Require-Admin','Assert-SplitCordMaintenancePaths','Read-SplitCordMachineUninstallCommand','Find-App','Get-AppExecutableDigest','Native','Event','Stop-AppProcesses','Wait-SplitCordService','Save-Journal')){
     $appRemovalSaved[$name]=(Get-Command $name).ScriptBlock
 }
 try {
@@ -2235,12 +2245,26 @@ try {
     $writer=[IO.File]::OpenWrite($fixtureApp)
     $writer.Dispose()
     Assert $true 'Application removal releases the client guard after vendor failure'
+    function Get-AppExecutableDigest([string]$Path) {
+        $digest=& $appRemovalSaved['Get-AppExecutableDigest'] $Path
+        if(($script:appRemovalChange -ceq 'client-bytes' -and $Path -ceq $fixtureApp) -or
+           ($script:appRemovalChange -ceq 'uninstaller' -and $Path -ceq $fixtureUninstaller)){
+            [IO.File]::WriteAllBytes($Path,[byte[]]@(2))
+        }
+        return $digest
+    }
     function Stop-AppProcesses {
-        param($variant,$app)
+        param($variant,$app,$ExpectedUninstaller)
+        $script:appRemovalStopCalls++
+        if($ExpectedUninstaller -cne $fixtureUninstaller){throw 'Process stop did not receive the verified removal target'}
+        foreach($path in @($fixtureApp,$fixtureUninstaller)){
+            $denied=$false
+            try {$writer=[IO.File]::OpenWrite($path);$writer.Dispose()}catch [IO.IOException] {$denied=$true}
+            if(-not $denied){throw 'A verified executable was writable while stopping the client'}
+            $script:appRemovalGuardChecks++
+        }
         switch ($script:appRemovalChange) {
             'client' {$script:appRemovalMoved=$true}
-            'client-bytes' {[IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(2))}
-            'uninstaller' {[IO.File]::WriteAllBytes($fixtureUninstaller,[byte[]]@(1))}
             'ambiguous' {[IO.File]::WriteAllBytes($secondUninstaller,[byte[]]@(0))}
             'client-restarted' {$newProcess.HasExited=$false;$script:appRemovalProcesses=@($newProcess)}
             'client-now-unreadable' {$hiddenImage.HasExited=$false;$script:appRemovalProcesses=@($hiddenImage)}
@@ -2256,22 +2280,25 @@ try {
     )){
         $script:appRemovalInvoked=$false
         $script:appRemovalChange=$case.kind
+        $script:appRemovalStopCalls=0;$script:appRemovalGuardChecks=0
         $script:externalEffectsPending=$false
         $rejected=$false
         try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq $case.error}
-        Assert ($rejected -and -not $script:appRemovalInvoked -and -not $script:externalEffectsPending) ('Application removal refuses '+$case.kind+' changes before vendor launch')
+        $expectedStops=[int]($case.kind -cnotin @('client-bytes','uninstaller'))
+        Assert ($rejected -and -not $script:appRemovalInvoked -and -not $script:externalEffectsPending -and
+            $script:appRemovalStopCalls -eq $expectedStops -and $script:appRemovalGuardChecks -eq (2*$expectedStops)) ('Application removal refuses '+$case.kind+' changes before vendor launch')
         $script:appRemovalMoved=$false
         $script:appRemovalProcesses=@()
         [IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
         [IO.File]::WriteAllBytes($fixtureUninstaller,[byte[]]@(0))
         [IO.File]::Delete($secondUninstaller)
     }
-    $script:appRemovalChange='client-bytes'
+    $script:appRemovalChange=$null
     $script:appRemovalInvoked=$false
+    $script:appRemovalStopCalls=0
     $rejected=$false
     try{Remove-App 'splitcord' $fixtureApp ('0'*64)}catch{$rejected=$_.Exception.Message -ceq 'Application installation changed before removal'}
-    Assert ($rejected -and -not $script:appRemovalInvoked -and [IO.File]::ReadAllBytes($fixtureApp)[0] -eq 0) 'Application removal refuses stale client bytes before stopping processes'
-    $script:appRemovalChange=$null
+    Assert ($rejected -and -not $script:appRemovalInvoked -and $script:appRemovalStopCalls -eq 0) 'Application removal refuses stale client bytes before stopping processes'
     function Save-Journal {
         switch($script:appRemovalJournalChange){
             'client' {$script:appRemovalMoved=$true}
