@@ -162,8 +162,19 @@ class SetupCompletionRefusalTests(unittest.TestCase):
         for value in (False, 1):
             with self.subTest(preservation=value), self.assertRaises(ValueError):
                 validate_setup_upgrade_baseline({**partial, "partialCopyUnrelatedFilesPreserved": value}, **options)
-        verified = validate_setup_upgrade_baseline({**partial, "partialCopyUnrelatedFilesPreserved": True}, **options)
+        preserved = {**partial, "partialCopyUnrelatedFilesPreserved": True}
+        verified = validate_setup_upgrade_baseline(preserved, **options)
         self.assertIs(verified["setupUpgradeTemporaryUninstallerCleanupVerified"], True)
+        options["check_locked_temp"] = True
+        with self.assertRaisesRegex(ValueError, "Incomplete managed Setup"):
+            validate_setup_upgrade_baseline(preserved, **options)
+        locked = {**preserved, "lockedTemporaryUninstallerExitCode": 1603, "lockedTemporaryUninstallerPendingVerified": True}
+        for changes in ({"lockedTemporaryUninstallerExitCode": 0}, {"lockedTemporaryUninstallerExitCode": "1603"},
+                        {"lockedTemporaryUninstallerPendingVerified": False}):
+            with self.subTest(locked_cleanup=changes), self.assertRaises(ValueError):
+                validate_setup_upgrade_baseline({**locked, **changes}, **options)
+        verified = validate_setup_upgrade_baseline(locked, **options)
+        self.assertIs(verified["setupUpgradeLockedTemporaryUninstallerVerified"], True)
 
     def test_rejects_unproven_uninstall_registration_repair(self):
         record = {

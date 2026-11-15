@@ -470,13 +470,19 @@ function AWSetFileDisposition(Handle, InfoClass: LongWord; var DeleteFile: Byte;
 
 function AWRemoveTemporaryUninstaller(const Path, Identity: String; ExpectedSize: Int64): Boolean;
 var Handle, Code: LongWord; Info: AWFileInfo; Subject: THandleStream; DeleteFile: Byte;
-    Deleted: Boolean;
+    CanDelete, Deleted: Boolean;
 begin
   Result := True;
   Deleted := False;
   { GENERIC_READ | DELETE, FILE_SHARE_READ, OPEN_EXISTING, OPEN_REPARSE_POINT. }
   Handle := AWOpenReplaceProbe(Path, $80010000, 1, 0, 3, $00200000, 0);
-  if Handle = $FFFFFFFF then Exit;
+  CanDelete := Handle <> $FFFFFFFF;
+  if not CanDelete then begin
+    { A reader can deny DELETE while still allowing us to identify the file.
+      Preserve unrelated files without delaying managed recovery. }
+    Handle := AWOpenReplaceProbe(Path, $80000000, 1, 0, 3, $00200000, 0);
+    if Handle = $FFFFFFFF then Exit;
+  end;
   try
     if AWGetFileInfo(Handle, Info) = 0 then Exit;
     if ((Info.Attributes and ($00000400 or $00000010)) <> 0) or (Info.Links <> 1) then Exit;
@@ -488,6 +494,7 @@ begin
       Subject.Free;
     end;
     if not AWOnlyDefaultDataStream(Handle) then Exit;
+    if not CanDelete then begin Result := False; Exit; end;
     DeleteFile := 1;
     Deleted := AWSetFileDisposition(Handle, 4, DeleteFile, 1) <> 0;
     Result := Deleted;

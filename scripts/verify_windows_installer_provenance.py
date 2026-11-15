@@ -28,7 +28,8 @@ RETIREMENT_FLUSH_REPORT_SCHEMA = 55
 FULL_PAYLOAD_UPGRADE_REPORT_SCHEMA = 56
 PARTIAL_COPY_UPGRADE_REPORT_SCHEMA = 57
 TEMP_UNINSTALLER_RECOVERY_REPORT_SCHEMA = 58
-REPORT_SCHEMAS = range(11, TEMP_UNINSTALLER_RECOVERY_REPORT_SCHEMA + 1)
+LOCKED_TEMP_UNINSTALLER_REPORT_SCHEMA = 59
+REPORT_SCHEMAS = range(11, LOCKED_TEMP_UNINSTALLER_REPORT_SCHEMA + 1)
 PHASES=["baseline","after-install","after-upgrade","after-reinstall","after-active-setup-uninstall","after-lifecycle-locks","after-refused-downgrade","after-version-policy","after-registry-read-boundaries","after-registry-view-policy","after-registry-access-policy","after-restoration-launch-failures","after-restoration-ownership-contracts","before-uninstall","after-uninstall"]
 
 def require(ok,message):
@@ -203,7 +204,7 @@ def validate_setup_completion_refusal(value, *, documentation=False):
 
 def validate_setup_upgrade_baseline(value, *, check_recovery=False, check_abrupt_termination=False,
                                     check_payload_binding=False, check_partial_copy=False,
-                                    check_temp_preservation=False):
+                                    check_temp_preservation=False, check_locked_temp=False):
     flags = {"installedStatePreserved", "profilePreserved", "pendingMarkerAbsent", "matchingUpgradeAccepted"}
     if check_recovery:
         flags.update({"copyCompletedBeforeRecovery", "changedRetryRefused", "matchingRetryRetiredMarker"})
@@ -213,11 +214,15 @@ def validate_setup_upgrade_baseline(value, *, check_recovery=False, check_abrupt
         flags.update({"partialCopyMixedSubjectsVerified", "partialCopyRetryVerified"})
     if check_temp_preservation:
         flags.add("partialCopyUnrelatedFilesPreserved")
+    if check_locked_temp:
+        flags.add("lockedTemporaryUninstallerPendingVerified")
     fields = flags | {"refusalExitCode", "refusalElapsedMilliseconds", "deadlineMilliseconds"}
     if check_abrupt_termination:
         fields.add("abruptTerminationExitCode")
     if check_partial_copy:
         fields.update({"partialCopyExitCode", "partialCopyTemporaryFilesRetained"})
+    if check_locked_temp:
+        fields.add("lockedTemporaryUninstallerExitCode")
     require(type(value) is dict and set(value) == fields, "Incomplete managed Setup upgrade baseline evidence")
     require(type(value["refusalExitCode"]) is int and value["refusalExitCode"] == 7
             and type(value["deadlineMilliseconds"]) is int and value["deadlineMilliseconds"] == 180000
@@ -242,6 +247,11 @@ def validate_setup_upgrade_baseline(value, *, check_recovery=False, check_abrupt
         verified["setupUpgradePartialCopyRecoveryVerified"] = True
     if check_temp_preservation:
         verified["setupUpgradeTemporaryUninstallerCleanupVerified"] = True
+    if check_locked_temp:
+        require(type(value["lockedTemporaryUninstallerExitCode"]) is int
+                and value["lockedTemporaryUninstallerExitCode"] == 1603,
+                "Managed Setup did not report blocked temporary uninstaller cleanup")
+        verified["setupUpgradeLockedTemporaryUninstallerVerified"] = True
     return verified
 
 
@@ -581,7 +591,8 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
             check_abrupt_termination=report["schemaVersion"] >= 37,
             check_payload_binding=report["schemaVersion"] >= FULL_PAYLOAD_UPGRADE_REPORT_SCHEMA,
             check_partial_copy=report["schemaVersion"] >= PARTIAL_COPY_UPGRADE_REPORT_SCHEMA,
-            check_temp_preservation=report["schemaVersion"] >= TEMP_UNINSTALLER_RECOVERY_REPORT_SCHEMA))
+            check_temp_preservation=report["schemaVersion"] >= TEMP_UNINSTALLER_RECOVERY_REPORT_SCHEMA,
+            check_locked_temp=report["schemaVersion"] >= LOCKED_TEMP_UNINSTALLER_REPORT_SCHEMA))
     if report["schemaVersion"] >= 38:
         require(report.get("uninstallDataRecoveryVerified") is True,
                 "Missing uninstall data refusal and recovery were not verified")
