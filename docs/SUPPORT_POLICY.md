@@ -54,6 +54,16 @@ A closure records the fixing commit or verified workaround, the actual validatio
 
 Before a production or LTS line is promoted, its owner must publish the supported versions/platforms, security-fix and backport policy, start/end-of-support dates, retirement notice period, escalation route and response coverage. Pin the approved candidate and document upgrade, rollback and retirement in the deploying organization's managed-package procedures. A newer upload alone does not establish compatibility, support coverage or safe rollback.
 
+## Support exercise for managed rollout
+
+Use an authorized reporter, the repository maintainer and the endpoint owner. Prepare an intended managed test endpoint with the identified candidate and a synthetic profile. Agree on the exercise window and give the public report a title that identifies it as a test.
+
+1. Have the reporter submit a synthetic degraded-operation case through the signed-in bug form. Include the candidate version and commit, platform, reproduction, impact and a safe workaround. Have the maintainer confirm the report is usable, assign severity S2 and record the proposed workaround.
+2. Exercise the security route with a separate synthetic case of suspected release compromise. Check private vulnerability reporting first. If it is unavailable, exercise the minimal public request for private contact and record whether an agreed private route was established. Keep the synthetic security details in that private route once available. [Security reporting procedure](../SECURITY.md).
+3. Have the endpoint owner exercise the recovery handoff on the test endpoint and record an independent observation of restored operation. Have the maintainer close the ordinary test report with the verified workaround or fixing commit and its validation scope. [Incident response procedure](INCIDENT_RESPONSE.md).
+
+Record the candidate identity, endpoint cohort, exercise date, severity and result for each step. Retain approved issue references and a restricted reference to private evidence. Record an unavailable or incomplete step explicitly. Exercise timing is an observation under best-effort support.
+
 ## Conditions still required for production support
 
 The repository maintainer and best-effort GitHub issue intake are assigned. Before production support is advertised, verify public issue intake and private vulnerability reporting, confirm the maintainer escalation route, and publish a supported-version and end-of-life policy the maintainer can meet. The published policy must describe the support coverage actually offered, including the best-effort commitment. Exercise an intake, private escalation, recovery handoff and closure on an intended managed endpoint. Until those commitments and exercises are verified, support operations remain partially implemented.

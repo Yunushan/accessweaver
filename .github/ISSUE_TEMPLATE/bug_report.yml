@@ -3,9 +3,12 @@ description: Report a reproducible AccessWeaver problem.
 body:
 - type: markdown
   attributes:
-    value: For vulnerabilities, follow SECURITY.md and keep sensitive details out of public issues. Review
-      the support policy before sharing evidence; do not attach profiles, raw logs, credentials, private
-      addresses or command arguments.
+    value: >-
+      Keep vulnerability details and sensitive evidence out of public issues. Review the
+      support policy before sharing. Omit profiles, raw logs, credentials, private addresses
+      and command arguments from reports and attachments.
+      [Security reporting](https://github.com/Yunushan/accessweaver/blob/main/SECURITY.md) and
+      [Support policy](https://github.com/Yunushan/accessweaver/blob/main/docs/SUPPORT_POLICY.md).
 - type: dropdown
   id: impact
   attributes:
