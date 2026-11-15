@@ -13,6 +13,7 @@ import sys
 import tarfile
 import tempfile
 
+import linux_package_reboot_traffic as traffic
 from verify_release import MAX_FILE, release_file, require
 
 GUEST = Path(__file__).with_name("linux_package_reboot_guest.py")
@@ -74,7 +75,7 @@ def package_info(path, expected_arch):
     return fields["Version"]
 
 
-def seed_guest(seed, packages):
+def seed_guest(seed, packages, engine_sha):
     config = {
         "ssh_pwauth": False, "disable_root": True, "package_update": False, "package_upgrade": False,
         "write_files": [
@@ -94,8 +95,13 @@ def seed_guest(seed, packages):
         "addresses": ["192.0.2.2/24"], "link-local": [], "dhcp4": False, "dhcp6": False,
     }}}
     (seed / "network-config").write_text(json.dumps(network) + "\n", encoding="ascii")
-    (seed / "packages.json").write_text(json.dumps(packages), encoding="ascii")
+    pins = dict(packages, ciadpi=engine_sha) if engine_sha else packages
+    (seed / "packages.json").write_text(json.dumps(pins), encoding="ascii")
     shutil.copyfile(GUEST, seed / "guest.py")
+    traffic_source = Path(traffic.__file__)
+    shutil.copyfile(traffic_source, seed / traffic_source.name)
+    if engine_sha:
+        shutil.copyfile(GUEST.with_name(traffic.SHARED_PROBE), seed / traffic.SHARED_PROBE)
 
 
 def boot(command, temporary, number, timeout):
@@ -138,7 +144,10 @@ def exercise(args, temporary):
         packages[name] = stage(source, seed / name, MAX_FILE, pin)
         versions[label] = package_info(seed / name, "amd64")
     run("dpkg", "--compare-versions", versions["older"], "lt", versions["newer"])
-    seed_guest(seed, packages)
+    engine_sha = None
+    if args.byedpi is not None:
+        engine_sha = stage(args.byedpi, seed / "ciadpi", 16 << 20, args.byedpi_sha256)
+    seed_guest(seed, packages, engine_sha)
     iso = temporary / "seed.iso"
     run(args.genisoimage, "-quiet", "-V", "cidata", "-J", "-r", "-o", iso, seed)
     system = [
@@ -157,6 +166,13 @@ def exercise(args, temporary):
     first, second = (boot(system, temporary, index, args.boot_timeout) for index in (1, 2))
     startup_fields = {"phase", "bootSHA256", "installedVersion", "acceptedRevision", "controllerSHA256"}
     recovery_fields = {"rollbackVersion", "rollbackKeptCurrentPolicy", "replayRefused", "purgePreservedState"}
+    if engine_sha:
+        startup_fields.add("liveEngine")
+        for receipt, expected in ((first, traffic.BEFORE), (second, traffic.AFTER)):
+            require(isinstance(receipt.get("liveEngine"), dict)
+                    and receipt["liveEngine"].keys() == expected
+                    and all(value is True for value in receipt["liveEngine"].values()),
+                    "Guest did not prove the required live engine state")
     require(set(first) == startup_fields and set(second) == startup_fields | recovery_fields
             and first["phase"] == "before-reboot" and second["phase"] == "after-reboot"
             and all(SHA256.fullmatch(receipt["bootSHA256"]) and SHA256.fullmatch(receipt["controllerSHA256"])
@@ -168,13 +184,20 @@ def exercise(args, temporary):
             and all(second[name] is True for name in recovery_fields - {"rollbackVersion"}),
             "Unexpected pre-reboot and reboot evidence")
     require(digest(base) == args.image_sha256, "Approved guest base snapshot changed")
-    return {"schemaVersion": 1, "scope": "Offline Ubuntu Linux AMD64 QEMU guest kernel restart and Debian lifecycle",
+    report = {"schemaVersion": 1, "scope": "Offline Ubuntu Linux AMD64 QEMU guest kernel restart and Debian lifecycle",
             "guestArchitecture": "amd64", "emulation": args.accel, "imageSHA256": args.image_sha256,
             "firmwareSHA256": template_pins, "packagesSHA256": packages,
             "driverSHA256": digest(Path(__file__)), "guestProbeSHA256": digest(GUEST),
             "qemuVersion": run(args.qemu, "--version").splitlines()[0].decode("ascii"),
             "guestExternalNetworkDisabled": True, "firstBoot": first, "secondBoot": second,
             "productionQualificationComplete": False}
+    if engine_sha:
+        report["liveByedpi"] = {
+            "engineSHA256": engine_sha,
+            "trafficProbeSHA256": digest(Path(traffic.__file__)),
+            "sharedNetworkProbeSHA256": digest(GUEST.with_name(traffic.SHARED_PROBE)),
+        }
+    return report
 
 
 def main():
@@ -182,6 +205,8 @@ def main():
     for key in ("image", "old", "new"):
         parser.add_argument(f"--{key}", type=Path, required=True)
         parser.add_argument(f"--{key}-sha256", required=True)
+    parser.add_argument("--byedpi", type=Path, help="Approved native static AMD64 ByeDPI executable")
+    parser.add_argument("--byedpi-sha256", help="Approved SHA-256 for --byedpi")
     parser.add_argument("--firmware-code", type=Path, required=True)
     parser.add_argument("--firmware-vars", type=Path, required=True)
     parser.add_argument("--qemu", default="qemu-system-x86_64")
@@ -194,6 +219,9 @@ def main():
     require(sys.platform == "linux" and os.uname().machine == "x86_64", "Expected a Linux AMD64 QEMU host")
     require(30 <= args.boot_timeout <= 600 and all(SHA256.fullmatch(pin) for pin in
             (args.image_sha256, args.old_sha256, args.new_sha256)), "Expected approved SHA-256 pins and a bounded boot time")
+    require((args.byedpi is None) == (args.byedpi_sha256 is None)
+            and (args.byedpi_sha256 is None or SHA256.fullmatch(args.byedpi_sha256)),
+            "Supply both ByeDPI arguments with an approved SHA-256")
     with tempfile.TemporaryDirectory(prefix="accessweaver-package-reboot-") as directory:
         report = exercise(args, Path(directory))
     print(json.dumps(report, indent=2))

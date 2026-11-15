@@ -4,8 +4,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import stat
 import subprocess
+import time
+
+import linux_package_reboot_traffic as traffic
 
 SEED = Path("/run/accessweaver-seed")
 WORK = Path("/var/lib/accessweaver-reboot-qualification")
@@ -91,14 +95,14 @@ def verify_installed(revision, key_id, profile):
     cli("import", WORK / "refused.json", ordinary=True, rejection=b"profile changes are disabled")
 
 
-def sign(revision, private):
+def sign(revision, private, launches):
     now = datetime.now(timezone.utc)
     policy = private / f"policy-{revision}.json"
     policy.write_text(json.dumps({"schemaVersion": 1, "revision": revision,
                                   "issuedAt": (now - timedelta(minutes=1)).isoformat(),
                                   "expiresAt": (now + timedelta(hours=2)).isoformat(),
                                   "allowProfileChanges": False, "allowDownloads": False,
-                                  "allowDiagnostics": False, "launches": [], "workflows": []}), encoding="ascii")
+                                  "allowDiagnostics": False, "launches": launches, "workflows": []}), encoding="ascii")
     envelope = private / f"envelope-{revision}.json"
     cli("managed", "sign", policy, "--private-key", private / "key.pem", "--out", envelope)
     return envelope
@@ -110,7 +114,7 @@ def receipt(phase, **fields):
                                                             separators=(",", ":")) + "\n")
 
 
-def before_reboot(boot, checkpoint):
+def before_reboot(boot, checkpoint, engine_sha):
     require(not POLICY.exists(), "test-image-already-enrolled")
     command("dpkg", "--install", SEED / "older.deb")
     old = package_version()
@@ -123,15 +127,25 @@ def before_reboot(boot, checkpoint):
     profile = {"version": 1, "id": PROFILE_ID, "name": "Package reboot fixture", "engine": "byedpi", "args": [],
                "routing": {"includeDomains": [], "excludeDomains": [], "applications": []},
                "probe": {"host": "127.0.0.1", "port": 1080, "tls": False, "timeoutSeconds": 2}}
+    if engine_sha:
+        traffic.ENGINE.parent.mkdir(parents=True, exist_ok=False)
+        shutil.copyfile(SEED / "ciadpi", traffic.ENGINE)
+        traffic.ENGINE.chmod(0o755)
+        require(digest(traffic.ENGINE) == engine_sha, "installed-byedpi-pin-mismatch")
+        profile.update(binary=str(traffic.ENGINE), sha256=engine_sha)
     profile_input.write_text(json.dumps(profile), encoding="ascii")
     cli("import", profile_input, ordinary=True)
     saved = json.loads(cli("show", PROFILE_ID, ordinary=True))
+    launches = []
+    if engine_sha:
+        launch = json.loads(cli("managed", "digest-profile", profile_input))["inputSHA256"]
+        launches = [{"engine": "byedpi", "binarySHA256": engine_sha, "inputSHA256": launch}]
     profile["id"] = "reboot-refused-fixture"
     (WORK / "refused.json").write_text(json.dumps(profile), encoding="ascii")
 
     command("openssl", "genpkey", "-algorithm", "ED25519", "-out", private / "key.pem")
     pin = cli("managed", "public-key", "--private-key", private / "key.pem").decode("ascii").strip()
-    envelope = sign(1, private)
+    envelope = sign(1, private, launches)
     installation = private / "installation.json"
     cli("managed", "prepare", envelope, "--public-key", pin, "--minimum-revision", "0", "--out", installation)
     enrolled = json.loads(cli("managed", "install", installation, "--public-key", pin))
@@ -144,7 +158,7 @@ def before_reboot(boot, checkpoint):
     command("dpkg", "--compare-versions", old, "lt", new)
     verify_installed(1, key_id, saved)
     require(state() == prior, "upgrade-modified-enrollment-or-profile")
-    updated = json.loads(cli("managed", "update", sign(2, private)))
+    updated = json.loads(cli("managed", "update", sign(2, private, launches)))
     require(updated["committed"] is True and updated["previousRevision"] == 1 and updated["revision"] == 2,
             "policy-update-did-not-commit")
     verify_installed(2, key_id, saved)
@@ -152,25 +166,45 @@ def before_reboot(boot, checkpoint):
     require(protected[-1] == prior[-1], "policy-update-modified-profile")
     require([entry[2:] for entry in protected] == [[0, 0, 0o644], [0, 0, 0o644], [0, 0, 0o600], [65534, 65534, 0o600]],
             "persistent-state-permissions-mismatch")
-    record = {"boot": boot, "older": old, "newer": new, "keyId": key_id, "profile": saved,
+    record = {"boot": boot, "older": old, "newer": new, "keyId": key_id, "profile": saved, "engineSHA256": engine_sha,
               "state": protected, "controllerSHA256": digest(CORE)}
     with checkpoint.open("x", encoding="ascii") as output:
         json.dump(record, output)
         output.flush()
         os.fsync(output.fileno())
     os.sync()
-    receipt("before-reboot", bootSHA256=boot, installedVersion=new, acceptedRevision=2,
-            controllerSHA256=record["controllerSHA256"])
+    startup = {"bootSHA256": boot, "installedVersion": new, "acceptedRevision": 2,
+               "controllerSHA256": record["controllerSHA256"]}
+    if engine_sha:
+        with traffic.routed_session(SEED, CORE, PROFILE_ID, ENV) as session:
+            traffic.prove_connected(session)
+            receipt("before-reboot", **startup, liveEngine={name: True for name in sorted(traffic.BEFORE)})
+            command("systemctl", "--no-block", "reboot")
+            # Keep both endpoints open. Guest shutdown owns termination of this
+            # fixture and of the running controller.
+            time.sleep(45)
+            raise ValueError("guest-reboot-did-not-stop-the-fixture")
+    receipt("before-reboot", **startup)
     command("systemctl", "--no-block", "reboot")
 
 
-def after_reboot(boot, checkpoint):
+def after_reboot(boot, checkpoint, engine_sha):
     record = json.loads(checkpoint.read_bytes())
     require(boot != record["boot"], "guest-kernel-did-not-reboot")
+    require(engine_sha == record["engineSHA256"], "reboot-engine-configuration-changed")
+    if engine_sha:
+        traffic.assert_restart_idle(SEED)
+        require(digest(traffic.ENGINE) == engine_sha, "reboot-changed-byedpi-input")
     require(package_version() == record["newer"] and digest(CORE) == record["controllerSHA256"],
             "reboot-changed-installed-package")
     verify_installed(2, record["keyId"], record["profile"])
     require(state() == record["state"], "reboot-changed-policy-or-profile")
+    extra = {}
+    if engine_sha:
+        with traffic.routed_session(SEED, CORE, PROFILE_ID, ENV) as session:
+            traffic.stop_and_verify(session)
+        require(state() == record["state"], "recovered-engine-changed-policy-or-profile")
+        extra["liveEngine"] = {name: True for name in sorted(traffic.AFTER)}
     command("dpkg", "--force-downgrade", "--install", SEED / "older.deb")
     require(package_version() == record["older"], "rollback-version-mismatch")
     verify_installed(2, record["keyId"], record["profile"])
@@ -183,7 +217,7 @@ def after_reboot(boot, checkpoint):
     require(not (PROFILE.parent / "reboot-refused-fixture.json").exists(), "refused-profile-was-created")
     receipt("after-reboot", bootSHA256=boot, installedVersion=record["newer"], acceptedRevision=2,
             controllerSHA256=record["controllerSHA256"], rollbackVersion=record["older"],
-            rollbackKeptCurrentPolicy=True, replayRefused=True, purgePreservedState=True)
+            rollbackKeptCurrentPolicy=True, replayRefused=True, purgePreservedState=True, **extra)
     command("systemctl", "--no-block", "poweroff")
 
 
@@ -197,21 +231,24 @@ def main():
             and not json.loads(command("ip", "-j", "-6", "route", "show", "default")),
             "refused-non-isolated-guest")
     pins = json.loads((SEED / "packages.json").read_bytes())
-    for name in ("older.deb", "newer.deb"):
-        require(digest(SEED / name) == pins[name], "guest-package-pin-mismatch")
+    engine_sha = pins.get("ciadpi")
+    expected = {"older.deb", "newer.deb"} | ({"ciadpi"} if engine_sha else set())
+    require(set(pins) == expected, "unexpected-guest-input-inventory")
+    for name, pin in pins.items():
+        require(digest(SEED / name) == pin, "guest-input-pin-mismatch")
     boot = digest(Path("/proc/sys/kernel/random/boot_id"))
     checkpoint = WORK / "checkpoint.json"
     if checkpoint.exists():
-        after_reboot(boot, checkpoint)
+        after_reboot(boot, checkpoint, engine_sha)
     else:
-        before_reboot(boot, checkpoint)
+        before_reboot(boot, checkpoint, engine_sha)
 
 
 if __name__ == "__main__":
     try:
         main()
-    except (KeyError, OSError, ValueError, subprocess.SubprocessError) as error:
-        code = str(error) if type(error) is ValueError else type(error).__name__
+    except (KeyError, OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+        code = str(error) if type(error) in (ValueError, RuntimeError) else type(error).__name__
         receipt("failure", code=code)
         command("systemctl", "--no-block", "poweroff")
         raise

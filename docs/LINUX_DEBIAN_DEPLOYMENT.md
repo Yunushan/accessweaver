@@ -115,6 +115,10 @@ python3 -B scripts/test-linux-package-reboot.py \
 
 The first boot installs and upgrades the controller, creates a real ordinary-user profile, installs a signed machine policy and advances it to revision 2. The guest requests a reboot. The driver verifies a second kernel boot on the same disk and checks that the installed controller, signed revision, policy protection and profile are intact. The second boot also rolls back the controller, rejects an older policy replay and purges the package while retaining user and policy state.
 
+To reboot with an active managed ByeDPI session, add `--byedpi APPROVED_CIADPI --byedpi-sha256 APPROVED_CIADPI_SHA256` using the approved static AMD64 executable. Before requesting reboot, the guest holds a real SOCKS5 connection open to a loopback origin and verifies traffic in both directions. After a new kernel boot, it checks for a stale ByeDPI process and listener, then explicitly launches the engine under the retained approval. It verifies fresh traffic and clean controller shutdown before rollback.
+
 A hardware-assisted Ubuntu Minimal 24.04 AMD64 guest passed both boots with its document filters in place. The test used two historical controller builds repackaged with the corrected metadata paths. It verified the SBOM against the installed executable and exercised rollback and purge after reboot. [Reboot and package-layout evidence](qualification/16632c4b2a7f-linux-package-reboot.json).
+
+The [live-session reboot evidence](qualification/16632c4b2a7f-linux-package-active-reboot.json) verified the same approved package and image bytes with pinned ByeDPI v0.17.3. The test used loopback traffic, disposable signing keys and an explicit post-reboot launch by the ordinary user.
 
 Production rollout still requires results for the approved release packages and native endpoint architectures. It also requires organization signing and hosting, reboot and active-engine checks, and validation through the organization's endpoint-management tools.
