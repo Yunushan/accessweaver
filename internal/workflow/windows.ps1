@@ -2861,6 +2861,9 @@ function Configure-DNS([string]$method) {
     $adapters=@(Get-ActiveDNSAdapters $inventory $clients)
     if(-not $adapters.Count){throw 'No active adapter exposes a DNS client family'}
     $originalSnapshot=Read-DNSRecoverySnapshot
+    $recoveryCopy=Read-DNSRecoveryCopy
+    if(-not $originalSnapshot -and $recoveryCopy){throw 'Original DNS snapshot is missing; use dns-restore to recover from its protected copy'}
+    Assert-DNSRecoveryCopyMatches $originalSnapshot $recoveryCopy
     $hadSnapshot=$null -ne $originalSnapshot
     $original=if($hadSnapshot){$originalSnapshot.record}else{[pscustomobject]@{adapters=@();doh=@();dohManaged=$false}}
     $plaintextBlockID=Get-DNSDohPlaintextBlockID $original
@@ -2953,6 +2956,7 @@ function Configure-DNS([string]$method) {
     $original | Add-Member -NotePropertyName recoveryID -NotePropertyValue ([guid]::NewGuid().ToString('N')) -Force
     $original.adapters=@($records)
     $original | Add-Member -NotePropertyName adapterConditional -NotePropertyValue $true -Force
+    $original | Add-Member -NotePropertyName previousRecoveryCopySHA256 -NotePropertyValue ([string]$recoveryCopy.fileSHA256) -Force
     $encoded=$original|ConvertTo-Json -Depth 10
     $bytes=[Text.UTF8Encoding]::new($false).GetBytes($encoded)
     if($bytes.Length -gt 8MB){throw 'DNS recovery snapshot exceeds its size limit'}
@@ -2969,6 +2973,7 @@ function Configure-DNS([string]$method) {
     Assert-DNSRecoverySnapshotUnchanged $originalSnapshot.sha256
     Publish-WorkflowFile $snapshot $bytes -BeforeHash $originalSnapshot.sha256
     if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'DNS recovery snapshot could not be published'}
+    Publish-DNSRecoveryCopy $bytes $snapshotSHA256 $recoveryCopy.fileSHA256
     $dnsUndo.snapshotActive=$true
     Save-Journal
     Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
@@ -3270,10 +3275,14 @@ function Test-DNSFamilyNeedsRollback([object]$Record,[string]$Number,[object]$Ob
 function Restore-DNS([string]$ExpectedSHA256,$ResolverReload) {
     $snapshot=Join-Path $root 'profiles\dns-original.json'
     $restoration=Read-DNSRecoverySnapshot
+    $recoveryCopy=Read-DNSRecoveryCopy
+    $recoverPrimary=(-not $restoration -and $null -ne $recoveryCopy)
+    if($recoverPrimary){$restoration=ConvertFrom-DNSRecoverySnapshotBytes $recoveryCopy.bytes}
     if(-not $restoration){
         Assert-DNSDohPlaintextRuleOwnership ''
         throw 'No original DNS snapshot exists; no settings were changed'
     }
+    Assert-DNSRecoveryCopyMatches $restoration $recoveryCopy
     $snapshotSHA256=$restoration.sha256
     if($ExpectedSHA256 -and $snapshotSHA256 -ine $ExpectedSHA256){
         throw 'DNS recovery journal does not match the active snapshot; review dns-restore'
@@ -3285,6 +3294,13 @@ function Restore-DNS([string]$ExpectedSHA256,$ResolverReload) {
     $saved=$restoration.record
     $plaintextBlockID=Get-DNSDohPlaintextBlockID $saved
     Assert-DNSDohPlaintextRuleOwnership $plaintextBlockID
+    if($recoverPrimary){
+        if((Read-DNSRecoveryCopy).fileSHA256 -cne $recoveryCopy.fileSHA256){
+            throw 'Original DNS recovery copy changed during preflight; retain it for review'
+        }
+        Publish-WorkflowFile $snapshot $recoveryCopy.bytes -BeforeHash ''
+        Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+    }
     $usesAdapterOwnership=Test-DNSRecoveryUsesAdapterOwnership $saved
     $guardAdapters=[bool]($ExpectedSHA256 -and $usesAdapterOwnership)
     $trackExplicitRestore=$usesAdapterOwnership -and -not $ExpectedSHA256
@@ -3407,6 +3423,11 @@ function Restore-DNS([string]$ExpectedSHA256,$ResolverReload) {
     # snapshot takes precedence over a receipt until retirement succeeds.
     Assert-RestoredDNSState $plans $dohPlans $dohAvailable
     Assert-DNSDohPlaintextRuleOwnership ''
+    Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+    if($recoveryCopy){
+        Remove-VerifiedDNSRecoverySnapshot (Get-DNSRecoveryCopyPath) $recoveryCopy.fileSHA256 (8MB+65)
+    }
+    if(Read-DNSRecoveryCopy){throw 'Original DNS recovery copy retirement could not be verified'}
     Remove-VerifiedDNSRecoverySnapshot $snapshot $snapshotSHA256
     if(Get-DNSRecoverySnapshotDigest){throw 'Original DNS snapshot retirement could not be verified'}
     Event 'Original DNS and DoH settings restored'
@@ -3739,6 +3760,7 @@ function Remove-Method([string]$engine,[switch]$OwnedOnly) {
     }
     if($engine -eq 'dnscrypt'){
         $digest=Get-DNSRecoverySnapshotDigest
+        if(-not $digest){$digest=(Read-DNSRecoveryCopy).sha256}
         if($digest){Restore-DNS $digest}
     }
     if($entry){Remove-RecordedService $name -Entry $entry}
@@ -3749,6 +3771,7 @@ function Remove-All {
     # Keep every managed resource available until adapter DNS and DoH policy
     # have been restored and independently read back by Restore-DNS.
     $digest=Get-DNSRecoverySnapshotDigest
+    if(-not $digest){$digest=(Read-DNSRecoveryCopy).sha256}
     if($digest){Restore-DNS $digest}
     else{Assert-DNSDohPlaintextRuleOwnership ''}
     if(Assert-ManagedServiceOwnership 'AccessWeaver-dnscrypt'){
@@ -5147,7 +5170,9 @@ function Discover {
     $task=Get-RefreshTaskInspection
     [Console]::WriteLine('Discovery phase: final-paths')
     [Console]::WriteLine(('Discovery timing ms: final-paths {0}' -f $discoveryClock.ElapsedMilliseconds))
-    $cli=WireSock-CLI;$dnsSnapshot=[bool](Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json'))
+    $cli=WireSock-CLI
+    $dnsSnapshot=(Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json')) -or
+        (Test-Path -LiteralPath (Get-DNSRecoveryCopyPath))
     [Console]::WriteLine('Discovery phase: complete')
     [Console]::WriteLine(('Discovery timing ms: complete {0}' -f $discoveryClock.ElapsedMilliseconds))
     return @{services=@($services);serviceInspectionError=$serviceError;components=$assets;applications=$apps;wiresockCLI=$cli;conflicts=@($conflicts);managedRoot=$root;refreshTask=$task.present;refreshTaskInspectionError=$task.error;dnsSnapshot=$dnsSnapshot;installerRecovery=$installerRecovery}
@@ -5281,7 +5306,7 @@ function Rollback([string]$OwnerlessWireSockProfile) {
 function Throw-WorkflowRecoveryJournalReadFailure {
     throw [IO.InvalidDataException]::new('Recovery journal could not be read safely; preserve the selected journal and recovery evidence')
 }
-function Read-WorkflowRecoveryJournalBytes([IO.Stream]$Source,[ValidateRange(1,8388608)][int]$Maximum=(Get-WorkflowRecoveryJournalLimit)) {
+function Read-WorkflowRecoveryJournalBytes([IO.Stream]$Source,[ValidateRange(1,8388673)][int]$Maximum=(Get-WorkflowRecoveryJournalLimit)) {
     $memory=$null
     try {
         if($null -eq $Source -or -not $Source.CanRead -or -not $Source.CanSeek -or $Source.Position -ne 0){Throw-WorkflowRecoveryJournalReadFailure}
@@ -5358,11 +5383,8 @@ function Read-DNSRecoveryFileBytes([string]$Path,[int]$Maximum) {
     try {return ,(Read-WorkflowRecoveryJournalBytes $stream $Maximum)}
     finally {$stream.Dispose()}
 }
-function Read-DNSRecoverySnapshot {
-    $path=Join-Path $root 'profiles\dns-original.json'
+function ConvertFrom-DNSRecoverySnapshotBytes([byte[]]$Bytes) {
     try {
-        $bytes=Read-DNSRecoveryFileBytes $path 8MB
-        if($null -eq $bytes){return}
         $text=[Text.UTF8Encoding]::new($false,$true).GetString($bytes)
         if($text.Length -gt 0 -and $text[0] -eq [char]0xfeff){$text=$text.Substring(1)}
         if([string]::IsNullOrWhiteSpace($text) -or $text.IndexOf([char]0) -ge 0){throw 'Invalid DNS snapshot encoding'}
@@ -5371,13 +5393,51 @@ function Read-DNSRecoverySnapshot {
         return @{record=$record;sha256=(Get-WorkflowBytesSHA256 $bytes)}
     } catch {throw 'Original DNS snapshot could not be read safely; retain it for review'}
 }
+function Read-DNSRecoverySnapshot {
+    $path=Join-Path $root 'profiles\dns-original.json'
+    try {
+        $bytes=Read-DNSRecoveryFileBytes $path 8MB
+        if($null -eq $bytes){return}
+        ConvertFrom-DNSRecoverySnapshotBytes $bytes
+    }catch{throw 'Original DNS snapshot could not be read safely; retain it for review'}
+}
+function Get-DNSRecoveryCopyPath {
+    return (Join-Path $root 'profiles\dns-original.copy')
+}
+function Read-DNSRecoveryCopy {
+    try {
+        $frame=Read-DNSRecoveryFileBytes (Get-DNSRecoveryCopyPath) (8MB+65)
+        if($null -eq $frame){return}
+        if($frame.Length -lt 66 -or $frame[64] -ne 10){throw 'Invalid copy frame'}
+        $digest=[Text.Encoding]::ASCII.GetString($frame,0,64)
+        if($digest -cnotmatch '\A[A-F0-9]{64}\z'){throw 'Invalid copy digest'}
+        $bytes=[byte[]]::new($frame.Length-65)
+        [Buffer]::BlockCopy($frame,65,$bytes,0,$bytes.Length)
+        if((Get-WorkflowBytesSHA256 $bytes) -cne $digest){throw 'Invalid copy content'}
+        return @{bytes=$bytes;sha256=$digest;fileSHA256=(Get-WorkflowBytesSHA256 $frame)}
+    }catch{throw 'Original DNS recovery copy could not be verified; retain it for review'}
+}
+function Assert-DNSRecoveryCopyMatches($Snapshot,$Copy) {
+    if($Copy -and $Copy.sha256 -cne $Snapshot.sha256 -and
+        $Copy.fileSHA256 -cne $Snapshot.record.previousRecoveryCopySHA256){
+        throw 'Original DNS recovery copy differs from the active snapshot; retain both for review'
+    }
+}
+function Publish-DNSRecoveryCopy([byte[]]$Bytes,[string]$SHA256,[string]$BeforeHash) {
+    $frame=[byte[]]::new($Bytes.Length+65)
+    $header=[Text.Encoding]::ASCII.GetBytes($SHA256.ToUpperInvariant()+[char]10)
+    [Buffer]::BlockCopy($header,0,$frame,0,65)
+    [Buffer]::BlockCopy($Bytes,0,$frame,65,$Bytes.Length)
+    Publish-WorkflowFile (Get-DNSRecoveryCopyPath) $frame -BeforeHash $BeforeHash
+    if((Read-DNSRecoveryCopy).sha256 -cne $SHA256){throw 'Original DNS recovery copy could not be published'}
+}
 function Assert-DNSRecoverySnapshotUnchanged([string]$ExpectedSHA256) {
     $observed=Get-DNSRecoverySnapshotDigest
     if(($ExpectedSHA256 -and $observed -ine $ExpectedSHA256) -or (-not $ExpectedSHA256 -and $observed)){
         throw 'Original DNS snapshot changed during preflight; retain it for review'
     }
 }
-function Remove-VerifiedDNSRecoverySnapshot([string]$Path,[string]$ExpectedSHA256) {
+function Remove-VerifiedDNSRecoverySnapshot([string]$Path,[string]$ExpectedSHA256,[int]$Maximum=8MB) {
     No-Reparse $Path
     if(-not ('AccessWeaver.DNSRecoverySnapshotRemoval' -as [type])){
         Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
@@ -5450,7 +5510,7 @@ namespace AccessWeaver
     try {
         $stream=[IO.FileStream]::new($handle,[IO.FileAccess]::Read)
         try {
-            $bytes=Read-WorkflowRecoveryJournalBytes $stream 8MB
+            $bytes=Read-WorkflowRecoveryJournalBytes $stream $Maximum
             if(-not $bytes.Length -or (Get-WorkflowBytesSHA256 $bytes) -ine $ExpectedSHA256){
                 throw 'Original DNS snapshot changed during preflight; retain it for review'
             }
@@ -5479,6 +5539,13 @@ function Confirm-DNSRecoveryEntry($Entry) {
     }
     $digest=$Entry.snapshotSHA256
     if(Confirm-DNSRecoverySnapshot $digest){return $true}
+    $copy=Read-DNSRecoveryCopy
+    if($copy){
+        if(-not $digest -or $copy.sha256 -ine $digest){
+            throw 'DNS recovery journal does not match the protected recovery copy; review dns-restore'
+        }
+        return $true
+    }
     # Legacy entries lack a digest and continue to require explicit dns-restore
     # whenever an active snapshot exists. Bound entries require their receipt.
     if(-not $digest -or ($Entry.snapshotActive -is [bool] -and -not $Entry.snapshotActive)){return $false}

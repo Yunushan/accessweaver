@@ -594,6 +594,8 @@ public static class AccessWeaverNativeDoHIdentity {
     if($ScenarioKind -ceq 'missing-snapshot'){
         $activeSnapshot=Join-Path $machineRoot 'profiles\dns-original.json'
         $heldSnapshot=Join-Path (Split-Path -Parent $activeSnapshot) ('fixture-held-'+[guid]::NewGuid().ToString('N')+'.tmp')
+        $activeCopy=Join-Path $machineRoot 'profiles\dns-original.copy'
+        $heldCopy=$heldSnapshot+'.copy'
         $missingSnapshotScenario=Invoke-NativeDNSMissingSnapshotScenario -Apply {
             param($Request,$ExpectedRefusal)
             Invoke-NativeDoHCLI $Request -ExpectMissingSnapshot:($ExpectedRefusal -ceq 'missing-snapshot')
@@ -605,9 +607,16 @@ public static class AccessWeaverNativeDoHIdentity {
             param($Digest)
             Assert-NativeOrdinaryPath $activeSnapshot
             Assert-NativeOrdinaryPath $heldSnapshot
+            Assert-NativeOrdinaryPath $activeCopy
+            Assert-NativeOrdinaryPath $heldCopy
             if((Get-FileHash -LiteralPath $activeSnapshot -Algorithm SHA256).Hash -cne $Digest){throw 'Active DNS snapshot changed'}
+            $script:heldDNSCopyDigest=(Get-FileHash -LiteralPath $activeCopy -Algorithm SHA256).Hash
             [IO.File]::Move($activeSnapshot,$heldSnapshot)
-            if((Test-Path -LiteralPath $activeSnapshot) -or (Get-FileHash -LiteralPath $heldSnapshot -Algorithm SHA256).Hash -cne $Digest){
+            try {[IO.File]::Move($activeCopy,$heldCopy)}
+            catch {[IO.File]::Move($heldSnapshot,$activeSnapshot);throw}
+            if((Test-Path -LiteralPath $activeSnapshot) -or (Test-Path -LiteralPath $activeCopy) -or
+                (Get-FileHash -LiteralPath $heldSnapshot -Algorithm SHA256).Hash -cne $Digest -or
+                (Get-FileHash -LiteralPath $heldCopy -Algorithm SHA256).Hash -cne $script:heldDNSCopyDigest){
                 throw 'Snapshot hold could not be verified'
             }
         } -ReturnSnapshot {
@@ -618,7 +627,14 @@ public static class AccessWeaverNativeDoHIdentity {
                 if((Get-FileHash -LiteralPath $heldSnapshot -Algorithm SHA256).Hash -cne $Digest){throw 'Held DNS snapshot changed'}
                 [IO.File]::Move($heldSnapshot,$activeSnapshot)
             }
-            if((Get-FileHash -LiteralPath $activeSnapshot -Algorithm SHA256).Hash -cne $Digest){throw 'Snapshot return could not be verified'}
+            Assert-NativeOrdinaryPath $activeCopy
+            Assert-NativeOrdinaryPath $heldCopy
+            if(Test-Path -LiteralPath $heldCopy){
+                if((Get-FileHash -LiteralPath $heldCopy -Algorithm SHA256).Hash -cne $script:heldDNSCopyDigest){throw 'Held DNS recovery copy changed'}
+                [IO.File]::Move($heldCopy,$activeCopy)
+            }
+            if((Get-FileHash -LiteralPath $activeSnapshot -Algorithm SHA256).Hash -cne $Digest -or
+                (Get-FileHash -LiteralPath $activeCopy -Algorithm SHA256).Hash -cne $script:heldDNSCopyDigest){throw 'Snapshot return could not be verified'}
         } -ReadResolver {
             $service=Get-CimInstance Win32_Service -Filter "Name='AccessWeaver-dnscrypt'" -ErrorAction Stop
             if(@($service).Count -ne 1 -or $service.State -cne 'Running' -or $service.StartMode -cne 'Auto' -or $service.ProcessId -le 0){
@@ -637,7 +653,26 @@ public static class AccessWeaverNativeDoHIdentity {
     }elseif($ScenarioKind -ceq 'journal-recovery'){
         $journalScenario=Invoke-NativeDNSJournalScenario -Apply {
             param($Request,[switch]$ExpectStaleJournal)
-            Invoke-NativeDoHCLI $Request -ExpectStaleJournal:$ExpectStaleJournal
+            if($Request.action -ceq 'recover' -and -not $ExpectStaleJournal){
+                $primary=Join-Path $machineRoot 'profiles\dns-original.json'
+                $copy=Join-Path $machineRoot 'profiles\dns-original.copy'
+                $held=Join-Path (Split-Path -Parent $primary) ('fixture-held-'+[guid]::NewGuid().ToString('N')+'.tmp')
+                Assert-NativeOrdinaryPath $primary
+                Assert-NativeOrdinaryPath $copy
+                Assert-NativeOrdinaryPath $held
+                if(-not [IO.File]::Exists($copy)){throw 'Protected DNS recovery copy is missing'}
+                [IO.File]::Move($primary,$held)
+                try{
+                    Invoke-NativeDoHCLI $Request
+                    if([IO.File]::Exists($primary) -or [IO.File]::Exists($copy)){throw 'Journal recovery did not retire both copies'}
+                }catch{
+                    if(-not [IO.File]::Exists($primary)){[IO.File]::Move($held,$primary)}
+                    throw
+                }
+                [IO.File]::Delete($held)
+            }else{
+                Invoke-NativeDoHCLI $Request -ExpectStaleJournal:$ExpectStaleJournal
+            }
         } -Capture {Read-DNSAcceptanceState ([ref]$script:captureStage) ([ref]$script:captureProgress)} -Resolve {
             [void](Get-NativeDNSAnswerCount)
         } -ReadBinding {
@@ -690,7 +725,8 @@ public static class AccessWeaverNativeDoHIdentity {
             $script:installedComponentVerified=$true
         }
     }
-    $snapshotRemoved=-not (Test-Path -LiteralPath (Join-Path $machineRoot 'profiles\dns-original.json'))
+    $snapshotRemoved=-not (Test-Path -LiteralPath (Join-Path $machineRoot 'profiles\dns-original.json')) -and
+        -not (Test-Path -LiteralPath (Join-Path $machineRoot 'profiles\dns-original.copy'))
     $scenarioPassed=($scenario.outcome -ceq 'passed' -and $scenario.restoredResolverVerified -and $script:restoredAnswers -ge 1 -and $snapshotRemoved -and $script:cliCount -eq $(if($ScenarioKind -ceq 'service-reactivation'){4}elseif($Method -ceq 'dnscrypt' -and $ScenarioKind -cne 'remove-all'){3}else{2}) -and $script:joined -eq $script:cliCount -and ($Method -ceq 'doh' -or ($serviceRunning -and $serviceAutomatic -and $serviceRemoved -and $script:cleanupExit -eq 0)) -and -not $script:overflow -and -not $script:captureFailed)
     if($ScenarioKind -ceq 'missing-snapshot'){
         $serviceConfig=Join-Path $machineRoot 'services\dnscrypt.json'
@@ -702,7 +738,8 @@ public static class AccessWeaverNativeDoHIdentity {
         $scenarioPassed=($missingSnapshotScenario.outcome -ceq 'passed' -and $snapshotRemoved -and $serviceRemoved -and
             $missingSnapshotScenario.serviceFilesRemoved -and
             $script:installedComponentVerified -and $script:cliCount -eq 3 -and $script:joined -eq 3 -and
-            -not (Test-Path -LiteralPath $heldSnapshot) -and -not $script:overflow -and -not $script:captureFailed)
+            -not (Test-Path -LiteralPath $heldSnapshot) -and -not (Test-Path -LiteralPath $heldCopy) -and
+            -not $script:overflow -and -not $script:captureFailed)
     }
     if($ScenarioKind -ceq 'journal-recovery'){
         $scenarioPassed=($journalScenario.outcome -ceq 'passed' -and $journalScenario.reappliedStateVerified -and
