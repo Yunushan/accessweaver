@@ -4,7 +4,7 @@ $fixture=Join-Path $PSScriptRoot 'test-windows-apps.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($fixture,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Interactive Windows app fixture failed parsing'}
-foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Assert-FixtureCommunicationImage','Test-FixtureCommunication','Check-FixtureCommunications','Test-FixtureAppChecks','Start-FixtureApp','Remove-FixtureApp','Assert-FixtureDiscordUpdaterAbsent','Assert-FixtureSplitCordServiceState','New-SplitCordHandoff','Read-SplitCordHandoff','Get-DiscordProxyRequest','New-DiscordProxyReceipt','Assert-DiscordProxyReceipt','Assert-FixtureDroverApplied','Assert-FixtureDroverRestored','Test-FixtureDiscordDroverLoaded','Get-FixtureDroverFiles','Get-FixtureDiscordProxy')){
+foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Assert-FixtureCommunicationImage','Test-FixtureCommunication','Check-FixtureCommunications','Test-FixtureAppChecks','Get-FixtureBaselineFailureStage','Start-FixtureApp','Remove-FixtureApp','Assert-FixtureDiscordUpdaterAbsent','Assert-FixtureSplitCordServiceState','New-SplitCordHandoff','Read-SplitCordHandoff','Get-DiscordProxyRequest','New-DiscordProxyReceipt','Assert-DiscordProxyReceipt','Assert-FixtureDroverApplied','Assert-FixtureDroverRestored','Test-FixtureDiscordDroverLoaded','Get-FixtureDroverFiles','Get-FixtureDiscordProxy')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -146,6 +146,14 @@ $script:observations.Enqueue($null)
 $refused=$false
 try{Assert-FixtureLiveImage $image $false}catch{$refused=$_.Exception.Message -ceq 'Fixture observation limit reached'}
 if(-not $refused){throw 'No conclusive readback was accepted as removal'}
+$blocked=[Exception]::new('Private fixture context',[ComponentModel.Win32Exception]::new(4551))
+$otherLaunchFault=[ComponentModel.Win32Exception]::new(5)
+if((Get-FixtureBaselineFailureStage 'discovery' $blocked) -cne 'controller-launch-policy' -or
+   (Get-FixtureBaselineFailureStage 'discovery' $otherLaunchFault) -cne 'discovery' -or
+   (Get-FixtureBaselineFailureStage 'updater-baseline' $blocked) -cne 'updater-baseline'){
+    throw 'Baseline reporting did not preserve fixed stages and distinguish an application policy block'
+}
+
 if((Get-FixtureAppImage ([pscustomobject]@{discord=$image}) 'discord') -cne $image){throw 'Approved discovery identity was missed'}
 if(Get-FixtureAppImage ([pscustomobject]@{'discord-ptb'=$null}) 'discord-ptb'){throw 'Absent discovery unexpectedly returned a path'}
 foreach($inventory in @(

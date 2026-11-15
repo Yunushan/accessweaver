@@ -177,6 +177,17 @@ function Test-FixtureAppChecks([object[]]$Checks,[string[]]$Expected) {
     return $remaining.Count -eq 0
 }
 
+function Get-FixtureBaselineFailureStage([string]$Stage,[Exception]$Failure){
+    if($Stage -ceq 'discovery'){
+        for($cause=$Failure;$null -ne $cause;$cause=$cause.InnerException){
+            if($cause -is [ComponentModel.Win32Exception] -and $cause.NativeErrorCode -eq 4551){
+                return 'controller-launch-policy'
+            }
+        }
+    }
+    return $Stage
+}
+
 function Get-FixtureSplitCordServiceState {
     $service=[ServiceProcess.ServiceController]::new('SplitCordDpiService')
     try {
@@ -530,10 +541,10 @@ try {
     $checks=[Collections.Generic.List[object]]::new()
     $script:appEvidenceStage='baseline'
     $report=[ordered]@{
-        schemaVersion=11;runID=$runID;controllerSHA256=$controllerDigest;approvedDigestMatched=[bool]$ExpectedSHA256;
+        schemaVersion=12;runID=$runID;controllerSHA256=$controllerDigest;approvedDigestMatched=[bool]$ExpectedSHA256;
         fixtureSHA256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant();
         architecture=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant();
-        checks=$null;baselineClear=$false;splitCordIncluded=(-not $SkipSplitCord);
+        checks=$null;baselineClear=$false;baselineFailureStage=$null;splitCordIncluded=(-not $SkipSplitCord);
         communicationMethod=$(if($InteractiveCommunications){'operator-observed-two-way'}else{'not-requested'});
         textExercised=$false;voiceExercised=$false;combinedRepairExecuted=$false;
         stagedDiscordRepairRequested=[bool]$StagedDiscordRepair;stagedDiscordRepairExercised=$false;passed=$false
@@ -643,8 +654,12 @@ try {
     try {
         $apps=Inspect-Apps
         foreach($variant in $variants){
+            $script:appEvidenceStage='application-baseline'
             if(Get-FixtureAppImage $apps $variant){throw 'The disposable desktop baseline already contains a tested application'}
-            if($variant -cin @('discord','discord-ptb')){Assert-FixtureDiscordUpdaterAbsent $variant -CheckProcesses}
+            if($variant -cin @('discord','discord-ptb')){
+                $script:appEvidenceStage='updater-baseline'
+                Assert-FixtureDiscordUpdaterAbsent $variant -CheckProcesses
+            }
         }
         if(-not $SkipSplitCord){
             $script:appEvidenceStage='service-baseline'
@@ -814,6 +829,11 @@ try {
             Check-FixtureCommunications 'splitcord' 'splitcord-start'
             Check 'splitcord-remove' {Remove-FixtureApp 'splitcord'}
         }
+    } catch {
+        if(-not $report.baselineClear){
+            $report.baselineFailureStage=Get-FixtureBaselineFailureStage $script:appEvidenceStage $_.Exception
+        }
+        throw
     } finally {
         foreach($variant in $attempted){
             Check ('cleanup-'+$variant) {

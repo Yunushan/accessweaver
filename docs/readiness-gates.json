@@ -85,7 +85,8 @@
             "scripts/test-windows-drover-restore.ps1",
             "scripts/test-windows-workflow.ps1",
             "docs/qualification/241f61b770d1-splitcord-registered-discovery-contracts.json",
-            "docs/qualification/38e1743ef9fb-application-live-process-contracts.json"
+            "docs/qualification/38e1743ef9fb-application-live-process-contracts.json",
+            "docs/qualification/f7d7e9b85325-windows-sandbox-application-policy.json"
           ]
         }
       ]
