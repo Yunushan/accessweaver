@@ -3868,6 +3868,29 @@ function Get-SplitCordInstaller {
     if($hash -notmatch '\A[a-fA-F0-9]{64}\z'){throw 'SplitCord installer requires a published or explicitly supplied SHA-256'}
     return @{url=$url;hash=$hash}
 }
+function Test-SplitCordServiceProcess($Service,[string]$Binary) {
+    $processID=$Service.ProcessId
+    if($processID -isnot [uint32] -or $processID -eq 0){return $false}
+
+    $filter='ProcessId='+$processID.ToString([Globalization.CultureInfo]::InvariantCulture)
+    $properties=@('ProcessId','ExecutablePath','CreationDate')
+    $before=@(Get-CimInstance -ClassName Win32_Process -Filter $filter -Property $properties -ErrorAction Stop)
+    if($before.Count -ne 1 -or $before[0].ProcessId -ne $processID -or
+        $before[0].ExecutablePath -ine $Binary -or $before[0].CreationDate -isnot [datetime]){
+        return $false
+    }
+
+    # The registration and process can change between the independent lookups.
+    $confirmed=Read-ManagedServiceRegistration 'SplitCordDpiService'
+    if($confirmed.State -cne 'Running' -or $confirmed.PathName -ine $Service.PathName -or
+        $confirmed.ProcessId -isnot [uint32] -or $confirmed.ProcessId -ne $processID){
+        return $false
+    }
+    $after=@(Get-CimInstance -ClassName Win32_Process -Filter $filter -Property $properties -ErrorAction Stop)
+    return ($after.Count -eq 1 -and $after[0].ProcessId -eq $processID -and
+        $after[0].ExecutablePath -ieq $Binary -and $after[0].CreationDate -is [datetime] -and
+        $after[0].CreationDate -eq $before[0].CreationDate)
+}
 function Wait-SplitCordService([string]$App,[int]$Seconds=20,[switch]$AllowAbsentOrStopped,[switch]$AllowMissingStoppedImage) {
     $name='SplitCordDpiService'
     $binary=if($App){Join-Path (Split-Path -Parent $App) 'resources\service-installer\SplitCordService.exe'}
@@ -3894,7 +3917,8 @@ function Wait-SplitCordService([string]$App,[int]$Seconds=20,[switch]$AllowAbsen
                 $service.State -cne 'Stopped' -or (Test-Path -LiteralPath $binary -ErrorAction Stop))){
                 throw 'SplitCord service executable is missing'
             }
-            if($service.State -ceq 'Running' -or ($AllowAbsentOrStopped -and $service.State -ceq 'Stopped')){
+            if(($AllowAbsentOrStopped -and $service.State -ceq 'Stopped') -or
+                ($service.State -ceq 'Running' -and (Test-SplitCordServiceProcess $service $binary))){
                 return
             }
         }

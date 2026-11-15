@@ -1811,17 +1811,48 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         param($Name)
         if($Name -cne 'SplitCordDpiService'){throw 'Unexpected SplitCord registration query'}
         if($removeImageDuringRead){[IO.File]::Delete($binary)}
-        return [pscustomobject]@{PathName=$serviceCommand;State=$serviceStatus}
+        $counters.service++
+        $pidValue=$serviceProcessID
+        if($processFault -ceq 'service-restarted' -and $counters.service -eq 2){$pidValue=[uint32]4322}
+        return [pscustomobject]@{PathName=$serviceCommand;State=$serviceStatus;ProcessId=$pidValue}
+    }
+    function Get-CimInstance {
+        param($ClassName,$Filter,$Property,$ErrorAction)
+        if($ClassName -cne 'Win32_Process' -or $Filter -cne 'ProcessId=4321' -or
+            ($Property -join ',') -cne 'ProcessId,ExecutablePath,CreationDate' -or $ErrorAction -cne 'Stop'){
+            throw 'Unexpected SplitCord process query'
+        }
+        $counters.process++
+        if($processFault -ceq 'gone' -or ($processFault -ceq 'exited' -and $counters.process -eq 2)){return}
+        $path=if($processFault -ceq 'other-image'){'C:\Fixture\other.exe'}elseif($processFault -cne 'unreadable'){$binary}
+        $creation=if($processFault -ceq 'reused-pid' -and $counters.process -eq 2){$started.AddSeconds(1)}else{$started}
+        [pscustomobject]@{ProcessId=[uint32]4321;ExecutablePath=$path;CreationDate=$creation}
     }
     $queryFails=$false
     $removeImageDuringRead=$false
+    $processFault=''
+    $serviceProcessID=[uint32]4321
+    $started=[datetime]'2026-01-01T00:00:00Z'
+    $counters=@{service=0;process=0}
     $serviceState=0;$serviceCommand='"'+$binary+'"';$serviceStatus='Running'
     Wait-SplitCordService $app 0
+    if($counters.service -ne 2 -or $counters.process -ne 2){throw 'SplitCord did not confirm the running process'}
     Wait-SplitCordService $app 0 -AllowAbsentOrStopped
+    foreach($processFault in @('gone','exited','other-image','unreadable','service-restarted','reused-pid','invalid-pid')){
+        $counters.service=0;$counters.process=0
+        $serviceProcessID=if($processFault -ceq 'invalid-pid'){[uint32]0}else{[uint32]4321}
+        $refused=$false
+        try{Wait-SplitCordService $app 0}catch{$refused=$_.Exception.Message -ceq 'SplitCord service did not reach Running'}
+        if(-not $refused){throw 'SplitCord accepted a missing, unrelated or replaced service process'}
+    }
+    $processFault=''
+    $serviceProcessID=[uint32]4321
+    $counters.process=0
     $serviceStatus='Stopped'
     Wait-SplitCordService $app 0 -AllowAbsentOrStopped
     $serviceState=1060
     Wait-SplitCordService $app 0 -AllowAbsentOrStopped
+    if($counters.process -ne 0){throw 'SplitCord queried a process for a stopped or absent service'}
     foreach($case in @(
         @{app='';state=0;command=$serviceCommand;status='Running'},
         @{app=$app;state=0;command=($serviceCommand+' --foreign');status='Stopped'},
