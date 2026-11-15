@@ -2496,6 +2496,99 @@ try {
     foreach($name in $appRemovalSaved.Keys){Set-Item ('Function:'+$name) $appRemovalSaved[$name]}
     $script:externalEffectsPending=$false
 }
+# Interrupt the vendor between client and updater removal using inert files.
+& {
+    $previousAppData=$env:LOCALAPPDATA
+    $previousRecoveryRoot=$script:appRemovalRecoveryRoot
+    $previousEffects=$script:externalEffectsPending
+    $env:LOCALAPPDATA=Join-Path $testRoot 'discord-retry-appdata'
+    $script:appRemovalRecoveryRoot=Join-Path $testRoot 'discord-retry-state'
+    try {
+        function Require-DesktopUser {}
+        function Get-Process {param($ErrorAction);return $state.processes}
+        function Stop-AppProcesses {param($Variant,$App,$ExpectedUninstaller);$state.stops++}
+        function Event {}
+        function Save-Journal {
+            if($state.recreateClient){[IO.File]::WriteAllText($image,'new client')}
+        }
+        function Native {
+            param($Program,$Arguments,$Timeout,[IO.FileStream[]]$StartGuard)
+            $expectedGuards=if($state.launches -eq 0){2}else{1}
+            $pending=Read-DiscordRemovalRecovery $variant
+            if($Program -ine $updater -or ($Arguments -join ' ') -cne '--uninstall -s' -or $Timeout -ne 300 -or
+                $StartGuard.Count -ne $expectedGuards -or -not $pending -or $pending.image -ine $image -or
+                $pending.updaterSHA256 -cne (Get-AppExecutableDigest $updater)){
+                throw 'Vendor was called without the exact recorded removal'
+            }
+            foreach($guard in $StartGuard){
+                $writeDenied=$false
+                try {$writer=[IO.File]::OpenWrite($guard.Name);$writer.Dispose()}catch [IO.IOException] {$writeDenied=$true}
+                if(-not $writeDenied){throw 'Vendor command did not hold its verified file'}
+                $guard.Dispose()
+            }
+            $state.launches++
+            if($state.launches -eq 1){
+                [IO.File]::Delete($image)
+                throw 'Synthetic interruption after client removal'
+            }
+            [IO.File]::Delete($updater)
+        }
+        foreach($variant in @('discord','discord-ptb')){
+            $state=@{launches=0;stops=0;recreateClient=$false;processes=@()}
+            $appBase=Get-AppProcessBase $variant
+            $appDir=Join-Path $appBase 'app-1.0.0'
+            [void][IO.Directory]::CreateDirectory($appDir)
+            $image=Join-Path $appDir (([IO.Path]::GetFileName($appBase))+'.exe')
+            $updater=Join-Path $appBase 'Update.exe'
+            [IO.File]::WriteAllText($image,'verified client')
+            [IO.File]::WriteAllText($updater,'verified updater')
+            $interrupted=$false
+            try{Remove-App $variant}catch{$interrupted=$_.Exception.Message -ceq 'Synthetic interruption after client removal'}
+            $saved=Read-DiscordRemovalRecovery $variant
+            Assert ($interrupted -and $saved -and -not [IO.File]::Exists($image) -and [IO.File]::Exists($updater)) ($variant+' retains recovery after interrupted removal')
+
+            $recordBytes=[IO.File]::ReadAllBytes($saved.path)
+            [IO.File]::WriteAllText($saved.path,('['+[Text.Encoding]::UTF8.GetString($recordBytes)+']'))
+            $refused=$false
+            try{Remove-App $variant}catch{$refused=$_.Exception.Message -like 'Discord removal recovery record could not be verified*'}
+            Assert ($refused -and $state.launches -eq 1 -and [IO.File]::Exists($saved.path)) ($variant+' rejects an invalid recovery record frame')
+            [IO.File]::WriteAllBytes($saved.path,$recordBytes)
+
+            $state.processes=@([pscustomobject]@{ProcessName='Update';Path=$updater;HasExited=$false})
+            $refused=$false
+            try{Remove-App $variant}catch{$refused=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+            Assert ($refused -and $state.launches -eq 1) ($variant+' defers retry while the original updater is running')
+            $state.processes=@()
+
+            [IO.File]::WriteAllText($updater,'different updater')
+            $refused=$false
+            try{Remove-App $variant}catch{$refused=$_.Exception.Message -ceq 'Discord updater differs from the interrupted removal'}
+            Assert ($refused -and $state.launches -eq 1 -and (Read-DiscordRemovalRecovery $variant).sha256 -ceq $saved.sha256) ($variant+' refuses a replaced updater and retains recovery')
+            [IO.File]::WriteAllText($updater,'verified updater')
+
+            $state.recreateClient=$true
+            $refused=$false
+            try{Remove-App $variant}catch{$refused=$_.Exception.Message -ceq 'Discord reappeared before removal retry; review the current installation'}
+            Assert ($refused -and $state.launches -eq 1 -and [IO.File]::Exists($image)) ($variant+' refuses to retry when the client reappears during journaling')
+            [IO.File]::Delete($image)
+            $state.recreateClient=$false
+
+            $refused=$false
+            try{Complete-DiscordRemovalRecovery $variant $saved}catch{
+                $refused=$_.Exception.Message -ceq 'Discord updater remains on disk; review the installation before retrying'
+            }
+            Assert ($refused -and (Read-DiscordRemovalRecovery $variant).sha256 -ceq $saved.sha256) ($variant+' retains the record while an updater is still present at retirement')
+
+            Assert (((Remove-App $variant) -ceq $true) -and $state.launches -eq 2 -and $state.stops -eq 1 -and
+                -not [IO.File]::Exists($updater) -and -not [IO.File]::Exists($saved.path)) ($variant+' finishes interrupted removal and retires its exact recovery record')
+            Assert (((Remove-App $variant) -ceq $false) -and $state.launches -eq 2) ($variant+' verifies a no-op after successful retry')
+        }
+    } finally {
+        $env:LOCALAPPDATA=$previousAppData
+        $script:appRemovalRecoveryRoot=$previousRecoveryRoot
+        $script:externalEffectsPending=$previousEffects
+    }
+}
 # Mock installer acquisition and user operations; never execute a vendor process.
 $appInstallSaved=@{};foreach($name in @('Require-DesktopUser','Find-App','Get-AppExecutableDigest','Get-AppUninstaller','Open-VerifiedAppExecutable','Remove-App','Download','Native','Wait-App','Wait-AppProcessesExited','Event','Save-Journal')){$appInstallSaved[$name]=(Get-Command $name).ScriptBlock}
 $previousAppRequest=$r
