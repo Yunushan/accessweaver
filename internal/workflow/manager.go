@@ -213,7 +213,10 @@ func (m *Manager) Preview(r Request) (Plan, error) {
 		p.Warnings = append(p.Warnings, "Windows DoH requires Windows Firewall. AccessWeaver blocks plaintext DNS Client traffic to Google and Quad9 until you restore DNS or switch to DNSCrypt.")
 	}
 	if r.Action == "app-remove" || r.Action == "app-reinstall" || r.Action == "app-repair" || r.Clean {
-		p.Warnings = append(p.Warnings, "Application removal or reinstall can sign you out. If the replacement installer fails after removal, run a fresh reviewed installation.")
+		p.Warnings = append(p.Warnings, "Application removal or reinstall can sign you out.")
+	}
+	if r.Action == "app-reinstall" {
+		p.Warnings = append(p.Warnings, "Retry an interrupted reinstall from the same AccessWeaver state directory to reuse the verified replacement installer. Review the current installation if a client or updater has appeared after replacement setup started.")
 	}
 	if r.Action == "vendor-uninstall" {
 		p.Warnings = append(p.Warnings, "Uninstalling the selected WireSock product can remove independently created profiles and vendor services. Back up profiles you need before applying this operation.")

@@ -2589,6 +2589,119 @@ try {
         $script:externalEffectsPending=$previousEffects
     }
 }
+# Verify reinstall recovery across fresh jobs without launching a vendor binary.
+& {
+    $previousAppData=$env:LOCALAPPDATA
+    $previousRecoveryRoot=$script:appRemovalRecoveryRoot
+    $previousEffects=$script:externalEffectsPending
+    $env:LOCALAPPDATA=Join-Path $testRoot 'discord-reinstall-appdata'
+    try {
+        function Require-DesktopUser {}
+        function Get-Process {param($ErrorAction);return $state.processes}
+        function Stop-AppProcesses {}
+        function Event {}
+        function Save-Journal {}
+        function Download {
+            param($url,$hash,$destination,[switch]$Signed,$Publisher,[switch]$ReturnVerifiedHash)
+            if(-not $Signed -or $Publisher -cne 'discord' -or -not $ReturnVerifiedHash){throw 'Replacement was not acquired with publisher verification'}
+            $state.downloads++
+            if($state.downloads -eq 1){$state.installer=$destination}
+            [IO.File]::WriteAllText($destination,'verified replacement installer')
+            return (Get-AppExecutableDigest $destination)
+        }
+        function Get-AuthenticodeSignature {
+            param($LiteralPath)
+            if($LiteralPath -ine $state.installer){throw 'Publisher check did not use the retained installer'}
+            $state.signatureChecks++
+            return @{Status=$(if($state.invalidSignature){'NotTrusted'}else{'Valid'});SignerCertificate=@{Subject='CN=Discord fixture'}}
+        }
+        function Native {
+            param($Program,$Arguments,$Timeout,[IO.FileStream[]]$StartGuard)
+            $pending=Read-DiscordRemovalRecovery 'discord'
+            if($Program -ieq $updater){
+                if(($Arguments -join ' ') -cne '--uninstall -s' -or $pending.replacement.setupAttempted){
+                    throw 'Uninstall was called outside the recorded removal phase'
+                }
+                $state.removals++
+                foreach($guard in $StartGuard){$guard.Dispose()}
+                [IO.File]::Delete($image)
+                if($state.mode -ceq 'partial-removal' -and $state.removals -eq 1){throw 'Synthetic removal interruption'}
+                [IO.File]::Delete($updater)
+                return
+            }
+            if($Program -ine $state.installer -or ($Arguments -join ' ') -cne '-s' -or
+                -not $pending.replacement.setupAttempted -or $StartGuard.Count -ne 1 -or -not $StartGuard[0].CanRead){
+                throw 'Setup was called without the retained installer and recorded phase'
+            }
+            $state.setups++
+            $StartGuard[0].Dispose()
+            if($state.mode -ceq 'setup-failure' -and $state.setups -eq 1){throw 'Synthetic replacement interruption'}
+            [IO.File]::WriteAllText($image,'replacement client')
+            [IO.File]::WriteAllText($updater,'replacement updater')
+        }
+        foreach($mode in @('partial-removal','setup-failure')){
+            $state=@{mode=$mode;downloads=0;removals=0;setups=0;signatureChecks=0;installer='';invalidSignature=$false;processes=@()}
+            $workflows=Join-Path $testRoot ('discord-reinstall-'+$mode)
+            $script:appRemovalRecoveryRoot=Join-Path $workflows 'application-recovery'
+            $root=Join-Path $workflows ((('a'*48))+'\application')
+            [void][IO.Directory]::CreateDirectory((Join-Path $root 'downloads'))
+            $r=[pscustomobject]@{action='app-reinstall';engine='discord';clean=$false}
+            $inputData=@{nativeArchitecture='amd64'}
+            $base=Get-AppProcessBase 'discord'
+            $versionDirectory=Join-Path $base 'app-1.0.0'
+            [void][IO.Directory]::CreateDirectory($versionDirectory)
+            $image=Join-Path $versionDirectory 'Discord.exe'
+            $updater=Join-Path $base 'Update.exe'
+            [IO.File]::WriteAllText($image,'original client')
+            [IO.File]::WriteAllText($updater,'original updater')
+
+            $interrupted=$false
+            $message=if($mode -ceq 'partial-removal'){'Synthetic removal interruption'}else{'Synthetic replacement interruption'}
+            try{Install-App 'discord' -Reinstall}catch{$interrupted=$_.Exception.Message -ceq $message}
+            $saved=Read-DiscordRemovalRecovery 'discord'
+            Assert ($interrupted -and $saved.replacement.job -ceq ('a'*48) -and
+                $saved.replacement.setupAttempted -eq ($mode -ceq 'setup-failure')) ('Discord reinstall retains the approved installer and phase after '+$mode)
+
+            $root=Join-Path $workflows ((('b'*48))+'\application')
+            [void][IO.Directory]::CreateDirectory((Join-Path $root 'downloads'))
+            if($mode -ceq 'setup-failure'){
+                $state.processes=@([pscustomobject]@{ProcessName='discord-setup';Path=$state.installer;HasExited=$false})
+                $refused=$false
+                try{Install-App 'discord' -Reinstall}catch{$refused=$_.Exception.Message -like 'The retained Discord installer may still be running*'}
+                Assert ($refused -and $state.setups -eq 1 -and $state.removals -eq 1 -and
+                    (Read-DiscordRemovalRecovery 'discord').sha256 -ceq $saved.sha256) 'Discord reinstall defers while the prior installer is still running'
+                $state.processes=@()
+                [IO.File]::WriteAllText($image,'original client')
+                [IO.File]::WriteAllText($updater,'original updater')
+                $refused=$false
+                try{Install-App 'discord' -Reinstall}catch{$refused=$_.Exception.Message -like 'Stable Discord changed before reinstall*'}
+                Assert ($refused -and $state.removals -eq 1 -and $state.setups -eq 1) 'Discord does not remove a client again after replacement setup was attempted'
+                [IO.File]::Delete($image)
+                [IO.File]::Delete($updater)
+            }
+            [IO.File]::WriteAllText($state.installer,'changed installer')
+            $refused=$false
+            try{Install-App 'discord' -Reinstall}catch{$refused=$_.Exception.Message -like 'Staged application installer differs*'}
+            Assert ($refused -and $state.downloads -eq 1 -and (Read-DiscordRemovalRecovery 'discord').sha256 -ceq $saved.sha256) 'Discord reinstall refuses changed retained installer bytes'
+            [IO.File]::WriteAllText($state.installer,'verified replacement installer')
+            $state.invalidSignature=$true
+            $refused=$false
+            try{Install-App 'discord' -Reinstall}catch{$refused=$_.Exception.Message -ceq 'Recorded Discord replacement publisher signature could not be verified'}
+            Assert ($refused -and $state.removals -eq 1 -and $state.signatureChecks -ge 1 -and [IO.File]::Exists($saved.path)) 'Discord reinstall rechecks publisher trust before resuming'
+            $state.invalidSignature=$false
+
+            $result=Install-App 'discord' -Reinstall
+            Assert ($result.reinstalled -eq $true -and $state.downloads -eq 1 -and
+                $state.removals -eq (1+[int]($mode -ceq 'partial-removal')) -and
+                $state.setups -eq (1+[int]($mode -ceq 'setup-failure')) -and
+                [IO.File]::ReadAllText($image) -ceq 'replacement client' -and -not [IO.File]::Exists($saved.path)) ('Discord reinstall resumes '+$mode+' and verifies cleanup')
+        }
+    } finally {
+        $env:LOCALAPPDATA=$previousAppData
+        $script:appRemovalRecoveryRoot=$previousRecoveryRoot
+        $script:externalEffectsPending=$previousEffects
+    }
+}
 # Mock installer acquisition and user operations; never execute a vendor process.
 $appInstallSaved=@{};foreach($name in @('Require-DesktopUser','Find-App','Get-AppExecutableDigest','Get-AppUninstaller','Open-VerifiedAppExecutable','Remove-App','Download','Native','Wait-App','Wait-AppProcessesExited','Event','Save-Journal')){$appInstallSaved[$name]=(Get-Command $name).ScriptBlock}
 $previousAppRequest=$r
