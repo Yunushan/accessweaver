@@ -70,9 +70,10 @@ function Assert-InstallerPackageDirectories([string]$Root,[string]$SetupScript,[
         $compiled=[IO.File]::ReadAllText($PreprocessedScript)
         $compiledReplacement=[regex]::Match($compiled,'(?ms)^function AWPayloadReplacementPreflight\(.*?^end;')
         $compiledCompletion=[regex]::Match($compiled,'(?ms)^function AWVerifyCompletedInstall\(.*?^end;')
-        if(-not $compiledReplacement.Success -or -not $compiledCompletion.Success -or
+        $compiledFingerprint=[regex]::Match($compiled,'(?ms)^function AWStagedPayloadDigest:.*?^end;')
+        if(-not $compiledReplacement.Success -or -not $compiledCompletion.Success -or -not $compiledFingerprint.Success -or
             $compiled -cnotmatch '(?m)^Source: .*; BeforeInstall: AWCheckPackageCopyDestination\s*$'){
-            throw 'Compiled installer package preflight, copy guard, or completion verification is missing'
+            throw 'Compiled installer package preflight, copy guard, completion verification or payload fingerprint is missing'
         }
         $releaseSubjects=@{
             'accessweaver.exe'='Executable'
@@ -114,6 +115,10 @@ function Assert-InstallerPackageDirectories([string]$Root,[string]$SetupScript,[
                 }
                 if($compiledCompletion.Value.IndexOf($check,[StringComparison]::OrdinalIgnoreCase) -lt 0){
                     throw ('Compiled installer omitted the staged file identity at completion: '+$relative)
+                }
+                $fingerprintEntry="Entries.Add('$literal|$length|$digest');"
+                if($compiledFingerprint.Value.IndexOf($fingerprintEntry,[StringComparison]::OrdinalIgnoreCase) -lt 0){
+                    throw ('Compiled installer omitted the staged file from the upgrade fingerprint: '+$relative)
                 }
             }
         }

@@ -417,13 +417,16 @@ end;
 #define AWStagedFind
 #define AWStagedResult
 #define AWStagedVerify False
+#define AWStagedFingerprint False
 #sub AWEmitStagedFileCheck
   #define AWStagedRelative AWStagedPrefix + FindGetFileName(AWStagedFind)
   #define AWStagedName LowerCase(AWStagedRelative)
-  #if AWStagedName != "accessweaver.exe" && AWStagedName != "build-info.json" && AWStagedName != "sbom.cdx.json" && AWStagedName != "licenses\inno-setup-license.txt"
-    #define AWStagedLiteral StringChange(AWStagedRelative, "'", "''")
+  #define AWStagedLiteral StringChange(AWStagedRelative, "'", "''")
+  #define AWStagedPath AddBackslash(BuildRoot) + AWStagedRelative
+  #if AWStagedFingerprint
+    Entries.Add('{#AWStagedLiteral}|{#FileSize(AWStagedPath)}|{#GetSHA256OfFile(AWStagedPath)}');
+  #elif AWStagedName != "accessweaver.exe" && AWStagedName != "build-info.json" && AWStagedName != "sbom.cdx.json" && AWStagedName != "licenses\inno-setup-license.txt"
     #if AWStagedVerify
-      #define AWStagedPath AddBackslash(BuildRoot) + AWStagedRelative
       if not AWVerifyAndHoldPackageFile(Destination + '\{#AWStagedLiteral}', '{#GetSHA256OfFile(AWStagedPath)}', {#FileSize(AWStagedPath)}, Held) then Exit;
     #else
       if not AWCanReplaceInstalledFile(Destination + '\{#AWStagedLiteral}') then begin
@@ -564,6 +567,31 @@ end;
 
 const AWUpgradeFromPrefix = '/AWUpgradeFrom=';
 
+function AWStagedPayloadDigest: String;
+var Entries: TStringList; I, J: Integer; Entry: String;
+begin
+  Entries := TStringList.Create;
+  try
+    #expr AWStagedFingerprint = True
+    #for {AWStagedDirectoryIndex = 0; AWStagedDirectoryIndex < DimOf(AWStagedDirectories); AWStagedDirectoryIndex++} AWEmitStagedDirectoryChecks
+    #expr AWStagedFingerprint = False
+    { Use the same order across build enumeration and Windows user locales. }
+    for I := 1 to Entries.Count - 1 do begin
+      Entry := Entries[I];
+      J := I;
+      while J > 0 do begin
+        if AWOrdinal(Entries[J - 1], Entry) <= 0 then Break;
+        Entries[J] := Entries[J - 1];
+        J := J - 1;
+      end;
+      Entries[J] := Entry;
+    end;
+    Result := GetSHA256OfString(Entries.Text);
+  finally
+    Entries.Free;
+  end;
+end;
+
 function AWApprovedUpgradePreflight(const Destination: String; var ApprovalPin: String): String;
 var I, Ordering: Integer; Argument, Approval, Version, PayloadPin, SBOMPin, BuildPin,
     Installed, Location, OtherVersion, OtherLocation, PendingVersion, PendingDirectory, PendingPin: String;
@@ -601,9 +629,9 @@ begin
   BuildPin := Copy(Approval, 131, 64);
   if not AWSha256Pin(PayloadPin) or not AWSha256Pin(SBOMPin) or not AWSha256Pin(BuildPin) then Exit;
 
-  { The pin binds the validated argument and package contents to this attempt.
+  { The pin binds the baseline argument and all staged payload files.
     The separate record fields bind its exact new version and destination. }
-  Argument := Version + ',' + Approval + '|{#TargetArch}|{#PayloadDigest}|{#PayloadSBOMDigest}|{#BuildInfoDigest}';
+  Argument := Version + ',' + Approval + '|{#TargetArch}|' + AWStagedPayloadDigest;
   ApprovalPin := Lowercase(GetSHA256OfString(Argument));
   if PendingPin <> '' then begin
     Result := 'Finish the incomplete AccessWeaver managed upgrade with its original approved installer and baseline argument.';

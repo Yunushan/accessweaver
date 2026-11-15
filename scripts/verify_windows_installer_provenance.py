@@ -25,7 +25,8 @@ SHA=re.compile(r"[a-f0-9]{64}")
 ROLLBACK_REPORT_SCHEMA = 53
 DOCUMENTATION_COMPLETION_REPORT_SCHEMA = 54
 RETIREMENT_FLUSH_REPORT_SCHEMA = 55
-REPORT_SCHEMAS = range(11, RETIREMENT_FLUSH_REPORT_SCHEMA + 1)
+FULL_PAYLOAD_UPGRADE_REPORT_SCHEMA = 56
+REPORT_SCHEMAS = range(11, FULL_PAYLOAD_UPGRADE_REPORT_SCHEMA + 1)
 PHASES=["baseline","after-install","after-upgrade","after-reinstall","after-active-setup-uninstall","after-lifecycle-locks","after-refused-downgrade","after-version-policy","after-registry-read-boundaries","after-registry-view-policy","after-registry-access-policy","after-restoration-launch-failures","after-restoration-ownership-contracts","before-uninstall","after-uninstall"]
 
 def require(ok,message):
@@ -194,10 +195,13 @@ def validate_setup_completion_refusal(value, *, documentation=False):
     return {key: True}
 
 
-def validate_setup_upgrade_baseline(value, *, check_recovery=False, check_abrupt_termination=False):
+def validate_setup_upgrade_baseline(value, *, check_recovery=False, check_abrupt_termination=False,
+                                    check_payload_binding=False):
     flags = {"installedStatePreserved", "profilePreserved", "pendingMarkerAbsent", "matchingUpgradeAccepted"}
     if check_recovery:
         flags.update({"copyCompletedBeforeRecovery", "changedRetryRefused", "matchingRetryRetiredMarker"})
+    if check_payload_binding:
+        flags.add("changedDocumentationRetryRefused")
     fields = flags | {"refusalExitCode", "refusalElapsedMilliseconds", "deadlineMilliseconds"}
     if check_abrupt_termination:
         fields.add("abruptTerminationExitCode")
@@ -214,6 +218,8 @@ def validate_setup_upgrade_baseline(value, *, check_recovery=False, check_abrupt
         require(type(value["abruptTerminationExitCode"]) is int and value["abruptTerminationExitCode"] == 197,
                 "Managed Setup abrupt termination was not observed")
         verified["setupUpgradeAbruptTerminationVerified"] = True
+    if check_payload_binding:
+        verified["setupUpgradeFullPayloadBindingVerified"] = True
     return verified
 
 
@@ -550,7 +556,8 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
     if report["schemaVersion"] >= 35:
         setup_readback.update(validate_setup_upgrade_baseline(
             report.get("setupUpgradeBaseline"), check_recovery=report["schemaVersion"] >= 36,
-            check_abrupt_termination=report["schemaVersion"] >= 37))
+            check_abrupt_termination=report["schemaVersion"] >= 37,
+            check_payload_binding=report["schemaVersion"] >= FULL_PAYLOAD_UPGRADE_REPORT_SCHEMA))
     if report["schemaVersion"] >= 38:
         require(report.get("uninstallDataRecoveryVerified") is True,
                 "Missing uninstall data refusal and recovery were not verified")

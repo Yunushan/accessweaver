@@ -212,7 +212,10 @@ $approvedUpgrade=[regex]::Match($installerSource,'(?ms)^function AWApprovedUpgra
 Assert ($prepare.Contains("AWApprovedUpgradePreflight(ExpandConstant('{app}'), ApprovalPin)") -and
     $copy -cmatch '(?s)AWApprovedUpgradePreflight\(Destination, AWPendingApprovalPin\).*RaiseException\(Failure\).*RegWriteStringValue\(HKLM64, AWLifecycleRegistry, AWPendingInstall, AWPendingInstallValue\(Destination\)\)') 'Managed upgrades must recheck the baseline before pending record publication'
 Assert ($approvedUpgrade -cmatch '(?s)ParamCount.*if Present then Exit.*AWCompare.*Ordering <= 0.*AWLockInstallationDirectory.*AWVerifyInstalledFile.*PayloadPin.*AWVerifyInstalledFile.*SBOMPin.*AWVerifyInstalledFile.*BuildPin.*AWOrdinal\(Version, Installed\)') 'Managed upgrade baseline must verify one strict prior version and all three installed pins'
-Assert ($approvedUpgrade -cmatch '(?s)\{#TargetArch\}\|\{#PayloadDigest\}\|\{#PayloadSBOMDigest\}\|\{#BuildInfoDigest\}.*GetSHA256OfString.*PendingPin = ApprovalPin.*AWOrdinal\(PendingVersion.*AWIsInstallationDirectory\(Destination, PendingDirectory\).*resumed from its pending installation record') 'Managed retry must match the committed approval, release contents and destination'
+$fingerprint=[regex]::Match($installerSource,'(?ms)^function AWStagedPayloadDigest:.*?^end;').Value
+Assert ($fingerprint -cmatch '(?s)AWEmitStagedDirectoryChecks.*AWOrdinal\(Entries\[J - 1\], Entry\).*Entries\[J\] := Entry.*GetSHA256OfString\(Entries.Text\)' -and
+    $installerSource.Contains("Entries.Add('{#AWStagedLiteral}|{#FileSize(AWStagedPath)}|{#GetSHA256OfFile(AWStagedPath)}');") -and
+    $approvedUpgrade -cmatch '(?s)\{#TargetArch\}.*AWStagedPayloadDigest.*GetSHA256OfString.*PendingPin = ApprovalPin.*AWOrdinal\(PendingVersion.*AWIsInstallationDirectory\(Destination, PendingDirectory\).*resumed from its pending installation record') 'Managed retry must match the committed approval, entire staged payload and destination'
 $resumeFile=[regex]::Match($installerSource,'(?ms)^function AWVerifyUpgradeResumeFile\(.*?^end;').Value
 Assert ($resumeFile -cmatch '(?s)AWPathAttributes.*Code = 2.*Code = 3.*AWVerifyInstalledFileDigests\(Path, BeforeDigest, AfterDigest, -MaximumSize, True, Held\)') 'Managed retry must admit only a missing file or verified old or new bytes'
 Assert ($approvedUpgrade -cmatch '(?s)PendingPin = ApprovalPin.*AWVerifyUpgradeResumeFile.*PayloadPin.*AWVerifyUpgradeResumeFile.*SBOMPin.*AWVerifyUpgradeResumeFile.*BuildPin.*AWReadRegistration.*if Found32 then Exit.*AWOrdinal\(Version, Installed\).*AWOrdinal.*resumed from its pending installation record') 'Managed retry must check all present releases and the registered version before resuming'
@@ -248,7 +251,8 @@ try {
     $nl=[Environment]::NewLine
     $header=@('[Files]','Source: "C:\Fixture\*"; DestDir: "{app}"; BeforeInstall: AWCheckPackageCopyDestination',
         '[Code]','function AWPayloadReplacementPreflight(const Destination: String): String;','begin') -join $nl
-    $completionHeader=@('end;','function AWVerifyCompletedInstall(const Destination: String): Boolean;','begin') -join $nl
+    $fingerprintHeader=@('end;','function AWStagedPayloadDigest: String;','begin') -join $nl
+    $completionHeader=@($fingerprintHeader,'end;','function AWVerifyCompletedInstall(const Destination: String): Boolean;','begin') -join $nl
     [IO.File]::WriteAllText($compiled,$header+$nl+$completionHeader+$nl+'end;'+$nl)
     Reject {Assert-InstallerPackageDirectories $layout $setupScript $compiled} 'Compiled installer without the nested file preflight was accepted'
     $probe="  if not AWCanReplaceInstalledFile(Destination + '\docs\qualification\fixture''s report.json') then Exit;"
@@ -261,7 +265,15 @@ try {
     Reject {Assert-InstallerPackageDirectories $layout $setupScript $compiled} 'Compiled installer with a mismatched staged file digest was accepted'
     [IO.File]::WriteAllText($compiled,$compiledPrefix+$verify.Replace(', 2,',', 3,')+$nl+'end;'+$nl)
     Reject {Assert-InstallerPackageDirectories $layout $setupScript $compiled} 'Compiled installer with a mismatched staged file length was accepted'
-    [IO.File]::WriteAllText($compiled,$compiledPrefix+$verify+$nl+'end;'+$nl)
+    $completedWithFingerprint=$compiledPrefix+$verify+$nl+'end;'+$nl
+    [IO.File]::WriteAllText($compiled,$completedWithFingerprint)
+    $refused=$false
+    try {Assert-InstallerPackageDirectories $layout $setupScript $compiled}catch{
+        $refused=$_.Exception.Message -like 'Compiled installer omitted the staged file from the upgrade fingerprint:*'
+    }
+    Assert $refused 'Compiled installer without the nested upgrade fingerprint entry was accepted'
+    $fingerprintEntry="  Entries.Add('docs\qualification\fixture''s report.json|2|$digest');"
+    [IO.File]::WriteAllText($compiled,$completedWithFingerprint.Replace($fingerprintHeader,$fingerprintHeader+$nl+$fingerprintEntry))
     Assert-InstallerPackageDirectories $layout $setupScript $compiled
     [IO.File]::WriteAllText($compiled,([IO.File]::ReadAllText($compiled).Replace('; BeforeInstall: AWCheckPackageCopyDestination','')))
     Reject {Assert-InstallerPackageDirectories $layout $setupScript $compiled} 'Compiled installer without a per-file copy guard was accepted'

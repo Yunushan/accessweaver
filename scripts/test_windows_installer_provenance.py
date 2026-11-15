@@ -130,6 +130,17 @@ class SetupCompletionRefusalTests(unittest.TestCase):
         verified = validate_setup_upgrade_baseline({**recovery, "abruptTerminationExitCode": 197},
                                                    check_recovery=True, check_abrupt_termination=True)
         self.assertIs(verified["setupUpgradeAbruptTerminationVerified"], True)
+        options = dict(check_recovery=True, check_abrupt_termination=True, check_payload_binding=True)
+        complete_recovery = {**recovery, "abruptTerminationExitCode": 197}
+        with self.assertRaisesRegex(ValueError, "Incomplete managed Setup"):
+            validate_setup_upgrade_baseline(complete_recovery, **options)
+        for invalid in (False, 1, "true"):
+            with self.subTest(documentation_refusal=invalid), self.assertRaises(ValueError):
+                validate_setup_upgrade_baseline(
+                    {**complete_recovery, "changedDocumentationRetryRefused": invalid}, **options)
+        verified = validate_setup_upgrade_baseline(
+            {**complete_recovery, "changedDocumentationRetryRefused": True}, **options)
+        self.assertIs(verified["setupUpgradeFullPayloadBindingVerified"], True)
 
     def test_rejects_unproven_uninstall_registration_repair(self):
         record = {
