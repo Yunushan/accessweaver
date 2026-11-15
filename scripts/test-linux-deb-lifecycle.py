@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the AccessWeaver Debian package in a private dpkg root on Linux AMD64."""
+"""Exercise the AccessWeaver Debian package in a private dpkg root on native Linux."""
 import argparse
 import hashlib
 from io import BytesIO
@@ -18,8 +18,7 @@ from verify_release import require
 BUILDER = Path(__file__).with_name("build-linux-deb.py")
 CONTACT = "AccessWeaver Fixture <package-fixture@example.invalid>"
 COMMAND_ENV = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"}
-AMD64 = "amd64"
-ARM64 = "arm64"
+MACHINE_ARCH = {"x86_64": "amd64", "aarch64": "arm64"}
 
 
 def run(*args, **options):
@@ -100,24 +99,25 @@ def install_state(root, package_version, payload):
                 "Installed file differs from the inspected package payload")
 
 
-def exercise(work, old, old_pin, new, new_pin, arm, arm_pin):
+def exercise(work, arch, old, old_pin, new, new_pin, other, other_pin):
+    other_arch = "arm64" if arch == "amd64" else "amd64"
     builds = work / "packages"
     builds.mkdir()
-    build(old, "0" * 64, AMD64, builds, b"Portable archive SHA-256 mismatch")
+    build(old, "0" * 64, arch, builds, b"Portable archive SHA-256 mismatch")
     require(not list(builds.iterdir()), "Rejected source left package output")
-    before = build(old, old_pin, AMD64, builds)
-    after = build(new, new_pin, AMD64, builds)
-    arm64 = build(arm, arm_pin, ARM64, builds)
-    before_version, before_payload = inspect(before, AMD64)
-    after_version, after_payload = inspect(after, AMD64)
-    arm_version, arm_payload = inspect(arm64, ARM64)
+    before = build(old, old_pin, arch, builds)
+    after = build(new, new_pin, arch, builds)
+    cross_package = build(other, other_pin, other_arch, builds)
+    before_version, before_payload = inspect(before, arch)
+    after_version, after_payload = inspect(after, arch)
+    cross_version, cross_payload = inspect(cross_package, other_arch)
     run("/usr/bin/dpkg", "--compare-versions", before_version, "lt", after_version)
     if "~" in after_version:
         run("/usr/bin/dpkg", "--compare-versions", after_version, "lt", after_version.split("~")[0])
-    build(old, old_pin, AMD64, builds, b"File exists")
-    other = work / "repeat"
-    other.mkdir()
-    repeat = build(old, old_pin, AMD64, other)
+    build(old, old_pin, arch, builds, b"File exists")
+    repeat_directory = work / "repeat"
+    repeat_directory.mkdir()
+    repeat = build(old, old_pin, arch, repeat_directory)
     require(sha(before) == sha(repeat), "Repeat builds disagree or exclusive publication altered the first package")
 
     root = work / "root"
@@ -160,15 +160,16 @@ def exercise(work, old, old_pin, new, new_pin, arm, arm_pin):
             and "Package: accessweaver" not in (database / "status").read_text(encoding="utf-8")
             and not run(*dpkg, "--audit"), "Uninstall left package registration, payload or an incomplete transaction")
     require(preserved_state() == expected, "Uninstall changed policy or profile state")
-    return {"schemaVersion": 1, "scope": "Isolated unsigned Debian package construction and Linux AMD64 dpkg lifecycle",
+    return {"schemaVersion": 1, "scope": "Isolated unsigned Debian package construction and native Linux dpkg lifecycle",
+            "endpointArchitecture": arch,
             "dpkgVersion": run("/usr/bin/dpkg", "--version").splitlines()[0].decode("ascii"),
             "builderSHA256": sha(BUILDER), "probeSHA256": sha(Path(__file__)),
-            "packages": [{"arch": arch, "version": version, "archiveSHA256": pin, "debSHA256": sha(package),
+            "packages": [{"arch": target, "version": version, "archiveSHA256": pin, "debSHA256": sha(package),
                           "binarySHA256": payload["usr/bin/accessweaver"], "payloadFiles": len(payload)}
-                         for arch, version, pin, package, payload in (
-                             (AMD64, before_version, old_pin, before, before_payload),
-                             (AMD64, after_version, new_pin, after, after_payload),
-                             (ARM64, arm_version, arm_pin, arm64, arm_payload))],
+                         for target, version, pin, package, payload in (
+                             (arch, before_version, old_pin, before, before_payload),
+                             (arch, after_version, new_pin, after, after_payload),
+                             (other_arch, cross_version, other_pin, cross_package, cross_payload))],
             "checks": ["mismatched-source-digest-refused-without-output",
                        "amd64-and-arm64-control-and-payload-inspected",
                        "reproducible-package-and-exclusive-publication",
@@ -178,21 +179,29 @@ def exercise(work, old, old_pin, new, new_pin, arm, arm_pin):
                        "guarded-downgrade-refusal-and-explicit-rollback",
                        "purge-and-package-registration-removal",
                        "synthetic-policy-and-profile-bytes-owner-mode-and-inode-preserved"],
-            "amd64Execution": True, "arm64Execution": False, "productionQualificationComplete": False}
+            "amd64Execution": arch == "amd64", "arm64Execution": arch == "arm64",
+            "productionQualificationComplete": False}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("old", "new", "arm64"):
+    parser.add_argument("--arch", choices=sorted(MACHINE_ARCH.values()))
+    for name in ("old", "new"):
         parser.add_argument(f"--{name}", required=True, type=Path)
         parser.add_argument(f"--{name}-sha256", required=True)
+    parser.add_argument("--other", "--arm64", required=True, type=Path)
+    parser.add_argument("--other-sha256", "--arm64-sha256", required=True)
     args = parser.parse_args()
-    require(sys.platform == "linux" and os.geteuid() == 0 and platform.machine() == "x86_64",
-            "Run on a disposable Linux AMD64 system as root")
+    require(sys.platform == "linux" and os.geteuid() == 0, "Run on a disposable Linux system as root")
+    arch = MACHINE_ARCH.get(platform.machine())
+    require(arch is not None and args.arch in (None, arch)
+            and run("/usr/bin/dpkg", "--print-architecture").strip() == arch.encode("ascii"),
+            "Kernel and dpkg must match the requested native architecture")
     with tempfile.TemporaryDirectory(prefix="accessweaver-deb-acceptance-") as temporary:
         work = Path(temporary)
         work.chmod(0o755)
-        result = exercise(work, args.old, args.old_sha256, args.new, args.new_sha256, args.arm64, args.arm64_sha256)
+        result = exercise(work, arch, args.old, args.old_sha256, args.new, args.new_sha256,
+                          args.other, args.other_sha256)
     print(json.dumps(result, indent=2))
 
 

@@ -8,6 +8,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 import sys
@@ -18,11 +19,12 @@ from verify_release import require
 
 BUILDER = Path(__file__).with_name("build-linux-apt-repository.py")
 SUITE = "accessweaver-test"
+MACHINE_ARCH = {"x86_64": "amd64", "aarch64": "arm64"}
 ENV = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"}
 
 
-def command(*argv, env=ENV, expected=None):
-    result = subprocess.run(argv, env=env, capture_output=True, timeout=90)
+def command(*argv, env=ENV, expected=None, **options):
+    result = subprocess.run(argv, env=env, capture_output=True, timeout=90, **options)
     if expected is None:
         require(result.returncode == 0, f"{Path(argv[0]).name} failed: "
                 + result.stderr[-2048:].decode("utf-8", "replace"))
@@ -55,7 +57,7 @@ def publication(path, source, pins, home, keyring, fingerprint, rejection=None):
             *approvals, expected=rejection)
 
 
-def apt_client(work, url, keyring, fingerprint):
+def apt_client(work, url, keyring, fingerprint, arch):
     root = work / "root"
     config = work / "config"
     database = root / "var/lib/dpkg"
@@ -66,7 +68,7 @@ def apt_client(work, url, keyring, fingerprint):
         directory.mkdir(parents=True)
     status.touch()
     (config / "sources.list.d/accessweaver.sources").write_text(
-        f"Types: deb\nURIs: {url}\nSuites: {SUITE}\nComponents: main\nArchitectures: amd64\n"
+        f"Types: deb\nURIs: {url}\nSuites: {SUITE}\nComponents: main\nArchitectures: {arch}\n"
         f"Signed-By: {keyring} {fingerprint}\n", encoding="ascii")
     options = work / "config.conf"
     options.write_text(
@@ -75,7 +77,7 @@ def apt_client(work, url, keyring, fingerprint):
         'Dir::Etc::sourcelist "sources.list";\nDir::Etc::sourceparts "sources.list.d";\n'
         'Dir::Etc::main "apt.conf";\nDir::Etc::parts "apt.conf.d";\n'
         'Dir::Etc::trusted "trusted.gpg";\nDir::Etc::trustedparts "trusted.gpg.d";\n'
-        'APT::Architecture "amd64";\nAPT::Architectures { "amd64"; };\n'
+        f'APT::Architecture "{arch}";\nAPT::Architectures {{ "{arch}"; }};\n'
         'APT::Update::Error-Mode "any";\nAcquire::Languages "none";\n'
         'Acquire::Retries "0";\nAcquire::http::Timeout "10";\nDPkg::Use-Pty "false";\n'
         f'DPkg::Options {{ "--root={root}"; "--admindir={database}"; }};\n',
@@ -95,11 +97,16 @@ def installed_version(root, version):
     require(query.decode() == f"install ok installed\t{version}", "Wrong package version after APT transaction")
     require(not command("/usr/bin/dpkg", f"--root={root}", "--verify", "accessweaver"),
             "APT-installed package failed dpkg verification")
-    return digest(root / "usr/bin/accessweaver")
+    binary = root / "usr/bin/accessweaver"
+    identity = command(binary, "version", "--json", user=65534, group=65534, extra_groups=[])
+    archived = root / "usr/share/doc/accessweaver/BUILD-INFO.json"
+    require(json.loads(identity) == json.loads(archived.read_bytes()),
+            "APT-installed ordinary-user CLI differs from its build identity")
+    return digest(binary)
 
 
-def install_and_upgrade(work, url, keyring, trusted, served, first, upgrade, older, newer):
-    apt, root = apt_client(work / "client", url, keyring, trusted)
+def install_and_upgrade(work, url, keyring, trusted, arch, served, first, upgrade, older, newer):
+    apt, root = apt_client(work / "client", url, keyring, trusted, arch)
     policy = root / "etc/accessweaver/installation.json"
     profile = root / "home/fixture/.config/accessweaver/profiles/fixture.json"
     for path, data in ((policy, b'{"fixture":"policy"}\n'), (profile, b'{"fixture":"profile"}\n')):
@@ -132,10 +139,10 @@ def install_and_upgrade(work, url, keyring, trusted, served, first, upgrade, old
     return previous, current
 
 
-def rejection_cases(work, url, ring, trusted, other, served, valid, gpg, newer):
+def rejection_cases(work, url, ring, trusted, other, arch, served, valid, gpg, newer):
     # The same keyring contains both test keys. The single scoped fingerprint chooses the authority.
     served[0] = valid
-    apt, _ = apt_client(work / "wrong-key", url, ring, other)
+    apt, _ = apt_client(work / "wrong-key", url, ring, other, arch)
     apt("update", expected=b"InRelease")
 
     damaged = work / "damaged-repository"
@@ -145,7 +152,7 @@ def rejection_cases(work, url, ring, trusted, other, served, valid, gpg, newer):
     signed.write_bytes(original.replace(b"Label: AccessWeaver", b"Label: AccessW3aver", 1))
     require(signed.read_bytes() != original, "Failed to alter signed test metadata")
     served[0] = damaged
-    apt, _ = apt_client(work / "bad-signature", url, ring, trusted)
+    apt, _ = apt_client(work / "bad-signature", url, ring, trusted, arch)
     apt("update", expected=b"InRelease")
     signed.write_bytes(original)
 
@@ -160,11 +167,11 @@ def rejection_cases(work, url, ring, trusted, other, served, valid, gpg, newer):
     release.write_text("\n".join(lines) + "\n", encoding="ascii")
     signed.unlink()
     command(*gpg, "--local-user", trusted, "--digest-algo", "SHA512", "--output", signed, "--clearsign", release)
-    apt, _ = apt_client(work / "expired", url, ring, trusted)
+    apt, _ = apt_client(work / "expired", url, ring, trusted, arch)
     apt("update", expected=b"expired")
     signed.write_bytes(original)
 
-    directory = signed.parent / "main/binary-amd64"
+    directory = signed.parent / "main" / f"binary-{arch}"
     originals = {}
     for index in (directory / "Packages", directory / "Packages.gz"):
         data = index.read_bytes()
@@ -172,24 +179,24 @@ def rejection_cases(work, url, ring, trusted, other, served, valid, gpg, newer):
         for entry in (index, by_hash):
             originals[entry] = data
             entry.write_bytes(b"\0" + data[1:])
-    apt, _ = apt_client(work / "bad-index", url, ring, trusted)
+    apt, _ = apt_client(work / "bad-index", url, ring, trusted, arch)
     apt("update", expected=b"Hash Sum mismatch")
     for entry, data in originals.items():
         entry.write_bytes(data)
 
-    package = damaged / "pool" / f"accessweaver_{newer}_amd64.deb"
+    package = damaged / "pool" / f"accessweaver_{newer}_{arch}.deb"
     with package.open("r+b") as stream:
         stream.seek(-1, os.SEEK_END)
         byte = stream.read(1)
         stream.seek(-1, os.SEEK_END)
         stream.write(bytes([byte[0] ^ 1]))
-    apt, root = apt_client(work / "bad-package", url, ring, trusted)
+    apt, root = apt_client(work / "bad-package", url, ring, trusted, arch)
     apt("update")
     apt("-y", "install", "accessweaver", expected=b"Hash Sum mismatch")
     require(not (root / "usr/bin/accessweaver").exists(), "APT unpacked a modified package")
 
 
-def exercise(work, packages, pins, older, newer):
+def exercise(work, packages, pins, arch, older, newer):
     home = work / "gnupg"
     home.mkdir(mode=0o700)
     gpg = ("/usr/bin/gpg", "--homedir", home, "--no-options", "--batch", "--no-tty")
@@ -245,17 +252,18 @@ def exercise(work, packages, pins, older, newer):
             try:
                 url = f"http://127.0.0.1:{server.server_port}"
                 old_binary, new_binary = install_and_upgrade(
-                    work, url, keyring, trusted, served, first, current, older, newer)
+                    work, url, keyring, trusted, arch, served, first, current, older, newer)
                 require(any("/by-hash/SHA256/" in path and code == 200 for path, code in requests),
                         "Native APT never fetched an index by its signed hash")
-                rejection_cases(work, url, keyring, trusted, other, served, current, gpg, newer)
+                rejection_cases(work, url, keyring, trusted, other, arch, served, current, gpg, newer)
             finally:
                 server.shutdown()
                 thread.join()
     finally:
         command("/usr/bin/gpgconf", "--homedir", home, "--kill", "all")
     return {
-        "schemaVersion": 1, "scope": "Loopback signed APT publication and isolated Linux AMD64 install lifecycle",
+        "schemaVersion": 1, "scope": "Loopback signed APT publication and isolated native Linux install lifecycle",
+        "endpointArchitecture": arch,
         "builderSHA256": digest(BUILDER), "probeSHA256": digest(Path(__file__)),
         "aptVersion": command("/usr/bin/apt-get", "--version").splitlines()[0].decode("ascii"),
         "packageSHA256": dict(sorted(pins.items())), "olderBinarySHA256": old_binary,
@@ -265,9 +273,10 @@ def exercise(work, packages, pins, older, newer):
                    "exclusive-publication-preserved-existing-snapshot",
                    "native-apt-fetched-index-by-signed-hash",
                    "signed-install-upgrade-and-purge-preserved-policy-and-profile",
+                   "ordinary-user-installed-cli-matched-package-build-identity",
                    "wrong-scoped-key-tampered-signature-and-expired-metadata-rejected",
                    "tampered-index-and-payload-rejected-before-installation"],
-        "ephemeralSigningKeys": True, "arm64EndpointExecution": False,
+        "ephemeralSigningKeys": True, "arm64EndpointExecution": arch == "arm64",
         "productionQualificationComplete": False,
     }
 
@@ -275,13 +284,17 @@ def exercise(work, packages, pins, older, newer):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
+    parser.add_argument("--arch", choices=sorted(MACHINE_ARCH.values()))
     parser.add_argument("--older-version", required=True)
     parser.add_argument("--newer-version", required=True)
     parser.add_argument("--package-sha256", action="append", nargs=2, required=True, metavar=("FILENAME", "SHA256"))
     args = parser.parse_args()
-    require(sys.platform == "linux" and os.geteuid() == 0, "Run as root on a disposable Linux AMD64 system")
+    require(sys.platform == "linux" and os.geteuid() == 0, "Run on a disposable Linux system as root")
+    arch = MACHINE_ARCH.get(platform.machine())
+    require(arch is not None and args.arch in (None, arch)
+            and command("/usr/bin/dpkg", "--print-architecture").strip() == arch.encode("ascii"),
+            "Kernel and dpkg must match the requested native architecture")
     older, newer = args.older_version, args.newer_version
-    require(command("/usr/bin/dpkg", "--print-architecture").strip() == b"amd64", "Expected native Linux AMD64")
     command("/usr/bin/dpkg", "--compare-versions", older, "lt", newer)
     pins = dict(args.package_sha256)
     expected = {f"accessweaver_{version}_{arch}.deb" for version in (older, newer) for arch in ("amd64", "arm64")}
@@ -290,7 +303,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="accessweaver-apt-acceptance-", dir="/var/tmp") as temporary:
         work = Path(temporary)
         work.chmod(0o755)
-        result = exercise(work, args.source, pins, older, newer)
+        result = exercise(work, args.source, pins, arch, older, newer)
     print(json.dumps(result, indent=2))
 
 

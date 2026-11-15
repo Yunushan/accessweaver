@@ -159,7 +159,8 @@
             "docs/qualification/56924863f63e-installer-lifecycle.json",
             "docs/qualification/16632c4b2a7f-linux-deb-lifecycle.json",
             "docs/LINUX_DEBIAN_DEPLOYMENT.md",
-            "docs/qualification/4caa86d5b6d0-linux-apt-repository.json"
+            "docs/qualification/4caa86d5b6d0-linux-apt-repository.json",
+            ".github/workflows/linux-package-lifecycle.yml"
           ]
         }
       ]
@@ -585,7 +586,8 @@
             ".github/workflows/ci.yml",
             "docs/qualification/16632c4b2a7f-linux-deb-lifecycle.json",
             "docs/LINUX_DEBIAN_DEPLOYMENT.md",
-            "docs/qualification/4caa86d5b6d0-linux-apt-repository.json"
+            "docs/qualification/4caa86d5b6d0-linux-apt-repository.json",
+            ".github/workflows/linux-package-lifecycle.yml"
           ]
         },
         {
@@ -618,7 +620,8 @@
             "docs/MACOS_MANAGED_POLICY.md",
             "docs/qualification/16632c4b2a7f-linux-deb-lifecycle.json",
             "docs/LINUX_DEBIAN_DEPLOYMENT.md",
-            "docs/qualification/4caa86d5b6d0-linux-apt-repository.json"
+            "docs/qualification/4caa86d5b6d0-linux-apt-repository.json",
+            ".github/workflows/linux-package-lifecycle.yml"
           ]
         }
       ]
