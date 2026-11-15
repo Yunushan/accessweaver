@@ -4514,6 +4514,13 @@ function Get-AppProcessMatch($process,[string]$base,[string]$app,[string[]]$name
         $exited=$process.HasExited
         if($exited -is [bool] -and $exited){return $false}
     }catch{}
+    if($base -and $name -in @('Update','crashpad_handler')){
+        # Discord's per-user workflow targets desktop applications. A generic
+        # name alone in the noninteractive service session is outside that scope.
+        $session=$null
+        try {$session=$process.SessionId}catch{}
+        if($session -is [int] -and $session -eq 0){return $false}
+    }
     # A potentially matching process without a readable image remains unresolved.
     return $null
 }

@@ -2145,6 +2145,24 @@ try {
     Assert ((Test-AppImagePath $discordHelper $discordBase '') -and
             -not (Test-AppImagePath $otherDiscord $discordBase '')) 'Application removal scopes shared helper names to the selected installation'
 
+    $discordNames=@(Get-AppProcessNames $discordBase '')
+    foreach($helperName in @('Update','crashpad_handler')){
+        $unreadableHelper=[pscustomobject]@{ProcessName=$helperName;Path=$null;SessionId=0;HasExited=$false}
+        $script:appRemovalProcesses=@($unreadableHelper)
+        Assert (Test-AppProcessesExited $discordBase '' $discordNames) ('Discord ignores an unreadable service-session helper named '+$helperName)
+        foreach($session in @(1,2,$null,'0')){
+            $unreadableHelper.SessionId=$session
+            Assert (-not (Test-AppProcessesExited $discordBase '' $discordNames)) 'Discord keeps an unreadable helper unresolved without a verified service session'
+        }
+        $unreadableHelper.SessionId=0
+        $unreadableHelper.Path=Join-Path $discordBase ($helperName+'.exe')
+        Assert (-not (Test-AppProcessesExited $discordBase '' $discordNames)) 'Discord checks an identified helper in its installation even in the service session'
+    }
+    $script:appRemovalProcesses=@([pscustomobject]@{ProcessName='Discord';Path=$null;SessionId=0;HasExited=$false})
+    Assert (-not (Test-AppProcessesExited $discordBase '' $discordNames)) 'Discord keeps an unreadable client unresolved in the service session'
+    $script:appRemovalProcesses=@([pscustomobject]@{ProcessName='crashpad_handler';Path=$null;SessionId=0;HasExited=$false})
+    Assert (-not (Test-AppProcessesExited '' $fixtureApp @(Get-AppProcessNames '' $fixtureApp))) 'SplitCord keeps an unreadable service-session crash handler unresolved'
+
     $splitCordHelper=Join-Path $fixtureAppDirectory 'crashpad_handler.exe'
     $splitCordNeighbor=Join-Path ($fixtureAppDirectory+'-neighbor') 'crashpad_handler.exe'
     Assert ((Test-AppImagePath $splitCordHelper '' $fixtureApp) -and
