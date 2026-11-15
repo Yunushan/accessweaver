@@ -4797,14 +4797,35 @@ function Stop-AppProcesses([string]$variant,[string]$app) {
                 # Journal publication can overlap a client starting in another session.
                 continue
             }
+            $readyToStop=[Collections.Generic.List[object]]::new()
             foreach($process in $matching){
+                try {
+                    # Hold the native handle before refreshing the image and session.
+                    # Windows keeps its process ID reserved while the handle is open.
+                    if($process.Handle -eq [IntPtr]::Zero){throw 'Application process handle is unavailable'}
+                    $process.Refresh()
+                    $exited=$process.HasExited
+                    if($exited -isnot [bool]){throw 'Application process exit state is unavailable'}
+                    if($exited){continue}
+                    $confirmed=Get-AppProcessMatch $process $base $app $names
+                    $processSession=$process.SessionId
+                    if($confirmed -ne $true -or $processSession -isnot [int] -or $processSession -ne $sessionId){
+                        throw 'Application process identity changed'
+                    }
+                    $readyToStop.Add($process)
+                } catch {
+                    $exited=$null
+                    try {$exited=$process.HasExited}catch{}
+                    if($exited -isnot [bool] -or -not $exited){
+                        throw 'A matching application changed or could not be verified before stopping'
+                    }
+                }
+            }
+            foreach($process in $readyToStop){
                 # Terminating a user application is an external effect even if a
                 # later stop or uninstall fails; it cannot be rolled back here.
                 $script:externalEffectsPending=$true
                 try {
-                    # Cache the native handle on this Process instance. Stop and
-                    # wait use that instance rather than reopening a numeric PID.
-                    if($process.Handle -eq [IntPtr]::Zero){throw 'Application process handle is unavailable'}
                     $process.Kill()
                     if(-not $process.WaitForExit(5000)){throw 'Application exit was not observed'}
                 } catch {

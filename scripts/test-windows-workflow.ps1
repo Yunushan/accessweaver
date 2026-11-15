@@ -1950,14 +1950,17 @@ try {
     $fixtureSession=[Diagnostics.Process]::GetCurrentProcess().SessionId
     $script:appStopCalls=0;$script:appStopFailure=$true;$script:externalEffectsPending=$false
     $script:appStopWaits=0
+    $script:appStopExitDuringKill=$false
     $script:appStopDisposals=0
     $script:appStopRecord=[pscustomobject]@{Path=$fixtureApp;SessionId=$fixtureSession;Handle=[IntPtr]123;HasExited=$false;ExitObserved=$false}
     $appStopRecords=@($script:appStopRecord)
     $script:appStopRecord | Add-Member ScriptMethod Kill {
         $script:appStopCalls++
+        if($script:appStopExitDuringKill){$this.HasExited=$true}
         if($script:appStopFailure){throw 'private fixture detail'}
     }
     $script:appStopRecord | Add-Member ScriptMethod Dispose { $script:appStopDisposals++ }
+    $script:appStopRecord | Add-Member ScriptMethod Refresh {}
     $script:appStopRecord | Add-Member ScriptMethod WaitForExit {
         param($milliseconds)
         $script:appStopWaits++
@@ -1995,8 +1998,8 @@ try {
     $rejected=$false;try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application process could not be stopped; the operation was not continued'}
     Assert ($rejected -and $script:appStopCalls -eq 1 -and $script:externalEffectsPending) 'Application removal stops on a matching process failure and records an external effect'
     $script:appStopCalls=0;$script:appStopFailure=$true;$script:externalEffectsPending=$false
-    $script:appStopRecord.HasExited=$true
-    Stop-AppProcesses 'splitcord'
+    $script:appStopExitDuringKill=$true
+    try {Stop-AppProcesses 'splitcord'} finally {$script:appStopExitDuringKill=$false}
     Assert ($script:appStopCalls -eq 1 -and $script:externalEffectsPending) 'Application process exit race remains a recorded external effect'
     $script:appStopCalls=0;$script:appStopFailure=$false;$script:externalEffectsPending=$false
     $script:appStopRecord.HasExited=$false
@@ -2007,6 +2010,36 @@ try {
     $script:appStopRecord.ExitObserved=$true
     Stop-AppProcesses 'splitcord'
     Assert ($script:appStopCalls -eq 1 -and $script:appStopWaits -eq 1 -and $script:appStopDisposals -eq 4 -and $script:externalEffectsPending) 'Application process stop records an external effect'
+
+    $changedProcess=[pscustomobject]@{
+        Path=$fixtureApp;ProcessName='SplitCord-Turkey';SessionId=$fixtureSession;Handle=[IntPtr]456;HasExited=$false;Drift=''
+    }
+    $changedProcess | Add-Member ScriptMethod Dispose {}
+    $changedProcess | Add-Member ScriptMethod Kill {$script:appStopCalls++}
+    $changedProcess | Add-Member ScriptMethod Refresh {
+        switch -CaseSensitive ($this.Drift){
+            'image' {$this.Path='C:\fixture\unrelated.exe'}
+            'session' {$this.SessionId++}
+            'unreadable' {$this.Path=$null}
+        }
+    }
+    $appStopRecords=@($script:appStopRecord,$changedProcess)
+    foreach($drift in @('image','session','unreadable','handle')){
+        $changedProcess.Path=$fixtureApp;$changedProcess.SessionId=$fixtureSession;$changedProcess.Drift=$drift
+        $changedProcess.Handle=if($drift -ceq 'handle'){[IntPtr]::Zero}else{[IntPtr]456}
+        $script:appStopCalls=0;$script:externalEffectsPending=$false
+        $rejected=$false
+        try {Stop-AppProcesses 'splitcord' $fixtureApp}catch{
+            $rejected=$_.Exception.Message -ceq 'A matching application changed or could not be verified before stopping'
+        }
+        Assert ($rejected -and $script:appStopCalls -eq 0 -and -not $script:externalEffectsPending) ('Application process stop preserves all clients on held identity '+$drift)
+    }
+    $appStopRecords=@($script:appStopRecord)
+    $script:appStopRecord.HasExited=$true
+    $script:appStopCalls=0;$script:externalEffectsPending=$false
+    Stop-AppProcesses 'splitcord'
+    Assert ($script:appStopCalls -eq 0 -and -not $script:externalEffectsPending) 'Application process stop skips a confirmed exit before termination'
+    $script:appStopRecord.HasExited=$false
 
     $r=[pscustomobject]@{action='app-remove'}
     $conflictingProcess.SessionId=$fixtureSession+1

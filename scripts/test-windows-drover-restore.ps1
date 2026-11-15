@@ -301,6 +301,7 @@ try {
 
     & {
         $removed=[Collections.Generic.List[string]]::new()
+        $dnsPreflight=[Collections.Generic.List[string]]::new()
         function Assert-ManagedServiceOwnership([string]$Name){
             if($Name -cin @('AccessWeaver-byedpi','AccessWeaver-proxifyre')){return @{name=$Name}}
         }
@@ -312,22 +313,32 @@ try {
             $removed.Add($Name)
         }
         function Get-DNSRecoverySnapshotDigest {}
+        function Read-DNSRecoveryCopy {$dnsPreflight.Add('copy')}
+        function Assert-DNSDohPlaintextRuleOwnership([string]$ID){
+            Require ($ID -ceq '') 'Unexpected DoH owner during absent-snapshot teardown'
+            $dnsPreflight.Add('rules')
+        }
         function Remove-WireSockRefreshTask {}
         function Get-Service {param($Name,$ErrorAction)}
         function Get-CimInstance {param($ClassName)}
         $expected='AccessWeaver-proxifyre,AccessWeaver-proxifyre-Inbound,AccessWeaver-proxifyre-Outbound,AccessWeaver-byedpi,AccessWeaver-byedpi-Inbound,AccessWeaver-byedpi-Outbound'
-        foreach($operation in @({Remove-Method 'byedpi'},{Remove-All})){
+        foreach($case in @(
+            @{run={Remove-Method 'byedpi'};beforeFailure='';onRetry=''},
+            @{run={Remove-All};beforeFailure='copy,rules';onRetry='copy,rules,copy'}
+        )){
             [IO.File]::WriteAllText($second,'installed INI')
             Write-Manifest @($records[1])
             $removed.Clear()
+            $dnsPreflight.Clear()
             $script:denySecond=$true
             $refused=$false
-            try {& $operation}catch{$refused=$_.Exception.Message -ceq 'Synthetic failed removal'}
-            Require ($refused -and $removed.Count -eq 0 -and
+            try {& $case.run}catch{$refused=$_.Exception.Message -ceq 'Synthetic failed removal'}
+            Require ($refused -and $removed.Count -eq 0 -and ($dnsPreflight -join ',') -ceq $case.beforeFailure -and
                 [IO.File]::Exists($manifest) -and [IO.File]::Exists($second)) 'Failed Drover restoration allowed explicit proxy teardown'
             $script:denySecond=$false
-            & $operation
-            Require (($removed -join ',') -ceq $expected -and
+            $dnsPreflight.Clear()
+            & $case.run
+            Require (($removed -join ',') -ceq $expected -and ($dnsPreflight -join ',') -ceq $case.onRetry -and
                 -not ([IO.File]::Exists($second) -or [IO.File]::Exists($manifest))) 'Explicit proxy teardown did not resume in dependency order'
         }
     }
