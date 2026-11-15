@@ -709,5 +709,120 @@
       "appScriptResourceTimingAvailable": false,
       "qualificationCredit": false
     }
+  },
+  "steadyHeadings": {
+    "scope": "local-offline-linux-amd64-webkit-performance",
+    "sourceCommit": "5d82027254a6bb69bcbcc6c832ac2b31121f054b",
+    "hostedSourceCommit": "60fd610de3b11894ef9d72f0a3acdf843a31fbfe",
+    "binarySHA256": "34e405edc843897304c8650179fcfea927ad217389eddf7b0e48f0706f9d0a45",
+    "sourceSHA256": {
+      "web/app.css": "6391cf2d9213fcf49e0cfc27271f5f8aeee4b99c64abbb754159148d50c394f3",
+      "scripts/browser-tests/desktop.spec.cjs": "68a2ecbb7bfd61e568afe75aa8ae583a1d909af87992e78d37e0cc6674b304b8",
+      "scripts/browser-tests/desktop-performance.cjs": "51208a7b3b0904d29c9fee55f206401b0922eeea7c1b91ee15b7c81a7a548e59",
+      "scripts/browser-tests/performance-budgets.json": "97e105bb42966d2b4a0cf4b8505385dbaab1aa1a4afab9670be4f8ee9785160e"
+    },
+    "profileCount": 256,
+    "runs": [
+      {
+        "reportSHA256": "6f79e9790f2bd6dec981da966295316024aeae23cc0fdee08238aea8efea9d43",
+        "outcome": "passed",
+        "metrics": {
+          "controllerStartupMs": 30.931403000000046,
+          "dashboardReadyMs": 2274.9641979999997,
+          "reloadP95Ms": 147.7309609999993,
+          "navigationP95Ms": 449.5069649999996,
+          "editorP95Ms": 372.08712900000046,
+          "apiP95Ms": 41,
+          "burstRequestsPerSecond": 109.03102132446885,
+          "loadRequestsPerSecond": 3.9997763173091867,
+          "loadCpuPercentOneCore": 3.549801481611903,
+          "sampledPeakRssBytes": 16834560,
+          "sampledPeakDescriptors": 14,
+          "sampledPeakThreads": 11,
+          "cooldownRssGrowthBytes": 2527232,
+          "cooldownDescriptorGrowth": -2,
+          "cooldownThreadGrowth": 2,
+          "browserSampledPeakRssBytes": 767365120,
+          "browserSampledPeakDescriptors": 101,
+          "browserSampledPeakThreads": 100,
+          "browserSampledPeakProcesses": 5,
+          "browserObservedLoadCpuPercentOneCore": 10.749375350689082,
+          "browserCooldownRssGrowthBytes": 109985792,
+          "browserCooldownDescriptorGrowth": 5,
+          "browserCooldownThreadGrowth": -4,
+          "browserCooldownProcessGrowth": 0,
+          "jobLoadCpuPercentOneCore": 25.90886533504124
+        },
+        "counts": {
+          "reload": 5,
+          "navigation": 24,
+          "editor": 10,
+          "burstRequests": 96,
+          "loadRequests": 240,
+          "resourceSamples": 302,
+          "loadMilliseconds": 60003,
+          "browserResourceSamples": 79,
+          "browserObservedExits": 0,
+          "browserCpuMilliseconds": 61026,
+          "browserFailureStage": 0,
+          "jobCpuMilliseconds": 61022,
+          "jobCpuFailureStage": 0
+        },
+        "violations": []
+      },
+      {
+        "reportSHA256": "59ad59b3a2c04844c95a6a4f9f670c06604ced35086fdc6465616e3194de6520",
+        "outcome": "passed",
+        "metrics": {
+          "controllerStartupMs": 35.061411000000135,
+          "dashboardReadyMs": 2333.3393790000005,
+          "reloadP95Ms": 193.55802400000084,
+          "navigationP95Ms": 316.8348499999993,
+          "editorP95Ms": 395.6821920000002,
+          "apiP95Ms": 44,
+          "burstRequestsPerSecond": 118.54788224352865,
+          "loadRequestsPerSecond": 3.9998387348352087,
+          "loadCpuPercentOneCore": 3.4831928982523275,
+          "sampledPeakRssBytes": 16601088,
+          "sampledPeakDescriptors": 15,
+          "sampledPeakThreads": 11,
+          "cooldownRssGrowthBytes": 1884160,
+          "cooldownDescriptorGrowth": -2,
+          "cooldownThreadGrowth": 2,
+          "browserSampledPeakRssBytes": 774078464,
+          "browserSampledPeakDescriptors": 101,
+          "browserSampledPeakThreads": 100,
+          "browserSampledPeakProcesses": 5,
+          "browserObservedLoadCpuPercentOneCore": 10.354076778144984,
+          "browserCooldownRssGrowthBytes": 135745536,
+          "browserCooldownDescriptorGrowth": 5,
+          "browserCooldownThreadGrowth": -12,
+          "browserCooldownProcessGrowth": 0,
+          "jobLoadCpuPercentOneCore": 24.722600032586023
+        },
+        "counts": {
+          "reload": 5,
+          "navigation": 24,
+          "editor": 10,
+          "burstRequests": 96,
+          "loadRequests": 240,
+          "resourceSamples": 306,
+          "loadMilliseconds": 60002,
+          "browserResourceSamples": 80,
+          "browserObservedExits": 0,
+          "browserCpuMilliseconds": 60942,
+          "browserFailureStage": 0,
+          "jobCpuMilliseconds": 60937,
+          "jobCpuFailureStage": 0
+        },
+        "violations": []
+      }
+    ],
+    "hostedRunIDs": {
+      "browser": 43686376980,
+      "sustained": 43686376817
+    },
+    "installedQualificationComplete": false,
+    "productionQualificationComplete": false
   }
 }
