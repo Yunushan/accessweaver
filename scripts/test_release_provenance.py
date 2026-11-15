@@ -51,6 +51,23 @@ class ProvenanceTests(unittest.TestCase):
                 self.assertEqual(run.call_count, 1)
                 contents.assert_not_called()
 
+    def test_duplicate_authenticated_manifest_is_refused_before_subject_selection(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            path = root / "BUILD-MANIFEST.json"
+            data = path.read_bytes()
+            path.write_bytes(data.replace(b'"sourceCommit": ', b'"sourceCommit": "another", "sourceCommit": ', 1))
+            with (
+                patch("verify_release_provenance.authenticate") as authenticate,
+                patch("verify_release_provenance.verify_contents") as contents,
+                self.assertRaisesRegex(ValueError, "Duplicate release metadata field"),
+            ):
+                verify(root, COMMIT, REF)
+            authenticate.assert_called_once()
+            self.assertEqual(authenticate.call_args.args[0].name, "BUILD-MANIFEST.json")
+            contents.assert_not_called()
+
     def test_authentication_and_content_checks_use_the_same_private_snapshot(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

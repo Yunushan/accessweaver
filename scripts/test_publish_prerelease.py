@@ -221,13 +221,13 @@ class PrereleasePublicationTests(unittest.TestCase):
             windows_receipt = receipts / "release-qualified-windows-arm64" / "candidate.json"
             bsd_execution = receipts / "release-qualified-openbsd-arm64" / "execution.json"
             for path, corrupt, message in (
-                (windows_receipt, lambda data: b'{"schemaVersion":2,' + data[1:], "Duplicate native metadata"),
+                (windows_receipt, lambda data: b'{"schemaVersion":2,' + data[1:], "Duplicate release metadata"),
                 (bsd_execution, lambda data: data.replace(b'"encryptedBackupCreated": true',
                                                           b'"encryptedBackupCreated": 1'),
                  "execution evidence does not match"),
                 (bsd_execution, lambda data: data.replace(b'"encryptedBackupCreated": true',
                                                           b'"encryptedBackupCreated": false, "encryptedBackupCreated": true'),
-                 "Duplicate native metadata"),
+                 "Duplicate release metadata"),
             ):
                 original_data = path.read_bytes()
                 changed = corrupt(original_data)

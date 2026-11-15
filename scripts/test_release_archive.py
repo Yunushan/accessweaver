@@ -274,6 +274,37 @@ class ArchiveMemberValidationTests(unittest.TestCase):
                     release.inspect_archive(path, "root", "accessweaver")
 
 
+    def test_archive_rejects_duplicate_build_sbom_and_license_fields(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            payload = root / "payload"
+            payload.write_bytes(b"fixture")
+            required = ("accessweaver", "LICENSE", "THIRD_PARTY.md", "SECURITY.md",
+                        "licenses/Go-runtime-LICENSE", "licenses/SplitWire-Turkey-MIT.txt")
+            members = [(payload, "root/" + name) for name in required]
+            info, bom = root / "info.json", root / "bom.json"
+            members += [(info, "root/BUILD-INFO.json"), (bom, "root/SBOM.cdx.json")]
+            notice_document = {"metadata": {"component": {"properties": [{
+                "name": "accessweaver:license-evidence",
+                "value": '[{"path":"licenses/Go-runtime-LICENSE","path":"licenses/Go-runtime-LICENSE"}]',
+            }]}}}
+            cases = (
+                ('{"commit":"first","commit":"second"}', '{"metadata":{"component":{}}}'),
+                ('{}', '{"metadata":{"component":{"type":"library","type":"application"}}}'),
+                ('{}', json.dumps(notice_document)),
+            )
+            for extension in (".zip", ".tar.gz"):
+                for build_json, sbom_json in cases:
+                    with self.subTest(extension=extension, build_json=build_json, sbom_json=sbom_json):
+                        info.write_text(build_json, encoding="utf-8")
+                        bom.write_text(sbom_json, encoding="utf-8")
+                        archive = root / ("release" + extension)
+                        write_archive(archive, members, 1760000001, executable="root/accessweaver")
+                        with patch.object(release, "validate_sbom"), self.assertRaisesRegex(
+                            ValueError, "Duplicate release metadata field",
+                        ):
+                            release.inspect_archive(archive, "root", "accessweaver")
+
     def test_archive_timestamps_are_checked_against_the_epoch(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -330,6 +361,26 @@ class ReleaseVerificationTests(unittest.TestCase):
         checksums["BUILD-MANIFEST.json"] = hashlib.sha256(data).hexdigest()
         (directory / "SHA256SUMS.txt").write_text("".join(f"{h}  {n}\n" for n, h in checksums.items()), encoding="utf-8")
         return manifest
+
+    def test_manifest_rejects_duplicate_fields_even_with_a_matching_checksum(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            path = root / "BUILD-MANIFEST.json"
+            original = path.read_bytes()
+            duplicated = original.replace(b'"archiveEpoch": ', b'"archiveEpoch": 0, "archiveEpoch": ', 1)
+            path.write_bytes(duplicated)
+            checksums = root / "SHA256SUMS.txt"
+            checksums.write_text(
+                checksums.read_text(encoding="utf-8").replace(
+                    hashlib.sha256(original).hexdigest(), hashlib.sha256(duplicated).hexdigest(),
+                ), encoding="utf-8",
+            )
+            with patch.object(release, "inspect_archive") as inspect, self.assertRaisesRegex(
+                ValueError, "Duplicate release metadata field",
+            ):
+                release.verify(root)
+            inspect.assert_not_called()
 
     def test_manifest_rejects_mismatched_archive_names_and_build_times(self):
         for field, value, message in (
@@ -485,7 +536,7 @@ class ReleaseVerificationTests(unittest.TestCase):
              "Update comparison differs"),
             ("update", json.dumps({**expected, "updateAvailable": True}).encode(), "Update comparison differs"),
             ("numeric-false", json.dumps({**expected, "updateAvailable": 0}).encode(), "Update comparison differs"),
-            ("duplicate", b'{"version":"v1.2.3-alpha","version":"v1.2.3-alpha"}', "Duplicate native metadata"),
+            ("duplicate", b'{"version":"v1.2.3-alpha","version":"v1.2.3-alpha"}', "Duplicate release metadata"),
             ("oversized", b" " * 4097, "Native metadata response exceeds"),
         ):
             with self.subTest(label=label):

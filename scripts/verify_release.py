@@ -117,16 +117,16 @@ def inspect_archive(path, root, binary_name, *, epoch=None):
             file_keys.add(key)
         for name in (binary_name, "BUILD-INFO.json", "SBOM.cdx.json", "LICENSE", "THIRD_PARTY.md", "SECURITY.md", "licenses/Go-runtime-LICENSE", "licenses/SplitWire-Turkey-MIT.txt"):
             require(f"{root}/{name}" in names, f"Missing release file: {name}")
-        info = json.loads(read(f"{root}/BUILD-INFO.json"))
+        info = json.loads(read(f"{root}/BUILD-INFO.json"), object_pairs_hook=unique_metadata_keys)
         binary = read(f"{root}/{binary_name}")
-        bom = json.loads(read(f"{root}/SBOM.cdx.json"))
+        bom = json.loads(read(f"{root}/SBOM.cdx.json"), object_pairs_hook=unique_metadata_keys)
         validate_sbom(bom, binary, info)
         components = [bom["metadata"]["component"]] + bom.get("components", [])
         for component in components:
             for prop in component.get("properties", []):
                 if prop["name"] != "accessweaver:license-evidence":
                     continue
-                for evidence in json.loads(prop["value"]):
+                for evidence in json.loads(prop["value"], object_pairs_hook=unique_metadata_keys):
                     name = evidence["path"]
                     require(re.fullmatch(r"licenses/[A-Za-z0-9._-]+", name), "Unexpected SBOM notice path")
                     require(f"{root}/{name}" in names and hashlib.sha256(read(f"{root}/{name}")).hexdigest() == evidence["sha256"], "Missing or changed SBOM license evidence")
@@ -224,7 +224,7 @@ def native_metadata_json(executable, arguments, environment):
 
 def unique_metadata_keys(pairs):
     result = dict(pairs)
-    require(len(result) == len(pairs), "Duplicate native metadata field")
+    require(len(result) == len(pairs), "Duplicate release metadata field")
     return result
 
 
@@ -258,7 +258,8 @@ def verify_go_metadata(binary, binary_name, info):
     with tempfile.TemporaryDirectory(prefix="accessweaver-go-metadata-") as temporary:
         path = Path(temporary) / binary_name
         path.write_bytes(binary)
-        metadata = json.loads(go_metadata_command(["go", "version", "-m", "-json", str(path)]))
+        metadata = json.loads(go_metadata_command(["go", "version", "-m", "-json", str(path)]),
+                              object_pairs_hook=unique_metadata_keys)
     project = "github.com/Yunushan/accessweaver"
     require(metadata["Path"] == project + "/cmd/accessweaver" and metadata["Main"]["Path"] == project
             and not metadata["Main"].get("Replace"), "Packaged binary main package differs")
@@ -287,7 +288,7 @@ def verify(directory, execute_native=False, *, check_go_metadata=False, require_
     manifest_path = directory / "BUILD-MANIFEST.json"
     release_file(manifest_path, 1 << 20)
     manifest_bytes = manifest_path.read_bytes()
-    manifest = json.loads(manifest_bytes.decode("utf-8"))
+    manifest = json.loads(manifest_bytes.decode("utf-8"), object_pairs_hook=unique_metadata_keys)
     require(manifest.get("unsigned") is True, "Unsigned packaging must be labeled accurately")
     require(manifest.get("sourceState") in ("clean", "modified", "unknown"), "Missing source modification state")
     commit = manifest.get("sourceCommit")

@@ -274,7 +274,7 @@ def verified_candidate(directory, commit, ref, rebuild_checksums_sha256, native_
             raise ValueError("Published candidate differs from the authenticated rebuild reference")
         qualification = None
         if native_qualification is not None:
-            manifest = json.loads((frozen / "BUILD-MANIFEST.json").read_bytes())
+            manifest = json.loads((frozen / "BUILD-MANIFEST.json").read_bytes(), object_pairs_hook=unique_metadata_keys)
             reports = verify_native_qualification(native_qualification, frozen, manifest, commit, ref, expected, run_id)
             qualification = {
                 "schemaVersion": 2,

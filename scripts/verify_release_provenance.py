@@ -17,7 +17,8 @@ import tarfile
 import tempfile
 import zipfile
 
-from verify_release import PROVENANCE_BUNDLE as BUNDLE_NAME, TARGETS, artifact_names, require, snapshot, verify as verify_contents
+from verify_release import (PROVENANCE_BUNDLE as BUNDLE_NAME, TARGETS, artifact_names, require, snapshot,
+                            unique_metadata_keys, verify as verify_contents)
 
 REPOSITORY = "Yunushan/accessweaver"
 WORKFLOW = REPOSITORY + "/.github/workflows/release.yml"
@@ -135,7 +136,7 @@ def _verify_snapshot(directory, names, commit, ref, gh, *, run_id=None, selected
     regular_file(directory / "SHA256SUMS.txt", 64 << 10)
     # Authenticate metadata BEFORE interpreting it as the artifact selection.
     authenticate(manifest_path, bundle, commit, ref, gh, run_id=run_id)
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"), object_pairs_hook=unique_metadata_keys)
     require(manifest.get("sourceCommit") == commit and manifest.get("sourceState") == "clean",
             "Authenticated manifest does not describe the expected clean source")
     if ref.startswith("refs/tags/"):
