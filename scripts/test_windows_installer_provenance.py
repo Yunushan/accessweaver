@@ -895,6 +895,15 @@ class ManagedDetectionEvidenceTests(unittest.TestCase):
         partial_cases = [*rollback[:managed_index], partial, *rollback[managed_index:]]
         latest_partial = {**latest_rollback, "schemaVersion": 57, "managedDetectionCases": partial_cases}
         self.assertEqual(validate_managed_detection(latest_partial), {"managedDetectionChecksVerified": 31})
+        reported_status = [*partial_cases[:managed_index], dict(partial, pendingStatusReported=True),
+                           *partial_cases[managed_index + 1:]]
+        latest_status = {**latest_partial, "schemaVersion": 60, "managedDetectionCases": reported_status}
+        self.assertEqual(validate_managed_detection(latest_status), {"managedDetectionChecksVerified": 31})
+        with self.assertRaisesRegex(ValueError, "Unexpected managed detection result"):
+            validate_managed_detection({**latest_status, "managedDetectionCases": partial_cases})
+        reported_status[managed_index]["pendingStatusReported"] = 1
+        with self.assertRaisesRegex(ValueError, "Unexpected managed detection result"):
+            validate_managed_detection(latest_status)
         for invalid in (rollback,
                         [*rollback[:managed_index + 1], partial, *rollback[managed_index + 1:]],
                         [*partial_cases[:managed_index], dict(partial, inspectionRefused=False),

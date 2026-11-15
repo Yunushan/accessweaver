@@ -39,6 +39,7 @@ WINDOWS_DETECTION_FAILURE_REASONS = (
     "detector-result-invalid",
     "detector-timeout",
     "detector-unavailable",
+    "installer-recovery-pending",
     "revocation-policy-expired",
 )
 WINDOWS_PAYLOAD_PUBLISHER = "payloadPublisherCertificateSHA256"
@@ -1075,6 +1076,7 @@ def detect_windows_upgrade(qualification, publisher_pin):
                  "-BuildInfoSHA256", qualification[WINDOWS_BUILD_INFO], "-UninstallerSHA256", qualification["uninstallerSHA256"],
                  "-PayloadPublisherSHA256", publisher_pin],
                 stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.DEVNULL, timeout=90,
+                env={**os.environ, "ACCESSWEAVER_REPORT_INSTALLER_RECOVERY": "1"},
             )
             output.seek(0)
             content = output.read(4097)
@@ -1088,8 +1090,11 @@ def detect_windows_upgrade(qualification, publisher_pin):
             return "detected", None
         if not content:
             return "unverified", "approved-installation-not-detected"
-    if result.returncode == 1 and not content:
-        return "unverified", "detector-inspection-failed"
+    if result.returncode == 1:
+        if content in (b"AccessWeaver installation pending\r\n", b"AccessWeaver installation pending\n"):
+            return "unverified", "installer-recovery-pending"
+        if not content:
+            return "unverified", "detector-inspection-failed"
     return "unverified", "detector-result-invalid"
 
 

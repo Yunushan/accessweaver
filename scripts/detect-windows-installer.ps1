@@ -286,7 +286,11 @@ namespace AccessWeaver
 
 function Assert-NoPendingAccessWeaverInstallation {
     $state=Get-AccessWeaverInstallerRecoveryState
-    if($state -ceq 'pending'){throw 'An AccessWeaver installation is incomplete'}
+    if($state -ceq 'pending'){
+        $pending=[InvalidOperationException]::new('An AccessWeaver installation is incomplete')
+        $pending.Data['AccessWeaverPendingInstall']=$true
+        throw $pending
+    }
     if($state -cne 'clear'){throw 'AccessWeaver Setup recovery state could not be read'}
 }
 
@@ -472,7 +476,10 @@ try {
     } else {Microsoft.PowerShell.Utility\Write-Output 'AccessWeaver detected'}
     exit 0
 } catch {
-    # Endpoint management uses stdout to determine detection. Keep all other
-    # paths silent, including private path, registry and exception details.
+    # Endpoint management uses stdout to determine detection. The release
+    # verifier explicitly opts into one fixed non-success status.
+    if($env:ACCESSWEAVER_REPORT_INSTALLER_RECOVERY -ceq '1' -and $_.Exception.Data['AccessWeaverPendingInstall'] -eq $true){
+        Microsoft.PowerShell.Utility\Write-Output 'AccessWeaver installation pending'
+    }
     exit 1
 }

@@ -2375,6 +2375,10 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
             (0, b"AccessWeaver detected\n", None),
             (0, b"", "approved-installation-not-detected"),
             (1, b"", "detector-inspection-failed"),
+            (1, b"AccessWeaver installation pending\r\n", "installer-recovery-pending"),
+            (1, b"AccessWeaver installation pending\n", "installer-recovery-pending"),
+            (0, b"AccessWeaver installation pending\n", "detector-result-invalid"),
+            (1, b"AccessWeaver installation pending\nextra\n", "detector-result-invalid"),
             (0, b"AccessWeaver detected\nextra\n", "detector-result-invalid"),
             (0, b"\n" * 4098, "detector-result-invalid"),
             (1, b"AccessWeaver detected\n", "detector-result-invalid"),
@@ -2395,6 +2399,7 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
                     "c" * 64, "-UninstallerSHA256", "d" * 64, "-PayloadPublisherSHA256", publisher,
                 ])
                 self.assertEqual(call.call_args.kwargs["timeout"], 90)
+                self.assertEqual(call.call_args.kwargs["env"]["ACCESSWEAVER_REPORT_INSTALLER_RECOVERY"], "1")
         for error, reason in (
             (subprocess.TimeoutExpired("detector", 90), "detector-timeout"),
             (OSError("detector could not start"), "detector-unavailable"),

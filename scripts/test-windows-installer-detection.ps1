@@ -146,9 +146,15 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
     $stock=Join-Path $PSHOME 'powershell.exe'
     if(-not (Test-Path -LiteralPath $stock)){$stock=Join-Path $PSHOME 'pwsh.exe'}
     $saved=$env:AW_DETECTION_FIXTURE
+    $savedRecovery=$env:ACCESSWEAVER_REPORT_INSTALLER_RECOVERY
     try {
         $cases=@(
             @{mode='pending';code=1;count=0;hash=$hash},
+            @{mode='pending';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
+            @{mode='marker-becomes-pending';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
+            @{mode='marker-access-denied';code=1;count=0;hash=$hash;reportRecovery=$true},
+            @{mode='marker-query-failed';code=1;count=0;hash=$hash;reportRecovery=$true},
+            @{mode='approved';code=0;count=1;hash=$hash;reportRecovery=$true},
             @{mode='marker-path-absent';code=0;count=1;hash=$hash},
             @{mode='setup-starts-during-inspection';code=1;count=0;hash=$hash},
             @{mode='marker-becomes-pending';code=1;count=0;hash=$hash},
@@ -226,6 +232,7 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             elseif($case.oversizedBuildInfo){[IO.File]::WriteAllBytes($buildInfo,[byte[]]::new(64KB+1))}
             else{[IO.File]::WriteAllBytes($buildInfo,$buildInfoBytes)}
             $env:AW_DETECTION_FIXTURE=$case.mode
+            $env:ACCESSWEAVER_REPORT_INSTALLER_RECOVERY=if($case.reportRecovery){'1'}
             $arguments=@('-NoProfile','-NonInteractive','-File',$fixture,'-Version','0.1.0-alpha','-Architecture',$arch,'-PayloadSHA256',$case.hash,'-InstallDirectory',$testRoot)
             if($case.uninstaller){$arguments+=@('-UninstallerSHA256',$case.uninstaller)}
             if($case.sbom){$arguments+=@('-PayloadSBOMSHA256',$case.sbom)}
@@ -238,7 +245,9 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
                 throw ('Unexpected managed detection fixture result: '+$label)
             }
             if($case.count -eq 1){
-                if($case.inventory){
+                if($case.pendingStatus){
+                    if($output[0] -cne 'AccessWeaver installation pending'){throw 'Unexpected opt-in recovery status'}
+                }elseif($case.inventory){
                     $record=$output[0] | ConvertFrom-Json
                     $schema=if($case.buildInfo){2}else{1}
                     if(@($record.PSObject.Properties).Count -ne (5+$schema) -or $record.schemaVersion -ne $schema -or
@@ -253,6 +262,7 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             }
         }
         $env:AW_DETECTION_FIXTURE='approved'
+        $env:ACCESSWEAVER_REPORT_INSTALLER_RECOVERY=$null
         $arguments=@('-NoProfile','-NonInteractive','-File',$fixture,'-Version','0.1.0-alpha','-Architecture',$arch,'-PayloadSHA256',$hash,'-InstallDirectory',$testRoot)
         function Assert-DetectionRefusal([string]$Reason='a retained lifecycle object') {
             $output=@(& $stock @arguments 2>&1)
@@ -274,8 +284,16 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
         # A legacy Setup can hold only its Inno mutex, including an unowned
         # mutex. Also reject another object type occupying its fixed name.
         $legacySetup=[Threading.Mutex]::new($false,$fixtureSetup)
-        try {Assert-DetectionRefusal}
-        finally {$legacySetup.Dispose()}
+        try {
+            Assert-DetectionRefusal
+            $env:AW_DETECTION_FIXTURE='pending'
+            $env:ACCESSWEAVER_REPORT_INSTALLER_RECOVERY='1'
+            Assert-DetectionRefusal 'the legacy Setup mutex even with pending reporting enabled'
+        } finally {
+            $legacySetup.Dispose()
+            $env:AW_DETECTION_FIXTURE='approved'
+            $env:ACCESSWEAVER_REPORT_INSTALLER_RECOVERY=$null
+        }
         $legacyCollision=[Threading.EventWaitHandle]::new($false,[Threading.EventResetMode]::ManualReset,$fixtureSetup)
         try {Assert-DetectionRefusal}
         finally {$legacyCollision.Dispose()}
@@ -370,7 +388,10 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
                 if([IO.Directory]::Exists($path)){[IO.Directory]::Delete($path)}
             }
         }
-    } finally {$env:AW_DETECTION_FIXTURE=$saved}
+    } finally {
+        $env:AW_DETECTION_FIXTURE=$saved
+        $env:ACCESSWEAVER_REPORT_INSTALLER_RECOVERY=$savedRecovery
+    }
 } finally {
     foreach($file in @($payload,$fixture,$uninstaller,$uninstallData,$sbom,$buildInfo,$notice)){
         if(Test-Path -LiteralPath $file){Remove-Item -LiteralPath $file -Force}
@@ -381,4 +402,4 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
     }
     $fixtureDirectory.Delete()
 }
-Write-Output ('Managed detection contracts passed: '+($cases.Count+26))
+Write-Output ('Managed detection contracts passed: '+($cases.Count+27))

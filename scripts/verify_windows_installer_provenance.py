@@ -29,7 +29,8 @@ FULL_PAYLOAD_UPGRADE_REPORT_SCHEMA = 56
 PARTIAL_COPY_UPGRADE_REPORT_SCHEMA = 57
 TEMP_UNINSTALLER_RECOVERY_REPORT_SCHEMA = 58
 LOCKED_TEMP_UNINSTALLER_REPORT_SCHEMA = 59
-REPORT_SCHEMAS = range(11, LOCKED_TEMP_UNINSTALLER_REPORT_SCHEMA + 1)
+PENDING_STATUS_REPORT_SCHEMA = 60
+REPORT_SCHEMAS = range(11, PENDING_STATUS_REPORT_SCHEMA + 1)
 PHASES=["baseline","after-install","after-upgrade","after-reinstall","after-active-setup-uninstall","after-lifecycle-locks","after-refused-downgrade","after-version-policy","after-registry-read-boundaries","after-registry-view-policy","after-registry-access-policy","after-restoration-launch-failures","after-restoration-ownership-contracts","before-uninstall","after-uninstall"]
 
 def require(ok,message):
@@ -151,10 +152,10 @@ def validate_managed_detection(report):
     if report.get("schemaVersion", 0) >= ROLLBACK_REPORT_SCHEMA:
         expected += [("after-rollback", True), ("newer-version-after-rollback", False),
                      ("after-rollback-uninstall", False)]
+    partial_copy_phase = "managed-upgrade-partial-copy-pending"
     if report.get("schemaVersion", 0) >= PARTIAL_COPY_UPGRADE_REPORT_SCHEMA:
-        phase = "managed-upgrade-partial-copy-pending"
-        refusals.add(phase)
-        expected.insert(expected.index(("managed-upgrade-pending", False)), (phase, False))
+        refusals.add(partial_copy_phase)
+        expected.insert(expected.index(("managed-upgrade-pending", False)), (partial_copy_phase, False))
     source = Path(__file__).with_name("detect-windows-installer.ps1")
     require(report.get("managedDetectionSourceSHA256") == digest(source.read_bytes()),
             "Managed detection differs from the approved source")
@@ -164,9 +165,10 @@ def validate_managed_detection(report):
         expected_case = {"phase": phase, "detected": detected}
         if phase in refusals:
             expected_case["inspectionRefused"] = True
+        if phase == partial_copy_phase and report.get("schemaVersion", 0) >= PENDING_STATUS_REPORT_SCHEMA:
+            expected_case["pendingStatusReported"] = True
         require(isinstance(case, dict) and case.keys() == expected_case.keys()
-                and case["phase"] == phase and case["detected"] is detected
-                and (phase not in refusals or case["inspectionRefused"] is True),
+                and all(type(case[key]) is type(value) and case[key] == value for key, value in expected_case.items()),
                 "Unexpected managed detection result")
     return {"managedDetectionChecksVerified": len(expected)}
 
