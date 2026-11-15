@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build a Debian package from a pinned AccessWeaver Linux portable archive."""
 import argparse
+import errno
 import hashlib
 import os
 from pathlib import Path
@@ -111,6 +112,9 @@ def build(archive, pin, arch, maintainer, destination):
         check_elf(binary, arch)
 
         output = destination / f"{PACKAGE}_{version}_{arch}.deb"
+        # Skip compression for an existing name. Publication still uses an exclusive rename.
+        if os.path.lexists(output):
+            raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), output)
         payload = staging / "payload"
         installed = stage_payload(frozen, root, payload)
         control_dir = payload / "DEBIAN"
