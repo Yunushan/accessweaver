@@ -71,6 +71,8 @@ The verifier requires a Windows-valid embedded Authenticode signature, a timesta
 
 On an organization-controlled Windows build host, invoke the existing Inno build with the approved organization signer executable. The signer accepts one artifact path, signs it in place with a trusted timestamp, and exits nonzero on failure. Configure its provider and credentials on that host. The build signs the payload before packaging, and the Inno callback checks the approved publisher on setup and its generated uninstaller. Each signing operation compares the signed PE to the original, including the installer payload beyond the PE sections. It allows the checksum, certificate-directory fields, zero alignment padding and appended certificate table to change. The callback records both file digests while reading the verified files, checks them again before replacement, and checks the resulting staging file before handing it back to the build. [Microsoft PE format](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format#the-attribute-certificate-table-image-only). Signed output and build evidence are kept in a new per-build directory under the build directory. A clean source checkout is required.
 
+The native Windows handoff fixture checks that approved bytes replace the staging file, that a locked original is preserved for retry, and that changed staging or replacement bytes fail verification. The fixture uses synthetic data. [Verified signing handoff checks](qualification/dffccc878ac6-windows-signing-handoff.json).
+
 ```powershell
 .\scripts\build-windows-installer.ps1 -Compiler APPROVED_ISCC_EXE -Version RELEASE_VERSION -TargetArch amd64 -SigningTool APPROVED_SIGNER_EXE -PublisherCertificateSHA256 APPROVED_CERTIFICATE_SHA256
 ```

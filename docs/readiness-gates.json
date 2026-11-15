@@ -276,7 +276,8 @@
             "scripts/signed_release_manifest.py",
             "scripts/test_signed_release_manifest.py",
             "scripts/test_macos_installer_publisher.py",
-            "docs/RELEASE_PROVENANCE.md"
+            "docs/RELEASE_PROVENANCE.md",
+            "docs/qualification/dffccc878ac6-windows-signing-handoff.json"
           ]
         },
         {

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "scope": "Native Windows filesystem signing handoff and installer source contracts using synthetic staging data",
+  "sourceCommit": "dffccc878ac6b5a309c66f592a66db9b3f4d2da5",
+  "sourceSHA256": {
+    "scripts/sign-windows-installer-artifact.ps1": "210e40ee71c65b6b21c4a3cca79419b2187b5055d847150acfeec523f763cdac",
+    "scripts/windows-installer-common.ps1": "3165a4629f997a627ce83f79b1d870379d3744dba041808dca107d2b5c3e1cfb",
+    "scripts/test-windows-installer-contracts.ps1": "de392f3c076414aa5df78178b43040c093c9d167e256baa48b71b70bfa1d9328",
+    "scripts/test-windows-installer-state.ps1": "de468a14c68fcb6e80a1bc470b1a6e9ac5c6c709a0985a4effd3a0e70250ec0c",
+    "scripts/windows-installer-state.ps1": "f137a0983f3485deeef77aa5a0f8f76eb6e4244941bd9235177d8955b82094d3",
+    "scripts/windows-installer.iss": "6a3bb34435220f51c708bc080a1bbf4da8629b24985d7bb11d5dba1189f214d1",
+    "scripts/windows-installer-registry.iss": "b34a92c54453eafcbcdab09f3d7736cdd956d870cee1b20344a9715effdd8a5a",
+    "scripts/build-windows-installer.ps1": "b468b7079653cf842a558ee39d449a70495106f1932457538f4476c3f644eb63",
+    "scripts/detect-windows-installer.ps1": "8cc2c175825be72330d77112a8b07b0fa5c5f530d14c9010b727fb8597ec92b3"
+  },
+  "environment": {
+    "os": "windows",
+    "powerShell": "7.6.9",
+    "architecture": "x64"
+  },
+  "suite": "scripts/test-windows-installer-contracts.ps1",
+  "knownSuiteMilestones": 6,
+  "checks": {
+    "changedSignedInputRefusedBeforeReplacement": true,
+    "changedOriginalRefusedBeforeReplacement": true,
+    "lockedOriginalPreservedAndRetrySucceeded": true,
+    "approvedReplacementDigestMatched": true,
+    "changedReplacementFailedFinalDigestCheck": true
+  },
+  "organizationSignerExercised": false,
+  "installerExecuted": false,
+  "productionQualificationComplete": false
+}
