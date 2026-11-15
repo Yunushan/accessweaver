@@ -75,15 +75,26 @@ test('public report output refuses a redirected directory',async t=>{
  const root=await fixture(t),target=path.join(root,'redirect');await fs.mkdir(target);await fs.mkdir(path.join(root,'build'),{recursive:true});await fs.symlink(target,path.join(root,'build/browser-shadow'),process.platform==='win32'?'junction':'dir');await assert.rejects(D.writeReport(root,'a'.repeat(40),null,'webkit','arm64','original',D.empty(),environment));assert.deepEqual(await fs.readdir(target),[]);
 });
 
-// These source-owned groups split decorative shadows; selection indicators remain. They
-// do not change production CSS or grant the diagnostic performance credit.
-test('fixed surface groups cover existing shadow declarations without changing another property',async()=>{
- const css=await fs.readFile(path.join(__dirname,'../../web/app.css'),'utf8');
- const groups=['without-core-and-modal-shadow','without-other-decorative-shadows'].map(v=>D.styles[v].split('{')[0].split(','));
- assert.equal(groups[0].some(s=>groups[1].includes(s)),false);
- const declared=[];for(const match of css.matchAll(/([^{}]+)\{([^{}]*?)\}/g))if(/(?:^|;)box-shadow:/.test(match[2]))for(const selector of match[1].split(','))declared.push(selector.trim().replace(/:hover$/,''));
- const selection=['.nav-item.active','.profile-active'];assert.ok(selection.every(s=>declared.includes(s)));assert.deepEqual([...new Set(declared)].filter(s=>!selection.includes(s)).sort(),groups.flat().sort());
- for(const variant of D.variants.slice(1))assert.match(D.styles[variant],/^[^{}]+\{box-shadow:none!important\}$/);
+// The rendering control requires all historical shadow surfaces to be present.
+test('fixed shadow groups cover the historical stylesheet and identify a border-only stylesheet', async () => {
+ const coreAndModal = '.core-symbol,.modal-card';
+ const otherDecoration = '.brand-mark,.online-dot,.topbar-secure-dot,.btn-primary,.orbit-node,#toast,.sidebar';
+ const classicCSS = [
+  coreAndModal + '{box-shadow: 0 0 20px black}',
+  otherDecoration + '{box-shadow: 0 0 10px black}',
+  '.btn-primary:hover {box-shadow: 0 0 15px black}',
+  '.nav-item.active,.profile-active {box-shadow: inset 2px 0 black}',
+ ].join('\n');
+
+ assert.equal(D.styles['without-core-and-modal-shadow'], coreAndModal + '{box-shadow:none!important}');
+ assert.equal(D.styles['without-other-decorative-shadows'], otherDecoration + '{box-shadow:none!important}');
+ assert.equal(D.matchesShadowFixture(classicCSS), true);
+ assert.equal(D.matchesShadowFixture('.nav-item.active {border-inline-start-color: black}'), false);
+ assert.throws(() => D.matchesShadowFixture(classicCSS.replace('.core-symbol,', '')), /Unexpected shadow fixture stylesheet/);
+ assert.throws(() => D.matchesShadowFixture(classicCSS + '\n.other {box-shadow: 0 0 1px black}'), /Unexpected shadow fixture stylesheet/);
+
+ const currentCSS = await fs.readFile(path.join(__dirname, '../../web/app.css'), 'utf8');
+ assert.doesNotThrow(() => D.matchesShadowFixture(currentCSS));
 });
 test('a computed shadow from the wrong surface family prevents an accepted intervention',()=>{
  for(const variant of D.variants)for(const phase of ['startup','editor']){
