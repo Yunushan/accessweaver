@@ -1881,6 +1881,13 @@ function Get-DroverInstallDirectories {
     if($dirs.Count -eq 0 -or $dirs.Count -gt 256){throw 'Expected a bounded stable Discord installation inventory'}
     return $dirs
 }
+function Assert-DroverInstallDirectoriesUnchanged([string[]]$Expected) {
+    $observed=@(Discord-Directories)
+    $directories=[Collections.Generic.HashSet[string]]::new($Expected,[StringComparer]::OrdinalIgnoreCase)
+    if($observed.Count -ne $Expected.Count -or -not $directories.SetEquals([string[]]$observed)){
+        throw 'Discord version directories changed during Drover deployment; review the current installation'
+    }
+}
 function Install-Drover {
     $manifest=Join-Path $root 'profiles\drover-owned.json'
     $dirs=@(Get-DroverInstallDirectories)
@@ -1895,6 +1902,7 @@ function Install-Drover {
         $hashes[$name]=Get-DroverFileHash $sources[$name]
         if(-not $hashes[$name]){throw 'Drover input is missing'}
     }
+    Assert-DroverInstallDirectoriesUnchanged $dirs
     $deploymentID=[guid]::NewGuid().ToString('N')
     $records=@(foreach($dir in $dirs){
         $appSHA256=Get-DroverFileHash (Join-Path $dir 'Discord.exe')
@@ -1931,7 +1939,9 @@ function Install-Drover {
     }
 
     Assert-DroverManifestUnchanged $manifest $digest
+    Assert-DroverInstallDirectoriesUnchanged $dirs
     Stop-AppProcesses 'discord'
+    Assert-DroverInstallDirectoriesUnchanged $dirs
     foreach($item in $records){
         $name=Split-Path -Leaf $item.path
         Set-DroverFile $sources[$name] $item.path $item.originalHash $item.installedHash $item.applicationSHA256 $manifest $digest
@@ -1939,6 +1949,7 @@ function Install-Drover {
     foreach($item in @(Get-DroverRestorePlan $records)){
         if(-not $item.directoryExists -or $item.current -ine $item.installedHash){throw 'Installed Drover file could not be verified'}
     }
+    Assert-DroverInstallDirectoriesUnchanged $dirs
     Assert-DroverManifestUnchanged $manifest $digest
     Event 'Discord drover files installed with original-file backups'
 }

@@ -4,7 +4,7 @@ $source=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Windows workflow source failed parsing'}
-foreach($name in @('No-Reparse','Get-DroverInstallDirectories','Install-Drover','Assert-RecordedServiceBinding','Recover-Operation','Rollback','Assert-DroverApplication','Set-DroverFile','Get-DroverFileHash','Get-DroverRestorePlan','Read-DroverManifest','Assert-DroverManifestUnchanged','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Restore-Drover','Remove-Method','Remove-All')){
+foreach($name in @('No-Reparse','Get-DroverInstallDirectories','Assert-DroverInstallDirectoriesUnchanged','Install-Drover','Assert-RecordedServiceBinding','Recover-Operation','Rollback','Assert-DroverApplication','Set-DroverFile','Get-DroverFileHash','Get-DroverRestorePlan','Read-DroverManifest','Assert-DroverManifestUnchanged','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Restore-Drover','Remove-Method','Remove-All')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -15,6 +15,7 @@ function Assert-TrustedItem([string]$path){No-Reparse $path}
 function Stop-AppProcesses([string]$variant){
     if($variant -cne 'discord'){throw 'Wrong client selected'}
     $script:stops++
+    if($inventoryChangePhase -ceq 'stop'){$script:extraVersionVisible=$true}
     if($script:changeOnStop){[IO.File]::AppendAllText($manifest,' ')}
     if($script:verifyPrepared){
         if(-not [IO.File]::Exists($manifest) -or $script:undo.Count -ne 1 -or
@@ -28,12 +29,20 @@ function Event([string]$text){$script:events++}
 function Save-Journal {
     if([IO.File]::Exists($manifest)){throw 'Ownership was published before journaling'}
     $script:journaled=$true
+    if($inventoryChangePhase -ceq 'journal'){$script:extraVersionVisible=$true}
 }
 function Ensure-Asset([string]$asset){
     if($asset -cne 'drover'){throw 'Unexpected fixture asset'}
+    if($inventoryChangePhase -cin @('acquisition','replacement')){$script:extraVersionVisible=$true}
     return $dll
 }
-function Discord-Directories {return $version}
+function Discord-Directories {
+    if($inventoryChangePhase -ceq 'replacement' -and $script:extraVersionVisible){return $newVersion}
+    if($script:extraVersionVisible -or ($inventoryChangePhase -ceq 'readback' -and [IO.File]::Exists($second))){
+        return @($newVersion,$version)
+    }
+    return $version
+}
 function Read-WorkflowRecoveryJournal([string]$Path){return @{undo=@($script:savedRecovery)}}
 function Remove-Item {
     param($LiteralPath,$ErrorAction)
@@ -52,6 +61,11 @@ $previous=$env:LOCALAPPDATA
 $env:LOCALAPPDATA=Join-Path $temp 'user'
 $root=Join-Path $temp 'machine'
 $version=Join-Path $env:LOCALAPPDATA 'Discord\app-1.0.0'
+$newVersion=Join-Path $env:LOCALAPPDATA 'Discord\app-2.0.0'
+$newApplication=Join-Path $newVersion 'Discord.exe'
+$newDLL=Join-Path $newVersion 'version.dll'
+$inventoryChangePhase=''
+$script:extraVersionVisible=$false
 $profiles=Join-Path $root 'profiles'
 $backups=Join-Path $root 'backups'
 $manifest=Join-Path $profiles 'drover-owned.json'
@@ -62,7 +76,7 @@ $backup=Join-Path $backups ('a'*32)
 $assets=Join-Path $root 'components'
 $dll=Join-Path $assets 'fixture.dll'
 $ini=Join-Path $assets 'drover.ini'
-$files=@($application,$first,$second,$backup,$manifest,$dll,$ini)
+$files=@($application,$first,$second,$backup,$manifest,$dll,$ini,$newApplication,$newDLL)
 try {
     foreach($path in @($version,$profiles,$backups)){[void][IO.Directory]::CreateDirectory($path)}
     [IO.File]::WriteAllText($backup,'original DLL')
@@ -143,6 +157,45 @@ try {
     [IO.File]::WriteAllText($dll,'new DLL')
     [IO.File]::WriteAllText($ini,'new INI')
     $script:undo=[Collections.Generic.List[object]]::new()
+    [void][IO.Directory]::CreateDirectory($newVersion)
+    [IO.File]::WriteAllText($newApplication,'new Discord executable')
+    [IO.File]::WriteAllText($newDLL,'unrelated DLL')
+    $script:extraVersionVisible=$true
+    Assert-DroverInstallDirectoriesUnchanged @($version,$newVersion)
+    $script:extraVersionVisible=$false
+    foreach($phase in @('acquisition','replacement','journal','stop','readback')){
+        $inventoryChangePhase=$phase
+        $script:journaled=$false
+        $script:externalEffectsPending=$false
+        $before=$script:stops
+        $eventsBefore=$script:events
+        $refused=$false
+        try {Install-Drover}catch{
+            if($_.Exception.Message -cne 'Discord version directories changed during Drover deployment; review the current installation'){throw}
+            $refused=$true
+        }
+        $published=$phase -ceq 'readback'
+        $stopped=$phase -cin @('stop','readback')
+        $journaled=$phase -cnotin @('acquisition','replacement')
+        Require ($refused -and $script:events -eq $eventsBefore -and
+            $script:stops -eq ($before+[int]$stopped) -and
+            $script:journaled -eq $journaled -and [IO.File]::Exists($manifest) -eq $journaled -and
+            [IO.File]::Exists($first) -eq $published -and [IO.File]::Exists($second) -eq $published) (
+            'Discord version change at '+$phase+' crossed the expected deployment boundary')
+        $inventoryChangePhase=''
+        $script:extraVersionVisible=$false
+        $rollback=@(Rollback)
+        Require ($rollback.Count -eq 0 -and -not [IO.File]::Exists($manifest) -and
+            -not [IO.File]::Exists($first) -and -not [IO.File]::Exists($second) -and
+            [IO.File]::ReadAllText($newApplication) -ceq 'new Discord executable' -and
+            [IO.File]::ReadAllText($newDLL) -ceq 'unrelated DLL') (
+            'Rollback after a Discord directory change did not preserve the new version')
+        $script:undo.Clear()
+    }
+    [IO.File]::Delete($newApplication)
+    [IO.File]::Delete($newDLL)
+    [IO.Directory]::Delete($newVersion)
+
     $script:externalEffectsPending=$false
     $script:changeOnStop=$true
     $refused=$false
@@ -338,7 +391,7 @@ try {
 } finally {
     $env:LOCALAPPDATA=$previous
     foreach($path in $files){if([IO.File]::Exists($path)){[IO.File]::Delete($path)}}
-    foreach($directory in @($version,(Split-Path -Parent $version),(Join-Path $temp 'user'),$profiles,$backups,$assets,$root,$temp)){
+    foreach($directory in @($version,$newVersion,(Split-Path -Parent $version),(Join-Path $temp 'user'),$profiles,$backups,$assets,$root,$temp)){
         if([IO.Directory]::Exists($directory)){[IO.Directory]::Delete($directory)}
     }
 }
