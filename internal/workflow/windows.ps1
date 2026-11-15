@@ -2341,17 +2341,22 @@ function Wait-OrdinaryDNSResolver([int]$TimeoutSeconds) {
     return $false
 }
 function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds=30,
-        [string]$FailureMessage='DNSCrypt loopback readiness could not be verified before adapter configuration') {
+        [string]$FailureMessage='DNSCrypt loopback readiness could not be verified before adapter configuration',
+        [switch]$RequireBothAddressTypes) {
     $pending=@($Servers)
+    $types=if($RequireBothAddressTypes){@('A','AAAA')}else{@('A')}
     $timer=[Diagnostics.Stopwatch]::StartNew()
     do {
         $pending=@(foreach($server in $pending){
             $ready=$false
             try {
                 Clear-DnsClientCache -ErrorAction Stop
-                $answers=@(Resolve-DnsName -Name 'example.net.' -Server $server -Type A -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
-                $ready=Test-DNSAddressAnswer $answers 'example.net' 'A'
-            } catch {}
+                foreach($type in $types){
+                    $answers=@(Resolve-DnsName -Name 'example.net.' -Server $server -Type $type -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
+                    $ready=Test-DNSAddressAnswer $answers 'example.net' $type
+                    if(-not $ready){break}
+                }
+            } catch {$ready=$false}
             if(-not $ready){$server}
         })
         if(-not $pending.Count){return}
@@ -2384,6 +2389,7 @@ function Assert-EffectiveDNSCryptListeners {
     if($listeners.Count){
         $addresses=[string[]]::new($listeners.Count)
         $listeners.CopyTo($addresses)
+        # Recovery can reinstate an older configuration that filters AAAA.
         Wait-DNSCryptListeners $addresses -TimeoutSeconds 5 -FailureMessage 'Restored DNSCrypt listener could not be verified'
     }
     if(-not $listeners.SetEquals((Get-EffectiveDNSCryptListeners))){
@@ -2816,7 +2822,7 @@ function Configure-DNS([string]$method) {
                 $resolver=Install-EngineService 'dnscrypt' $binary @('-config',$config) -DeferAutomaticStartup
             }
             # SCM can report Running before the replacement listener is usable.
-            Wait-DNSCryptListeners $listeners
+            Wait-DNSCryptListeners $listeners -RequireBothAddressTypes
             Assert-DNSCryptConfiguration $config $publishedConfigSHA256
             # Verify automatic startup before adding any loopback DNS dependency.
             if((Assert-RecordedServiceBinding $resolver) -ne 0){throw 'DNSCrypt service disappeared before enabling automatic startup'}
@@ -2895,9 +2901,9 @@ function Configure-DNS([string]$method) {
             throw 'Resolver verification failed; original DNS settings restored: the ordinary resolver did not return valid A and AAAA answers'
         }
         if($method -ceq 'dnscrypt'){
-            # The ordinary resolver can succeed through one family even when a
-            # different family now points at a failed listener.
-            Wait-DNSCryptListeners $listeners -TimeoutSeconds 5 -FailureMessage 'DNSCrypt loopback readiness could not be verified after adapter configuration'
+            # The ordinary resolver can succeed through one listener while
+            # another cannot answer both address record types.
+            Wait-DNSCryptListeners $listeners -RequireBothAddressTypes -TimeoutSeconds 5 -FailureMessage 'DNSCrypt loopback readiness could not be verified after adapter configuration'
         }
         # A DNS answer could have come through settings that changed during the probe.
         Assert-ConfiguredDNSServers $adapters $records $servers
