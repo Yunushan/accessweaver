@@ -175,7 +175,8 @@
             "docs/qualification/0c9c8fd3806c-linux-package-reboot.json",
             "docs/qualification/16632c4b2a7f-linux-package-arm64-reboot.json",
             "docs/qualification/5ac640dede08-debian-reboot-payload.json",
-            "docs/qualification/5ac640dede08-debian-reboot-arm64-payload.json"
+            "docs/qualification/5ac640dede08-debian-reboot-arm64-payload.json",
+            "docs/qualification/d57c7c8d8a97-hosted-debian-amd64.json"
           ]
         }
       ]
@@ -456,7 +457,8 @@
             "docs/qualification/1ed0fa951710-local-webkit-soak.json",
             "docs/qualification/2e0f6f4b7f30-local-webkit-baseline-miss.json",
             "docs/qualification/2e0f6f4b7f30-local-webkit-baseline-repeat.json",
-            "docs/qualification/2d1e263f7fc6-local-webkit-editor-timings.json"
+            "docs/qualification/2d1e263f7fc6-local-webkit-editor-timings.json",
+            "docs/qualification/d57c7c8d8a97-dashboard-webkit.json"
           ]
         },
         {

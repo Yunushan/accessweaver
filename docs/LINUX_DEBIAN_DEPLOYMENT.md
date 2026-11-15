@@ -147,4 +147,6 @@ The KVM AMD64 guest upgraded from the approved `0.1.0-alpha.2` package to `0.1.0
 
 An ARM64 guest under QEMU emulation on the AMD64 host passed the same two-boot test with the `5ac640dede08` ARM64 package. The verifier matched the installed and rolled-back executables to their approved package bytes, checked routed traffic before and after reboot, and verified that policy and profile state survived rollback and purge. Native ARM64 endpoint qualification is pending. [ARM64 emulated reboot and executable evidence](qualification/5ac640dede08-debian-reboot-arm64-payload.json).
 
+The hosted Ubuntu AMD64 job for `d57c7c8` passed 12 dpkg and 9 loopback signed APT lifecycle checks. The qualification reconciles package and executable digests across both probes, verifies a managed policy revision update and rollback, and confirms profile and policy state after purge and reinstall. APT used disposable signing keys. Native ARM64 execution is pending. [Verified hosted AMD64 evidence](qualification/d57c7c8d8a97-hosted-debian-amd64.json).
+
 Production rollout still requires results for the approved release packages and native endpoint architectures. It also requires organization signing and hosting, reboot and active-engine checks, and validation through the organization's endpoint-management tools.
