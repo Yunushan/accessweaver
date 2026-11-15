@@ -365,6 +365,171 @@ begin
     (Info.SizeHigh = 0) and (Info.SizeLow > 0) and (Info.SizeLow <= 536870912);
 end;
 
+{ Inno Setup can leave its staged temporary uninstaller in the application
+  directory after interruption. Keep a baseline tied to this managed attempt. }
+const AWManagedTempBaseline = 'PendingTemporaryFileBaseline';
+
+var AWManagedTempCandidates: TStringList;
+
+function AWSetupTempName(const Name: String): Boolean;
+var I: Integer; C: Char;
+begin
+  Result := False;
+  if (Length(Name) <> 17) or (CompareText(Copy(Name, 1, 3), 'is-') <> 0) or
+     (CompareText(Copy(Name, 14, 4), '.tmp') <> 0) then Exit;
+  for I := 4 to 13 do begin
+    C := Name[I];
+    if not (((C >= '0') and (C <= '9')) or ((C >= 'a') and (C <= 'z')) or
+            ((C >= 'A') and (C <= 'Z'))) then Exit;
+  end;
+  Result := True;
+end;
+
+function AWCollectSetupTempNames(const Destination: String; Names: TStringList): Boolean;
+var Search: TFindRec; Held: AWNativeHandles; I: Integer;
+begin
+  Result := False;
+  try
+    if not AWLockInstallationDirectory(Destination, Held) then Exit;
+    { A managed baseline already has files. Failure to enumerate cannot
+      establish that previously existing temporary names are absent. }
+    if not FindFirst(AddBackslash(Destination) + '*', Search) then Exit;
+    try
+      repeat
+        if AWSetupTempName(Search.Name) then Names.Add(Search.Name);
+        if Names.Count > 512 then Exit;
+      until not FindNext(Search);
+      Result := True;
+    finally
+      FindClose(Search);
+    end;
+  finally
+    for I := GetArrayLength(Held) - 1 downto 0 do AWCloseNativeHandle(Held[I]);
+  end;
+end;
+
+function AWPrepareManagedTempRecovery(const Destination: String): Boolean;
+var Baseline, Current: TStringList; Value, Binding: String; I: Integer;
+begin
+  Result := True;
+  if AWPendingApprovalPin = '' then Exit;
+  Binding := GetSHA256OfString(AWPendingInstallValue(Destination)) + '|';
+  Current := TStringList.Create;
+  try
+    if AWPendingInstallAbsent then begin
+      Value := '';
+      if AWCollectSetupTempNames(Destination, Current) then Value := Binding + Current.Text;
+      Result := RegWriteStringValue(HKLM64, AWLifecycleRegistry, AWManagedTempBaseline, Value);
+      Exit;
+    end;
+    if not AWPendingInstallMatches(Destination) then begin Result := False; Exit; end;
+    if not RegQueryStringValue(HKLM64, AWLifecycleRegistry, AWManagedTempBaseline, Value) then Exit;
+    if (Length(Value) > 10000) or (Copy(Value, 1, Length(Binding)) <> Binding) then Exit;
+    Baseline := TStringList.Create;
+    try
+      Baseline.Text := Copy(Value, Length(Binding) + 1, Length(Value));
+      for I := 0 to Baseline.Count - 1 do
+        if not AWSetupTempName(Baseline[I]) then Exit;
+      if not AWCollectSetupTempNames(Destination, Current) then Exit;
+      AWManagedTempCandidates := TStringList.Create;
+      for I := 0 to Current.Count - 1 do
+        if Baseline.IndexOf(Current[I]) < 0 then AWManagedTempCandidates.Add(Current[I]);
+    finally
+      Baseline.Free;
+    end;
+  finally
+    Current.Free;
+  end;
+end;
+
+type AWFileStreamInfo = record
+  NextEntryOffset, NameBytes: LongWord;
+  StreamSize, AllocationSize: Int64;
+  Name: array[0..31] of Word;
+end;
+
+function AWQueryFileStreams(Handle, InfoClass: LongWord; var Info: AWFileStreamInfo;
+  Bytes: LongWord): Integer;
+  external 'GetFileInformationByHandleEx@kernel32.dll stdcall';
+
+function AWOnlyDefaultDataStream(Handle: LongWord): Boolean;
+var Info: AWFileStreamInfo; I: Integer; DefaultName: String;
+begin
+  Result := False;
+  if AWQueryFileStreams(Handle, 7, Info, SizeOf(Info)) = 0 then Exit;
+  DefaultName := '::$DATA';
+  if (Info.NextEntryOffset <> 0) or (Info.NameBytes <> 2 * Length(DefaultName)) then Exit;
+  for I := 1 to Length(DefaultName) do
+    if Info.Name[I - 1] <> Ord(DefaultName[I]) then Exit;
+  Result := True;
+end;
+
+function AWSetFileDisposition(Handle, InfoClass: LongWord; var DeleteFile: Byte;
+  Bytes: LongWord): Integer;
+  external 'SetFileInformationByHandle@kernel32.dll stdcall';
+
+function AWRemoveTemporaryUninstaller(const Path, Identity: String; ExpectedSize: Int64): Boolean;
+var Handle, Code: LongWord; Info: AWFileInfo; Subject: THandleStream; DeleteFile: Byte;
+    Deleted: Boolean;
+begin
+  Result := True;
+  Deleted := False;
+  { GENERIC_READ | DELETE, FILE_SHARE_READ, OPEN_EXISTING, OPEN_REPARSE_POINT. }
+  Handle := AWOpenReplaceProbe(Path, $80010000, 1, 0, 3, $00200000, 0);
+  if Handle = $FFFFFFFF then Exit;
+  try
+    if AWGetFileInfo(Handle, Info) = 0 then Exit;
+    if ((Info.Attributes and ($00000400 or $00000010)) <> 0) or (Info.Links <> 1) then Exit;
+    Subject := THandleStream.Create(Handle);
+    try
+      if Subject.Size <> ExpectedSize then Exit;
+      if GetSHA256OfStream(Subject) <> Identity then Exit;
+    finally
+      Subject.Free;
+    end;
+    if not AWOnlyDefaultDataStream(Handle) then Exit;
+    DeleteFile := 1;
+    Deleted := AWSetFileDisposition(Handle, 4, DeleteFile, 1) <> 0;
+    Result := Deleted;
+  finally
+    if AWCloseNativeHandle(Handle) = 0 then Result := False;
+  end;
+  if Deleted and Result then begin
+    Result := False;
+    if AWPathAttributes(Path) = $FFFFFFFF then begin
+      Code := DLLGetLastError;
+      Result := (Code = 2) or (Code = 3);
+    end;
+  end;
+end;
+
+function AWCleanupManagedTemporaryUninstallers(const Destination: String; Uninstaller: LongWord): Boolean;
+var Subject: THandleStream; Identity: String; UninstallerSize: Int64; I: Integer;
+begin
+  Result := True;
+  if AWManagedTempCandidates = nil then Exit;
+  if AWManagedTempCandidates.Count = 0 then Exit;
+  Result := False;
+  if not AWPendingInstallMatches(Destination) then Exit;
+  { The verified registered uninstaller and all installation directories are
+    held by the caller. Use its exact bytes to identify staged copies. }
+  try
+    Subject := THandleStream.Create(Uninstaller);
+    try
+      UninstallerSize := Subject.Size;
+      Identity := GetSHA256OfStream(Subject);
+    finally
+      Subject.Free;
+    end;
+    for I := 0 to AWManagedTempCandidates.Count - 1 do
+      if not AWRemoveTemporaryUninstaller(AddBackslash(Destination) + AWManagedTempCandidates[I],
+        Identity, UninstallerSize) then Exit;
+    Result := True;
+  except
+    Result := False;
+  end;
+end;
+
 function AWCheckPackageDirectory(const Path: String; Hold: Boolean; var Held: AWNativeHandles): String;
 var Attributes, Code: LongWord;
 begin
@@ -706,8 +871,11 @@ begin
     AWPendingRetirementFailed := True;
     if not Verified then
       Log('AccessWeaver installed payload or registration verification failed. Pending installation record retained.')
+    else if not AWCleanupManagedTemporaryUninstallers(Destination, Uninstaller) then
+      Log('AccessWeaver could not retire a verified temporary uninstaller. Pending installation record retained.')
     else if AWRetirePendingInstall(Destination) then begin
       AWPendingRetirementFailed := False;
+      if AWPendingApprovalPin <> '' then RegDeleteValue(HKLM64, AWLifecycleRegistry, AWManagedTempBaseline);
       Log('AccessWeaver installed payload and registration verified. Pending installation record retired.');
     end;
   finally
@@ -737,6 +905,8 @@ begin
     if Failure = '' then Failure := AWPayloadReplacementPreflight(Destination);
     if Failure = '' then Failure := AWApprovedUpgradePreflight(Destination, AWPendingApprovalPin);
     if Failure <> '' then RaiseException(Failure);
+    if not AWPrepareManagedTempRecovery(Destination) then
+      RaiseException('Cannot persist the AccessWeaver temporary file baseline.');
     if not RegWriteStringValue(HKLM64, AWLifecycleRegistry, AWPendingInstall, AWPendingInstallValue(Destination)) or
       not AWFlushLifecycleRecord then
       RaiseException('Cannot persist the AccessWeaver pending installation record.');
@@ -798,6 +968,7 @@ end;
 
 procedure DeinitializeSetup;
 begin
+  if AWManagedTempCandidates <> nil then AWManagedTempCandidates.Free;
   AWReleaseLifecycle;
 end;
 

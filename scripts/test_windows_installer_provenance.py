@@ -156,6 +156,14 @@ class SetupCompletionRefusalTests(unittest.TestCase):
                 validate_setup_upgrade_baseline({key: value for key, value in partial.items() if key != dropped}, **options)
         verified = validate_setup_upgrade_baseline(partial, **options)
         self.assertIs(verified["setupUpgradePartialCopyRecoveryVerified"], True)
+        options["check_temp_preservation"] = True
+        with self.assertRaisesRegex(ValueError, "Incomplete managed Setup"):
+            validate_setup_upgrade_baseline(partial, **options)
+        for value in (False, 1):
+            with self.subTest(preservation=value), self.assertRaises(ValueError):
+                validate_setup_upgrade_baseline({**partial, "partialCopyUnrelatedFilesPreserved": value}, **options)
+        verified = validate_setup_upgrade_baseline({**partial, "partialCopyUnrelatedFilesPreserved": True}, **options)
+        self.assertIs(verified["setupUpgradeTemporaryUninstallerCleanupVerified"], True)
 
     def test_rejects_unproven_uninstall_registration_repair(self):
         record = {
