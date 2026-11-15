@@ -460,3 +460,5 @@ The dashboard change in `d57c7c8` avoids rewriting unchanged translations, skips
 | WebKit | 963 ms | 402 ms | 266 ms |
 
 The revised dashboard still needs a sustained workload result and hosted and installed-platform qualification. [Exact dashboard browser results](qualification/d57c7c8d8a97-dashboard-browser-acceptance.json).
+
+The later managed history source `eec0a50` completed a separate offline AMD64 WebKit soak. Its short baseline exceeded dashboard readiness at 3,025 ms and editor-open p95 at 511 ms. The sustained workload completed all 900 seconds, 3,600 requests, 180 navigations, 30 editor opens and 901 resource samples. Sustained editor-open p95 was 524 ms against the 500 ms limit, with 391 ms for the click and actionability, 17 ms for visibility and 117 ms for paint settlement in the p95 sample. The other 21 sustained limits passed. [Verified managed history WebKit timings](qualification/eec0a50e3b29-local-webkit-editor-timings.json).
