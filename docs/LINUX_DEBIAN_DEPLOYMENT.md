@@ -149,4 +149,6 @@ An ARM64 guest under QEMU emulation on the AMD64 host passed the same two-boot t
 
 The hosted Ubuntu AMD64 job for `d57c7c8` passed 12 dpkg and 9 loopback signed APT lifecycle checks. The qualification reconciles package and executable digests across both probes, verifies a managed policy revision update and rollback, and confirms profile and policy state after purge and reinstall. APT used disposable signing keys. Native ARM64 execution is pending. [Verified hosted AMD64 evidence](qualification/d57c7c8d8a97-hosted-debian-amd64.json).
 
+The [exact-source reboot qualification](qualification/03aa58615a16-debian-managed-reboot.json) exercised an upgrade from `0.1.0-alpha.4` to `0.1.0-alpha.5` built from `03aa58615a16`. The AMD64 guest used KVM and the ARM64 guest used QEMU emulation on the AMD64 host. Both verified managed ByeDPI traffic before reboot and after a fresh launch, rolled back to the previous executable, and completed purge with the enrolled policy revision and user profile intact. The packages were unsigned qualification builds.
+
 Production rollout still requires results for the approved release packages and native endpoint architectures. It also requires organization signing and hosting, reboot and active-engine checks, and validation through the organization's endpoint-management tools.
