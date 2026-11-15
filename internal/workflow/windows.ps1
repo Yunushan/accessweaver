@@ -3904,6 +3904,7 @@ function Install-App([string]$variant,[switch]$Reinstall) {
     $cleanPTB=$r.clean -and $variant -eq 'discord-ptb'
     $stableBeforeDownload=$null;$stableBeforeDownloadDigest=$null;$stableUpdaterDigest=$null;$ptbBeforeSetupDigest=$null
     if($variant -eq 'splitcord'){
+        $splitCordBaseline=Get-SplitCordSetupBaseline
         $installer=Get-SplitCordInstaller
         $file=Join-Path $root 'downloads\splitcord-setup.exe'
         $verifiedHash=Download $installer.url $installer.hash $file -ReturnVerifiedHash
@@ -3933,7 +3934,7 @@ function Install-App([string]$variant,[switch]$Reinstall) {
     try {
         $stagedHash=(Get-FileHash -InputStream $lockedInstaller -Algorithm SHA256).Hash
         if($verifiedHash -isnot [string] -or $stagedHash -ine $verifiedHash){throw 'Staged application installer differs from the verified download'}
-        $existingApp=Find-App $variant
+        $existingApp=if($variant -eq 'splitcord'){$splitCordBaseline.app}else{Find-App $variant}
         $previouslyInstalled=[bool]$existingApp
         if($Reinstall){
             if($existingApp -ine $originalApp){throw 'Stable Discord changed before reinstall; review the current installation'}
@@ -3952,7 +3953,7 @@ function Install-App([string]$variant,[switch]$Reinstall) {
             throw 'Stable Discord reappeared before replacement setup; review the current installation'
         }
         if($variant -eq 'splitcord'){
-            Assert-SplitCordSetupPreflight $existingApp
+            Assert-SplitCordSetupBaseline $splitCordBaseline
             Wait-SplitCordService $existingApp 0 -AllowAbsentOrStopped
         }
         Save-ApplicationEffectBoundary
@@ -3978,8 +3979,7 @@ function Install-App([string]$variant,[switch]$Reinstall) {
             if(-not $stableBeforeDownload){Assert-DiscordUpdaterAbsent 'discord'}
         }
         if($variant -eq 'splitcord'){
-            if((Find-App $variant) -ine $existingApp){throw 'SplitCord installation changed before setup'}
-            Assert-SplitCordSetupPreflight $existingApp
+            Assert-SplitCordSetupBaseline $splitCordBaseline
             Wait-SplitCordService $existingApp 0 -AllowAbsentOrStopped
             Wait-AppProcessesExited $variant $existingApp 0
         }
@@ -4118,8 +4118,26 @@ function Assert-SplitCordSetupPreflight([string]$App) {
             }
         } finally {$user.Dispose()}
     }
-    if($App){[void](Get-AppUninstaller 'splitcord' $App)}
-    elseif(Read-SplitCordMachineUninstallCommand){throw 'Existing SplitCord machine registration has no verified installation'}
+    if($App){return (Get-AppUninstaller 'splitcord' $App)}
+    if(Read-SplitCordMachineUninstallCommand){throw 'Existing SplitCord machine registration has no verified installation'}
+}
+function Get-SplitCordSetupBaseline {
+    $app=Find-App 'splitcord'
+    $uninstaller=Assert-SplitCordSetupPreflight $app
+    if(-not $app){return @{app=$null}}
+    return @{
+        app=$app
+        appSHA256=Get-AppExecutableDigest $app
+        uninstaller=$uninstaller.path
+        uninstallerSHA256=Get-AppExecutableDigest $uninstaller.path
+    }
+}
+function Assert-SplitCordSetupBaseline([hashtable]$Baseline) {
+    $current=Get-SplitCordSetupBaseline
+    if($current.app -ine $Baseline.app -or $current.appSHA256 -ine $Baseline.appSHA256 -or
+       $current.uninstaller -ine $Baseline.uninstaller -or $current.uninstallerSHA256 -ine $Baseline.uninstallerSHA256){
+        throw 'SplitCord installation or registered uninstaller changed before setup; review the current installation'
+    }
 }
 function Assert-SplitCordMaintenancePaths([string]$App,[string]$Uninstaller) {
     $directory=[IO.Path]::GetDirectoryName($App)

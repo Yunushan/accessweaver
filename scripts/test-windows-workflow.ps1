@@ -2879,7 +2879,10 @@ try {
     $root=Join-Path $testRoot 'splitcord-install-fixture'
     [void][IO.Directory]::CreateDirectory((Join-Path $root 'downloads'))
     function Require-Admin {}
-    function Assert-SplitCordSetupPreflight {param($App);if($App){throw 'Unexpected setup preimage'}}
+    function Assert-SplitCordSetupPreflight {
+        param($App)
+        if($App){return (Get-AppUninstaller 'splitcord' $App)}
+    }
     $fixtureClient=Join-Path $root 'SplitCord-Turkey.exe'
     $fixtureUninstaller=Join-Path $root 'Uninstall-SplitCord.exe'
     $otherUninstaller=Join-Path $root 'Uninstall-Replacement.exe'
@@ -2888,23 +2891,35 @@ try {
     function Find-App {
         param($Variant)
         if($Variant -cne 'splitcord'){throw 'Unexpected setup variant'}
-        if($observed.launched){return $fixtureClient}
+        if($observed.launched -or $observed.existing){return $fixtureClient}
     }
     function Get-AppUninstaller {
         param($Variant,$App)
-        if($Variant -cne 'splitcord' -or $App -ine $fixtureClient -or -not $observed.launched){throw 'Unexpected uninstall registry read'}
+        if($Variant -cne 'splitcord' -or $App -ine $fixtureClient -or (-not $observed.launched -and -not $observed.existing)){throw 'Unexpected uninstall registry read'}
         $path=$fixtureUninstaller
         if($observed.running -and $drift -ceq 'path'){$path=$otherUninstaller}
         if($observed.running -and $drift -ceq 'registration'){throw 'Application uninstaller not found'}
+        if(-not $observed.launched -and $observed.changedRegistration){$path=$otherUninstaller}
         return @{path=$path}
     }
     function Get-SplitCordInstaller {return @{url='unused';hash=''}}
+    function Change-SplitCordFixture {
+        switch -CaseSensitive ($change) {
+            'client' {[IO.File]::WriteAllText($fixtureClient,'updated inert client')}
+            'uninstaller' {[IO.File]::WriteAllText($fixtureUninstaller,'updated inert uninstaller')}
+            'registration' {$observed.changedRegistration=$true}
+            'appeared' {$observed.existing=$true}
+            'disappeared' {$observed.existing=$false}
+        }
+    }
     function Download {
         param($Url,$Hash,$Destination,[switch]$ReturnVerifiedHash)
+        if($phase -ceq 'download'){Change-SplitCordFixture}
         [IO.File]::WriteAllText($Destination,'inert installer')
         return (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash
     }
-    $observed=@{probes=0;journalWrites=0;launched=$false;running=$false;reported=$false}
+    $phase=''
+    $observed=@{probes=0;journalWrites=0;launched=$false;running=$false;reported=$false;existing=$false;changedRegistration=$false}
     function Wait-SplitCordService {
         param($App,$Seconds,[switch]$AllowAbsentOrStopped)
         if($observed.launched){
@@ -2913,12 +2928,20 @@ try {
             $observed.running=$true
             return
         }
-        if($App -or $Seconds -ne 0 -or -not $AllowAbsentOrStopped){throw 'Unexpected setup service probe'}
+        $expectedApp=if($observed.existing){$fixtureClient}else{$null}
+        if($App -ine $expectedApp -or $Seconds -ne 0 -or -not $AllowAbsentOrStopped){throw 'Unexpected setup service probe'}
         $observed.probes++
         if($observed.probes -eq $foreignAt){throw 'Synthetic foreign service'}
     }
-    function Save-ApplicationEffectBoundary {$observed.journalWrites++}
-    function Wait-AppProcessesExited {param($Variant,$App,$Seconds);if($Variant -cne 'splitcord' -or $App -or $Seconds -ne 0){throw 'Unexpected setup process probe'}}
+    function Save-ApplicationEffectBoundary {
+        $observed.journalWrites++
+        if($phase -ceq 'journal'){Change-SplitCordFixture}
+    }
+    function Wait-AppProcessesExited {
+        param($Variant,$App,$Seconds)
+        $expectedApp=if($observed.existing){$fixtureClient}else{$null}
+        if($Variant -cne 'splitcord' -or $App -ine $expectedApp -or $Seconds -ne 0){throw 'Unexpected setup process probe'}
+    }
     function Native {$observed.launched=$true}
     function Event {$observed.reported=$true}
     foreach($foreignAt in @(1,2)){
@@ -2953,6 +2976,46 @@ try {
         }
     }
     Assert $true 'SplitCord setup verifies the registered uninstaller after the service reaches Running'
+
+    $drift='none'
+    foreach($case in @(
+        @{phase='download';change='client'},
+        @{phase='download';change='uninstaller'},
+        @{phase='download';change='registration'},
+        @{phase='download';change='appeared'},
+        @{phase='journal';change='client'},
+        @{phase='journal';change='uninstaller'},
+        @{phase='journal';change='registration'},
+        @{phase='journal';change='disappeared'}
+    )){
+        $phase=$case.phase
+        $change=$case.change
+        $observed.existing=$change -cne 'appeared'
+        $observed.changedRegistration=$false
+        $observed.launched=$false
+        $observed.running=$false
+        $observed.reported=$false
+        $observed.journalWrites=0
+        [IO.File]::WriteAllText($fixtureClient,'inert client')
+        [IO.File]::WriteAllText($fixtureUninstaller,'inert uninstaller')
+        $failure=$null
+        try {Install-App 'splitcord'} catch {$failure=$_.Exception.Message}
+        $expectedJournalWrites=[int]($phase -ceq 'journal')
+        Assert ($failure -ceq 'SplitCord installation or registered uninstaller changed before setup; review the current installation' -and
+            -not $observed.launched -and -not $observed.reported -and $observed.journalWrites -eq $expectedJournalWrites) (
+            'SplitCord setup refuses '+$change+' drift during '+$phase)
+    }
+
+    $phase=''
+    $observed.existing=$true
+    $observed.launched=$false
+    $observed.running=$false
+    $observed.reported=$false
+    $observed.changedRegistration=$false
+    [IO.File]::WriteAllText($fixtureClient,'inert client')
+    [IO.File]::WriteAllText($fixtureUninstaller,'inert uninstaller')
+    $result=Install-App 'splitcord'
+    Assert ($result.installed -and $result.previouslyInstalled -and $observed.launched -and $observed.reported) 'SplitCord setup accepts an unchanged existing installation'
 }
 # Exercise official release selection with fixed metadata and no vendor execution.
 & {
