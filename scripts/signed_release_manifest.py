@@ -612,6 +612,8 @@ def load_windows_upgrade_result_receipt(directory, path, fingerprint, start_rece
     fields = {"setupExitCode", "installedDetection"}
     if "installedDetectionReason" in receipt:
         fields.add("installedDetectionReason")
+    if "setupDispatched" in receipt:
+        fields.add("setupDispatched")
     require(receipt.keys() == start_receipt.keys() | fields
             and all(type(receipt[key]) is type(value) and receipt[key] == value
                     for key, value in start_receipt.items()),
@@ -619,13 +621,18 @@ def load_windows_upgrade_result_receipt(directory, path, fingerprint, start_rece
     code = receipt["setupExitCode"]
     detection = receipt["installedDetection"]
     reason = receipt.get("installedDetectionReason")
-    require(type(code) is int and 0 <= code <= 0xFFFFFFFF
-            and ((code == 0 and detection in ("detected", "unverified"))
-                 or (code == 3010 and detection == "restart-required")
-                 or (code not in (0, 3010) and detection == "setup-failed"))
-            and ("installedDetectionReason" not in receipt
-                 or (code == 0 and detection == "unverified" and reason in WINDOWS_DETECTION_FAILURE_REASONS)),
-            "Malformed Windows upgrade result receipt")
+    if "setupDispatched" in receipt:
+        require(receipt["setupDispatched"] is False and code is None and detection == "unverified"
+                and reason == "revocation-policy-expired",
+                "Malformed Windows upgrade result receipt")
+    else:
+        require(type(code) is int and 0 <= code <= 0xFFFFFFFF
+                and ((code == 0 and detection in ("detected", "unverified"))
+                     or (code == 3010 and detection == "restart-required")
+                     or (code not in (0, 3010) and detection == "setup-failed"))
+                and ("installedDetectionReason" not in receipt
+                     or (code == 0 and detection == "unverified" and reason in WINDOWS_DETECTION_FAILURE_REASONS)),
+                "Malformed Windows upgrade result receipt")
     return {field: receipt[field] for field in sorted(fields)}
 
 
@@ -965,6 +972,25 @@ def write_windows_upgrade_receipt(destination, receipt):
     return hashlib.sha256(content).hexdigest()
 
 
+def record_windows_setup_result(directory, directory_identity, attempt, update):
+    if attempt is None:
+        return
+    fields = ("setupExitCode", "installedDetection", "installedDetectionReason", "setupDispatched")
+    result_receipt = {**attempt, **{field: update[field] for field in fields if field in update}}
+    try:
+        with hold_windows_staging_directory(directory):
+            require(staging_directory_identity(directory) == directory_identity,
+                    "Managed update staging directory changed before receipt publication")
+            update["resultReceiptSHA256"] = write_windows_upgrade_receipt(
+                directory / (attempt["attemptID"] + ".result.json"), result_receipt,
+            )
+    except (OSError, ValueError):
+        # Keep the observed outcome available even if publication fails.
+        update["resultReceiptStatus"] = "unverified"
+    else:
+        update["resultReceiptStatus"] = "published"
+
+
 class WindowsSetupLaunchError(OSError):
     """Windows did not return a Setup process handle."""
 
@@ -1202,8 +1228,10 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
     if launch_staged_windows_setup and start_receipt is not None:
         require(windows_upgrade_attempt_id is not None and windows_upgrade_attempt_id != start_receipt["attemptID"],
                 "A receipt-bound Windows retry requires a new attempt ID")
-        require(recorded_result is not None and recorded_result["installedDetection"] == "setup-failed",
-                "A receipt-bound Windows retry requires a saved Setup failure result")
+        require(recorded_result is not None and (
+            recorded_result["installedDetection"] == "setup-failed"
+            or recorded_result.get("setupDispatched") is False
+        ), "A receipt-bound Windows retry requires a saved Setup failure result or proof of non-dispatch")
         require("boot" in start_receipt, "A receipt-bound Windows retry requires saved endpoint identity")
     if windows_setup_wait_seconds is not None:
         require(windows_upgrade_attempt_id is not None, "Windows Setup wait limit requires a Windows upgrade attempt ID")
@@ -1574,6 +1602,9 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     update["installedDetectionReason"] = reasons[type(error)]
                     if isinstance(error, WindowsSetupDispatchPolicyExpired):
                         report["revocationCheckPassed"] = False
+                        update["setupDispatched"] = False
+                        if "startReceiptSHA256" in update:
+                            record_windows_setup_result(stage_directory, stage_directory_id, attempt, update)
                     return finish_windows_upgrade_report(report, policy)
                 update["setupExitCode"] = code
                 if code == 0:
@@ -1582,23 +1613,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     update["installedDetection"] = "restart-required"
                 else:
                     update["installedDetection"] = "setup-failed"
-                if attempt is not None:
-                    result_receipt = {**attempt, "setupExitCode": code,
-                                      "installedDetection": update["installedDetection"]}
-                    if "installedDetectionReason" in update:
-                        result_receipt["installedDetectionReason"] = update["installedDetectionReason"]
-                    try:
-                        with hold_windows_staging_directory(stage_directory):
-                            require(staging_directory_identity(stage_directory) == stage_directory_id,
-                                    "Managed update staging directory changed before receipt publication")
-                            update["resultReceiptSHA256"] = write_windows_upgrade_receipt(
-                                stage_directory / (windows_upgrade_attempt_id + ".result.json"), result_receipt,
-                            )
-                    except (OSError, ValueError):
-                        # Setup has already exited. Keep its outcome available to the agent.
-                        update["resultReceiptStatus"] = "unverified"
-                    else:
-                        update["resultReceiptStatus"] = "published"
+                record_windows_setup_result(stage_directory, stage_directory_id, attempt, update)
         if detect_installed_windows_upgrade or launch_staged_windows_setup:
             # A Setup exit code or saved receipt remains a historical observation.
             return finish_windows_upgrade_report(report, policy)

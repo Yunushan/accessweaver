@@ -1606,12 +1606,26 @@ class SignedReleaseManifestTests(unittest.TestCase):
                             self.assertEqual(update["installedDetection"], "unverified")
                             self.assertEqual(update["installedDetectionReason"], reason)
                             self.assertEqual(update["startReceiptSHA256"], release.digest(failed_start))
-                            self.assertFalse(failed_result.exists())
+                            if reason == "revocation-policy-expired":
+                                self.assertIs(update["setupDispatched"], False)
+                                self.assertEqual(update["resultReceiptStatus"], "published")
+                                self.assertEqual(update["resultReceiptSHA256"], release.digest(failed_result))
+                                saved_start = json.loads(failed_start.read_bytes())
+                                self.assertEqual(release.load_windows_upgrade_result_receipt(
+                                    approved, failed_result, update["resultReceiptSHA256"], saved_start,
+                                ), {"setupExitCode": None, "setupDispatched": False,
+                                    "installedDetection": "unverified",
+                                    "installedDetectionReason": "revocation-policy-expired"})
+                                policy_blocked_result = failed_result.read_bytes()
+                            else:
+                                self.assertFalse(failed_result.exists())
+                                self.assertNotIn("setupDispatched", update)
                             self.assertNotIn("private wait failure", json.dumps(update))
                             detect.assert_not_called()
                         finally:
                             launch.side_effect = None
                             failed_start.unlink(missing_ok=True)
+                            failed_result.unlink(missing_ok=True)
 
                 launch.return_value = 0
                 result = self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
@@ -1941,6 +1955,41 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 launch.assert_not_called()
                 self.assertEqual(list(staging.iterdir()), [start_file])
                 self.assertEqual(release.digest(start_file), start_digest)
+
+                blocked_receipt = self.root / "policy-blocked.result.json"
+                blocked_receipt.write_bytes(policy_blocked_result)
+                blocked_digest = release.digest(blocked_receipt)
+                blocked = json.loads(policy_blocked_result)
+                for changed in ({"setupDispatched": 0}, {"setupDispatched": True}, {"setupExitCode": 1603},
+                                {"installedDetectionReason": "setup-launch-failed"},
+                                {"installedDetectionReason": "setup-wait-timeout"}):
+                    invalid_receipt = self.root / "invalid-dispatch.result.json"
+                    invalid_receipt.write_text(json.dumps({**blocked, **changed}), encoding="ascii")
+                    with self.subTest(invalid_dispatch=changed), self.assertRaisesRegex(
+                            ValueError, "Malformed Windows upgrade result receipt"):
+                        release.load_windows_upgrade_result_receipt(
+                            approved, invalid_receipt, release.digest(invalid_receipt), attempt,
+                        )
+                nondispatch_attempt = "c" * 32
+                launch.return_value = 0
+                boot.side_effect = [initial_boot, {**initial_boot, "endpointSHA256": "c" * 64}]
+                try:
+                    retried_dispatch = self.verify(
+                        approved, pin, policy_pin=newer_pin, **launch_options,
+                        windows_upgrade_start_receipt=receipt,
+                        windows_upgrade_result_receipt=(blocked_receipt, blocked_digest),
+                        windows_upgrade_attempt_id=nondispatch_attempt,
+                    )["managedUpdate"]
+                finally:
+                    boot.side_effect = None
+                self.assertEqual(retried_dispatch["previousAttemptID"], attempt_id)
+                self.assertEqual(launch.call_args.kwargs["attempt"]["previousResultReceiptSHA256"], blocked_digest)
+                self.assertEqual(launch.call_args.kwargs["attempt"]["revocationPolicySequence"], 5)
+                self.assertEqual(retried_dispatch["setupExitCode"], 0)
+                self.assertEqual(release.digest(blocked_receipt), blocked_digest)
+                (staging / (nondispatch_attempt + ".result.json")).unlink()
+                staged_path.unlink()
+                launch.reset_mock()
 
                 retry_attempt_id = "b" * 32
                 retry_from_receipt = {**launch_options, "windows_upgrade_start_receipt": receipt,
