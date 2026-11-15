@@ -37,14 +37,13 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: linux-package-lifecycle-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   qualify:
     name: Native package lifecycle (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
+    concurrency:
+      group: linux-package-lifecycle-${{ matrix.arch }}-${{ github.ref }}
+      cancel-in-progress: false
     timeout-minutes: 35
     strategy:
       fail-fast: false
