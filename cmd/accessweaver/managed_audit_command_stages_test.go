@@ -188,3 +188,51 @@ func TestWindowsAliasFailureProjectionRejectsUnknownAndPrivateLabels(t *testing.
 		}
 	}
 }
+
+// These statuses belong only to the source-test worker wire protocol. A
+// status never authenticates a reply or authorizes a command.
+type darwinOrdinaryWorkerExit int
+
+const (
+	darwinOrdinaryExitRequestDescriptor darwinOrdinaryWorkerExit = 71 + iota
+	darwinOrdinaryExitReplyDescriptor
+	darwinOrdinaryExitWireFiles
+	darwinOrdinaryExitRequestRead
+	darwinOrdinaryExitRequestClose
+	darwinOrdinaryExitReplyWrite
+	darwinOrdinaryExitReplyClose
+)
+
+func (code darwinOrdinaryWorkerExit) label() string {
+	switch code {
+	case darwinOrdinaryExitRequestDescriptor:
+		return "request-descriptor"
+	case darwinOrdinaryExitReplyDescriptor:
+		return "reply-descriptor"
+	case darwinOrdinaryExitWireFiles:
+		return "wire-files"
+	case darwinOrdinaryExitRequestRead:
+		return "request-read"
+	case darwinOrdinaryExitRequestClose:
+		return "request-close"
+	case darwinOrdinaryExitReplyWrite:
+		return "reply-write"
+	case darwinOrdinaryExitReplyClose:
+		return "reply-close"
+	default:
+		return ""
+	}
+}
+
+func TestDarwinOrdinaryWorkerExitProjectionIsClosed(t *testing.T) {
+	known := map[int]string{
+		71: "request-descriptor", 72: "reply-descriptor", 73: "wire-files",
+		74: "request-read", 75: "request-close", 76: "reply-write", 77: "reply-close",
+	}
+	// Include signal/timeout, ordinary validation and every other process status.
+	for code := -1; code <= 255; code++ {
+		if got := darwinOrdinaryWorkerExit(code).label(); got != known[code] {
+			t.Fatalf("worker diagnostic escaped its fixed vocabulary for status %d", code)
+		}
+	}
+}

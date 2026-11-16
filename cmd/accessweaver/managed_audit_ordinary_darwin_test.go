@@ -57,6 +57,10 @@ const (
 	darwinOrdinaryCheckGate
 	darwinOrdinaryCheckDrain
 	darwinOrdinaryCheckCleanup
+	darwinOrdinaryCheckIPCEndpoints
+	darwinOrdinaryCheckIPCRequest
+	darwinOrdinaryCheckIPCReply
+	darwinOrdinaryCheckIPCBinding
 )
 
 func (check darwinOrdinaryCheck) label() string {
@@ -81,6 +85,14 @@ func (check darwinOrdinaryCheck) label() string {
 		return "worker-launch"
 	case darwinOrdinaryCheckIPC:
 		return "worker-ipc"
+	case darwinOrdinaryCheckIPCEndpoints:
+		return "worker-ipc-endpoints"
+	case darwinOrdinaryCheckIPCRequest:
+		return "worker-ipc-request"
+	case darwinOrdinaryCheckIPCReply:
+		return "worker-ipc-reply"
+	case darwinOrdinaryCheckIPCBinding:
+		return "worker-ipc-binding"
 	case darwinOrdinaryCheckGate:
 		return "signal-lifetime-gate"
 	case darwinOrdinaryCheckDrain:
@@ -488,14 +500,23 @@ func ordinaryDarwinWorker() int {
 		var stat unix.Stat_t
 		flags, err := unix.FcntlInt(uintptr(descriptor), unix.F_GETFL, 0)
 		if unix.Fstat(descriptor, &stat) != nil || stat.Mode&unix.S_IFMT != unix.S_IFIFO || err != nil || flags&unix.O_ACCMODE != direction || unix.SetNonblock(descriptor, true) != nil {
-			return 91
+			if descriptor == 3 {
+				return int(darwinOrdinaryExitRequestDescriptor)
+			}
+			return int(darwinOrdinaryExitReplyDescriptor)
 		}
 	}
 	requestFile := os.NewFile(3, "ordinary-request")
 	replyFile := os.NewFile(4, "ordinary-reply")
 	var request darwinOrdinaryRequest
-	if requestFile == nil || replyFile == nil || darwinOrdinaryReadWire(requestFile, &request, 15*time.Second) != nil || requestFile.Close() != nil {
-		return 91
+	if requestFile == nil || replyFile == nil {
+		return int(darwinOrdinaryExitWireFiles)
+	}
+	if darwinOrdinaryReadWire(requestFile, &request, 15*time.Second) != nil {
+		return int(darwinOrdinaryExitRequestRead)
+	}
+	if requestFile.Close() != nil {
+		return int(darwinOrdinaryExitRequestClose)
 	}
 	reply := darwinOrdinaryReply{Version: 1, Nonce: request.Nonce, PID: os.Getpid()}
 	valid := request.Version == 1 && len(request.Nonce) == 32 && request.WorkerPID == os.Getpid() && len(request.SourceCommit) == 40 && darwinOrdinaryHash(request.TestImageSHA256) && request.TestImageSHA256 == request.WorkerImageSHA256
@@ -552,7 +573,13 @@ func ordinaryDarwinWorker() int {
 	writeErr := darwinOrdinaryWriteWire(replyFile, reply)
 	closeErr := replyFile.Close()
 	mask := uint64(1)<<uint(len(darwinCommandCaseIDs)) - 1
-	if writeErr != nil || closeErr != nil || !reply.Identity || !reply.Home || !reply.Image || !reply.Backend || !reply.Lifecycle || reply.Executed != mask || reply.Passed != mask {
+	if writeErr != nil {
+		return int(darwinOrdinaryExitReplyWrite)
+	}
+	if closeErr != nil {
+		return int(darwinOrdinaryExitReplyClose)
+	}
+	if !reply.Identity || !reply.Home || !reply.Image || !reply.Backend || !reply.Lifecycle || reply.Executed != mask || reply.Passed != mask {
 		return 92
 	}
 	return 0
@@ -652,6 +679,7 @@ type ordinaryDarwinFixture struct {
 	preserve   bool
 	gate       *os.File
 	retainGate bool
+	workerExit darwinOrdinaryWorkerExit
 	phase      darwinOrdinaryCheck
 }
 
@@ -1172,7 +1200,22 @@ func (f *ordinaryDarwinFixture) run() (reply darwinOrdinaryReply, failure error)
 		// Kill is issued before the sole Wait begins; no released/reused PID race.
 		_ = child.Process.Kill()
 		if f.holdGateExclusive() == nil {
-			_ = f.waitChild(child)
+			var exit *exec.ExitError
+			if errors.As(f.waitChild(child), &exit) {
+				// The sole Wait returned this owned worker's actual status.
+				// Unknown exits and signals never become projected diagnostics.
+				f.workerExit = darwinOrdinaryWorkerExit(exit.ExitCode())
+			}
+		}
+		switch {
+		case endpointErr != nil:
+			f.phase = darwinOrdinaryCheckIPCEndpoints
+		case writeErr != nil:
+			f.phase = darwinOrdinaryCheckIPCRequest
+		case readErr != nil:
+			f.phase = darwinOrdinaryCheckIPCReply
+		default:
+			f.phase = darwinOrdinaryCheckIPCBinding
 		}
 		return reply, errDarwinOrdinary
 	}
@@ -1302,6 +1345,9 @@ func TestDisposableDarwinAuditCommands(t *testing.T) {
 		}
 	} else {
 		t.Error("ordinary Darwin audit worker protocol unavailable")
+		if label := fixture.workerExit.label(); label != "" {
+			t.Errorf("ordinary Darwin audit worker bootstrap failed: %s", label)
+		}
 	}
 	if runErr != nil {
 		t.Errorf("ordinary Darwin audit bootstrap failed: %s", fixture.phase.label())

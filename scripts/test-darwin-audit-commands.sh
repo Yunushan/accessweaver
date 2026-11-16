@@ -44,8 +44,10 @@ cases = (
     'full-journal-reservation-refusal','approved-recorded-foreground-run',
     'recorded-foreground-output-cancellation-drain','private-command-workspace-cleanup',
 )
-for stage in ('host-context','source-binding','protected-ancestry','protected-source-staging','private-home','policy-preflight','required-policy-install','required-policy-bindings','worker-launch','worker-ipc','signal-lifetime-gate','worker-drain','owned-cleanup','unknown-bootstrap'):
+for stage in ('host-context','source-binding','protected-ancestry','protected-source-staging','private-home','policy-preflight','required-policy-install','required-policy-bindings','worker-launch','worker-ipc','worker-ipc-endpoints','worker-ipc-request','worker-ipc-reply','worker-ipc-binding','signal-lifetime-gate','worker-drain','owned-cleanup','unknown-bootstrap'):
     labels.add('ordinary Darwin audit bootstrap failed: '+stage)
+for stage in ('request-descriptor','reply-descriptor','wire-files','request-read','request-close','reply-write','reply-close'):
+    labels.add('ordinary Darwin audit worker bootstrap failed: '+stage)
 # Match only the source-defined alias contexts/checks; ordinals and raw
 # observations never leave the anonymous reply or appear in projected output.
 alias_cases = ['scope-setup']

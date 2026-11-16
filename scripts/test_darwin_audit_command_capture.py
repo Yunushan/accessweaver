@@ -100,6 +100,38 @@ class DarwinAuditCommandCaptureTests(unittest.TestCase):
         self.assertNotIn("PRIVATE_RAW_FIXTURE_VALUE", json.dumps(report))
         self.assertEqual(report["failureLabels"], [label])
 
+    def test_worker_bootstrap_diagnostics_preserve_only_fixed_labels(self):
+        labels = [
+            "ordinary Darwin audit bootstrap failed: worker-ipc-" + stage
+            for stage in ("endpoints", "request", "reply", "binding")
+        ] + [
+            "ordinary Darwin audit worker bootstrap failed: " + stage
+            for stage in ("request-descriptor", "reply-descriptor", "wire-files",
+                          "request-read", "request-close", "reply-write", "reply-close")
+        ]
+        rejected = [
+            "ordinary Darwin audit worker bootstrap failed: PRIVATE_RAW_FIXTURE_VALUE",
+            "ordinary Darwin audit bootstrap failed: worker-ipc-PRIVATE_RAW_FIXTURE_VALUE",
+            "ordinary Darwin audit worker bootstrap failed: request-read PRIVATE_RAW_FIXTURE_VALUE",
+        ]
+        raw = ("PRIVATE_RAW_FIXTURE_VALUE\n" + "\n".join(
+            "source_test.go:12: " + label for label in labels + rejected
+        ) + "\n").encode()
+        for arch in ("amd64", "arm64"):
+            with self.subTest(arch=arch):
+                code, output, _, report = run_capture(self.program, arch, raw, 1)
+                self.assertEqual(code, 1)
+                self.assertEqual(report["failureLabels"], sorted(labels))
+                self.assertFalse(report["commandPassed"])
+                self.assertFalse(report["productionQualificationComplete"])
+                self.assertNotIn("PRIVATE_RAW_FIXTURE_VALUE", output)
+                self.assertNotIn("PRIVATE_RAW_FIXTURE_VALUE", json.dumps(report))
+                code, _, _, report = run_capture(self.program, arch, ROOT_PASS + raw, 0)
+                self.assertEqual(code, 1)
+                self.assertTrue(report["rootTestPassedOnce"])
+                self.assertTrue(report["commandExitSucceeded"])
+                self.assertFalse(report["commandPassed"])
+
     def test_missing_skipped_or_duplicate_test_cannot_pass(self):
         for raw in (b"PASS\n", b"--- SKIP: TestDisposableDarwinAuditCommands (0.00s)\n", ROOT_PASS * 2):
             with self.subTest(raw=raw):
