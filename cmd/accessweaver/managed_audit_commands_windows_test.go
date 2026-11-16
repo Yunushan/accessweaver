@@ -1510,13 +1510,108 @@ func runWindowsCommandCases(nonce []byte) (executed, passed uint64, desktopFailu
 	passed |= root.aliasDetailPassed << windowsAliasDetailCaseOffset
 	return executed, passed, windowsDesktopStage(encodeWindowsCommandFailure(root.desktopFailure, root.aliasFailure))
 }
-func windowsInertReadyName(parent, pid uint32) string {
-	// The fresh worker can run in service session zero, where the explicit
-	// Local namespace may deny this normal logon account object creation.
-	// Global event creation needs no mapping/symlink creation privilege.
-	// Keep the PID-bound name, exact user/SYSTEM DACL and collision refusal.
-	return "Global\\AccessWeaverOrdinaryReady-" + strconv.FormatUint(uint64(parent), 10) + "-" + strconv.FormatUint(uint64(pid), 10)
+
+const windowsReadyEventUserRights = windows.READ_CONTROL | windows.SYNCHRONIZE | windows.EVENT_MODIFY_STATE
+
+func windowsInertReadyName(stage string, pid uint32) string {
+	// Bind this held object to the private random staging root and worker PID.
+	digest := sha256.Sum256([]byte(strings.ToLower(filepath.Clean(stage))))
+	return "Local\\AccessWeaverOrdinaryReady-" + strconv.FormatUint(uint64(pid), 10) + "-" + hex.EncodeToString(digest[:16])
 }
+
+func windowsReadyEventDescriptor(handle windows.Handle, sid string) bool {
+	sd, err := windows.GetSecurityInfo(handle, windows.SE_KERNEL_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	if err != nil || !ordinaryDescriptor(sd, sid, true) {
+		return false
+	}
+	owner, _, err := sd.Owner()
+	if err != nil || owner.String() != "S-1-5-32-544" {
+		return false
+	}
+	acl, _, err := sd.DACL()
+	if err != nil {
+		return false
+	}
+	header := (*struct {
+		Revision, Reserved     byte
+		Size, Count, Reserved2 uint16
+	})(unsafe.Pointer(acl))
+	if header.Count != 3 {
+		return false
+	}
+	seen := map[string]bool{}
+	for index := uint16(0); index < header.Count; index++ {
+		var raw unsafe.Pointer
+		ok, _, _ := ordinaryAdvapi.NewProc("GetAce").Call(uintptr(unsafe.Pointer(acl)), uintptr(index), uintptr(unsafe.Pointer(&raw)))
+		if ok == 0 || raw == nil {
+			return false
+		}
+		ace := (*windows.ACCESS_ALLOWED_ACE)(raw)
+		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Header.AceFlags != 0 {
+			return false
+		}
+		principal := (*windows.SID)(unsafe.Add(raw, 8))
+		value := principal.String()
+		if seen[value] {
+			return false
+		}
+		seen[value] = true
+		switch value {
+		case "S-1-5-32-544", "S-1-5-18":
+			// Object creation may map GENERIC_ALL into EVENT_ALL_ACCESS.
+			if ace.Mask != windows.GENERIC_ALL && ace.Mask != 0x001f0003 {
+				return false
+			}
+		case sid:
+			if ace.Mask != windowsReadyEventUserRights {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return seen[sid] && seen["S-1-5-32-544"] && seen["S-1-5-18"]
+}
+
+func (f *ordinaryFixture) prepareWindowsReadyEvent() error {
+	sd, err := windows.SecurityDescriptorFromString("O:BAD:P(A;;GA;;;BA)(A;;GA;;;SY)(A;;0x00120002;;;" + f.sid + ")")
+	if err != nil {
+		return errOrdinary
+	}
+	sa := windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
+	name, _ := windows.UTF16PtrFromString(windowsInertReadyName(f.root, f.pid))
+	handle, _, lastErr := ordinaryKernel.NewProc("CreateEventW").Call(uintptr(unsafe.Pointer(&sa)), 1, 0, uintptr(unsafe.Pointer(name)))
+	runtime.KeepAlive(sd)
+	f.readyEvent = windows.Handle(handle)
+	if handle == 0 || errors.Is(lastErr, windows.ERROR_ALREADY_EXISTS) || !windowsReadyEventDescriptor(f.readyEvent, f.sid) {
+		return errOrdinary
+	}
+	state, waitErr := windows.WaitForSingleObject(f.readyEvent, 0)
+	if waitErr != nil || state != uint32(windows.WAIT_TIMEOUT) {
+		return errOrdinary
+	}
+	return nil
+}
+
+func (w *windowsCommandWorker) resetWindowsReadyEvent() error {
+	executable, err := os.Executable()
+	if err != nil {
+		return errOrdinary
+	}
+	name, _ := windows.UTF16PtrFromString(windowsInertReadyName(filepath.Dir(executable), uint32(os.Getpid())))
+	event, err := windows.OpenEvent(windowsReadyEventUserRights, false, name)
+	if err != nil {
+		return errOrdinary
+	}
+	valid := windowsReadyEventDescriptor(event, w.sid) && windows.ResetEvent(event) == nil
+	state, waitErr := windows.WaitForSingleObject(event, 0)
+	closed := ordinaryClose(&event)
+	if !valid || waitErr != nil || state != uint32(windows.WAIT_TIMEOUT) || !closed {
+		return errOrdinary
+	}
+	return nil
+}
+
 func ordinaryInertWindowsEngine() bool {
 	if !strings.EqualFold(filepath.Base(os.Args[0]), "ciadpi.exe") {
 		return false
@@ -1524,31 +1619,36 @@ func ordinaryInertWindowsEngine() bool {
 	if len(os.Args) != 3 || os.Args[1] != "--ip" || os.Args[2] != "127.0.0.1" {
 		os.Exit(98)
 	}
-	// Consume BREAK through Notify: Windows' runtime default handler does not
-	// treat signal.Ignore as a delivered SIGINT. Readiness is signaled only after
-	// this subscription exists, so the real manager owns the cancellation kill.
+	// Readiness follows signal subscription and opens the exact object held by
+	// the privileged parent. A normal account never creates namespace objects.
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil || user == nil || user.User.Sid == nil {
 		os.Exit(99)
 	}
-	sid := user.User.Sid.String()
-	sd, err := windows.SecurityDescriptorFromString("O:" + sid + "D:P(A;;GA;;;" + sid + ")(A;;GA;;;SY)")
+	executable, err := os.Executable()
 	if err != nil {
 		os.Exit(100)
 	}
-	sa := windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
-	name, _ := windows.UTF16PtrFromString(windowsInertReadyName(uint32(os.Getppid()), uint32(os.Getpid())))
-	handle, _, lastErr := ordinaryKernel.NewProc("CreateEventW").Call(uintptr(unsafe.Pointer(&sa)), 1, 1, uintptr(unsafe.Pointer(name)))
-	runtime.KeepAlive(sd)
-	if handle == 0 {
-		os.Exit(windowsInertEventFailureExit(lastErr))
+	stage := filepath.Dir(filepath.Dir(executable))
+	name, _ := windows.UTF16PtrFromString(windowsInertReadyName(stage, uint32(os.Getppid())))
+	ready, err := windows.OpenEvent(windowsReadyEventUserRights, false, name)
+	if err != nil {
+		os.Exit(windowsInertEventFailureExit(err))
 	}
-	ready := windows.Handle(handle)
-	if errors.Is(lastErr, windows.ERROR_ALREADY_EXISTS) {
+	if !windowsReadyEventDescriptor(ready, user.User.Sid.String()) {
+		_ = ordinaryClose(&ready)
+		os.Exit(100)
+	}
+	state, waitErr := windows.WaitForSingleObject(ready, 0)
+	if waitErr != nil || state != uint32(windows.WAIT_TIMEOUT) {
 		_ = ordinaryClose(&ready)
 		os.Exit(102)
+	}
+	if windows.SetEvent(ready) != nil {
+		_ = ordinaryClose(&ready)
+		os.Exit(101)
 	}
 	time.Sleep(3 * time.Second)
 	signal.Stop(interrupts)
@@ -1558,6 +1658,7 @@ func ordinaryInertWindowsEngine() bool {
 	os.Exit(0)
 	return true
 }
+
 func windowsRunWaitReady(w *windowsCommandWorker) bool {
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
@@ -1589,13 +1690,17 @@ func windowsRunWaitReady(w *windowsCommandWorker) bool {
 			if imageErr != nil || !closed || length == 0 || length >= uint32(len(image)) || !strings.EqualFold(windows.UTF16ToString(image[:length]), w.engine) {
 				return false
 			}
-			name, _ := windows.UTF16PtrFromString(windowsInertReadyName(uint32(os.Getpid()), childPID))
+			executable, executableErr := os.Executable()
+			if executableErr != nil {
+				return false
+			}
+			name, _ := windows.UTF16PtrFromString(windowsInertReadyName(filepath.Dir(executable), uint32(os.Getpid())))
 			event, err := windows.OpenEvent(windows.SYNCHRONIZE|windows.READ_CONTROL, false, name)
 			if err == nil {
-				sd, securityErr := windows.GetSecurityInfo(event, windows.SE_KERNEL_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+				valid := windowsReadyEventDescriptor(event, w.sid)
 				status, waitErr := windows.WaitForSingleObject(event, 0)
 				closed := ordinaryClose(&event)
-				return securityErr == nil && ordinaryDescriptor(sd, w.sid, true) && waitErr == nil && status == windows.WAIT_OBJECT_0 && closed
+				return valid && waitErr == nil && status == windows.WAIT_OBJECT_0 && closed
 			}
 			if !errors.Is(err, windows.ERROR_FILE_NOT_FOUND) {
 				return false
@@ -1793,7 +1898,7 @@ func (w *windowsCommandWorker) runAssertion(label string, valid bool) bool {
 
 func (w *windowsCommandWorker) runApprovedAndRefusals() error {
 	child, err := w.newStream("run-approved")
-	if !w.runAssertion("run-stream", err == nil) {
+	if !w.runAssertion("run-stream", err == nil && child.resetWindowsReadyEvent() == nil) {
 		return errOrdinary
 	}
 	before, err := windowsRunPreservedInputs(child)
@@ -1896,7 +2001,7 @@ func windowsRunOutputFailure(w *windowsCommandWorker, intent bool) (failure erro
 		label = "run-intent-output-failure"
 	}
 	child, err := w.newStream(label)
-	if err != nil {
+	if err != nil || child.resetWindowsReadyEvent() != nil {
 		return errOrdinary
 	}
 	before, err := windowsRunPreservedInputs(child)
@@ -1948,7 +2053,7 @@ func windowsRunOutputFailure(w *windowsCommandWorker, intent bool) (failure erro
 
 func windowsRunCancellation(w *windowsCommandWorker) (failure error) {
 	child, err := w.newStream("run-cancellation")
-	if err != nil {
+	if err != nil || child.resetWindowsReadyEvent() != nil {
 		return errOrdinary
 	}
 	before, err := windowsRunPreservedInputs(child)
