@@ -2264,8 +2264,8 @@ func windowsAliasAttempt(w *windowsCommandWorker, action, source, variant string
 		w.aliasPhase(variant, "watchdog")
 		return errOrdinary
 	}
-	if !errors.Is(commandErr, expected) || len(out) != 0 || len(notice) != 0 {
-		w.aliasPhase(variant, "refusal")
+	if phase := windowsAliasRefusalPhase(commandErr, expected, out, notice); phase != "" {
+		w.aliasPhase(variant, phase)
 		return errOrdinary
 	}
 	w.aliasPhase(variant, "input-preservation")
@@ -2367,8 +2367,8 @@ func (w *windowsCommandWorker) aliasAdmission() (failure error) {
 			child.aliasPhase("pairwise", "watchdog")
 			return errOrdinary
 		}
-		if !errors.Is(commandErr, expected) || len(out) != 0 || len(notice) != 0 {
-			child.aliasPhase("pairwise", "refusal")
+		if phase := windowsAliasRefusalPhase(commandErr, expected, out, notice); phase != "" {
+			child.aliasPhase("pairwise", phase)
 			return errOrdinary
 		}
 		if closeErr != nil {

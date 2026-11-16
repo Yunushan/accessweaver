@@ -40,7 +40,7 @@ jobs:
       - name: Fixed command receipt protocol contracts
         shell: pwsh
         run: |
-          go test ./cmd/accessweaver -run '^TestWindows(CommandFailureStageRoundTripAndCaseBinding|AliasFailureProjectionRejectsUnknownAndPrivateLabels)$' -count=1 -timeout=2m
+          go test ./cmd/accessweaver -run '^TestWindows(CommandFailureStageRoundTripAndCaseBinding|AliasFailureProjectionRejectsUnknownAndPrivateLabels|AliasRefusalProjectionDropsPrivateDiagnostics)$' -count=1 -timeout=2m
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Native file identity and bound input output admission
         env:

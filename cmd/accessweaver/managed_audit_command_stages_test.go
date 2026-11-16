@@ -2,7 +2,10 @@
 // every platform can check the one-byte command-failure projection.
 package main
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 // The worker may publish only these fixed labels for a failed desktop assertion.
 type windowsDesktopStage byte
@@ -46,7 +49,21 @@ var windowsDesktopStageNames = [...]string{
 type windowsAliasFailure byte
 
 var windowsAliasVariants = [...]string{"none", "direct", "case", "hardlink", "ads", "pairwise"}
-var windowsAliasPhases = [...]string{"none", "prepare", "source-snapshot", "destination-open", "invoke", "watchdog", "refusal", "input-preservation", "product-inventory", "source-readback", "profile-inventory", "destination-cleanup", "budget"}
+var windowsAliasPhases = [...]string{"none", "prepare", "source-snapshot", "destination-open", "invoke", "watchdog", "refusal", "input-preservation", "product-inventory", "source-readback", "profile-inventory", "destination-cleanup", "budget", "refusal-input", "refusal-error", "refusal-output"}
+
+// Classify only source-known categories; never publish command errors or output.
+func windowsAliasRefusalPhase(commandErr, expected error, out, notice []byte) string {
+	if !errors.Is(commandErr, expected) {
+		if commandErr != nil && commandErr.Error() == "audit input must be an unchanged bounded regular file" {
+			return "refusal-input"
+		}
+		return "refusal-error"
+	}
+	if len(out) != 0 || len(notice) != 0 {
+		return "refusal-output"
+	}
+	return ""
+}
 
 func makeWindowsAliasFailure(variant, phase string) windowsAliasFailure {
 	for kind, name := range windowsAliasVariants {
@@ -104,6 +121,9 @@ func decodeWindowsCommandFailure(value byte, failed uint64) (windowsDesktopStage
 }
 
 func TestWindowsCommandFailureStageRoundTripAndCaseBinding(t *testing.T) {
+	if len(windowsAliasPhases) > 16 || len(windowsAliasVariants) > 8 {
+		t.Fatal("fixed alias labels exceed the one-byte transport capacity")
+	}
 	const desktopCase = uint64(1) << (5 + 2)
 	const capacityCase = uint64(1) << (5 + 6)
 	const aliasCase = uint64(1) << (5 + 5)
@@ -233,6 +253,32 @@ func TestDarwinOrdinaryWorkerExitProjectionIsClosed(t *testing.T) {
 	for code := -1; code <= 255; code++ {
 		if got := darwinOrdinaryWorkerExit(code).label(); got != known[code] {
 			t.Fatalf("worker diagnostic escaped its fixed vocabulary for status %d", code)
+		}
+	}
+}
+
+func TestWindowsAliasRefusalProjectionDropsPrivateDiagnostics(t *testing.T) {
+	expected := errors.New("expected admission refusal")
+	private := errors.New("PRIVATE_ACCOUNT_PATH_NATIVE_ERROR")
+	for _, check := range []struct {
+		err         error
+		out, notice []byte
+		phase       string
+	}{
+		{err: expected},
+		{err: errors.Join(expected, private)},
+		{err: nil, phase: "refusal-error"},
+		{err: private, phase: "refusal-error"},
+		{err: errors.New("audit input must be an unchanged bounded regular file"), phase: "refusal-input"},
+		{err: expected, out: []byte("PRIVATE_PROFILE"), phase: "refusal-output"},
+		{err: expected, notice: []byte("PRIVATE_ACCOUNT"), phase: "refusal-output"},
+	} {
+		got := windowsAliasRefusalPhase(check.err, expected, check.out, check.notice)
+		if got != check.phase {
+			t.Fatal("private diagnostic did not reduce to its fixed refusal category")
+		}
+		if got != "" && !windowsAliasFailureValid(makeWindowsAliasFailure("direct", got)) {
+			t.Fatal("fixed refusal category cannot cross the existing protocol")
 		}
 	}
 }
