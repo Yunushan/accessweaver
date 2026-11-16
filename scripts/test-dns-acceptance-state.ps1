@@ -943,6 +943,18 @@ try {
         param([string]$DiagnosticScriptRoot=$PSScriptRoot)
         # Pure source-literal observer contracts. No source text or raw suffix is
         # part of the public observation, even when a static literal is sensitive.
+        # Exercise the current product literals through the real bounded observer.
+        $productText=[IO.File]::ReadAllText((Join-Path $project 'internal/workflow/windows.ps1'))
+        $productCatalog=New-NativeDNSFailureCatalog $productText
+        $refusals=@($productCatalog.entries | Where-Object {
+            $_.literal.StartsWith('Managed DoH plaintext protection is missing from effective Windows Firewall policy: ',[StringComparison]::Ordinal)
+        })
+        Assert-A ($refusals.Count -eq 28 -and $productCatalog.entries.Count -le 1024) 'source-literal-catalog'
+        foreach($refusal in $refusals){
+            $match=Get-NativeDNSFailureMarker $productCatalog '' ('PRIVATE_ACCOUNT '+$refusal.literal+' PRIVATE_TOKEN')
+            Assert-A ($match.lines.Count -eq 1 -and $match.lines[0] -eq $refusal.lines[0] -and
+                $refusal.lines.Count -eq 1 -and -not $match.overflow) 'source-literal-marker'
+        }
         $sample=@'
 function First { throw 'PRIVATE_STATIC_REFUSAL' }
 function Second { throw 'Another fixed source refusal' }

@@ -2635,9 +2635,57 @@ function Assert-DNSDohPlaintextBlock([string]$ID) {
                 $fullyEnforced=$label -or ($integer -and $status -eq 1)
             }
         }
-        if(-not (Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore') -or
-            -not $active -or -not $fullyEnforced){
-            throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy'
+        # Keep fixed reasons observable without exposing rule identities or provider text.
+        $persistent=Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore'
+        if(-not $persistent){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: persistent rule missing'}
+        if(-not $active){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: effective rule missing'}
+        if(-not $fullyEnforced){
+            if($statuses.Count -eq 0 -or ($statuses.Count -eq 1 -and $null -eq $statuses[0])){
+                throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: enforcement status unavailable'
+            }
+            if($statuses.Count -ne 1){
+                throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: enforcement status ambiguous'
+            }
+            # Only classify documented integer, enum or exact label representations.
+            # Classification never authorizes a non-Full rule.
+            $knownStatus=-1
+            if($integer){
+                if($status -ge 0 -and $status -le 23){$knownStatus=[int]$status}
+            }elseif($status -is [string] -or $status -is [Enum]){
+                $labels=@(
+                    'Invalid','Full','FirewallOffInProfile','CategoryOff','DisabledObject','InactiveProfile','LocalAddressResolutionEmpty','RemoteAddressResolutionEmpty','LocalPortResolutionEmpty','RemotePortResolutionEmpty','InterfaceResolutionEmpty','ApplicationResolutionEmpty',
+                    'RemoteMachineEmpty','RemoteUserEmpty','LocalGlobalOpenPortsDisallowed','LocalAuthorizedApplicationsDisallowed','LocalFirewallRulesDisallowed','LocalConsecRulesDisallowed','NotTargetPlatform','OptimizedOut','LocalUserEmpty','TransportMachinesEmpty','TunnelMachinesEmpty','TupleResolutionEmpty'
+                )
+                for($index=0;$index -lt $labels.Count;$index++){
+                    if([string]$status -ceq $labels[$index]){$knownStatus=$index;break}
+                }
+            }
+            switch($knownStatus){
+                0 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: Invalid'}
+                2 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: FirewallOffInProfile'}
+                3 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: CategoryOff'}
+                4 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: DisabledObject'}
+                5 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: InactiveProfile'}
+                6 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalAddressResolutionEmpty'}
+                7 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: RemoteAddressResolutionEmpty'}
+                8 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalPortResolutionEmpty'}
+                9 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: RemotePortResolutionEmpty'}
+                10 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: InterfaceResolutionEmpty'}
+                11 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: ApplicationResolutionEmpty'}
+                12 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: RemoteMachineEmpty'}
+                13 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: RemoteUserEmpty'}
+                14 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalGlobalOpenPortsDisallowed'}
+                15 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalAuthorizedApplicationsDisallowed'}
+                16 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalFirewallRulesDisallowed'}
+                17 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalConsecRulesDisallowed'}
+                18 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: NotTargetPlatform'}
+                19 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: OptimizedOut'}
+                20 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalUserEmpty'}
+                21 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: TransportMachinesEmpty'}
+                22 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: TunnelMachinesEmpty'}
+                23 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: TupleResolutionEmpty'}
+                default {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: enforcement status unsupported'}
+            }
         }
     }
 }

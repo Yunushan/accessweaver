@@ -65,7 +65,8 @@
             "docs/qualification/3ae6417cb9a8-dns-native-recovery.json",
             "docs/qualification/80cf5cfbe5fb-native-dns-refusals.json",
             "docs/qualification/8b9184de225d-doh-full-status.json",
-            "docs/qualification/8b9184de225d-dns-observer-followup.json"
+            "docs/qualification/8b9184de225d-dns-observer-followup.json",
+            "docs/qualification/520a3053b245-doh-refusal-diagnostics.json"
           ]
         },
         {
