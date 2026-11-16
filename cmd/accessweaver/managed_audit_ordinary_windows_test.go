@@ -89,6 +89,7 @@ var ordinaryCloseFailure bool
 const ordinaryReplySize = 56
 
 type ordinaryFixture struct {
+	releaseFailure                                                       windowsRunReleaseStage
 	desktopFailure                                                       windowsDesktopStage
 	aliasFailure                                                         windowsAliasFailure
 	commands, policyInstalled, policyRemoved, privateChildRemoved        bool
@@ -1050,7 +1051,7 @@ func (f *ordinaryFixture) exchange() error {
 		}
 		replySize, budget := ordinaryReplySize, 20*time.Second
 		if f.commands {
-			replySize++
+			replySize += 2
 			budget = 120 * time.Second
 		}
 		reply := make([]byte, replySize)
@@ -1073,6 +1074,10 @@ func (f *ordinaryFixture) exchange() error {
 				return errOrdinary
 			}
 			f.desktopFailure, f.aliasFailure = desktop, alias
+			f.releaseFailure = windowsRunReleaseStage(reply[ordinaryReplySize+1])
+			if !windowsRunReleaseValid(f.releaseFailure, executed&^passed) {
+				return errOrdinary
+			}
 		}
 		var failure error
 		for bit, id := range names {
@@ -1259,15 +1264,17 @@ func runOrdinaryWindowsWorker(arguments []string, commands bool) (exitCode int) 
 	}
 	executed := uint64(31)
 	stage := windowsDesktopNoFailure
+	releaseStage := windowsRunReleaseStage(0)
 	if commands && flags == 31 {
-		commandExecuted, commandPassed, desktopFailure := runWindowsCommandCases(request[8:40])
+		commandExecuted, commandPassed, desktopFailure, releaseFailure := runWindowsCommandCases(request[8:40])
 		executed |= commandExecuted << 5
 		flags |= commandPassed << 5
 		stage = desktopFailure
+		releaseStage = releaseFailure
 	}
 	reply := make([]byte, ordinaryReplySize)
 	if commands {
-		reply = append(reply, byte(stage))
+		reply = append(reply, byte(stage), byte(releaseStage))
 	}
 	copy(reply, request[:40])
 	binary.LittleEndian.PutUint64(reply[40:48], executed)
@@ -1564,8 +1571,9 @@ func (f *ordinaryFixture) report(t *testing.T) {
 		"cleanupComplete": f.cleanupOK, "passed": passed, "productionQualificationComplete": false,
 	}
 	if f.commands {
-		report["schemaVersion"] = 8
+		report["schemaVersion"] = 9
 		report["desktopFailureStage"] = windowsDesktopStageNames[f.desktopFailure]
+		report["runReleaseFailureStage"] = windowsRunReleaseNames[f.releaseFailure]
 		report["aliasFailureVariant"], report["aliasFailureStage"] = windowsAliasFailureNames(f.aliasFailure)
 	}
 	data, err := json.MarshalIndent(report, "", "  ")

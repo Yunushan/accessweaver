@@ -350,6 +350,7 @@ func stageRequiredWindowsPolicy(f *ordinaryFixture) (*ordinaryPolicyFixture, err
 }
 
 type windowsCommandWorker struct {
+	releaseFailure                                   windowsRunReleaseStage
 	base, directory, state, profilePath, engine, sid string
 	start, head                                      audit.Checkpoint
 	p                                                profile.Profile
@@ -1437,40 +1438,40 @@ func (w *windowsCommandWorker) desktop(full bool) (failure error) {
 	return nil
 }
 
-func runWindowsCommandCases(nonce []byte) (executed, passed uint64, desktopFailure windowsDesktopStage) {
+func runWindowsCommandCases(nonce []byte) (executed, passed uint64, desktopFailure windowsDesktopStage, releaseFailure windowsRunReleaseStage) {
 	executable, err := os.Executable()
 	if err != nil || len(nonce) != 32 {
-		return 0, 0, windowsDesktopNoFailure
+		return 0, 0, windowsDesktopNoFailure, 0
 	}
 	stage := filepath.Dir(executable)
 	input, err := os.Open(filepath.Join(stage, "reviewed-profile.json"))
 	if err != nil {
-		return 0, 0, windowsDesktopNoFailure
+		return 0, 0, windowsDesktopNoFailure, 0
 	}
 	data, readErr := io.ReadAll(io.LimitReader(input, (1<<20)+1))
 	closeErr := input.Close()
 	if readErr != nil || closeErr != nil || len(data) > 1<<20 {
 		clear(data)
-		return 0, 0, windowsDesktopNoFailure
+		return 0, 0, windowsDesktopNoFailure, 0
 	}
 	reviewed, err := profile.Decode(bytes.NewReader(data))
 	clear(data)
 	if err != nil || !strings.EqualFold(reviewed.Binary, filepath.Join(stage, "approved-engine", "ciadpi.exe")) || len(reviewed.Args) != 0 {
-		return 0, 0, windowsDesktopNoFailure
+		return 0, 0, windowsDesktopNoFailure, 0
 	}
 	var token windows.Token
 	if windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_QUERY, &token) != nil {
-		return 0, 0, windowsDesktopNoFailure
+		return 0, 0, windowsDesktopNoFailure, 0
 	}
 	user, err := token.GetTokenUser()
 	if err != nil || user == nil || user.User.Sid == nil {
 		_ = token.Close()
-		return 0, 0, windowsDesktopNoFailure
+		return 0, 0, windowsDesktopNoFailure, 0
 	}
 	sid := user.User.Sid.String()
 	if token.Close() != nil {
 		ordinaryCloseFailure = true
-		return 0, 0, windowsDesktopNoFailure
+		return 0, 0, windowsDesktopNoFailure, 0
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 110*time.Second)
 	defer cancel()
@@ -1481,10 +1482,10 @@ func runWindowsCommandCases(nonce []byte) (executed, passed uint64, desktopFailu
 		root.runApprovedAndRefusals, root.runFailuresAndCancellation,
 	}
 	if len(operations)+1 != windowsAliasDetailCaseOffset {
-		return 0, 0, windowsDesktopNoFailure
+		return 0, 0, windowsDesktopNoFailure, 0
 	}
 	if root.mkdirPrivate(root.base) != nil {
-		return 0, 0, windowsDesktopNoFailure
+		return 0, 0, windowsDesktopNoFailure, 0
 	}
 	for index, operation := range operations {
 		if ctx.Err() != nil {
@@ -1508,7 +1509,7 @@ func runWindowsCommandCases(nonce []byte) (executed, passed uint64, desktopFailu
 	passed |= root.runDetailPassed << windowsRunDetailCaseOffset
 	executed |= root.aliasDetailExecuted << windowsAliasDetailCaseOffset
 	passed |= root.aliasDetailPassed << windowsAliasDetailCaseOffset
-	return executed, passed, windowsDesktopStage(encodeWindowsCommandFailure(root.desktopFailure, root.aliasFailure))
+	return executed, passed, windowsDesktopStage(encodeWindowsCommandFailure(root.desktopFailure, root.aliasFailure)), root.releaseFailure
 }
 
 func windowsInertReadyName(stage string, worker, child uint32) string {
@@ -1810,51 +1811,69 @@ func windowsRunPreservedInputs(w *windowsCommandWorker) (map[string][]byte, erro
 // disk-derived terminal checkpoint must never be reused as retained authority.
 // Opening existing lock-bearing files does not recreate or truncate anything.
 func windowsRunReleased(w *windowsCommandWorker) error {
-	entries, err := os.ReadDir(filepath.Join(w.state, "profiles"))
-	if err != nil || len(entries) != 0 {
+	fail := func(stage windowsRunReleaseStage) error {
+		root := w.manifest()
+		if root.releaseFailure == 0 {
+			root.releaseFailure = stage
+		}
 		return errOrdinary
+	}
+	entries, err := os.ReadDir(filepath.Join(w.state, "profiles"))
+	if err != nil {
+		return fail(1)
+	}
+	if len(entries) != 0 {
+		return fail(2)
 	}
 	if _, err := os.Lstat(filepath.Join(w.state, "presets-initialized")); !os.IsNotExist(err) {
-		return errOrdinary
+		return fail(3)
 	}
 	if _, err := os.Lstat(filepath.Join(w.state, "generated")); !os.IsNotExist(err) {
-		return errOrdinary
+		return fail(4)
 	}
-	for _, path := range []string{filepath.Join(w.state, ".controller.lock"), filepath.Join(w.directory, "events.journal")} {
+	for index, path := range []string{filepath.Join(w.state, ".controller.lock"), filepath.Join(w.directory, "events.journal")} {
+		base := windowsRunReleaseStage(5 + index*6)
 		if w.record(path) != nil {
-			return errOrdinary
+			return fail(base)
 		}
 		name, err := windows.UTF16PtrFromString(path)
 		if err != nil {
-			return errOrdinary
+			return fail(base + 1)
 		}
 		handle, err := windows.CreateFile(name, windows.GENERIC_READ|windows.GENERIC_WRITE,
 			windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING,
 			windows.FILE_ATTRIBUTE_NORMAL|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
 		if err != nil {
-			return errOrdinary
+			return fail(base + 2)
 		}
 		var overlap windows.Overlapped
 		lockErr := windows.LockFileEx(handle, windows.LOCKFILE_FAIL_IMMEDIATELY|windows.LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &overlap)
-		closeErr := windows.CloseHandle(handle) // Final close releases the lock.
-		if lockErr != nil || closeErr != nil || w.record(path) != nil {
-			return errOrdinary
+		closeErr := windows.CloseHandle(handle)
+		if lockErr != nil {
+			return fail(base + 3)
+		}
+		if closeErr != nil {
+			return fail(base + 4)
+		}
+		if w.record(path) != nil {
+			return fail(base + 5)
 		}
 	}
-	// The real command may create this coordination object in some paths.
 	profileLock := filepath.Join(w.state, ".profiles.lock")
 	if _, err := os.Lstat(profileLock); err == nil {
 		if w.record(profileLock) != nil {
-			return errOrdinary
+			return fail(17)
 		}
 	} else if !os.IsNotExist(err) {
-		return errOrdinary
+		return fail(18)
 	}
 	var accounting ordinaryAccounting
 	if windows.QueryInformationJobObject(0, windows.JobObjectBasicAccountingInformation,
-		uintptr(unsafe.Pointer(&accounting)), uint32(unsafe.Sizeof(accounting)), nil) != nil ||
-		accounting.Active != 1 {
-		return errOrdinary
+		uintptr(unsafe.Pointer(&accounting)), uint32(unsafe.Sizeof(accounting)), nil) != nil {
+		return fail(19)
+	}
+	if accounting.Active != 1 {
+		return fail(20)
 	}
 	return nil
 }

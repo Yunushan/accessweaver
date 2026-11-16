@@ -441,3 +441,50 @@ func TestWindowsInertReadyErrorProjectionDropsPrivateText(t *testing.T) {
 		}
 	}
 }
+
+// Fixed source stages for the native release probe. One additional command
+// reply byte avoids overflowing the already full executed/passed bit fields.
+type windowsRunReleaseStage byte
+
+var windowsRunReleaseNames = [...]string{
+	"none", "profiles-read", "profiles-not-empty", "presets-present-or-unreadable",
+	"generated-present-or-unreadable", "controller-record-before", "controller-name",
+	"controller-open", "controller-lock", "controller-close", "controller-record-after",
+	"journal-record-before", "journal-name", "journal-open", "journal-lock", "journal-close",
+	"journal-record-after", "profile-lock-record", "profile-lock-inspect",
+	"job-accounting-query", "job-child-remains",
+}
+
+func windowsRunReleaseValid(stage windowsRunReleaseStage, failed uint64) bool {
+	if int(stage) >= len(windowsRunReleaseNames) {
+		return false
+	}
+	const runCase = uint64(1) << (5 + 7)
+	const drainCase = uint64(1) << (5 + 8)
+	released, known := windowsRunDetailBit("run-released-resources")
+	if !known {
+		return false
+	}
+	released <<= 5 + windowsRunDetailCaseOffset
+	if failed&released != 0 {
+		return stage != 0 && failed&runCase != 0
+	}
+	return stage == 0 || failed&drainCase != 0
+}
+
+func TestWindowsRunReleaseProjectionIsClosedAndCaseBound(t *testing.T) {
+	released, _ := windowsRunDetailBit("run-released-resources")
+	released <<= 5 + windowsRunDetailCaseOffset
+	const runCase = uint64(1) << (5 + 7)
+	const drainCase = uint64(1) << (5 + 8)
+	for value := 0; value < 256; value++ {
+		stage := windowsRunReleaseStage(value)
+		known := value > 0 && value < len(windowsRunReleaseNames)
+		if windowsRunReleaseValid(stage, runCase|released) != known ||
+			windowsRunReleaseValid(stage, released) ||
+			windowsRunReleaseValid(stage, drainCase) != (value < len(windowsRunReleaseNames)) ||
+			windowsRunReleaseValid(stage, 0) != (value == 0) {
+			t.Fatal("release stage escaped its fixed vocabulary or owning assertion")
+		}
+	}
+}
