@@ -119,7 +119,7 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Windows PowerShell DNS reboot contracts failed'}
       - name: Verify DNS journal binding and rollback
         run: ./scripts/test-windows-dns-journal.ps1
-      - name: Verify DNS journal through an aliased Unix temporary path
+      - name: Verify DNS journal and reboot contracts through an aliased Unix temporary path
         if: runner.os != 'Windows'
         run: |
           $ErrorActionPreference='Stop'
@@ -132,6 +132,8 @@ jobs:
             $env:TMPDIR=$alias
             & pwsh -NoProfile -NonInteractive -File ./scripts/test-windows-dns-journal.ps1
             if($LASTEXITCODE -ne 0){throw 'Aliased temporary-path DNS journal contracts failed'}
+            & pwsh -NoProfile -NonInteractive -File ./scripts/test-windows-reboot-contracts.ps1
+            if($LASTEXITCODE -ne 0){throw 'Aliased temporary-path DNS reboot contracts failed'}
           } finally {
             $env:TMPDIR=$priorTemporary
           }

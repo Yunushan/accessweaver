@@ -1,5 +1,22 @@
 # Test reboot admission and result publication without touching DNS or rebooting a host.
 $ErrorActionPreference='Stop'
+# Only inert fixture inputs use a canonical temporary root. The production
+# reader must continue to reject every reparse-point ancestor.
+$originalTemporary=[IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+$fixtureTemporary=$originalTemporary
+if([IO.Path]::DirectorySeparatorChar -eq '/'){
+    $resolvedTemporary=[IO.Path]::GetPathRoot($fixtureTemporary)
+    foreach($temporaryPart in $fixtureTemporary.Substring($resolvedTemporary.Length).Split([IO.Path]::DirectorySeparatorChar)){
+        if(-not $temporaryPart){continue}
+        $temporaryEntry=[IO.DirectoryInfo]::new((Join-Path $resolvedTemporary $temporaryPart))
+        if($temporaryEntry.Attributes -band [IO.FileAttributes]::ReparsePoint){$temporaryEntry=$temporaryEntry.ResolveLinkTarget($true)}
+        if($null -eq $temporaryEntry -or $temporaryEntry -isnot [IO.DirectoryInfo] -or -not $temporaryEntry.Exists){
+            throw 'DNS reboot fixture temporary directory is unavailable'
+        }
+        $resolvedTemporary=$temporaryEntry.FullName
+    }
+    $fixtureTemporary=$resolvedTemporary
+}
 $source=Join-Path $PSScriptRoot 'test-windows-reboot.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
@@ -35,7 +52,7 @@ function Refuse([scriptblock]$Action){
     if(-not $rejected){throw 'Invalid DNS reboot evidence was accepted'}
 }
 # The parsed object and digest must come from the same bounded observation.
-$readFixture=Join-Path ([IO.Path]::GetTempPath()) ('accessweaver-dns-reboot-read-'+[guid]::NewGuid().ToString('N')+'.json')
+$readFixture=Join-Path $fixtureTemporary ('accessweaver-dns-reboot-read-'+[guid]::NewGuid().ToString('N')+'.json')
 $encoding=[Text.UTF8Encoding]::new($false,$true)
 try {
     $first=$encoding.GetBytes('{"schemaVersion":7,"method":"doh"}')
@@ -44,6 +61,10 @@ try {
     $observed=Read-DNSRebootRecord $readFixture $first.Length
     if($observed.record.method -cne 'doh' -or $observed.sha256 -cne (Get-FileHash -LiteralPath $readFixture -Algorithm SHA256).Hash){
         throw 'DNS reboot record did not bind its parsed bytes'
+    }
+    if([IO.Path]::DirectorySeparatorChar -eq '/' -and $originalTemporary.TrimEnd('/') -cne $fixtureTemporary.TrimEnd('/')){
+        $aliasedFixture=Join-Path $originalTemporary ([IO.Path]::GetFileName($readFixture))
+        Refuse {Read-DNSRebootRecord $aliasedFixture $first.Length}
     }
     Refuse {Read-DNSRebootRecord $readFixture ($first.Length-1)}
     Refuse {Read-DNSRebootRecord (Split-Path -Parent $readFixture) 1MB}
@@ -67,7 +88,7 @@ try {
 } finally {[IO.File]::Delete($readFixture)}
 
 # Exercise candidate pinning through the same Windows file handle used at dispatch.
-$controllerFixture=Join-Path ([IO.Path]::GetTempPath()) ('accessweaver-dns-pin-'+[guid]::NewGuid().ToString('N'))
+$controllerFixture=Join-Path $fixtureTemporary ('accessweaver-dns-pin-'+[guid]::NewGuid().ToString('N'))
 $controller=$null
 try {
     $image=[byte[]]::new(90)
@@ -149,7 +170,7 @@ foreach($name in @('Read-ApprovedDNSRebootResume','New-DNSRebootStartupArguments
 }
 # Run the exact scheduled command with an inert verifier before and after replacement.
 & {
-    $path=Join-Path ([IO.Path]::GetTempPath()) ("accessweaver-startup's-"+[guid]::NewGuid().ToString('N')+'.ps1')
+    $path=Join-Path $fixtureTemporary ("accessweaver-startup's-"+[guid]::NewGuid().ToString('N')+'.ps1')
     $inert='param($ExecutableName,$ExecutableSHA256,$QualificationID,$DNS,$RequiredOriginalMode,$FixtureSHA256,$OracleSHA256)' + [Environment]::NewLine +
         '@($ExecutableName,$ExecutableSHA256,$QualificationID,$DNS,$RequiredOriginalMode,$FixtureSHA256,$OracleSHA256) -join ''|'''
     $options=@{
@@ -251,7 +272,7 @@ foreach($value in @('..\\'+$journalId,'workflow-'+('A'*32)+'.json','foreign.json
     $changed=$current.Clone();$changed.journalId=$value
     Refuse {Assert-DNSRebootAdmission $invalid $changed}
 }
-$log=[IO.Path]::Combine([IO.Path]::GetTempPath(),'synthetic-dns-logs')
+$log=[IO.Path]::Combine($fixtureTemporary,'synthetic-dns-logs')
 $journal=[IO.Path]::Combine($log,$journalId)
 if((Get-DNSRebootJournalID $journal $log) -cne $journalId){throw 'Exact protected journal name was not retained'}
 Refuse {Get-DNSRebootJournalID $journalId $log}
@@ -305,7 +326,7 @@ foreach($invalid in @(
 
 # Exercise socket ownership with closed CIM, config, and endpoint fixtures.
 & {
-    $machineRoot=Join-Path ([IO.Path]::GetTempPath()) 'inert-dns-reboot-machine'
+    $machineRoot=Join-Path $fixtureTemporary 'inert-dns-reboot-machine'
     $pin='A'*64
     $servicesPath=Join-Path $machineRoot 'services'
     $serviceHostPath=Join-Path $servicesPath ('host-'+$pin.ToLowerInvariant()+'.exe')
@@ -605,7 +626,7 @@ function Test-DNSRebootServicesRemoved {
 $save=(Get-Command Save-DNSRebootRecord).ScriptBlock
 function Save-DNSRebootRecord {param($Path,$Record);if($Path -cne $report){throw 'Unexpected report path'};$script:published=$Record}
 $report='synthetic report';$journalPath='synthetic journal'
-$cleanupRoot=Join-Path ([IO.Path]::GetTempPath()) ('aw-dns-reboot-cleanup-'+[guid]::NewGuid().ToString('N'))
+$cleanupRoot=Join-Path $fixtureTemporary ('aw-dns-reboot-cleanup-'+[guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($cleanupRoot)
 $snapshot=Join-Path $cleanupRoot 'dns-original.json'
 $recoveryCopy=Join-Path $cleanupRoot 'dns-original.copy'
@@ -693,7 +714,7 @@ foreach($failure in @('none','journal-changed','copy-changed','recover','state',
 }
 Set-Item Function:Save-DNSRebootRecord $save
 Set-Item Function:Get-DNSRebootDigest $digestCommand
-$target=Join-Path ([IO.Path]::GetTempPath()) ('aw-dns-reboot-'+[guid]::NewGuid().ToString('N')+'.json')
+$target=Join-Path $fixtureTemporary ('aw-dns-reboot-'+[guid]::NewGuid().ToString('N')+'.json')
 try {
     Refuse {Save-DNSRebootRecord $target @{data=('x'*1MB)}}
     if([IO.File]::Exists($target)){throw 'Oversized evidence left a partial result'}
@@ -722,7 +743,7 @@ foreach($name in $selected){
     }
     . ([scriptblock]::Create($nodes[0].Extent.Text))
 }
-$root=[IO.Path]::Combine([IO.Path]::GetTempPath(),('aw-dns-reboot-publication-'+[guid]::NewGuid().ToString('N')))
+$root=[IO.Path]::Combine($fixtureTemporary,('aw-dns-reboot-publication-'+[guid]::NewGuid().ToString('N')))
 [void][IO.Directory]::CreateDirectory($root)
 $shared=Join-Path $root 'share'
 $report=Join-Path $root 'reboot-results.json'
