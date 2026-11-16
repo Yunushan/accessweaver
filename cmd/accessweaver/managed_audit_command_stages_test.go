@@ -415,6 +415,9 @@ func TestWindowsRunDetailProjectionIsClosedAndCaseBound(t *testing.T) {
 // Public Win32 codes only; native error strings and object names never cross
 // the worker protocol. Unknown errors retain the existing generic exit.
 func windowsInertEventFailureExit(err error) int {
+	if errors.Is(err, syscall.Errno(2)) { // an existing named event was not found
+		return 110
+	}
 	for index, code := range []syscall.Errno{5, 6, 87, 1338, 1307, 1314, 3} {
 		if errors.Is(err, code) {
 			return 104 + index
@@ -424,6 +427,9 @@ func windowsInertEventFailureExit(err error) int {
 }
 
 func TestWindowsInertEventErrorProjectionDropsPrivateText(t *testing.T) {
+	if windowsInertEventFailureExit(errors.Join(syscall.Errno(2), errors.New("PRIVATE_ACCOUNT_PATH"))) != 110 {
+		t.Fatal("missing event was not reduced to the fixed path category")
+	}
 	for index, code := range []syscall.Errno{5, 6, 87, 1338, 1307, 1314, 3} {
 		if windowsInertEventFailureExit(errors.Join(code, errors.New("PRIVATE_ACCOUNT_PATH"))) != 104+index {
 			t.Fatal("fixed event error category was lost")

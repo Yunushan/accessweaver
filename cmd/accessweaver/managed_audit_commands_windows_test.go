@@ -1516,7 +1516,9 @@ const windowsReadyEventUserRights = windows.READ_CONTROL | windows.SYNCHRONIZE |
 func windowsInertReadyName(stage string, pid uint32) string {
 	// Bind this held object to the private random staging root and worker PID.
 	digest := sha256.Sum256([]byte(strings.ToLower(filepath.Clean(stage))))
-	return "Local\\AccessWeaverOrdinaryReady-" + strconv.FormatUint(uint64(pid), 10) + "-" + hex.EncodeToString(digest[:16])
+	// The privileged parent and fresh normal logon can have different local
+	// namespaces. Opening this held Global event requires only its explicit ACL.
+	return "Global\\AccessWeaverOrdinaryReady-" + strconv.FormatUint(uint64(pid), 10) + "-" + hex.EncodeToString(digest[:16])
 }
 
 func windowsReadyEventDescriptor(handle windows.Handle, sid string) bool {
@@ -1593,21 +1595,33 @@ func (f *ordinaryFixture) prepareWindowsReadyEvent() error {
 	return nil
 }
 
-func (w *windowsCommandWorker) resetWindowsReadyEvent() error {
+func (w *windowsCommandWorker) resetWindowsReadyEvent() (failure error) {
 	executable, err := os.Executable()
 	if err != nil {
-		return errOrdinary
+		return err
 	}
 	name, _ := windows.UTF16PtrFromString(windowsInertReadyName(filepath.Dir(executable), uint32(os.Getpid())))
 	event, err := windows.OpenEvent(windowsReadyEventUserRights, false, name)
 	if err != nil {
-		return errOrdinary
+		return err
 	}
-	valid := windowsReadyEventDescriptor(event, w.sid) && windows.ResetEvent(event) == nil
+	defer func() {
+		if !ordinaryClose(&event) {
+			failure = errors.Join(failure, errOrdinary)
+		}
+	}()
+	if !windowsReadyEventDescriptor(event, w.sid) {
+		return windows.ERROR_INVALID_SECURITY_DESCR
+	}
+	if err := windows.ResetEvent(event); err != nil {
+		return err
+	}
 	state, waitErr := windows.WaitForSingleObject(event, 0)
-	closed := ordinaryClose(&event)
-	if !valid || waitErr != nil || state != uint32(windows.WAIT_TIMEOUT) || !closed {
-		return errOrdinary
+	if waitErr != nil {
+		return waitErr
+	}
+	if state != uint32(windows.WAIT_TIMEOUT) {
+		return windows.ERROR_INVALID_DATA
 	}
 	return nil
 }
@@ -1898,7 +1912,17 @@ func (w *windowsCommandWorker) runAssertion(label string, valid bool) bool {
 
 func (w *windowsCommandWorker) runApprovedAndRefusals() error {
 	child, err := w.newStream("run-approved")
-	if !w.runAssertion("run-stream", err == nil && child.resetWindowsReadyEvent() == nil) {
+	if !w.runAssertion("run-stream", err == nil) {
+		return errOrdinary
+	}
+	if readyErr := child.resetWindowsReadyEvent(); readyErr != nil {
+		w.runAssertion("run-stream", false)
+		code := windowsInertEventFailureExit(readyErr)
+		for index, label := range []string{"run-error-event-access-absent", "run-error-event-handle-absent",
+			"run-error-event-parameter-absent", "run-error-event-security-absent",
+			"run-error-event-owner-absent", "run-error-event-privilege-absent", "run-error-event-path-absent"} {
+			w.runAssertion(label, code != 104+index)
+		}
 		return errOrdinary
 	}
 	before, err := windowsRunPreservedInputs(child)
