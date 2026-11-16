@@ -18,6 +18,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"reflect"
@@ -1526,29 +1527,29 @@ func ordinaryInertWindowsEngine() bool {
 	signal.Notify(interrupts, os.Interrupt)
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil || user == nil || user.User.Sid == nil {
-		os.Exit(98)
+		os.Exit(99)
 	}
 	sid := user.User.Sid.String()
 	sd, err := windows.SecurityDescriptorFromString("O:" + sid + "D:P(A;;GA;;;" + sid + ")(A;;GA;;;SY)")
 	if err != nil {
-		os.Exit(98)
+		os.Exit(100)
 	}
 	sa := windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
 	name, _ := windows.UTF16PtrFromString(windowsInertReadyName(uint32(os.Getppid()), uint32(os.Getpid())))
 	handle, _, lastErr := ordinaryKernel.NewProc("CreateEventW").Call(uintptr(unsafe.Pointer(&sa)), 1, 1, uintptr(unsafe.Pointer(name)))
 	runtime.KeepAlive(sd)
 	if handle == 0 {
-		os.Exit(98)
+		os.Exit(101)
 	}
 	ready := windows.Handle(handle)
 	if errors.Is(lastErr, windows.ERROR_ALREADY_EXISTS) {
 		_ = ordinaryClose(&ready)
-		os.Exit(98)
+		os.Exit(102)
 	}
 	time.Sleep(3 * time.Second)
 	signal.Stop(interrupts)
 	if !ordinaryClose(&ready) {
-		os.Exit(98)
+		os.Exit(103)
 	}
 	os.Exit(0)
 	return true
@@ -1803,6 +1804,21 @@ func (w *windowsCommandWorker) runApprovedAndRefusals() error {
 	w.runAssertion("run-error-recorder-absent", !errors.Is(err, audit.ErrRecorderUnavailable))
 	w.runAssertion("run-error-uncertain-absent", !errors.Is(err, audit.ErrRecordedUncertain))
 	w.runAssertion("run-error-context-absent", !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled))
+	var engineExit *exec.ExitError
+	exited := errors.As(err, &engineExit)
+	w.runAssertion("run-error-engine-exit-absent", !exited)
+	w.runAssertion("run-error-output-absent", !errors.Is(err, errAuditRunOutput))
+	w.runAssertion("run-error-profile-absent", !errors.Is(err, errAuditRunProfile))
+	w.runAssertion("run-error-input-absent", err == nil || err.Error() != "audit input must be an unchanged bounded regular file")
+	w.runAssertion("run-error-journal-absent", !errors.Is(err, audit.ErrJournalBusy) &&
+		!errors.Is(err, audit.ErrJournalStorage) && !errors.Is(err, audit.ErrJournalUnavailable) &&
+		!errors.Is(err, audit.ErrJournalUncertain) && !errors.Is(err, audit.ErrJournalFull))
+	for index, label := range []string{"run-error-inert-args-absent", "run-error-inert-token-absent",
+		"run-error-inert-security-absent", "run-error-inert-event-absent",
+		"run-error-inert-existing-absent", "run-error-inert-close-absent"} {
+		w.runAssertion(label, !exited || engineExit.ExitCode() != 98+index)
+	}
+
 	if !w.runAssertion("run-command-return", err == nil) ||
 		!w.runAssertion("run-launch-notice", string(notice) == windowsRunLaunchNotice) ||
 		!w.runAssertion("run-observed-journal", windowsRunObserved(child, observed, "intent", "accepted", "completed") == nil) ||
