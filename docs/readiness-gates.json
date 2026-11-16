@@ -253,7 +253,8 @@
             "scripts/security-tools/go.mod",
             ".github/workflows/ci.yml",
             ".github/workflows/release.yml",
-            "scripts/fixtures/wgpeer/go.mod"
+            "scripts/fixtures/wgpeer/go.mod",
+            "docs/qualification/4a1c4bbcedf0-wireguard-fixture-initiation.json"
           ]
         }
       ]
@@ -495,7 +496,8 @@
           "status": "partial",
           "evidence": [
             "docs/TESTING.md",
-            "docs/SPLITWIRE_IMPLEMENTATION.md"
+            "docs/SPLITWIRE_IMPLEMENTATION.md",
+            "docs/qualification/4a1c4bbcedf0-wireguard-fixture-initiation.json"
           ]
         }
       ]
