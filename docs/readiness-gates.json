@@ -67,7 +67,8 @@
             "docs/qualification/80cf5cfbe5fb-native-dns-refusals.json",
             "docs/qualification/8b9184de225d-doh-full-status.json",
             "docs/qualification/8b9184de225d-dns-observer-followup.json",
-            "docs/qualification/520a3053b245-doh-refusal-diagnostics.json"
+            "docs/qualification/520a3053b245-doh-refusal-diagnostics.json",
+            "docs/qualification/7a963d7c64d9-doh-raw-cim.json"
           ]
         },
         {
@@ -433,7 +434,8 @@
             "scripts/test-unix-controller.py",
             "docs/qualification/77a884e7c213-local-linux-core.json",
             "docs/qualification/57bc58e23c89-local-linux-core.json",
-            "docs/qualification/86090c940482-local-linux-core.json"
+            "docs/qualification/86090c940482-local-linux-core.json",
+            "docs/qualification/4061b28c965e-local-linux-core.json"
           ]
         },
         {

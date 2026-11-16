@@ -1,0 +1,254 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "pure-typed-cim-enforcement-status-and-ets-isolation",
+  "sourceCommit": "7a963d7c64d9ee986ac54d02af4b91eb6fb0fcfc",
+  "sourceSHA256": {
+    "internal/workflow/windows.ps1": "9d35b93589843ccd9e7049a02eeb731bc54e5480014dbbaa675f28eca4805b8f",
+    "scripts/test-dns-recovery-contracts.ps1": "b05df108ed6635edb390fe7d51f638d423d2c68ad17c23786189f719c9ff732a",
+    "scripts/test-dns-acceptance-state.ps1": "f505f8ce169c75800d53437eaea5399d7f9245d2377e7edc3fac4078390892d2"
+  },
+  "publicStatusContract": "https://learn.microsoft.com/en-us/windows/win32/fwp/wmi/wfascimprov/msft-netfirewallrule",
+  "behavior": {
+    "rawCimUInt16ArrayUsed": true,
+    "displayFormattingUsedAsAuthority": false,
+    "singleFullAdmissionRequirementRetained": true,
+    "nonFullOrMalformedStatusAdmitted": false,
+    "nativeQueriesAddedByPureValidation": 0
+  },
+  "publicPlatformFormatterReproduction": {
+    "cases": [
+      {
+        "syntheticInput": 0,
+        "syntheticFormatting": [
+          "NotApplicable"
+        ]
+      },
+      {
+        "syntheticInput": 1,
+        "syntheticFormatting": [
+          "Enforced"
+        ]
+      },
+      {
+        "syntheticInput": 2,
+        "syntheticFormatting": [
+          "DisabledInProfile"
+        ]
+      },
+      {
+        "syntheticInput": 3,
+        "syntheticFormatting": [
+          "CategoryDisabled"
+        ]
+      },
+      {
+        "syntheticInput": 4,
+        "syntheticFormatting": [
+          "Disabled"
+        ]
+      },
+      {
+        "syntheticInput": 5,
+        "syntheticFormatting": [
+          "ProfileInactive"
+        ]
+      },
+      {
+        "syntheticInput": 6,
+        "syntheticFormatting": [
+          "NoLocalAddress"
+        ]
+      },
+      {
+        "syntheticInput": 7,
+        "syntheticFormatting": [
+          "NoRemoteAddress"
+        ]
+      },
+      {
+        "syntheticInput": 8,
+        "syntheticFormatting": [
+          "NoLocalPort"
+        ]
+      },
+      {
+        "syntheticInput": 9,
+        "syntheticFormatting": [
+          "NoRemotePort"
+        ]
+      },
+      {
+        "syntheticInput": 10,
+        "syntheticFormatting": [
+          "NoInterface"
+        ]
+      },
+      {
+        "syntheticInput": 11,
+        "syntheticFormatting": [
+          "NoApplication"
+        ]
+      },
+      {
+        "syntheticInput": 12,
+        "syntheticFormatting": [
+          "NoRemoteMachine"
+        ]
+      },
+      {
+        "syntheticInput": 13,
+        "syntheticFormatting": [
+          "NoRemoteUser"
+        ]
+      },
+      {
+        "syntheticInput": 14,
+        "syntheticFormatting": [
+          "UserPortsNotAllowed"
+        ]
+      },
+      {
+        "syntheticInput": 15,
+        "syntheticFormatting": [
+          "UserAppsNotAllowed"
+        ]
+      },
+      {
+        "syntheticInput": 16,
+        "syntheticFormatting": [
+          "LocalFirewallRulesNotAllowed"
+        ]
+      },
+      {
+        "syntheticInput": 17,
+        "syntheticFormatting": [
+          "LocalIPsecRulesNotAllowed"
+        ]
+      },
+      {
+        "syntheticInput": 18,
+        "syntheticFormatting": [
+          "WrongSystemVersion"
+        ]
+      },
+      {
+        "syntheticInput": 19,
+        "syntheticFormatting": [
+          "OptimizedOut"
+        ]
+      },
+      {
+        "syntheticInput": 20,
+        "syntheticFormatting": [
+          "NoLocalUser"
+        ]
+      },
+      {
+        "syntheticInput": 21,
+        "syntheticFormatting": [
+          "NoAuthorizedMachine"
+        ]
+      },
+      {
+        "syntheticInput": 22,
+        "syntheticFormatting": [
+          "NoAuthorizedUser"
+        ]
+      },
+      {
+        "syntheticInput": 23,
+        "syntheticFormatting": [
+          "NoDynamicTransport"
+        ]
+      }
+    ],
+    "synthetic": true,
+    "nativeQueries": 0,
+    "publicModule": "NetSecurity",
+    "typeProjectionSHA256": "68731bce0d53d0b7bc8d3348eeb3d39c393ac7db9ba3cec019db58f546636874",
+    "formatterLibrarySHA256": "387f0ed64dae94a3a09b2282076d81918a09c57a53761743d109076d451afea3",
+    "formattingScriptProperty": "[Microsoft.Windows.Firewall.Commands.Formatting.Formatter]::FormatEnforcementStatus($this.PSBase.CimInstanceProperties[\"EnforcementStatus\"].Value)",
+    "productionQualificationComplete": false
+  },
+  "selectedGuardMatrix": [
+    {
+      "outcome": "passed",
+      "edition": "Desktop",
+      "version": "5.1.26100.9818",
+      "checks": 1388,
+      "admitted": 12,
+      "refused": 1376,
+      "cimCases": 3,
+      "sourceSHA256": "9d35b93589843ccd9e7049a02eeb731bc54e5480014dbbaa675f28eca4805b8f",
+      "fixtureSHA256": "b05df108ed6635edb390fe7d51f638d423d2c68ad17c23786189f719c9ff732a",
+      "nativeSettingsQueried": false,
+      "nativeSettingsChanged": false,
+      "productionQualificationComplete": false
+    },
+    {
+      "outcome": "passed",
+      "edition": "Core",
+      "version": "7.6.9",
+      "checks": 1388,
+      "admitted": 12,
+      "refused": 1376,
+      "cimCases": 3,
+      "sourceSHA256": "9d35b93589843ccd9e7049a02eeb731bc54e5480014dbbaa675f28eca4805b8f",
+      "fixtureSHA256": "b05df108ed6635edb390fe7d51f638d423d2c68ad17c23786189f719c9ff732a",
+      "nativeSettingsQueried": false,
+      "nativeSettingsChanged": false,
+      "productionQualificationComplete": false
+    }
+  ],
+  "syntheticCimETSRegression": [
+    {
+      "checks": 16,
+      "syntheticCimCases": 8,
+      "nativeChanges": 0,
+      "version": "5.1.26100.9818",
+      "fixtureSHA256": "b05df108ed6635edb390fe7d51f638d423d2c68ad17c23786189f719c9ff732a",
+      "edition": "Desktop",
+      "nativeQueries": 0,
+      "sourceSHA256": "9d35b93589843ccd9e7049a02eeb731bc54e5480014dbbaa675f28eca4805b8f",
+      "outcome": "passed",
+      "productionQualificationComplete": false
+    },
+    {
+      "productionQualificationComplete": false,
+      "edition": "Core",
+      "fixtureSHA256": "b05df108ed6635edb390fe7d51f638d423d2c68ad17c23786189f719c9ff732a",
+      "checks": 16,
+      "sourceSHA256": "9d35b93589843ccd9e7049a02eeb731bc54e5480014dbbaa675f28eca4805b8f",
+      "outcome": "passed",
+      "nativeQueries": 0,
+      "nativeChanges": 0,
+      "syntheticCimCases": 8,
+      "version": "7.6.9"
+    }
+  ],
+  "fullMockedLinuxContracts": [
+    {
+      "suite": "recovery",
+      "outcome": "passed",
+      "code": "none",
+      "checks": 3350,
+      "edition": "Core",
+      "version": "7.6.9",
+      "realDnsChanged": false,
+      "nativeDnsQualified": false
+    },
+    {
+      "suite": "acceptance",
+      "outcome": "passed",
+      "code": "none",
+      "checks": 1055,
+      "edition": "Core",
+      "version": "7.6.9",
+      "realDnsChanged": false,
+      "nativeDnsQualified": false
+    }
+  ],
+  "nativeFollowupRun": "https://github.com/Yunushan/accessweaver/actions/runs/43970479151",
+  "nativeAcceptanceResultClaimed": false,
+  "productionQualificationComplete": false
+}
