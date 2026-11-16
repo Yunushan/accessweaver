@@ -137,7 +137,8 @@
             "cmd/accessweaver/system_output_test.go",
             "internal/api/workflow_output_test.go",
             "internal/workflow/metadata_output_test.go",
-            "docs/qualification/67068364c8e8-firefox-sustained-rss.json"
+            "docs/qualification/67068364c8e8-firefox-sustained-rss.json",
+            "docs/qualification/bc5bd74965c4-browser-rss-roles.json"
           ]
         },
         {
@@ -187,7 +188,8 @@
             "docs/qualification/03aa58615a16-debian-apt-dpkg-lifecycle.json",
             "docs/qualification/03aa58615a16-debian-filtered-lifecycle.json",
             "docs/qualification/03aa58615a16-debian-arm64-dpkg-lifecycle.json",
-            "docs/qualification/43385d49f54c-installer-registration-refusal.json"
+            "docs/qualification/43385d49f54c-installer-registration-refusal.json",
+            "docs/qualification/ed049b12e54e-installer-terminal-server-refusal.json"
           ]
         }
       ]
@@ -481,7 +483,8 @@
             "docs/qualification/2d1e263f7fc6-local-webkit-editor-timings.json",
             "docs/qualification/d57c7c8d8a97-dashboard-webkit.json",
             "docs/qualification/d57c7c8d8a97-dashboard-browser-acceptance.json",
-            "docs/qualification/eec0a50e3b29-local-webkit-editor-timings.json"
+            "docs/qualification/eec0a50e3b29-local-webkit-editor-timings.json",
+            "docs/qualification/bc5bd74965c4-browser-rss-roles.json"
           ]
         },
         {
