@@ -119,6 +119,22 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Windows PowerShell DNS reboot contracts failed'}
       - name: Verify DNS journal binding and rollback
         run: ./scripts/test-windows-dns-journal.ps1
+      - name: Verify DNS journal through an aliased Unix temporary path
+        if: runner.os != 'Windows'
+        run: |
+          $ErrorActionPreference='Stop'
+          $physical=Join-Path $env:ACCESSWEAVER_DNS_CONTRACT_EVIDENCE 'journal-physical-temp'
+          $alias=Join-Path $env:ACCESSWEAVER_DNS_CONTRACT_EVIDENCE 'journal-aliased-temp'
+          New-Item -ItemType Directory -Path $physical -ErrorAction Stop | Out-Null
+          [IO.Directory]::CreateSymbolicLink($alias,$physical) | Out-Null
+          $priorTemporary=$env:TMPDIR
+          try {
+            $env:TMPDIR=$alias
+            & pwsh -NoProfile -NonInteractive -File ./scripts/test-windows-dns-journal.ps1
+            if($LASTEXITCODE -ne 0){throw 'Aliased temporary-path DNS journal contracts failed'}
+          } finally {
+            $env:TMPDIR=$priorTemporary
+          }
       - name: Verify DNS reboot admission and publication
         run: ./scripts/test-windows-reboot-contracts.ps1
       - name: PowerShell Core DNS acceptance oracle contracts

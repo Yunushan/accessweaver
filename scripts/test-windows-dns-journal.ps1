@@ -85,7 +85,22 @@ function Restore-DNS([string]$ExpectedSHA256,$ResolverReload) {
     Save-DNSRecoveryReceipt $digest
     [IO.File]::Delete($snapshot)
 }
-$root=Join-Path ([IO.Path]::GetTempPath()) ('aw-dns-journal-'+[guid]::NewGuid().ToString('N'))
+# macOS temporary paths may traverse /var -> /private/var. Keep the inert
+# fixture on the physical directory so the real no-reparse reader can run.
+$temporary=[IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+if([IO.Path]::DirectorySeparatorChar -eq '/'){
+    $resolved=[IO.Path]::GetPathRoot($temporary)
+    foreach($part in $temporary.Substring($resolved.Length).Split([IO.Path]::DirectorySeparatorChar)){
+        if(-not $part){continue}
+        $entry=[IO.DirectoryInfo]::new((Join-Path $resolved $part))
+        if($entry.Attributes -band [IO.FileAttributes]::ReparsePoint){$entry=$entry.ResolveLinkTarget($true)}
+        if($null -eq $entry -or $entry -isnot [IO.DirectoryInfo] -or -not $entry.Exists){throw 'DNS journal fixture temporary directory is unavailable'}
+        $resolved=$entry.FullName
+    }
+    $temporary=$resolved
+}
+No-Reparse $temporary
+$root=Join-Path $temporary ('aw-dns-journal-'+[guid]::NewGuid().ToString('N'))
 $profiles=Join-Path $root 'profiles'
 [void][IO.Directory]::CreateDirectory($profiles)
 $snapshot=Join-Path $profiles 'dns-original.json'
@@ -98,7 +113,7 @@ $script:serviceFault='';$script:serviceState='running'
 $script:serviceCommand='inert service-host command --instance='+('1'*32)
 $script:order=[Collections.Generic.List[string]]::new()
 $originalSystemRoot=$env:SystemRoot
-if(-not $env:SystemRoot){$env:SystemRoot=[IO.Path]::GetTempPath()}
+if(-not $env:SystemRoot){$env:SystemRoot=$temporary}
 $serviceConfig=Join-Path $root 'dnscrypt.toml'
 $script:journalPath=Join-Path $root $r.journalId
 $script:journalState='running'
