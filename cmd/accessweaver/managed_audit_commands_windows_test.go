@@ -43,14 +43,14 @@ import (
 
 const ordinaryCommandWorkerArgument = "--accessweaver-audit-commands-native-worker-v1"
 
-var ordinaryCommandCaseNames = append([]string{
+var ordinaryCommandCaseNames = append(append([]string{
 	"signed-required-audit-admission", "initialize-import-retained-head",
 	"audited-private-http-desktop", "read-only-export-verify",
 	"current-recorded-export-key-boundary", "actual-output-alias-admission",
 	"full-journal-reservation-refusal", "approved-recorded-foreground-run",
 	"recorded-foreground-output-cancellation-drain",
 	"private-command-workspace-cleanup",
-}, windowsAliasDetailCaseNames[:]...)
+}, windowsAliasDetailCaseNames[:]...), windowsRunDetailCaseNames[:]...)
 
 func windowsCommandReadSource(w *windowsCommandWorker, path string) ([]byte, error) {
 	if strings.EqualFold(path, w.engine) {
@@ -360,6 +360,7 @@ type windowsCommandWorker struct {
 	desktopFailure                                   windowsDesktopStage
 	aliasFailure                                     windowsAliasFailure
 	aliasDetailExecuted, aliasDetailPassed           uint64
+	runDetailExecuted, runDetailPassed               uint64
 }
 
 func (w *windowsCommandWorker) manifest() *windowsCommandWorker {
@@ -1502,6 +1503,8 @@ func runWindowsCommandCases(nonce []byte) (executed, passed uint64, desktopFailu
 	if root.close() == nil {
 		passed |= cleanupBit
 	}
+	executed |= root.runDetailExecuted << windowsRunDetailCaseOffset
+	passed |= root.runDetailPassed << windowsRunDetailCaseOffset
 	executed |= root.aliasDetailExecuted << windowsAliasDetailCaseOffset
 	passed |= root.aliasDetailPassed << windowsAliasDetailCaseOffset
 	return executed, passed, windowsDesktopStage(encodeWindowsCommandFailure(root.desktopFailure, root.aliasFailure))
@@ -1768,57 +1771,83 @@ func windowsRunReleased(w *windowsCommandWorker) error {
 	return nil
 }
 
+func (w *windowsCommandWorker) runAssertion(label string, valid bool) bool {
+	mask, known := windowsRunDetailBit(label)
+	if !known {
+		return false
+	}
+	root := w.manifest()
+	root.runDetailExecuted |= mask
+	if valid {
+		root.runDetailPassed |= mask
+	} else {
+		root.runDetailPassed &^= mask
+	}
+	return valid
+}
+
 func (w *windowsCommandWorker) runApprovedAndRefusals() error {
 	child, err := w.newStream("run-approved")
-	if err != nil {
+	if !w.runAssertion("run-stream", err == nil) {
 		return errOrdinary
 	}
 	before, err := windowsRunPreservedInputs(child)
-	if err != nil {
+	if !w.runAssertion("run-input-snapshot", err == nil) {
 		return errOrdinary
 	}
 	command := windowsRunArguments(child, child.profilePath)
 	observed, notice, err := child.command(command, nil, nil)
-	if err != nil || string(notice) != windowsRunLaunchNotice ||
-		windowsRunObserved(child, observed, "intent", "accepted", "completed") != nil ||
-		!windowsRunPrivateMetadata(child, notice) || !child.preserved(before) ||
-		windowsRunReleased(child) != nil {
+	// Classify only source-known errors; retain no paths, output or error text.
+	w.runAssertion("run-error-preview-absent", !errors.Is(err, errAuditRunPreview))
+	w.runAssertion("run-error-admission-absent", !errors.Is(err, errAuditRunAdmission))
+	w.runAssertion("run-error-recorder-absent", !errors.Is(err, audit.ErrRecorderUnavailable))
+	w.runAssertion("run-error-uncertain-absent", !errors.Is(err, audit.ErrRecordedUncertain))
+	w.runAssertion("run-error-context-absent", !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled))
+	if !w.runAssertion("run-command-return", err == nil) ||
+		!w.runAssertion("run-launch-notice", string(notice) == windowsRunLaunchNotice) ||
+		!w.runAssertion("run-observed-journal", windowsRunObserved(child, observed, "intent", "accepted", "completed") == nil) ||
+		!w.runAssertion("run-notice-private", windowsRunPrivateMetadata(child, notice)) ||
+		!w.runAssertion("run-preserved-inputs", child.preserved(before)) ||
+		!w.runAssertion("run-released-resources", windowsRunReleased(child) == nil) {
 		return errOrdinary
 	}
 	// The retained file still contains genesis. The in-memory head above came
 	// from stdout, but is deliberately not retained until after this retry.
 	stale := child.sources()
 	retry, retryNotice, err := child.command(command, nil, nil)
-	if err == nil || len(retry) != 0 || len(retryNotice) != 0 || !child.preserved(stale) ||
-		windowsRunReleased(child) != nil {
+	if !w.runAssertion("run-stale-head-refusal", err != nil && len(retry) == 0 && len(retryNotice) == 0 &&
+		child.preserved(stale) && windowsRunReleased(child) == nil) {
 		return errOrdinary
 	}
-	if child.writeHead() != nil || child.exportVerify(3) != nil {
+	if !w.runAssertion("run-retained-head-export", child.writeHead() == nil && child.exportVerify(3) == nil) {
 		return errOrdinary
 	}
 	input, err := windowsCommandReadDefault(child.profilePath)
 	if err != nil {
+		w.runAssertion("run-unapproved-profile", false)
 		return errOrdinary
 	}
 	unapproved, err := profile.Decode(bytes.NewReader(input))
 	if err != nil {
+		w.runAssertion("run-unapproved-profile", false)
 		return errOrdinary
 	}
 	unapproved.Routing.IncludeDomains = []string{"unapproved-native-fixture.invalid"}
 	unapprovedBytes, err := json.Marshal(unapproved)
 	if err != nil {
+		w.runAssertion("run-unapproved-profile", false)
 		return errOrdinary
 	}
 	unapprovedPath := filepath.Join(child.base, "unapproved-run-profile.json")
-	if child.ownFile(unapprovedPath, unapprovedBytes) != nil {
+	if !w.runAssertion("run-unapproved-profile", child.ownFile(unapprovedPath, unapprovedBytes) == nil) {
 		return errOrdinary
 	}
 	preserved := child.sources()
 	preserved[unapprovedPath] = bytes.Clone(unapprovedBytes)
 	preserved[child.engine] = bytes.Clone(before[child.engine])
 	refused, refusedNotice, err := child.command(windowsRunArguments(child, unapprovedPath), nil, nil)
-	if !errors.Is(err, errAuditRunPreview) || len(refused) != 0 || len(refusedNotice) != 0 ||
-		!child.preserved(preserved) || windowsRunReleased(child) != nil {
+	if !w.runAssertion("run-unapproved-refusal", errors.Is(err, errAuditRunPreview) && len(refused) == 0 && len(refusedNotice) == 0 &&
+		child.preserved(preserved) && windowsRunReleased(child) == nil) {
 		return errOrdinary
 	}
 	return nil

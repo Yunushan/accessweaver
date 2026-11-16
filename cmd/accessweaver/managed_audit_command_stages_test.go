@@ -76,6 +76,27 @@ var windowsAliasDetailCaseNames = [...]string{
 	"alias-role-stdout", "alias-role-stderr", "alias-role-pairwise",
 }
 
+// Foreground assertions reuse the remaining bits without carrying native output.
+const windowsRunDetailCaseOffset = windowsAliasDetailCaseOffset + len(windowsAliasDetailCaseNames)
+
+var windowsRunDetailCaseNames = [...]string{
+	"run-stream", "run-input-snapshot", "run-command-return",
+	"run-error-preview-absent", "run-error-admission-absent", "run-error-recorder-absent",
+	"run-error-uncertain-absent", "run-error-context-absent",
+	"run-launch-notice", "run-observed-journal", "run-notice-private",
+	"run-preserved-inputs", "run-released-resources", "run-stale-head-refusal",
+	"run-retained-head-export", "run-unapproved-profile", "run-unapproved-refusal",
+}
+
+func windowsRunDetailBit(label string) (uint64, bool) {
+	for index, name := range windowsRunDetailCaseNames {
+		if label == name {
+			return 1 << index, true
+		}
+	}
+	return 0, false
+}
+
 func windowsAliasDetailBits(action, source, role string) (uint64, bool) {
 	var mask uint64
 	for index, name := range windowsAliasDetailCaseNames {
@@ -129,6 +150,11 @@ func decodeWindowsCommandFailure(value byte, failed uint64) (windowsDesktopStage
 	const aliasCase = uint64(1) << (5 + 5)
 	aliasDetails := failed & (((uint64(1) << len(windowsAliasDetailCaseNames)) - 1) << (5 + windowsAliasDetailCaseOffset))
 	if aliasDetails != 0 && failed&aliasCase == 0 {
+		return 0, 0, false
+	}
+	const runCase = uint64(1) << (5 + 7)
+	runDetails := failed & (((uint64(1) << len(windowsRunDetailCaseNames)) - 1) << (5 + windowsRunDetailCaseOffset))
+	if runDetails != 0 && failed&runCase == 0 {
 		return 0, 0, false
 	}
 	observed := failed & (desktopCase | capacityCase | aliasCase)
@@ -347,6 +373,33 @@ func TestWindowsAliasDetailProjectionDropsPrivateLabels(t *testing.T) {
 	} {
 		if mask, ok := windowsAliasDetailBits(labels[0], labels[1], labels[2]); ok || mask != 0 {
 			t.Fatal("private or unknown labels escaped the fixed detail projection")
+		}
+	}
+}
+
+func TestWindowsRunDetailProjectionIsClosedAndCaseBound(t *testing.T) {
+	if 5+windowsRunDetailCaseOffset+len(windowsRunDetailCaseNames) > 64 {
+		t.Fatal("foreground details exceed the existing reply fields")
+	}
+	const runCase = uint64(1) << (5 + 7)
+	var observed uint64
+	for index, label := range windowsRunDetailCaseNames {
+		mask, ok := windowsRunDetailBit(label)
+		if !ok || mask != uint64(1)<<index || observed&mask != 0 {
+			t.Fatal("foreground detail is duplicate or unreachable")
+		}
+		observed |= mask
+		failed := mask << (5 + windowsRunDetailCaseOffset)
+		if _, _, ok := decodeWindowsCommandFailure(0, runCase|failed); !ok {
+			t.Fatal("foreground detail lost its umbrella failure")
+		}
+		if _, _, ok := decodeWindowsCommandFailure(0, failed); ok {
+			t.Fatal("foreground detail escaped its umbrella failure")
+		}
+	}
+	for _, label := range []string{"PRIVATE_ACCOUNT_PATH", "PRIVATE_NATIVE_ERROR", ""} {
+		if mask, ok := windowsRunDetailBit(label); ok || mask != 0 {
+			t.Fatal("unknown or private foreground detail escaped its fixed vocabulary")
 		}
 	}
 }
