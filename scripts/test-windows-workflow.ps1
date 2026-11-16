@@ -2076,11 +2076,12 @@ try {
 }
 # Verify vendor completion against the previous executable and a fresh process snapshot.
 $appRemovalSaved=@{}
-foreach($name in @('Require-Admin','Assert-SplitCordMaintenancePaths','Read-SplitCordMachineUninstallCommand','Find-App','Get-AppExecutableDigest','Native','Event','Stop-AppProcesses','Wait-SplitCordService','Save-Journal')){
+foreach($name in @('Require-Admin','Require-DesktopUser','Assert-SplitCordMaintenancePaths','Read-SplitCordMachineUninstallCommand','Find-App','Get-AppExecutableDigest','Native','Event','Stop-AppProcesses','Wait-SplitCordService','Save-Journal')){
     $appRemovalSaved[$name]=(Get-Command $name).ScriptBlock
 }
 try {
     function Require-Admin {}
+    function Require-DesktopUser {}
     function Assert-SplitCordMaintenancePaths {}
     function Read-SplitCordMachineUninstallCommand {
         if($script:appRemovalForeignCommand){return ('"'+$secondUninstaller+'" /allusers')}
