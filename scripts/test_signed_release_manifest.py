@@ -2596,6 +2596,7 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
                 release.require_pending_windows_upgrade(update, "b" * 64, self.policy)
             detect.assert_not_called()
 
+    @unittest.skipUnless(os.name == "nt", "requires native Windows file sharing")
     def test_windows_staging_detector_pins_script_through_execution(self):
         script = self.root / "detect-windows-installer.ps1"
         script.write_bytes(b"inert reviewed detector")
