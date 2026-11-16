@@ -412,3 +412,74 @@ function Get-NativeDNSStaticFailure([Exception]$Exception) {
     }
     return 'unexpected'
 }
+
+
+# Source-known literal observations only. These helpers cannot qualify a command
+# or return error text. The driver hashes source bytes before building a catalog.
+function New-NativeDNSFailureCatalog([string]$SourceText) {
+    if(-not $SourceText -or $SourceText.Length -gt 1048576){throw 'DNS diagnostic source bound exceeded'}
+    $tokens=$null;$issues=$null
+    $ast=[Management.Automation.Language.Parser]::ParseInput($SourceText,[ref]$tokens,[ref]$issues)
+    if($issues.Count -or $ast.Extent.EndLineNumber -gt 20000){throw 'DNS diagnostic source inventory unavailable'}
+    $entries=[Collections.Generic.List[object]]::new()
+    $byText=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+    $maxLength=0
+    foreach($node in $ast.FindAll({param($n) $n -is [Management.Automation.Language.ThrowStatementAst]},$true)){
+        if($node.Pipeline -isnot [Management.Automation.Language.PipelineAst] -or $node.Pipeline.PipelineElements.Count -ne 1){continue}
+        $command=$node.Pipeline.PipelineElements[0]
+        if($command -isnot [Management.Automation.Language.CommandExpressionAst] -or
+            $command.Expression -isnot [Management.Automation.Language.StringConstantExpressionAst]){continue}
+        $text=$command.Expression.Value
+        if($text.Length -lt 12 -or $text.Length -gt 512 -or $text.Contains([string][char]10) -or $text.Contains([string][char]13)){continue}
+        if(-not $byText.ContainsKey($text)){
+            if($entries.Count -ge 1024){throw 'DNS diagnostic literal inventory bound exceeded'}
+            $entry=@{literal=$text;lines=[Collections.Generic.List[int]]::new()}
+            $byText.Add($text,$entry);$entries.Add($entry)
+        }
+        $byText[$text].lines.Add($node.Extent.StartLineNumber)
+        if($text.Length -gt $maxLength){$maxLength=$text.Length}
+    }
+    return @{entries=$entries;maxLength=$maxLength}
+}
+function Get-NativeDNSFailureMarker($Catalog,[string]$Previous,[string]$Chunk) {
+    if($null -eq $Catalog -or $Catalog.entries.Count -gt 1024 -or $Catalog.maxLength -lt 0 -or $Catalog.maxLength -gt 512 -or
+        $Previous.Length -gt 511 -or $Chunk.Length -gt 4096){throw 'DNS diagnostic marker input bound exceeded'}
+    $combined=$Previous+$Chunk;$lines=[Collections.Generic.List[int]]::new();$overflow=$false
+    foreach($entry in $Catalog.entries){
+        if($combined.Contains($entry.literal)){
+            foreach($number in $entry.lines){
+                if($number -lt 1 -or $number -gt 20000){throw 'DNS diagnostic source line is invalid'}
+                if(-not $lines.Contains($number)){
+                    if($lines.Count -lt 16){$lines.Add($number)}else{$overflow=$true}
+                }
+            }
+        }
+    }
+    $keep=[Math]::Max(0,$Catalog.maxLength-1)
+    $suffix=if($keep -eq 0){''}else{$combined.Substring([Math]::Max(0,$combined.Length-$keep))}
+    return @{lines=$lines;suffix=$suffix;matchOverflow=$overflow}
+}
+function Get-NativeDNSFailureObservation([string]$Action,[int]$Ordinal,[object[]]$Captures,[bool]$CatalogAvailable) {
+    if($Action -cnotin @('dns','dns-restore','recover','remove','remove-all')){$Action='unknown'}
+    if($Ordinal -lt 1 -or $Ordinal -gt 128){$Ordinal=0}
+    $lines=[Collections.Generic.List[int]]::new();$failed=$false;$overflow=$false;$truncated=$false
+    if($Captures.Count -ne 2){$failed=$true}
+    for($captureIndex=0;$captureIndex -lt [Math]::Min(2,$Captures.Count);$captureIndex++){
+        $capture=$Captures[$captureIndex]
+        $failed=$failed -or [bool]$capture.failureProjectionFailed
+        $overflow=$overflow -or [bool]$capture.failureMatchOverflow
+        $truncated=$truncated -or [bool]$capture.failureScanTruncated
+        if($capture.failureLines.Count -gt 16){$overflow=$true}
+        for($lineIndex=0;$lineIndex -lt [Math]::Min(16,$capture.failureLines.Count);$lineIndex++){
+            $number=$capture.failureLines[$lineIndex]
+            if($number -isnot [int] -or $number -lt 1 -or $number -gt 20000){$failed=$true;continue}
+            if(-not $lines.Contains($number)){
+                if($lines.Count -lt 16){$lines.Add($number)}else{$overflow=$true}
+            }
+        }
+    }
+    if(-not $CatalogAvailable -and $lines.Count){$lines.Clear();$failed=$true}
+    $lines.Sort()
+    return @{schemaVersion=1;action=$Action;ordinal=$Ordinal;catalogAvailable=$CatalogAvailable;sourceLiteralLines=@($lines.ToArray());
+        scanTruncated=$truncated;projectionFailed=$failed;matchOverflow=$overflow}
+}

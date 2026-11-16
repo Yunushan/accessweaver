@@ -32,7 +32,7 @@ $definitions=@($ast.EndBlock.Statements)
 $tokens=$null;$issues=$null;$coordinator=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-doh-scenario.ps1'),[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Native coordinator source did not parse'}
 $definitions+=@($coordinator.EndBlock.Statements)
-$selected=@('Get-NativeDNSStaticFailure','Invoke-NativeDNSStaticFixture','Read-DNSAcceptanceRegistry','Get-DNSAcceptanceRegistryHash','Invoke-NativeDoHScenario','Invoke-NativeDNSJournalScenario','Invoke-NativeDNSMissingSnapshotScenario','Invoke-NativeDNSRollbackScenario','New-NativeDNSFailureResponse','Get-NativeDNSVerificationMarker','Get-NativeDNSForwarderFailure','Get-NativeDNSComponentFailure','Get-NativeDNSComponentRetry','Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Assert-DNSAcceptanceFamilyPreserved','Assert-DNSAcceptanceConfigured','Invoke-DNSAcceptanceRoundTrip')
+$selected=@('New-NativeDNSFailureCatalog','Get-NativeDNSFailureMarker','Get-NativeDNSFailureObservation','Get-NativeDNSStaticFailure','Invoke-NativeDNSStaticFixture','Read-DNSAcceptanceRegistry','Get-DNSAcceptanceRegistryHash','Invoke-NativeDoHScenario','Invoke-NativeDNSJournalScenario','Invoke-NativeDNSMissingSnapshotScenario','Invoke-NativeDNSRollbackScenario','New-NativeDNSFailureResponse','Get-NativeDNSVerificationMarker','Get-NativeDNSForwarderFailure','Get-NativeDNSComponentFailure','Get-NativeDNSComponentRetry','Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Assert-DNSAcceptanceFamilyPreserved','Assert-DNSAcceptanceConfigured','Invoke-DNSAcceptanceRoundTrip')
 $allowed=$selected+@('ConvertTo-Json','Get-NetAdapter','Get-ItemProperty','Get-DnsClientServerAddress','Get-Command','Get-DnsClientDohServerAddress','Where-Object','Get-Service','Clear-DnsClientCache','Resolve-DnsName')
 foreach($name in $selected){
     $nodes=@($definitions | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
@@ -45,7 +45,7 @@ foreach($name in $selected){
     . ([scriptblock]::Create($nodes[0].Extent.Text))
 }
 $script:checks=0;$script:contractOutcome='failed';$script:contractCode='unexpected-contract-error'
-$script:closedContractCodes=@('service-reactivation-result','service-reactivation-order','static-stage-source','static-resolver-source-callback','static-closed-failure-map','static-fixture-result','static-fixture-cleanup','static-fixture-order','static-fixture-flags','static-fixture-preflight','component-retry-contract','component-closed-error-map','forwarder-closed-error-map','rollback-native-result','rollback-native-flags','rollback-native-cleanup','rollback-native-order','rollback-native-preflight','fixed-dns-response','journal-scenario-order','journal-scenario-result','journal-scenario-private-output','journal-refusal-marker','missing-snapshot-scenario','missing-snapshot-retained','missing-snapshot-marker','verification-marker-boundary','failure-native-result','failure-native-flags','failure-native-cleanup','failure-native-order','failure-native-preflight','roundtrip-does-not-inject','native-method-forwarded','native-invalid-method-no-effects','capture-identity-change-refused','final-capture-topology-change-refused','unexposed-state-preserved','unexposed-state-not-selected','unexposed-access-refused','unexposed-registry-change-refused','single-family-configured-state','client-inventory-failure-phase','capture-stage-complete','capture-stage-refusal','native-coordinator-result','native-coordinator-cleanup','remove-all-native-recovery','service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
+$script:closedContractCodes=@('source-literal-catalog','source-literal-marker','source-literal-private-output','source-literal-bounds','source-literal-projection','service-reactivation-result','service-reactivation-order','static-stage-source','static-resolver-source-callback','static-closed-failure-map','static-fixture-result','static-fixture-cleanup','static-fixture-order','static-fixture-flags','static-fixture-preflight','component-retry-contract','component-closed-error-map','forwarder-closed-error-map','rollback-native-result','rollback-native-flags','rollback-native-cleanup','rollback-native-order','rollback-native-preflight','fixed-dns-response','journal-scenario-order','journal-scenario-result','journal-scenario-private-output','journal-refusal-marker','missing-snapshot-scenario','missing-snapshot-retained','missing-snapshot-marker','verification-marker-boundary','failure-native-result','failure-native-flags','failure-native-cleanup','failure-native-order','failure-native-preflight','roundtrip-does-not-inject','native-method-forwarded','native-invalid-method-no-effects','capture-identity-change-refused','final-capture-topology-change-refused','unexposed-state-preserved','unexposed-state-not-selected','unexposed-access-refused','unexposed-registry-change-refused','single-family-configured-state','client-inventory-failure-phase','capture-stage-complete','capture-stage-refusal','native-coordinator-result','native-coordinator-cleanup','remove-all-native-recovery','service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
 function Assert-A([bool]$Value,[string]$Code){if(-not $Value){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('Acceptance contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-A([scriptblock]$Operation){$failed=$false;try{& $Operation | Out-Null}catch{$failed=$true};Assert-A $failed 'expected-refusal'}
 $script:g1='abcdef00-0000-0000-0000-000000000001';$script:g2='abcdef00-0000-0000-0000-000000000002'
@@ -938,6 +938,117 @@ try {
         $calls=@($native.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true) | ForEach-Object {$_.GetCommandName()})
         $connected=if($file -like '*integration*'){@($calls | Where-Object {$_ -ceq 'Invoke-DNSAcceptanceRoundTrip'}).Count -eq 2}else{('Assert-DNSAcceptanceConfigured' -in $calls -and 'Assert-DNSAcceptanceRestored' -in $calls -and 'Get-DNSAcceptanceIndex' -in $calls)}
         Assert-A ($issues.Count -eq 0 -and $connected) 'native-harness-wiring'
+    }
+    & {
+        param([string]$DiagnosticScriptRoot=$PSScriptRoot)
+        # Pure source-literal observer contracts. No source text or raw suffix is
+        # part of the public observation, even when a static literal is sensitive.
+        $sample=@'
+function First { throw 'PRIVATE_STATIC_REFUSAL' }
+function Second { throw 'Another fixed source refusal' }
+function Duplicate { throw 'PRIVATE_STATIC_REFUSAL' }
+function Dynamic { throw ('PRIVATE_DYNAMIC '+$value) }
+function Variable { throw $value }
+'@
+        $catalog=New-NativeDNSFailureCatalog $sample
+        Assert-A ($catalog.entries.Count -eq 2 -and $catalog.maxLength -le 512) 'source-literal-catalog'
+        $expected=@(1,3)
+        $message='PRIVATE_STATIC_REFUSAL'
+        for($split=0;$split -le $message.Length;$split++){
+            $first=Get-NativeDNSFailureMarker $catalog '' ('PRIVATE_ACCOUNT '+$message.Substring(0,$split))
+            $second=Get-NativeDNSFailureMarker $catalog $first.suffix ($message.Substring($split)+' PRIVATE_TOKEN')
+            $all=[Collections.Generic.List[int]]::new()
+            foreach($number in $first.lines){if(-not $all.Contains($number)){$all.Add($number)}}
+            foreach($number in $second.lines){if(-not $all.Contains($number)){$all.Add($number)}}
+            $all.Sort()
+            Assert-A (($all.ToArray() -join ',') -ceq ($expected -join ',')) 'source-literal-marker'
+        }
+        Assert-A ((Get-NativeDNSFailureMarker $catalog '' $message.ToLowerInvariant()).lines.Count -eq 0 -and
+            (Get-NativeDNSFailureMarker $catalog '' 'PRIVATE_DYNAMIC value PRIVATE_UNKNOWN').lines.Count -eq 0) 'source-literal-marker'
+        foreach($request in @(
+            @{previous=('x'*512);chunk=''},@{previous='';chunk=('x'*4097)}
+        )){
+            $rejected=$false
+            try{$null=Get-NativeDNSFailureMarker $catalog $request.previous $request.chunk}catch{$rejected=$true}
+            Assert-A $rejected 'source-literal-bounds'
+        }
+        foreach($text in @('function Broken {',('x'*1048577))){
+            $rejected=$false;try{$null=New-NativeDNSFailureCatalog $text}catch{$rejected=$true}
+            Assert-A $rejected 'source-literal-bounds'
+        }
+        $empty=New-NativeDNSFailureCatalog 'function Empty {}'
+        $emptyMatch=Get-NativeDNSFailureMarker $empty '' 'PRIVATE_ACCOUNT PRIVATE_TOKEN'
+        Assert-A ($emptyMatch.lines.Count -eq 0 -and $emptyMatch.suffix -ceq '') 'source-literal-private-output'
+        $tokens=$null;$issues=$null
+        $driver=[Management.Automation.Language.Parser]::ParseFile((Join-Path $DiagnosticScriptRoot 'test-native-doh.ps1'),[ref]$tokens,[ref]$issues)
+        Assert-A (-not $issues.Count) 'source-literal-projection'
+        $branches=@($driver.FindAll({param($node)
+            $node -is [Management.Automation.Language.IfStatementAst] -and
+            $node.Extent.Text.StartsWith('if($null -ne $script:commandFailureCatalog -and -not $capture.failureScanTruncated)')
+        },$true))
+        Assert-A ($branches.Count -eq 1) 'source-literal-projection'
+        $script:commandFailureCatalog=$catalog
+        $capture=@{count=0;buffer=[char[]]::new(4096);failureSuffix='';failureLines=[Collections.Generic.List[int]]::new();
+            failureProjectionFailed=$false;failureMatchOverflow=$false;failureScanTruncated=$false}
+        $chunk='PRIVATE_ACCOUNT '+$message+' PRIVATE_TOKEN';$count=$chunk.Length;$chunk.CopyTo(0,$capture.buffer,0,$count)
+        . ([scriptblock]::Create($branches[0].Extent.Text))
+        Assert-A ($capture.failureLines.Count -eq 2 -and -not $capture.failureProjectionFailed) 'source-literal-projection'
+        $other=@{failureSuffix='PRIVATE_OTHER';failureLines=[Collections.Generic.List[int]]::new();
+            failureProjectionFailed=$false;failureMatchOverflow=$false;failureScanTruncated=$false}
+        $public=Get-NativeDNSFailureObservation 'dns' 1 @($capture,$other) $true
+        Assert-A (($public.sourceLiteralLines -join ',') -ceq '1,3' -and -not $public.scanTruncated -and
+            -not $public.projectionFailed -and -not $public.matchOverflow) 'source-literal-projection'
+        $capture.count=32768
+        . ([scriptblock]::Create($branches[0].Extent.Text))
+        $truncated=Get-NativeDNSFailureObservation 'dns-restore' 2 @($capture,$other) $true
+        Assert-A ($truncated.scanTruncated -and $capture.failureSuffix -ceq '') 'source-literal-bounds'
+        $script:commandFailureCatalog=@{entries=@();maxLength=999}
+        $capture.failureScanTruncated=$false;$capture.count=0
+        . ([scriptblock]::Create($branches[0].Extent.Text))
+        Assert-A ($capture.failureProjectionFailed -and $capture.failureSuffix -ceq '') 'source-literal-projection'
+        $invalid=Get-NativeDNSFailureObservation 'PRIVATE_ACTION' 999 @($capture,$other) $false
+        Assert-A ($invalid.action -ceq 'unknown' -and $invalid.ordinal -eq 0 -and
+            $invalid.sourceLiteralLines.Count -eq 0 -and $invalid.projectionFailed) 'source-literal-private-output'
+        $many=@{failureLines=[Collections.Generic.List[int]]::new();failureProjectionFailed=$false;failureMatchOverflow=$false;failureScanTruncated=$false}
+        for($number=1;$number -le 17;$number++){$many.failureLines.Add($number)}
+        $limited=Get-NativeDNSFailureObservation 'recover' 3 @($many,$other) $true
+        Assert-A ($limited.sourceLiteralLines.Count -eq 16 -and $limited.matchOverflow) 'source-literal-bounds'
+        foreach($observation in @($public,$truncated,$invalid,$limited)){
+            $json=ConvertTo-Json -InputObject $observation -Compress -Depth 4
+            Assert-A ($json.Length -le 1024 -and -not $json.Contains('PRIVATE_') -and
+                -not $json.Contains($message) -and -not $json.Contains('Another fixed source refusal')) 'source-literal-private-output'
+        }
+        $recorders=@($driver.FindAll({param($node)
+            $node -is [Management.Automation.Language.IfStatementAst] -and $node.Extent.Text.StartsWith('if($process.ExitCode -ne 0)')
+        },$true))
+        Assert-A ($recorders.Count -eq 1) 'source-literal-projection'
+        $script:commandFailureCatalog=$catalog
+        $script:commandFailureObservations=[Collections.Generic.List[object]]::new()
+        $script:commandFailureProjectionFailed=$false;$script:commandFailureObservationOverflow=$false;$script:cliCount=1
+        $captures=@($capture,$other);$Request=@{action='dns'};$process=[pscustomobject]@{ExitCode=0}
+        . ([scriptblock]::Create($recorders[0].Extent.Text))
+        Assert-A ($script:commandFailureObservations.Count -eq 0) 'source-literal-projection'
+        $process.ExitCode=1
+        for($attempt=0;$attempt -lt 17;$attempt++){. ([scriptblock]::Create($recorders[0].Extent.Text))}
+        Assert-A ($script:commandFailureObservations.Count -eq 16 -and $script:commandFailureObservationOverflow -and
+            $process.ExitCode -eq 1) 'source-literal-bounds'
+        $emit=@($driver.FindAll({param($node)
+            $node -is [Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -ceq '$report.commandFailureLiterals'
+        },$true))
+        Assert-A ($emit.Count -eq 1) 'source-literal-projection'
+        $hashes=@{'internal/workflow/windows.ps1'=('a'*64)};$report=@{}
+        . ([scriptblock]::Create($emit[0].Extent.Text))
+        $json=ConvertTo-Json -InputObject $report.commandFailureLiterals -Compress -Depth 6
+        Assert-A (-not $json.Contains('PRIVATE_') -and -not $json.Contains('failureSuffix') -and
+            $report.commandFailureLiterals.observations.Count -eq 16) 'source-literal-private-output'
+        & {
+            function Get-NativeDNSFailureObservation {throw 'Synthetic observer fault'}
+            $script:commandFailureObservations.Clear();$script:commandFailureProjectionFailed=$false
+            . ([scriptblock]::Create($recorders[0].Extent.Text))
+            Assert-A ($script:commandFailureProjectionFailed -and $script:commandFailureObservations.Count -eq 0 -and
+                $process.ExitCode -eq 1) 'source-literal-projection'
+        }
+        $script:commandFailureCatalog=$null
     }
     foreach($file in $sourceFiles){if((Get-ASourceSHA256 (Join-Path $project $file)) -cne $sourceHashes[$file]){throw 'Acceptance source changed during contracts'}}
     $script:contractOutcome='passed';$script:contractCode='none'

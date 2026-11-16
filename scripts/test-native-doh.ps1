@@ -146,6 +146,7 @@ if(-not $reportParent.PSIsContainer -or [IO.Directory]::GetFileSystemEntries($re
 $reportCreated=$reportParent.CreationTimeUtc.Ticks;$project=Split-Path -Parent $PSScriptRoot
 $sources=@('scripts/test-native-doh.ps1','scripts/native-doh-scenario.ps1','scripts/dns-acceptance-state.ps1','scripts/test-dns-acceptance-state.ps1','scripts/check-native-environment.cjs','.github/workflows/native-doh.yml','internal/workflow/windows.ps1','internal/workflow/manager.go','cmd/accessweaver/system.go','go.mod','go.sum')
 $hashes=@{};foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
+$script:commandFailureCatalog=$null;$script:commandFailureObservations=[Collections.Generic.List[object]]::new();$script:commandFailureProjectionFailed=$false;$script:commandFailureObservationOverflow=$false
 $script:wire=$null;$wireSummary=$null;$queryBinaryVerified=$false;$queryProbeReady=$false;$script:configuredReadbackControl=@{schemaVersion=1;outcome='not-run';code='not-started';sourceBound=$false;positiveVerified=$false;ipv4MismatchRejected=$false;ipv6MismatchRejected=$false;dnsConfigurationChanged=$false;networkQueryInvoked=$false;productionQualificationComplete=$false}
 $script:componentRequestAttempts=0;$script:componentRetryStatus=0;$script:componentStage='not-started';$script:componentFailureCode='none';$script:componentHTTPStatus=0;$script:componentDownloadedBytes=0;$script:componentArchiveEntries=0
 $script:cliCount=0;$script:joined=0;$script:overflow=$false;$script:captureFailed=$false;$script:diagnosticWaitExceeded=$false
@@ -224,6 +225,26 @@ public static class AccessWeaverNativeDoHIdentity {
     }
     $environmentVerified=$true;$code='component-stage'
     . (Join-Path $PSScriptRoot 'native-doh-scenario.ps1')
+    $script:commandFailureCatalog=$null
+    try {
+        $catalogStream=[IO.File]::OpenRead((Join-Path $project 'internal\workflow\windows.ps1'))
+        try {
+            if($catalogStream.Length -le 0 -or $catalogStream.Length -gt 1048576){throw 'DNS diagnostic source byte bound exceeded'}
+            $catalogBytes=[byte[]]::new([int]$catalogStream.Length);$catalogOffset=0
+            while($catalogOffset -lt $catalogBytes.Length){
+                $catalogRead=$catalogStream.Read($catalogBytes,$catalogOffset,$catalogBytes.Length-$catalogOffset)
+                if($catalogRead -le 0){throw 'DNS diagnostic source shortened'}
+                $catalogOffset+=$catalogRead
+            }
+            if($catalogStream.ReadByte() -ne -1){throw 'DNS diagnostic source grew'}
+        } finally {$catalogStream.Dispose()}
+        $catalogAlgorithm=[Security.Cryptography.SHA256]::Create()
+        try {$catalogSHA256=([BitConverter]::ToString($catalogAlgorithm.ComputeHash($catalogBytes))).Replace('-','').ToLowerInvariant()}
+        finally {$catalogAlgorithm.Dispose()}
+        if($catalogSHA256 -cne $hashes['internal/workflow/windows.ps1']){throw 'DNS diagnostic source changed'}
+        $catalogText=[Text.UTF8Encoding]::new($false,$true).GetString($catalogBytes)
+        $script:commandFailureCatalog=New-NativeDNSFailureCatalog $catalogText
+    } catch {}
     if($Method -ceq 'dnscrypt'){try{$component=New-NativeDNSCryptBundle $privateRoot $env:ACCESSWEAVER_EXPECT_GOARCH}catch{$script:componentFailureCode=Get-NativeDNSComponentFailure $_.Exception $script:componentHTTPStatus;throw}}
     $code='native-scenario'
     . (Join-Path $PSScriptRoot 'dns-acceptance-state.ps1')
@@ -277,7 +298,7 @@ public static class AccessWeaverNativeDoHIdentity {
             if(-not $process.Start()){throw 'Native CLI did not start'}
             $script:cliCount++;$clock=[Diagnostics.Stopwatch]::StartNew();$captures=@()
             foreach($reader in @($process.StandardOutput,$process.StandardError)){
-                $capture=@{reader=$reader;buffer=[char[]]::new(4096);done=$false;count=0;task=$null;suffix=''}
+                $capture=@{reader=$reader;buffer=[char[]]::new(4096);done=$false;count=0;task=$null;suffix='';failureSuffix='';failureLines=[Collections.Generic.List[int]]::new();failureProjectionFailed=$false;failureMatchOverflow=$false;failureScanTruncated=$false}
                 try{$capture.task=$reader.ReadAsync($capture.buffer,0,$capture.buffer.Length)}catch{$capture.done=$true;$script:captureFailed=$true;$reader.Dispose()};$captures+=@($capture)
             }
             # Discard private output in bounded buffers. Join the actual process
@@ -293,6 +314,21 @@ public static class AccessWeaverNativeDoHIdentity {
                                     if($expectRefusal){$refusalMarkerSeen=$true}else{$script:resolverVerificationRejected=$true}
                                 }
                                 $capture.suffix=$marker.suffix
+                                if($null -ne $script:commandFailureCatalog -and -not $capture.failureScanTruncated){
+                                    if($capture.count+$count -gt 32768){$capture.failureScanTruncated=$true;$capture.failureSuffix=''}
+                                    else {
+                                        try {
+                                            $failureMarker=Get-NativeDNSFailureMarker $script:commandFailureCatalog $capture.failureSuffix ([string]::new($capture.buffer,0,$count))
+                                            $capture.failureSuffix=$failureMarker.suffix
+                                            $capture.failureMatchOverflow=$capture.failureMatchOverflow -or $failureMarker.matchOverflow
+                                            foreach($number in $failureMarker.lines){
+                                                if(-not $capture.failureLines.Contains($number)){
+                                                    if($capture.failureLines.Count -lt 16){$capture.failureLines.Add($number)}else{$capture.failureMatchOverflow=$true}
+                                                }
+                                            }
+                                        } catch {$capture.failureProjectionFailed=$true;$capture.failureSuffix=''}
+                                    }
+                                }
                                 $capture.count=[Math]::Min(1048577,$capture.count+$count);if($capture.count -gt 1048576){$script:overflow=$true}
                                 $capture.task=$capture.reader.ReadAsync($capture.buffer,0,$capture.buffer.Length)
                             }
@@ -313,6 +349,12 @@ public static class AccessWeaverNativeDoHIdentity {
             }
             $process.WaitForExit();$script:joined++
             if($Request.action -ceq 'dns'){$script:configureExit=$process.ExitCode;$script:configureElapsedMilliseconds=[int64][Math]::Floor($clock.Elapsed.TotalMilliseconds)}elseif($Request.action -ceq 'dns-restore'){$script:restoreExit=$process.ExitCode}elseif($Request.action -cin @('remove','remove-all')){$script:cleanupExit=$process.ExitCode}
+            if($process.ExitCode -ne 0){
+                if($script:commandFailureObservations.Count -lt 16){
+                    try {$script:commandFailureObservations.Add((Get-NativeDNSFailureObservation $Request.action $script:cliCount $captures ($null -ne $script:commandFailureCatalog)))}
+                    catch {$script:commandFailureProjectionFailed=$true}
+                } else {$script:commandFailureObservationOverflow=$true}
+            }
             $exitAccepted=if($expectRefusal){$process.ExitCode -ne 0 -and $refusalMarkerSeen}else{
                 $process.ExitCode -eq 0 -or ($Request.action -ceq 'dns' -and $ScenarioKind -ceq 'verification-failure')
             }
@@ -771,6 +813,7 @@ finally {
     if($ScenarioKind -ceq 'journal-recovery'){$report.journalScenario=$journalScenario}
     if($ScenarioKind -ceq 'missing-snapshot'){$report.missingSnapshotScenario=$missingSnapshotScenario}
     if($WireTransport){$report.configuredReadbackControl=$script:configuredReadbackControl;$report.queryBinarySHA256=$(if($queryBinaryVerified){$QueryBinarySHA256}else{''});$report.queryBinaryVerified=$queryBinaryVerified;$report.queryProbeReady=$queryProbeReady;$report.wire=$wireSummary;$report.encryptedTrafficObserved=($outcome -ceq 'passed' -and $null -ne $wireSummary -and $wireSummary.outcome -ceq 'passed')}
+    $report.commandFailureLiterals=@{sourceSHA256=$hashes['internal/workflow/windows.ps1'];catalogAvailable=($null -ne $script:commandFailureCatalog);projectionFailed=$script:commandFailureProjectionFailed;observationOverflow=$script:commandFailureObservationOverflow;observations=@($script:commandFailureObservations.ToArray())}
     $bytes=[Text.UTF8Encoding]::new($false).GetBytes(($report|ConvertTo-Json -Depth 8 -Compress));if($bytes.Length -gt 24576){throw 'Native report exceeds fixed metadata bound'}
     $stream=[IO.FileStream]::new($ReportPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
     try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush()}finally{$stream.Dispose()}
