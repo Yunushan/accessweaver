@@ -53,14 +53,16 @@ class BrowserResources {
     if(stat.dead){assert.notEqual(pid,this.child.pid,'Owned browser root exited');return null;}
     return stat;
   }
-  async snapshot(withMemory=false) {
+  async snapshot(withMemory=false,withRssRoles=false) {
     assert.equal(typeof withMemory,'boolean','Owned memory selection differs');
+    assert.equal(typeof withRssRoles,'boolean','Owned RSS role selection differs');
     this.phase=1; live(this.child); assert.ok(!this.busy, 'Browser resource samples must be serialized'); this.busy = true;
     try {
       const pending = [{pid:this.child.pid, parent:process.pid}], visited = new Set();
       // Previously proven descendants remain owned if reparented after an exit.
       for (const pid of this.known.keys()) if (pid !== this.child.pid) pending.push({pid, parent:null});
       let rssBytes=0, descriptors=0, threads=0, processes=0, taskReads=0;const memory=withMemory?{root:emptyGroup(),descendants:emptyGroup()}:null;
+      const rssRoles=withRssRoles?{rootBytes:0,descendantBytes:0,largestDescendantBytes:0,descendantProcesses:0}:null;
       while (pending.length) {
         const item=pending.shift(), pid=item.pid; if (visited.has(pid)) continue; visited.add(pid);
         assert.ok(visited.size <= MAX_IDENTITIES, 'Browser identity census budget differs');
@@ -93,11 +95,21 @@ class BrowserResources {
         this.phase=7; this.cpuTicks+=after.cpuTicks-(previous?previous.cpuTicks:0); assert.ok(Number.isSafeInteger(this.cpuTicks),'Owned CPU aggregate differs');
         this.known.set(pid,{startTicks:after.startTicks,cpuTicks:after.cpuTicks,gone:false}); assert.ok(this.known.size<=MAX_IDENTITIES,'Owned identity history budget differs');
         if(withMemory){const group=memory[pid===this.child.pid?'root':'descendants'];group.processes++;group.statRssBytes+=after.rssBytes;group.largestProcessRssBytes=Math.max(group.largestProcessRssBytes,after.rssBytes);group[availability]++;if(mapping)for(const k of mappedFields)group[k]+=mapping[k];}
+        // Attribute the same identity-checked stat counters; no extra proc read.
+        if(rssRoles){
+          if(pid===this.child.pid)rssRoles.rootBytes=after.rssBytes;
+          else {rssRoles.descendantBytes+=after.rssBytes;rssRoles.largestDescendantBytes=Math.max(rssRoles.largestDescendantBytes,after.rssBytes);rssRoles.descendantProcesses++;}
+        }
         rssBytes+=after.rssBytes; descriptors+=fdNames.length; threads+=after.threads;
         for(const child of children) if(!visited.has(child)) pending.push({pid:child,parent:pid});
       }
+      if(rssRoles){
+        assert.ok(Object.values(rssRoles).every(n=>Number.isSafeInteger(n)&&n>=0),'Owned RSS role counters differ');
+        assert.equal(rssRoles.rootBytes+rssRoles.descendantBytes,rssBytes,'Owned RSS role total differs');
+        assert.equal(rssRoles.descendantProcesses+1,processes,'Owned RSS role census differs');
+      }
       live(this.child); this.samples++;
-      return {cpuTicks:this.cpuTicks,rssBytes,descriptors,threads,processes,samples:this.samples,observedExits:this.exits,...(withMemory?{memory}:{})};
+      return {cpuTicks:this.cpuTicks,rssBytes,descriptors,threads,processes,samples:this.samples,observedExits:this.exits,...(withMemory?{memory}:{}),...(withRssRoles?{rssRoles}:{})};
     } catch(error) { this.failureStage=this.phase; throw error; } finally { this.busy=false; }
   }
 }

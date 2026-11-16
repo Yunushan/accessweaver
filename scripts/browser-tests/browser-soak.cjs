@@ -7,18 +7,44 @@ const seconds=900,requestsPerSecond=4,checkpointSeconds=100;
 const stages=['environment','baseline','workload','cooldown','close','complete'];
 const counts=['seconds','requests','navigation','editor','samples','elapsedMilliseconds'];
 const limits={browserPeakRssBytes:1073741824,controllerPeakRssBytes:201326592,browserPeakDescriptors:1024,browserPeakThreads:512,browserPeakProcesses:64,controllerPeakDescriptors:128,controllerPeakThreads:128,browserRssGrowthBytes:268435456,controllerRssGrowthBytes:67108864,browserDescriptorGrowth:64,browserThreadGrowth:64,browserProcessGrowth:4,controllerDescriptorGrowth:2,controllerThreadGrowth:8,navigationP95Ms:500,editorP95Ms:500,apiP95Ms:250,browserCpuPercentOneCore:300,controllerCpuPercentOneCore:50,jobCpuPercentOneCore:100,maximumSampleGapMs:5000,lateMedianRssGrowthBytes:67108864};
-const sources=['scripts/browser-tests/browser-timing.cjs','scripts/browser-tests/browser-timing.test.cjs','scripts/browser-tests/browser-soak.cjs','scripts/browser-tests/browser-soak.test.cjs','scripts/browser-tests/soak.config.cjs','scripts/browser-tests/desktop.spec.cjs','scripts/browser-tests/desktop-performance.cjs','scripts/browser-tests/browser-resources.cjs','scripts/browser-tests/browser-memory.cjs','scripts/browser-tests/job-cpu.cjs','scripts/browser-tests/performance-budgets.json','scripts/browser-tests/playwright.config.cjs','scripts/browser-tests/package-lock.json','scripts/check-native-environment.cjs','scripts/browser-tests/check-image-environment.cjs','web/app.js','web/system.js','web/locales.js','web/app.css','web/index.html','.github/workflows/browser-soak.yml'];
+const sources=['scripts/browser-tests/browser-timing.cjs','scripts/browser-tests/browser-timing.test.cjs','scripts/browser-tests/browser-soak.cjs','scripts/browser-tests/browser-soak.test.cjs','scripts/browser-tests/soak.config.cjs','scripts/browser-tests/desktop.spec.cjs','scripts/browser-tests/desktop-performance.cjs','scripts/browser-tests/browser-resources.cjs','scripts/browser-tests/browser-resources.test.cjs','scripts/browser-tests/browser-memory.cjs','scripts/browser-tests/job-cpu.cjs','scripts/browser-tests/performance-budgets.json','scripts/browser-tests/playwright.config.cjs','scripts/browser-tests/package-lock.json','scripts/check-native-environment.cjs','scripts/browser-tests/check-image-environment.cjs','web/app.js','web/system.js','web/locales.js','web/app.css','web/index.html','.github/workflows/browser-soak.yml'];
 function allowed(env=process.env,platform=process.platform){return platform==='linux'&&env.GITHUB_ACTIONS==='true'&&env.CI==='true'&&env.ACCESSWEAVER_BROWSER_SOAK==='1'&&env.ACCESSWEAVER_JOB_CPU_ACCOUNTING==='required'}
-function empty(baselinePassed=false){return {baselinePassed,stage:'environment',failureKind:'none',counts:Object.fromEntries(counts.map(n=>[n,0])),metrics:Object.fromEntries(Object.keys(limits).map(n=>[n,null])),checkpoints:[],editorTimings:[]}}
+function empty(baselinePassed=false){return {baselinePassed,stage:'environment',failureKind:'none',counts:Object.fromEntries(counts.map(n=>[n,0])),metrics:Object.fromEntries(Object.keys(limits).map(n=>[n,null])),checkpoints:[],editorTimings:[],browserRssPeak:null}}
 function validate(v){
- assert.deepEqual(Object.keys(v).sort(),['baselinePassed','stage','failureKind','counts','metrics','checkpoints','editorTimings'].sort());assert.ok(stages.includes(v.stage)&&P.failureKinds.includes(v.failureKind));assert.equal(typeof v.baselinePassed,'boolean');
+ assert.deepEqual(Object.keys(v).sort(),['baselinePassed','stage','failureKind','counts','metrics','checkpoints','editorTimings','browserRssPeak'].sort());assert.ok(stages.includes(v.stage)&&P.failureKinds.includes(v.failureKind));assert.equal(typeof v.baselinePassed,'boolean');
  assert.deepEqual(Object.keys(v.counts).sort(),[...counts].sort());assert.ok(Object.values(v.counts).every(n=>Number.isSafeInteger(n)&&n>=0&&n<=10000000));
  assert.deepEqual(Object.keys(v.metrics).sort(),Object.keys(limits).sort());assert.ok(Object.values(v.metrics).every(n=>n===null||typeof n==='number'&&Number.isFinite(n)&&Math.abs(n)<=Number.MAX_SAFE_INTEGER));
+ if(v.browserRssPeak===null)assert.equal(v.metrics.browserPeakRssBytes,null);
+ else {
+  const p=v.browserRssPeak;
+  assert.deepEqual(Object.keys(p).sort(),['phase','second','rssBytes','rootBytes','descendantBytes','largestDescendantBytes','descendantProcesses'].sort());
+  assert.ok(['initial','workload','cooldown'].includes(p.phase));
+  assert.ok(Object.entries(p).every(([k,n])=>k==='phase'||Number.isSafeInteger(n)&&n>=0&&n<=Number.MAX_SAFE_INTEGER));
+  assert.ok(p.second<=seconds&&(p.phase!=='initial'||p.second===0)&&(p.phase!=='cooldown'||p.second===seconds));
+  assert.equal(p.rssBytes,p.rootBytes+p.descendantBytes);assert.equal(p.rssBytes,v.metrics.browserPeakRssBytes);
+  assert.ok(p.descendantProcesses<=63&&p.largestDescendantBytes<=p.descendantBytes);
+  assert.ok(p.descendantProcesses>0||p.descendantBytes===0&&p.largestDescendantBytes===0);
+  assert.ok(v.counts.samples>0);if(v.metrics.browserPeakProcesses!==null)assert.ok(p.descendantProcesses+1<=v.metrics.browserPeakProcesses);
+ }
  validateEditorTimings(v.editorTimings,seconds/30);
  assert.equal(v.editorTimings.length,v.counts.editor);
  if(v.metrics.editorP95Ms!==null)assert.equal(v.metrics.editorP95Ms,P.percentile(v.editorTimings.map(row=>row.totalMs)));
  assert.ok(Array.isArray(v.checkpoints)&&v.checkpoints.length<=10);
  for(let i=0;i<v.checkpoints.length;i++){const p=v.checkpoints[i];assert.deepEqual(Object.keys(p).sort(),['second','browserRssBytes','controllerRssBytes','browserDescriptors','controllerDescriptors','browserThreads','controllerThreads','browserProcesses'].sort());assert.equal(p.second,i*checkpointSeconds);assert.ok(Object.values(p).every(n=>Number.isSafeInteger(n)&&n>=0&&n<=Number.MAX_SAFE_INTEGER))}
+}
+function observeRssPeak(value,sample,phase,second){
+ const roles=sample.rssRoles;
+ assert.deepEqual(Object.keys(roles).sort(),['rootBytes','descendantBytes','largestDescendantBytes','descendantProcesses'].sort());
+ assert.ok(Object.values(roles).every(n=>Number.isSafeInteger(n)&&n>=0));
+ assert.ok(Number.isSafeInteger(sample.rssBytes)&&sample.rssBytes>=0&&Number.isSafeInteger(sample.processes)&&sample.processes>=1&&sample.processes<=64);
+ assert.equal(roles.rootBytes+roles.descendantBytes,sample.rssBytes);assert.equal(roles.descendantProcesses+1,sample.processes);
+ assert.ok(roles.largestDescendantBytes<=roles.descendantBytes);
+ assert.ok(roles.descendantProcesses>0||roles.descendantBytes===0&&roles.largestDescendantBytes===0);
+ assert.ok(['initial','workload','cooldown'].includes(phase)&&Number.isSafeInteger(second)&&second>=0&&second<=seconds);
+ assert.ok((phase!=='initial'||second===0)&&(phase!=='cooldown'||second===seconds));
+ if(value.browserRssPeak===null||sample.rssBytes>value.browserRssPeak.rssBytes){
+  value.browserRssPeak={phase,second,rssBytes:sample.rssBytes,rootBytes:roles.rootBytes,descendantBytes:roles.descendantBytes,largestDescendantBytes:roles.largestDescendantBytes,descendantProcesses:roles.descendantProcesses};
+ }
 }
 function violations(v){validate(v);const bad=Object.keys(limits).filter(k=>v.metrics[k]===null||v.metrics[k]>limits[k]);const c=v.counts;if(c.seconds!==seconds||c.requests!==seconds*requestsPerSecond||c.navigation!==seconds/5||c.editor!==seconds/30||c.samples!==seconds+1||c.elapsedMilliseconds<seconds*1000||c.requests/(c.elapsedMilliseconds/1000)<3.8||v.checkpoints.length!==10)bad.push('workload');return bad}
 function median(rows){assert.ok(rows.length===300&&rows.every(n=>Number.isFinite(n)&&n>=0));return P.percentile(rows,.5)}
@@ -26,7 +52,7 @@ async function hash(file,cap){const fd=await fs.open(file,'r');try{const a=await
 async function writeReport(repo,source,binarySHA256,project,architecture,value){
  validate(value);assert.ok(/^[a-f0-9]{40}$/.test(source)&&/^[a-f0-9]{64}$/.test(binarySHA256)&&['chromium','firefox','webkit'].includes(project)&&['amd64','arm64'].includes(architecture));
  const snapshot=JSON.parse(JSON.stringify(value)),failed=violations(snapshot),sourceSHA256={};for(const file of sources)sourceSHA256[file]=await hash(path.join(repo,file),1<<20);assert.equal(await hash(path.join(repo,'build/browser-tests/accessweaver'),128<<20),binarySHA256);
- const report={schemaVersion:3,sourceCommit:source,sourceSHA256,binarySHA256,project,architecture,scope:'owned-linux-browser-15-minute-soak',...snapshot,violations:failed,outcome:snapshot.baselinePassed&&snapshot.stage==='complete'&&snapshot.failureKind==='none'&&!failed.length?'passed':'failed',workingDaySoakQualified:false,nativeInstalledQualified:false,productionQualificationComplete:false};
+ const report={schemaVersion:4,sourceCommit:source,sourceSHA256,binarySHA256,project,architecture,scope:'owned-linux-browser-15-minute-soak',...snapshot,violations:failed,outcome:snapshot.baselinePassed&&snapshot.stage==='complete'&&snapshot.failureKind==='none'&&!failed.length?'passed':'failed',workingDaySoakQualified:false,nativeInstalledQualified:false,productionQualificationComplete:false};
  const encoded=JSON.stringify(report)+'\n';assert.ok(Buffer.byteLength(encoded)<=16384);const parent=path.join(repo,'build/browser-soak');await fs.mkdir(parent,{recursive:true,mode:0o700});const info=await fs.lstat(parent),real=await fs.realpath(parent);assert.ok(info.isDirectory()&&!info.isSymbolicLink()&&path.dirname(real)===await fs.realpath(path.join(repo,'build')));const fd=await fs.open(path.join(real,'status.json'),'wx',0o600);try{await fd.writeFile(encoded,'utf8')}finally{await fd.close()}return report.outcome;
 }
 async function driveWorkload({start,waitUntil,requests,interact,complete}){
@@ -43,7 +69,8 @@ async function runSoak(page,core,testInfo,browserChild,baselinePassed){
  assert.equal(typeof baselinePassed,'boolean');
  const v=empty(baselinePassed),m=v.metrics,c=v.counts,browserRss=[],api=[],nav=[];let job,observer,identity=null,lastSample,first,previous,jobBefore,beforeTime,hz,pageBytes;
  const sample=async second=>{
-  const a=await P.sampleController(core.controller,identity,pageBytes);identity=a.startTicks;const b=await observer.snapshot();const now=performance.now();
+  const a=await P.sampleController(core.controller,identity,pageBytes);identity=a.startTicks;const b=await observer.snapshot(false,true);const now=performance.now();
+  observeRssPeak(v,b,second===0?'initial':'workload',second);
   if(lastSample!==undefined)m.maximumSampleGapMs=Math.max(m.maximumSampleGapMs||0,now-lastSample);lastSample=now;c.samples++;
   for(const [name,n] of Object.entries({browserPeakRssBytes:b.rssBytes,controllerPeakRssBytes:a.rssBytes,browserPeakDescriptors:b.descriptors,browserPeakThreads:b.threads,browserPeakProcesses:b.processes,controllerPeakDescriptors:a.descriptors,controllerPeakThreads:a.threads}))m[name]=Math.max(m[name]||0,n);
   if(second%checkpointSeconds===0)v.checkpoints.push({second,browserRssBytes:b.rssBytes,controllerRssBytes:a.rssBytes,browserDescriptors:b.descriptors,controllerDescriptors:a.descriptors,browserThreads:b.threads,controllerThreads:a.threads,browserProcesses:b.processes});
@@ -59,11 +86,12 @@ async function runSoak(page,core,testInfo,browserChild,baselinePassed){
   await driveWorkload({start:beforeTime,waitUntil:P.waitUntil,requests:()=>P.requestBatch(page,requestsPerSecond),interact:interaction,complete:async(i,latencies)=>{api.push(...latencies);c.requests+=requestsPerSecond;previous=await sample(i);c.seconds++}});
   c.elapsedMilliseconds=Math.floor(performance.now()-beforeTime);const jobAfter=await job.sample();m.jobCpuPercentOneCore=usageBetween(jobBefore,jobAfter).percentOneCore;m.controllerCpuPercentOneCore=P.cpuPercent(first.a,previous.a,hz,c.elapsedMilliseconds);m.browserCpuPercentOneCore=(previous.b.cpuTicks-first.b.cpuTicks)/hz/(c.elapsedMilliseconds/1000)*100;
   m.navigationP95Ms=P.percentile(nav);m.editorP95Ms=P.percentile(v.editorTimings.map(row=>row.totalMs));m.apiP95Ms=P.percentile(api);m.lateMedianRssGrowthBytes=median(browserRss.slice(600,900))-median(browserRss.slice(300,600));
-  v.stage='cooldown';await P.waitUntil(performance.now()+5000);const a=await P.sampleController(core.controller,identity,pageBytes),b=await observer.snapshot();
+  v.stage='cooldown';await P.waitUntil(performance.now()+5000);const a=await P.sampleController(core.controller,identity,pageBytes),b=await observer.snapshot(false,true);
+  observeRssPeak(v,b,'cooldown',seconds);
   // Cooldown observations remain included in all absolute peak caps.
   for(const [name,n] of Object.entries({browserPeakRssBytes:b.rssBytes,controllerPeakRssBytes:a.rssBytes,browserPeakDescriptors:b.descriptors,browserPeakThreads:b.threads,browserPeakProcesses:b.processes,controllerPeakDescriptors:a.descriptors,controllerPeakThreads:a.threads}))m[name]=Math.max(m[name],n);
   Object.assign(m,{browserRssGrowthBytes:b.rssBytes-first.b.rssBytes,controllerRssGrowthBytes:a.rssBytes-first.a.rssBytes,browserDescriptorGrowth:b.descriptors-first.b.descriptors,browserThreadGrowth:b.threads-first.b.threads,browserProcessGrowth:b.processes-first.b.processes,controllerDescriptorGrowth:a.descriptors-first.a.descriptors,controllerThreadGrowth:a.threads-first.a.threads});v.stage='complete';
  }catch(error){v.failureKind=P.classifyFailure(error)}finally{if(job)try{await job.close()}catch(error){v.stage='close';v.failureKind=P.classifyFailure(error)}}
  const outcome=await writeReport(path.resolve(__dirname,'../..'),core.build.commit,core.binarySha256,testInfo.project.name,process.env.ACCESSWEAVER_EXPECT_GOARCH,v);assert.equal(outcome,'passed',baselinePassed?'Browser soak contract failed at '+v.stage:'Desktop performance baseline exceeded its limits');
 }
-module.exports={seconds,requestsPerSecond,checkpointSeconds,counts,limits,sources,stages,allowed,empty,validate,violations,median,writeReport,driveWorkload,runSoak};
+module.exports={seconds,requestsPerSecond,checkpointSeconds,counts,limits,sources,stages,allowed,empty,validate,violations,median,writeReport,driveWorkload,runSoak,observeRssPeak};

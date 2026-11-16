@@ -133,7 +133,8 @@
             "internal/workflow/output_test.go",
             "cmd/accessweaver/system_output_test.go",
             "internal/api/workflow_output_test.go",
-            "internal/workflow/metadata_output_test.go"
+            "internal/workflow/metadata_output_test.go",
+            "docs/qualification/67068364c8e8-firefox-sustained-rss.json"
           ]
         },
         {

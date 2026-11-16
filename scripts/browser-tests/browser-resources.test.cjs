@@ -26,7 +26,7 @@ test('browser census fails closed on oversized lists, ancestry cycles and read/c
 test('real Linux census includes an owned Node grandchild without inspecting other processes',{skip:process.platform!=='linux'},async()=>{
  const child=spawn(process.execPath,['-e',"const {spawn}=require('node:child_process');const c=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});process.stdout.write('ready\\n');process.on('SIGTERM',()=>{c.kill('SIGTERM');c.on('exit',()=>process.exit(0))});setInterval(()=>{},1000)"],{stdio:['ignore','pipe','ignore']});
  let timer;
- try{await Promise.race([new Promise(resolve=>child.stdout.once('data',resolve)),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Synthetic child deadline')),5000)})]);clearTimeout(timer);const observer=new BrowserResources(child,4096,parseStat);const value=await observer.snapshot();assert.equal(value.processes,2);assert.ok(value.threads>=2&&value.rssBytes>0&&value.descriptors>=2);assert.deepEqual(Object.keys(value).sort(),['cpuTicks','rssBytes','descriptors','threads','processes','samples','observedExits'].sort());const memory=(await observer.snapshot(true)).memory;assert.equal(memory.root.readable,1);assert.equal(memory.descendants.readable,1);assert.ok(memory.root.pssBytes>0&&memory.descendants.pssBytes>0)}
+ try{await Promise.race([new Promise(resolve=>child.stdout.once('data',resolve)),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Synthetic child deadline')),5000)})]);clearTimeout(timer);const observer=new BrowserResources(child,4096,parseStat);const value=await observer.snapshot();assert.equal(value.processes,2);assert.ok(value.threads>=2&&value.rssBytes>0&&value.descriptors>=2);assert.deepEqual(Object.keys(value).sort(),['cpuTicks','rssBytes','descriptors','threads','processes','samples','observedExits'].sort());const roles=(await observer.snapshot(false,true));assert.equal(roles.rssRoles.descendantProcesses,1);assert.ok(roles.rssRoles.rootBytes>0&&roles.rssRoles.descendantBytes>0);assert.equal(roles.rssRoles.rootBytes+roles.rssRoles.descendantBytes,roles.rssBytes);const memory=(await observer.snapshot(true)).memory;assert.equal(memory.root.readable,1);assert.equal(memory.descendants.readable,1);assert.ok(memory.root.pssBytes>0&&memory.descendants.pssBytes>0)}
  finally{clearTimeout(timer);const done=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGTERM');await Promise.race([done,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Synthetic child cleanup deadline')),5000)})]);clearTimeout(timer)}
 });
 
@@ -39,4 +39,34 @@ test('owned memory collection reports root/descendant totals and permission cove
 });
 test('owned memory read is rechecked against the original start time before aggregation',async()=>{
  const f=fixture([processRow(100,process.pid)]),read=f.source.read;f.source.read=async file=>{if(file.endsWith('/smaps_rollup')){f.graph.get(100).start++;return ['Rss','Pss','Private_Clean','Private_Dirty','Shared_Clean','Shared_Dirty','Anonymous','Swap','Pss_Anon','Pss_File','Pss_Shmem'].map(k=>k+': 0 kB').join('\n')}return read(file)};await assert.rejects(f.observer.snapshot(true));assert.equal(f.observer.failureStage,6);
+});
+
+
+test('optional RSS role attribution performs exactly the original process reads and census',async()=>{
+ const rows=()=>[processRow(100,process.pid,{rss:7,children:{100:[200,300]}}),processRow(200,100,{rss:3}),processRow(300,100,{rss:5})];
+ const ordinary=fixture(rows()),attributed=fixture(rows());
+ const calls=[];
+ for(const [index,f] of [ordinary,attributed].entries()){
+  calls[index]=[];
+  for(const name of ['read','entries']){const original=f.source[name];f.source[name]=async(...args)=>{calls[index].push([name,...args]);return original(...args)}}
+ }
+ const original=await ordinary.observer.snapshot(),value=await attributed.observer.snapshot(false,true);
+ assert.deepEqual(attributed.reads,ordinary.reads);assert.deepEqual(calls[1],calls[0]);
+ assert.deepEqual(value.rssRoles,{rootBytes:7*4096,descendantBytes:8*4096,largestDescendantBytes:5*4096,descendantProcesses:2});
+ const {rssRoles,...withoutRoles}=value;assert.deepEqual(withoutRoles,original);
+ assert.equal(rssRoles.rootBytes+rssRoles.descendantBytes,value.rssBytes);
+ assert.ok(!JSON.stringify(rssRoles).includes('PRIVATE_SYNTHETIC'));
+ await assert.rejects(attributed.observer.snapshot(false,'PRIVATE_SYNTHETIC'));
+});
+
+test('RSS roles preserve reparented ownership and omit descendants that exit during the checked observation',async()=>{
+ const f=fixture([processRow(100,process.pid,{rss:7,children:{100:[200]}}),processRow(200,100,{rss:3})]);
+ await f.observer.snapshot(false,true);
+ f.graph.get(100).children={100:[]};f.graph.get(200).parent=1;
+ const reparented=await f.observer.snapshot(false,true);assert.equal(reparented.rssRoles.descendantBytes,3*4096);
+ const read=f.source.read;let childReads=0;
+ f.source.read=async file=>{if(file==='/proc/200/stat'&&++childReads===2){f.graph.delete(200);throw Object.assign(new Error('PRIVATE_SYNTHETIC'),{code:'ENOENT'})}return read(file)};
+ const exited=await f.observer.snapshot(false,true);
+ assert.equal(exited.observedExits,1);assert.equal(exited.processes,1);
+ assert.deepEqual(exited.rssRoles,{rootBytes:7*4096,descendantBytes:0,largestDescendantBytes:0,descendantProcesses:0});
 });
