@@ -117,7 +117,10 @@ function Get-WorkflowOutcome($run,$job) {
 function Get-FixedConnectionState([string]$text){
     if($text.Length -gt 8192){return 'oversized'}
     if([string]::IsNullOrWhiteSpace($text)){return 'empty'}
-    $states=@([regex]::Matches($text,'(?<![A-Za-z])(NotConnected|Connecting|Connected|Disconnecting|Disconnected)(?![A-Za-z])') | ForEach-Object {$_.Value} | Sort-Object -Unique)
+    $states=@([regex]::Matches($text,'(?<![A-Za-z])(NotConnected|Connecting|Connected|Disconnecting|Disconnected)(?![A-Za-z])') | ForEach-Object {$_.Value})
+    # Independent fixed English CLI sentence observed in the pinned public resource.
+    if($text -cmatch '(?m)^[ \t]*Not connected[ \t]*\r?$'){$states+=@('NotConnected')}
+    $states=@($states | Sort-Object -Unique)
     if($states.Count -eq 1){return $states[0]}
     if($states.Count -gt 1){return 'ambiguous'}
     return 'unrecognized'

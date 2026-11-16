@@ -48,7 +48,8 @@
             "docs/qualification/8228725c7a8c-native-wiresock-lifecycle.json",
             "docs/SPLITWIRE_IMPLEMENTATION.md",
             "docs/qualification/4216e0e67f8f-native-wiresock-lifecycle.json",
-            "docs/qualification/0a0ace501720-native-wiresock-lifecycle.json"
+            "docs/qualification/0a0ace501720-native-wiresock-lifecycle.json",
+            "docs/qualification/bc5bd74965c4-wiresock-status-grammar.json"
           ]
         },
         {
@@ -118,7 +119,8 @@
           "evidence": [
             "scripts/test-windows-workflow.ps1",
             "internal/workflow/windows.ps1",
-            "internal/managed/recovery_empty_test.go"
+            "internal/managed/recovery_empty_test.go",
+            "docs/qualification/bc5bd74965c4-wiresock-status-grammar.json"
           ]
         },
         {

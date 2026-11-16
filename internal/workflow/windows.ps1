@@ -1538,14 +1538,226 @@ function Start-WireSockServices {
         }
     }
 }
-function Get-WireSockReportedState($status) {
+function Get-WireSockReportedState($status,[string]$ExpectedProfile) {
     if($status.outputComplete -ne $true -or $status.stdout -isnot [string] -or $status.stdout.Length -gt 8192){return 'Unknown'}
-    # Accept one state from a standalone line or an explicit status field.
-    # Never persist the address, profile name, or other vendor output.
-    $pattern='(?m)^[ \t]*(?:(?i:(?:Connection[ \t]+)?Status)[ \t]*:[ \t]*)?(NotConnected|Connecting|Connected|Disconnecting|Disconnected)[ \t]*\r?$'
-    $states=[regex]::Matches($status.stdout,$pattern)
+    if($ExpectedProfile -and $ExpectedProfile -cnotmatch '\AAccessWeaver-[a-f0-9]{32}\z'){return 'Unknown'}
+    if($status.stdout -cmatch '[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]'){return 'Unknown'}
+    # Pinned 3.8.1.1 CLI GetStatus resource templates, including all 21 shipped
+    # cultures. JSON escapes keep this source ASCII for Windows PowerShell 5.1.
+    # Only fixed canonical states leave this function; private output is discarded.
+    $formats=ConvertFrom-Json @'
+[
+  {
+    "state": "NotConnected",
+    "templates": [
+      "Ba\u011fl\u0131 de\u011fil",
+      "Ch\u01b0a k\u1ebft n\u1ed1i",
+      "Hin wal-qunnamne",
+      "Ni povezano",
+      "Nicht verbunden",
+      "No conectado",
+      "Non connect\u00e9",
+      "Not connected",
+      "N\u00e3o conectado",
+      "Tidak terhubung",
+      "\u041d\u0435\u0442 \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u044f",
+      "\u063a\u064a\u0631 \u0645\u062a\u0635\u0644",
+      "\u0645\u062a\u0635\u0644 \u0646\u06cc\u0633\u062a",
+      "\u06a9\u0646\u06cc\u06a9\u0679 \u0646\u06c1\u06cc\u06ba \u06c1\u06d2",
+      "\u0915\u0928\u0947\u0915\u094d\u091f \u0928\u0939\u0940\u0902 \u0939\u0948",
+      "\u09b8\u0982\u09af\u09c1\u0995\u09cd\u09a4 \u09a8\u09af\u09bc",
+      "\u12a0\u120d\u1270\u1308\u1293\u1298\u121d",
+      "\u63a5\u7d9a\u3055\u308c\u3066\u3044\u307e\u305b\u3093",
+      "\u672a\u8fde\u63a5",
+      "\uc5f0\uacb0\ub418\uc9c0 \uc54a\uc74c"
+    ]
+  },
+  {
+    "state": "Connecting",
+    "templates": [
+      "Estabelecendo conex\u00e3o usando o perfil {0}",
+      "Estableciendo conexi\u00f3n usando el perfil {0}",
+      "Establishing connection using profile {0}",
+      "Membuat koneksi menggunakan profil {0}",
+      "Profil {0} kullan\u0131larak ba\u011flant\u0131 kuruluyor",
+      "Proofaayila {0} fayyadamuun wal-qunnamtii hundeessaa jira",
+      "Verbindung wird mit Profil {0} hergestellt",
+      "Vzpostavljanje povezave z uporabo profila {0}",
+      "\u00c9tablissement de la connexion en utilisant le profil {0}",
+      "\u0110ang thi\u1ebft l\u1eadp k\u1ebft n\u1ed1i b\u1eb1ng h\u1ed3 s\u01a1 {0}",
+      "\u0423\u0441\u0442\u0430\u043d\u0430\u0432\u043b\u0438\u0432\u0430\u0435\u0442\u0441\u044f \u0441\u043e\u0435\u0434\u0438\u043d\u0435\u043d\u0438\u0435 \u0441 \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d\u0438\u0435\u043c \u043f\u0440\u043e\u0444\u0438\u043b\u044f {0}",
+      "\u062c\u0627\u0631\u064d \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0627\u062a\u0635\u0627\u0644 \u0628\u0627\u0633\u062a\u062e\u062f\u0627\u0645 \u0627\u0644\u0645\u0644\u0641 \u0627\u0644\u0634\u062e\u0635\u064a {0}",
+      "\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0642\u0631\u0627\u0631\u06cc \u0627\u062a\u0635\u0627\u0644 \u0628\u0627 \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0627\u0632 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 {0}",
+      "\u067e\u0631\u0648\u0641\u0627\u0626\u0644 {0} \u0627\u0633\u062a\u0639\u0645\u0627\u0644 \u06a9\u0631\u062a\u06d2 \u06c1\u0648\u0626\u06d2 \u06a9\u0646\u06a9\u0634\u0646 \u0642\u0627\u0626\u0645 \u06a9\u06cc\u0627 \u062c\u0627 \u0631\u06c1\u0627 \u06c1\u06d2",
+      "\u092a\u094d\u0930\u094b\u092b\u093c\u093e\u0907\u0932 {0} \u0915\u093e \u0909\u092a\u092f\u094b\u0917 \u0915\u0930\u0915\u0947 \u0915\u0928\u0947\u0915\u094d\u0936\u0928 \u0938\u094d\u0925\u093e\u092a\u093f\u0924 \u0915\u093f\u092f\u093e \u091c\u093e \u0930\u0939\u093e \u0939\u0948",
+      "\u09aa\u09cd\u09b0\u09cb\u09ab\u09be\u0987\u09b2 {0} \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u0995\u09b0\u09c7 \u09b8\u0982\u09af\u09cb\u0997 \u09b8\u09cd\u09a5\u09be\u09aa\u09a8 \u0995\u09b0\u09be \u09b9\u099a\u09cd\u099b\u09c7",
+      "\u1260\u1355\u122e\u134b\u12ed\u120d {0} \u130d\u1295\u1299\u1290\u1275 \u1260\u1218\u1218\u1235\u1228\u1275 \u120b\u12ed",
+      "\u30d7\u30ed\u30d5\u30a1\u30a4\u30eb {0} \u3092\u4f7f\u7528\u3057\u3066\u63a5\u7d9a\u3092\u78ba\u7acb\u4e2d",
+      "\u6b63\u5728\u4f7f\u7528\u914d\u7f6e\u6587\u4ef6 {0} \u5efa\u7acb\u8fde\u63a5",
+      "\ud504\ub85c\ud544 {0}\uc744(\ub97c) \uc0ac\uc6a9\ud558\uc5ec \uc5f0\uacb0\uc744 \uc124\uc815\ud558\ub294 \uc911"
+    ]
+  },
+  {
+    "state": "Connected",
+    "templates": [
+      "Conectado al servidor usando el perfil {0}",
+      "Conectado ao servidor usando o perfil {0}",
+      "Connected to server using profile {0}",
+      "Connect\u00e9 au serveur en utilisant le profil {0}",
+      "Mit dem Profil {0} mit dem Server verbunden",
+      "Povezano s stre\u017enikom z uporabo profila {0}",
+      "Profil {0} kullan\u0131larak sunucuya ba\u011flan\u0131ld\u0131",
+      "Proofaayila {0} fayyadamuun seerverii waliin wal qunnamsiifameera",
+      "Terhubung ke server menggunakan profil {0}",
+      "\u0110\u00e3 k\u1ebft n\u1ed1i t\u1edbi m\u00e1y ch\u1ee7 b\u1eb1ng h\u1ed3 s\u01a1 {0}",
+      "\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u043e \u043a \u0441\u0435\u0440\u0432\u0435\u0440\u0443 \u0441 \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d\u0438\u0435\u043c \u043f\u0440\u043e\u0444\u0438\u043b\u044f {0}",
+      "\u0628\u0627 \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0627\u0632 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 {0} \u0628\u0647 \u0633\u0631\u0648\u0631 \u0645\u062a\u0635\u0644 \u0634\u062f",
+      "\u062a\u0645 \u0627\u0644\u0627\u062a\u0635\u0627\u0644 \u0628\u0627\u0644\u062e\u0627\u062f\u0645 \u0628\u0627\u0633\u062a\u062e\u062f\u0627\u0645 \u0627\u0644\u0645\u0644\u0641 \u0627\u0644\u0634\u062e\u0635\u064a {0}",
+      "\u067e\u0631\u0648\u0641\u0627\u0626\u0644 {0} \u0627\u0633\u062a\u0639\u0645\u0627\u0644 \u06a9\u0631\u062a\u06d2 \u06c1\u0648\u0626\u06d2 \u0633\u0631\u0648\u0631 \u0633\u06d2 \u06a9\u0646\u06cc\u06a9\u0679 \u06c1\u0648 \u06af\u06cc\u0627",
+      "\u092a\u094d\u0930\u094b\u092b\u093c\u093e\u0907\u0932 {0} \u0915\u093e \u0909\u092a\u092f\u094b\u0917 \u0915\u0930\u0915\u0947 \u0938\u0930\u094d\u0935\u0930 \u0938\u0947 \u0915\u0928\u0947\u0915\u094d\u091f \u0915\u093f\u092f\u093e \u0917\u092f\u093e",
+      "\u09aa\u09cd\u09b0\u09cb\u09ab\u09be\u0987\u09b2 {0} \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u0995\u09b0\u09c7 \u09b8\u09be\u09b0\u09cd\u09ad\u09be\u09b0\u09c7\u09b0 \u09b8\u09be\u09a5\u09c7 \u09b8\u0982\u09af\u09c1\u0995\u09cd\u09a4 \u09b9\u09af\u09bc\u09c7\u099b\u09c7",
+      "\u12a8\u1230\u122d\u1268\u1229 \u130b\u122d \u1260\u1355\u122e\u134b\u12ed\u120d {0} \u1270\u1308\u1293\u129d\u1277\u120d",
+      "\u30d7\u30ed\u30d5\u30a1\u30a4\u30eb {0} \u3092\u4f7f\u7528\u3057\u3066\u30b5\u30fc\u30d0\u30fc\u306b\u63a5\u7d9a\u3057\u307e\u3057\u305f",
+      "\u5df2\u4f7f\u7528\u914d\u7f6e\u6587\u4ef6 {0} \u8fde\u63a5\u5230\u670d\u52a1\u5668",
+      "\ud504\ub85c\ud544 {0}\uc744(\ub97c) \uc0ac\uc6a9\ud558\uc5ec \uc11c\ubc84\uc5d0 \uc5f0\uacb0\ub428"
+    ]
+  },
+  {
+    "state": "Disconnecting",
+    "templates": [
+      "Desconectando del servidor usando el perfil {0}",
+      "Desconectando do servidor usando o perfil {0}",
+      "Disconnecting from server using profile {0}",
+      "D\u00e9connexion du serveur en utilisant le profil {0}",
+      "Memutus koneksi dari server menggunakan profil {0}",
+      "Prekinjanje povezave s stre\u017enikom z uporabo profila {0}",
+      "Profil {0} kullan\u0131larak sunucuyla ba\u011flant\u0131 kesiliyor",
+      "Proofaayila {0} fayyadamuun seerverii irraa wal-qunnamtii addaan kutaa jira",
+      "Trennen der Verbindung zum Server mit Profil {0}",
+      "\u0110ang ng\u1eaft k\u1ebft n\u1ed1i kh\u1ecfi m\u00e1y ch\u1ee7 b\u1eb1ng h\u1ed3 s\u01a1 {0}",
+      "\u041e\u0442\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435 \u043e\u0442 \u0441\u0435\u0440\u0432\u0435\u0440\u0430 \u0441 \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d\u0438\u0435\u043c \u043f\u0440\u043e\u0444\u0438\u043b\u044f {0}",
+      "\u062c\u0627\u0631\u064d \u0642\u0637\u0639 \u0627\u0644\u0627\u062a\u0635\u0627\u0644 \u0628\u0627\u0644\u062e\u0627\u062f\u0645 \u0628\u0627\u0633\u062a\u062e\u062f\u0627\u0645 \u0627\u0644\u0645\u0644\u0641 \u0627\u0644\u0634\u062e\u0635\u064a {0}",
+      "\u062f\u0631 \u062d\u0627\u0644 \u0642\u0637\u0639 \u0627\u062a\u0635\u0627\u0644 \u0627\u0632 \u0633\u0631\u0648\u0631 \u0628\u0627 \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0627\u0632 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 {0}",
+      "\u067e\u0631\u0648\u0641\u0627\u0626\u0644 {0} \u0627\u0633\u062a\u0639\u0645\u0627\u0644 \u06a9\u0631\u062a\u06d2 \u06c1\u0648\u0626\u06d2 \u0633\u0631\u0648\u0631 \u0633\u06d2 \u06a9\u0646\u06a9\u0634\u0646 \u0645\u0646\u0642\u0637\u0639 \u06a9\u06cc\u0627 \u062c\u0627 \u0631\u06c1\u0627 \u06c1\u06d2",
+      "\u092a\u094d\u0930\u094b\u092b\u093c\u093e\u0907\u0932 {0} \u0915\u093e \u0909\u092a\u092f\u094b\u0917 \u0915\u0930\u0915\u0947 \u0938\u0930\u094d\u0935\u0930 \u0938\u0947 \u0915\u0928\u0947\u0915\u094d\u0936\u0928 \u0921\u093f\u0938\u094d\u0915\u0928\u0947\u0915\u094d\u091f \u0915\u093f\u092f\u093e \u091c\u093e \u0930\u0939\u093e \u0939\u0948",
+      "\u09aa\u09cd\u09b0\u09cb\u09ab\u09be\u0987\u09b2 {0} \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u0995\u09b0\u09c7 \u09b8\u09be\u09b0\u09cd\u09ad\u09be\u09b0 \u09a5\u09c7\u0995\u09c7 \u09b8\u0982\u09af\u09cb\u0997 \u09ac\u09bf\u099a\u09cd\u099b\u09bf\u09a8\u09cd\u09a8 \u0995\u09b0\u09be \u09b9\u099a\u09cd\u099b\u09c7",
+      "\u12a8\u1230\u122d\u1268\u1229 \u1260\u1355\u122e\u134b\u12ed\u120d {0} \u1218\u124b\u1228\u1325 \u1260\u1202\u12f0\u1275 \u120b\u12ed",
+      "\u30d7\u30ed\u30d5\u30a1\u30a4\u30eb {0} \u3092\u4f7f\u7528\u3057\u3066\u30b5\u30fc\u30d0\u30fc\u304b\u3089\u5207\u65ad\u4e2d",
+      "\u6b63\u5728\u4f7f\u7528\u914d\u7f6e\u6587\u4ef6 {0} \u4ece\u670d\u52a1\u5668\u65ad\u5f00\u8fde\u63a5",
+      "\ud504\ub85c\ud544 {0}\uc744(\ub97c) \uc0ac\uc6a9\ud558\uc5ec \uc11c\ubc84\uc5d0\uc11c \uc5f0\uacb0\uc744 \ud574\uc81c\ud558\ub294 \uc911"
+    ]
+  },
+  {
+    "state": "Disconnected",
+    "templates": [
+      "Addaan citeera",
+      "Ba\u011flant\u0131s\u0131 kesildi",
+      "Desconectado",
+      "D\u00e9connect\u00e9",
+      "Getrennt",
+      "Prekinjeno",
+      "Terputus",
+      "\u0110\u00e3 ng\u1eaft k\u1ebft n\u1ed1i",
+      "\u041e\u0442\u043a\u043b\u044e\u0447\u0435\u043d\u043e",
+      "\u062a\u0645 \u0642\u0637\u0639 \u0627\u0644\u0627\u062a\u0635\u0627\u0644",
+      "\u0642\u0637\u0639 \u0634\u062f",
+      "\u06a9\u0646\u06a9\u0634\u0646 \u0645\u0646\u0642\u0637\u0639 \u06c1\u0648 \u06af\u06cc\u0627",
+      "\u0921\u093f\u0938\u094d\u0915\u0928\u0947\u0915\u094d\u091f \u0915\u093f\u092f\u093e \u0917\u092f\u093e",
+      "\u09b8\u0982\u09af\u09cb\u0997 \u09ac\u09bf\u099a\u09cd\u099b\u09bf\u09a8\u09cd\u09a8 \u09b9\u09af\u09bc\u09c7\u099b\u09c7",
+      "\u1270\u124b\u122d\u1327\u120d",
+      "\u5207\u65ad\u3055\u308c\u307e\u3057\u305f",
+      "\u5df2\u65ad\u5f00\u8fde\u63a5",
+      "\uc5f0\uacb0 \ud574\uc81c\ub428"
+    ]
+  }
+]
+'@
+    $metadata=ConvertFrom-Json @'
+[
+  "Adresse externe : {0}",
+  "Alamat eksternal: {0}",
+  "A\u011f kilitlendi (Kill Switch)",
+  "Direcci\u00f3n externa: {0}",
+  "Endere\u00e7o externo: {0}",
+  "External address: {0}",
+  "Externe Adresse: {0}",
+  "Harici adres: {0}",
+  "Jaringan dikunci (Kill Switch)",
+  "M\u1ea1ng b\u1ecb kh\u00f3a (Kill Switch)",
+  "Neetworkiin cufameera (Kill Switch)",
+  "Network is locked (Kill Switch)",
+  "Network lock is active",
+  "Netzwerk gesperrt (Kill Switch)",
+  "Omre\u017eje je zaklenjeno (Kill Switch)",
+  "Red bloqueada (Kill Switch)",
+  "Rede bloqueada (Kill Switch)",
+  "R\u00e9seau verrouill\u00e9 (Kill Switch)",
+  "Teessoo alaa: {0}",
+  "Zunanji naslov: {0}",
+  "\u0110\u1ecba ch\u1ec9 b\u00ean ngo\u00e0i: {0}",
+  "\u0412\u043d\u0435\u0448\u043d\u0438\u0439 \u0430\u0434\u0440\u0435\u0441: {0}",
+  "\u0421\u0435\u0442\u044c \u0437\u0430\u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u0430\u043d\u0430 (Kill Switch)",
+  "\u0622\u062f\u0631\u0633 \u062e\u0627\u0631\u062c\u06cc: {0}",
+  "\u0627\u0644\u0634\u0628\u0643\u0629 \u0645\u062d\u062c\u0648\u0628\u0629 (Kill Switch)",
+  "\u0627\u0644\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u062e\u0627\u0631\u062c\u064a: {0}",
+  "\u0628\u06cc\u0631\u0648\u0646\u06cc \u067e\u062a\u06c1: {0}",
+  "\u0634\u0628\u06a9\u0647 \u0642\u0641\u0644 \u0634\u062f\u0647 \u0627\u0633\u062a (Kill Switch)",
+  "\u0646\u06cc\u0679 \u0648\u0631\u06a9 \u0644\u0627\u06a9 \u06c1\u06d2 (Kill Switch)",
+  "\u0928\u0947\u091f\u0935\u0930\u094d\u0915 \u0932\u0949\u0915 \u0939\u0948 (Kill Switch)",
+  "\u092c\u093e\u0939\u0930\u0940 \u092a\u0924\u093e: {0}",
+  "\u09a8\u09c7\u099f\u0993\u09af\u09bc\u09be\u09b0\u09cd\u0995 \u09b2\u0995 \u0995\u09b0\u09be \u09b9\u09af\u09bc\u09c7\u099b\u09c7 (Kill Switch)",
+  "\u09ac\u09be\u09b9\u09cd\u09af\u09bf\u0995 \u09a0\u09bf\u0995\u09be\u09a8\u09be: {0}",
+  "\u1294\u1275\u12c8\u122d\u12ad \u1270\u1246\u120d\u134f\u120d (Kill Switch)",
+  "\u12cd\u132b\u12ca \u12a0\u12f5\u122b\u123b\u1366 {0}",
+  "\u30cd\u30c3\u30c8\u30ef\u30fc\u30af\u304c\u30ed\u30c3\u30af\u3055\u308c\u3066\u3044\u307e\u3059 (Kill Switch)",
+  "\u5916\u90e8\u30a2\u30c9\u30ec\u30b9: {0}",
+  "\u5916\u90e8\u5730\u5740\uff1a{0}",
+  "\u7f51\u7edc\u5df2\u9501\u5b9a\uff08Kill Switch\uff09",
+  "\ub124\ud2b8\uc6cc\ud06c\uac00 \uc7a0\uaca8 \uc788\uc2b5\ub2c8\ub2e4 (Kill Switch)",
+  "\uc678\ubd80 \uc8fc\uc18c: {0}"
+]
+'@
+    $statePatterns=[Collections.Generic.List[object]]::new()
+    foreach($format in $formats){
+        foreach($template in $format.templates){
+            $parts=$template -split '\{0\}',2
+            $body=[regex]::Escape($parts[0])
+            if($parts.Count -eq 2){$body+='(?<profile>[^\x00-\x1f\x7f]{1,256})'+[regex]::Escape($parts[1])}
+            $statePatterns.Add(@{state=$format.state;pattern=('\A'+$body+'\z')})
+        }
+    }
+    $metadataPatterns=@(foreach($template in $metadata){
+        $parts=$template -split '\{0\}',2
+        $body=[regex]::Escape($parts[0])
+        if($parts.Count -eq 2){$body+='[^\x00-\x1f\x7f]{1,512}'+[regex]::Escape($parts[1])}
+        '\A'+$body+'\z'
+    })
+    $states=[Collections.Generic.List[string]]::new()
+    foreach($rawLine in ($status.stdout -split '\r?\n')){
+        $line=$rawLine.Trim([char[]]@(32,9,13))
+        if(-not $line){continue}
+        $legacy=[regex]::Match($line,'\A(?:(?i:(?:Connection[ \t]+)?Status)[ \t]*:[ \t]*)?(NotConnected|Connecting|Connected|Disconnecting|Disconnected)\z')
+        if($legacy.Success){
+            $state=$legacy.Groups[1].Value
+            # An unbound Connected label cannot confirm the requested profile.
+            if($ExpectedProfile -and $state -cnotin @('NotConnected','Disconnected')){return 'Unknown'}
+            $states.Add($state)
+            continue
+        }
+        $recognized=$false
+        foreach($candidate in $statePatterns){
+            $match=[regex]::Match($line,$candidate.pattern)
+            if(-not $match.Success){continue}
+            if($ExpectedProfile -and $match.Groups['profile'].Success -and
+                $match.Groups['profile'].Value -cne $ExpectedProfile){return 'Unknown'}
+            $states.Add($candidate.state);$recognized=$true
+        }
+        if($recognized){continue}
+        foreach($pattern in $metadataPatterns){if([regex]::IsMatch($line,$pattern)){$recognized=$true;break}}
+        if(-not $recognized){return 'Unknown'}
+    }
     if($states.Count -ne 1){return 'Unknown'}
-    return $states[0].Groups[1].Value
+    return $states[0]
 }
 function Get-ManagedWireSockProfiles([string]$cli) {
     $failure='WireSock profile inventory could not be verified; retry before importing a profile'
@@ -1583,7 +1795,7 @@ function Connect-WireSock([string]$config) {
         $recovery.importOnly=$false
         try {Save-Journal}catch{$recovery.importOnly=$true;throw}
         [void](Native $cli @('connect',$profile,'-exit') -Secret)
-        $status=Get-WireSockReportedState (Native $cli @('status') -Secret -Timeout 15)
+        $status=Get-WireSockReportedState (Native $cli @('status') -Secret -Timeout 15) $profile
         if($status -cne 'Connected'){throw 'WireSock connection was not confirmed by vendor status'}
         Write-Atomic (Join-Path $root 'profiles\wiresock-owned.json') (@{profile=$profile;cli=$cli} | ConvertTo-Json)
         Event 'WireSock reports Connected; verify traffic independently'

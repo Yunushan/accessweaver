@@ -1242,6 +1242,9 @@ try {
                 'status' {
                     if($Timeout -ne 15){throw 'Expected bounded status query'}
                     $calls.Add($command)
+                    if($fixtureStatus.bindProfile){
+                        return @{stdout=$fixtureStatus.stdout.Replace(('AccessWeaver-'+('a'*32)),$entry.profile);outputComplete=$fixtureStatus.outputComplete}
+                    }
                     return $fixtureStatus
                 }
                 'disconnect' {$calls.Add($command)}
@@ -1302,6 +1305,15 @@ try {
             @{stdout='Connected';complete=$false;want='Unknown'},
             @{stdout=('x'*8193);complete=$true;want='Unknown'}
         )
+        # The actual CLI emits localized sentences, not enum labels. Bind each
+        # successful connection to the exact generated import identity.
+        $vendor=ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'fixtures/wiresock-status-3.8.1.1.json')))
+        foreach($culture in $vendor.cultures.PSObject.Properties){
+            $checks+=@{stdout=$culture.Value.templates.Connected.Replace('{0}',('AccessWeaver-'+('a'*32)));
+                complete=$true;want='Connected';connect=$true;bindProfile=$true}
+        }
+        $checks+=@{stdout=('Connected to server using profile AccessWeaver-'+('e'*32));
+            complete=$true;want='Connected';connect=$false}
         foreach($check in $checks){
             $fixtureStatus=@{stdout=$check.stdout;outputComplete=$check.complete}
             if((Get-WireSockReportedState $fixtureStatus) -cne $check.want){throw 'Unexpected WireSock status projection'}
@@ -1311,8 +1323,8 @@ try {
             $calls.Clear()
             $fixtureInventory.stdout='1. Independent profile'
             $script:undo=[Collections.Generic.List[object]]::new()
-            $fixtureStatus=@{stdout=$check.stdout;outputComplete=$check.complete}
-            if($check.want -ceq 'Connected'){
+            $fixtureStatus=@{stdout=$check.stdout;outputComplete=$check.complete;bindProfile=($check.bindProfile -eq $true)}
+            if($check.connect -eq $true){
                 $status=Connect-WireSock $originalConfig
                 if($status -cne 'Connected' -or ($calls -join ',') -cne 'list,save-import,import,save-connect,connect,status,record'){
                     throw 'Confirmed connection did not publish its ownership record'
@@ -1333,6 +1345,7 @@ try {
         Assert (@(Get-ChildItem -LiteralPath $profiles -Filter '*.conf').Count -eq 0 -and [IO.File]::ReadAllText($originalConfig) -ceq 'inert profile') 'WireSock retires import copies after completion and preserves the generated profile'
     } finally {$script:undo=$previousUndo}
 }
+& (Join-Path $PSScriptRoot 'test-windows-wiresock-status.ps1')
 # A recovery replay can reach the vendor's global disconnect. Verify the
 # entire journal is refused before a save or rollback when its profile is stale.
 & {
