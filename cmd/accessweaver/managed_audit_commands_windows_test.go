@@ -1522,7 +1522,7 @@ func windowsInertReadyName(stage string, pid uint32) string {
 }
 
 func windowsReadyEventDescriptor(handle windows.Handle, sid string) bool {
-	sd, err := windows.GetSecurityInfo(handle, windows.SE_KERNEL_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	sd, err := windows.GetSecurityInfo(handle, windows.SE_KERNEL_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.LABEL_SECURITY_INFORMATION)
 	if err != nil || !ordinaryDescriptor(sd, sid, true) {
 		return false
 	}
@@ -1572,11 +1572,39 @@ func windowsReadyEventDescriptor(handle windows.Handle, sid string) bool {
 			return false
 		}
 	}
-	return seen[sid] && seen["S-1-5-32-544"] && seen["S-1-5-18"]
+	if !seen[sid] || !seen["S-1-5-32-544"] || !seen["S-1-5-18"] {
+		return false
+	}
+	// The parent is elevated; only this fixed test signal is explicitly medium
+	// so its fresh standard-account worker can modify it. Querying a label
+	// requires READ_CONTROL, not access to the object's audit SACL.
+	labelACL, _, err := sd.SACL()
+	if err != nil || labelACL == nil {
+		return false
+	}
+	labelHeader := (*struct {
+		Revision, Reserved     byte
+		Size, Count, Reserved2 uint16
+	})(unsafe.Pointer(labelACL))
+	if labelHeader.Size < 8 || labelHeader.Count != 1 {
+		return false
+	}
+	var labelRaw unsafe.Pointer
+	ok, _, _ := ordinaryAdvapi.NewProc("GetAce").Call(uintptr(unsafe.Pointer(labelACL)), 0, uintptr(unsafe.Pointer(&labelRaw)))
+	if ok == 0 || labelRaw == nil {
+		return false
+	}
+	label := (*windows.ACCESS_ALLOWED_ACE)(labelRaw)
+	if label.Header.AceType != 0x11 || label.Header.AceFlags != 0 || label.Header.AceSize < 16 || label.Mask != 1 {
+		return false // SYSTEM_MANDATORY_LABEL_ACE / NO_WRITE_UP only
+	}
+	principal := (*windows.SID)(unsafe.Add(labelRaw, 8))
+	return principal.IsValid() && uint32(label.Header.AceSize) >= 8+uint32(principal.Len()) &&
+		principal.String() == "S-1-16-8192"
 }
 
 func (f *ordinaryFixture) prepareWindowsReadyEvent() error {
-	sd, err := windows.SecurityDescriptorFromString("O:BAD:P(A;;GA;;;BA)(A;;GA;;;SY)(A;;0x00120002;;;" + f.sid + ")")
+	sd, err := windows.SecurityDescriptorFromString("O:BAD:P(A;;GA;;;BA)(A;;GA;;;SY)(A;;0x00120002;;;" + f.sid + ")S:(ML;;NW;;;ME)")
 	if err != nil {
 		return errOrdinary
 	}
