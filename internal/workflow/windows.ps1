@@ -2839,7 +2839,17 @@ function Assert-DNSDohPlaintextBlock([string]$ID) {
         if($active){
             # MSFT_NetFirewallRule exposes a uint16 array; Full is code 1.
             # NetSecurity may adapt that value to an enum or the Full label.
-            $statuses=@($active.EnforcementStatus)
+            if($active -is [Microsoft.Management.Infrastructure.CimInstance]){
+                # NetSecurity's ETS property is localized display formatting, not
+                # the schema's uint16 array. Never parse it as policy authority.
+                $statusProperty=$active.PSBase.CimInstanceProperties['EnforcementStatus']
+                $statuses=@()
+                if($null -ne $statusProperty -and $statusProperty.CimType -eq [Microsoft.Management.Infrastructure.CimType]::UInt16Array){
+                    $statuses=@($statusProperty.Value)
+                }
+            }else{
+                $statuses=@($active.EnforcementStatus)
+            }
             if($statuses.Count -eq 1 -and $null -ne $statuses[0]){
                 $status=$statuses[0]
                 $label=($status -is [string] -or $status -is [Enum]) -and [string]$status -ceq 'Full'
