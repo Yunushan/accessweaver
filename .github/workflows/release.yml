@@ -207,6 +207,7 @@ jobs:
         if: runner.os == 'macOS'
         env:
           ACCESSWEAVER_DISPOSABLE_DARWIN_AUDIT_TEST: '1'
+          CORE_FAILURE_ANNOTATIONS: '1'
         run: node scripts/core-test-evidence.cjs unit
       - name: Retain fixed macOS unit-test outcomes
         if: always() && runner.os == 'macOS'

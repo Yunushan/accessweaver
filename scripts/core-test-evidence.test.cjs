@@ -92,3 +92,31 @@ test('macOS unit report binds the release workflow and excludes private data',as
  assert.equal(report.sourceSHA256['.github/workflows/release.yml'],'d'.repeat(64));
  assert.equal(report.outcome,'passed');
 });
+
+
+test('engine phase annotations use fixed suffixes and catalog roots without reading output or retaining dynamic parents',()=>{
+ const pkg=MODULE+'/internal/engine',root='TestUnixLifetimeAdmittedSignalResolvesBeforeConsumingWait',p={schemaVersion:1,module:MODULE,packages:[{path:pkg,tests:[root]},{path:MODULE+'/internal/other',tests:[root]}]},t=new C.Tracker(p);
+ const event=(Package,Test,Action='fail')=>({Action,Package,Test,get Output(){throw new Error('PRIVATE_OUTPUT_MUST_NOT_BE_READ')}});
+ t.event(event(pkg,root+'/PRIVATE_ACCOUNT_PATH/lifetime-diagnostic/fixture-control-reply'));
+ t.event(event(pkg,root+'/PRIVATE_ACCOUNT_PATH/lifetime-diagnostic/observer-bind-failed-invalid-observation'));
+ assert.deepEqual(C.engineLifetimeFailureAnnotations(t),[pkg+'#'+root+'/lifetime-diagnostic/fixture-control-reply',pkg+'#'+root+'/lifetime-diagnostic/observer-bind-failed-invalid-observation']);
+ for(const label of [root+'/lifetime-diagnostic/PRIVATE_TOKEN',root+'/lifetime-diagnostic/fixture-control-reply/PRIVATE_PATH','TestPRIVATE/lifetime-diagnostic/fixture-control-reply'])t.event(event(pkg,label));
+ t.event(event(MODULE+'/internal/other',root+'/lifetime-diagnostic/fixture-control-write'));t.event(event(pkg,root+'/lifetime-diagnostic/fixture-control-write','pass'));
+ t.event({Action:'output',get Test(){throw new Error('PRIVATE_LABEL_MUST_NOT_BE_READ')},get Output(){throw new Error('PRIVATE_OUTPUT_MUST_NOT_BE_READ')}});
+ assert.equal(C.engineLifetimeFailureAnnotations(t).length,2);assert.ok(!JSON.stringify(C.engineLifetimeFailureAnnotations(t)).includes('PRIVATE'));
+ assert.ok(!JSON.stringify(t.value('unit',1)).includes('lifetime-diagnostic'));assert.ok(!JSON.stringify(t.value('unit',1)).includes('PRIVATE'));
+});
+
+test('engine phase categories match source-owned fixture enums and cap supplemental annotations',async()=>{
+ const source=await fs.readFile(path.join(__dirname,'../internal/engine/lifetime_unix_test.go'),'utf8'),reporter=await fs.readFile(path.join(__dirname,'core-test-evidence.cjs'),'utf8');
+ const pairs=[['lifetimeDiagnosticStages','engineLifetimeStages'],['lifetimeObserverPhases','engineObserverPhases'],['lifetimeObserverErrors','engineObserverErrors']],values=[];
+ for(const [goName,jsName] of pairs){
+  const goBlock=source.match(new RegExp('var '+goName+' = \\[\\]string\\{([\\s\\S]+?)\\}'))[1],jsBlock=reporter.match(new RegExp('const '+jsName+'=\\[([^\\]]+)\\]'))[1];
+  const goValues=[...goBlock.matchAll(/"([a-z-]+)"/g)].map(m=>m[1]),jsValues=[...jsBlock.matchAll(/'([a-z-]+)'/g)].map(m=>m[1]);assert.deepEqual(jsValues,goValues);values.push(goValues);
+ }
+ const labels=values[0].map(stage=>'fixture-'+stage);for(const phase of values[1])for(const error of values[2])labels.push('observer-'+phase+'-'+error);
+ const pkg=MODULE+'/internal/engine',root='TestUnixShutdownRepeatedCallersShareOneActualStop',p={schemaVersion:1,module:MODULE,packages:[{path:pkg,tests:[root]}]};
+ for(const code of labels){const t=new C.Tracker(p);t.event({Action:'fail',Package:pkg,Test:root+'/lifetime-diagnostic/'+code});assert.deepEqual(C.engineLifetimeFailureAnnotations(t),[pkg+'#'+root+'/lifetime-diagnostic/'+code])}
+ const t=new C.Tracker(p);t.event({Action:'start',Package:pkg});t.event({Action:'run',Package:pkg,Test:root});for(const code of labels)t.event({Action:'fail',Package:pkg,Test:root+'/lifetime-diagnostic/'+code});t.event({Action:'fail',Package:pkg,Test:root});t.event({Action:'fail',Package:pkg});
+ assert.equal(C.engineLifetimeFailureAnnotations(t).length,10);assert.equal(t.value('unit',1).packages[0].tests[0].childFailed,labels.length);assert.equal(t.value('unit',1).outcome,'failed');
+});

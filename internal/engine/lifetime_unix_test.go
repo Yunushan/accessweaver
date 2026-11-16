@@ -86,6 +86,61 @@ func TestUnixLifetimeFixturePipeRoles(t *testing.T) {
 	}
 }
 
+type lifetimeTraceStub struct {
+	calls                      []string
+	pid                        int
+	bindErr, waitErr, closeErr error
+}
+
+func (s *lifetimeTraceStub) bind(pid int) error {
+	s.calls = append(s.calls, "bind")
+	s.pid = pid
+	return s.bindErr
+}
+func (s *lifetimeTraceStub) waitExit() error { s.calls = append(s.calls, "wait"); return s.waitErr }
+func (s *lifetimeTraceStub) close() error    { s.calls = append(s.calls, "close"); return s.closeErr }
+
+type lifetimePrivateDiagnosticError struct{}
+
+func (lifetimePrivateDiagnosticError) Error() string { panic("PRIVATE_NATIVE_ERROR_MUST_NOT_BE_READ") }
+
+func TestUnixLifetimeObserverDiagnosticsPreserveCallsAndExcludePrivateErrors(t *testing.T) {
+	for _, item := range []struct {
+		failure error
+		code    string
+	}{
+		{unix.EPERM, "permission"}, {unix.EBADF, "descriptor"}, {unix.EINVAL, "argument"},
+		{unix.ESRCH, "process-gone"}, {ErrProcessOwnershipLost, "ownership-lost"},
+		{ErrProcessLifecycle, "invalid-observation"}, {lifetimePrivateDiagnosticError{}, "other"},
+	} {
+		base := &lifetimeTraceStub{bindErr: item.failure}
+		trace := &lifetimeObserverTrace{base: base}
+		if trace.bind(4321) != item.failure || trace.close() != nil || base.pid != 4321 || strings.Join(base.calls, ",") != "bind,close" {
+			t.Fatal("fixture diagnostic changed native observer calls or results")
+		}
+		labels := trace.labels("control-reply")
+		if strings.Join(labels, ",") != "fixture-control-reply,observer-closed-none,observer-bind-failed-"+item.code || strings.Contains(strings.Join(labels, ","), "PRIVATE") || trace.labels("PRIVATE_STAGE") != nil {
+			t.Fatal("fixture diagnostic escaped its fixed categories or lost the first fault")
+		}
+	}
+	base := &lifetimeTraceStub{waitErr: unix.EINVAL, closeErr: unix.EPERM}
+	trace := &lifetimeObserverTrace{base: base}
+	if trace.bind(4321) != nil || trace.waitExit() != unix.EINVAL || trace.close() != unix.EPERM || strings.Join(base.calls, ",") != "bind,wait,close" {
+		t.Fatal("fixture diagnostic changed native wait or close")
+	}
+	if strings.Join(trace.labels("control-reply"), ",") != "fixture-control-reply,observer-close-failed-permission,observer-wait-failed-argument" {
+		t.Fatal("fixture diagnostic replaced its first wait fault with cleanup")
+	}
+	clean := &lifetimeObserverTrace{base: &lifetimeTraceStub{}}
+	if clean.bind(4321) != nil || clean.waitExit() != nil || clean.close() != nil || strings.Join(clean.labels("control-reply"), ",") != "fixture-control-reply,observer-closed-none" {
+		t.Fatal("successful fixture observer acquired a fabricated fault")
+	}
+	clean.state.Store(^uint32(0))
+	if strings.Join(clean.labels("control-reply"), ",") != "fixture-control-reply" {
+		t.Fatal("invalid diagnostic scalars were retained")
+	}
+}
+
 func lifetimeFixtureMain(mode string) (status int) {
 	for _, fd := range []int{3, 4} {
 		var st unix.Stat_t
@@ -318,7 +373,124 @@ ready:
 	return 0
 }
 
+// Failure-only fixture diagnostics retain closed phase/errno categories. They
+// never stringify native errors or retain process IDs, paths or private output.
+type lifetimeObserverTrace struct {
+	base       exitObserver
+	state      atomic.Uint32
+	firstFault atomic.Uint32
+	reported   atomic.Bool
+}
+
+var lifetimeDiagnosticStages = []string{
+	"launch", "inherited-endpoint-close", "control-write", "control-reply",
+	"identity-reply",
+}
+var lifetimeObserverPhases = []string{
+	"not-created", "binding", "bound", "bind-failed", "waiting", "exit-observed",
+	"wait-failed", "closing", "closed", "close-failed",
+}
+var lifetimeObserverErrors = []string{
+	"none", "permission", "descriptor", "argument", "process-gone",
+	"ownership-lost", "invalid-observation", "other",
+}
+
+func lifetimeObserverError(err error) uint32 {
+	switch {
+	case err == nil:
+		return 0
+	case errors.Is(err, unix.EPERM), errors.Is(err, unix.EACCES):
+		return 1
+	case errors.Is(err, unix.EBADF):
+		return 2
+	case errors.Is(err, unix.EINVAL):
+		return 3
+	case errors.Is(err, unix.ESRCH):
+		return 4
+	case errors.Is(err, ErrProcessOwnershipLost), errors.Is(err, unix.ECHILD):
+		return 5
+	case errors.Is(err, ErrProcessLifecycle):
+		return 6
+	default:
+		return 7
+	}
+}
+func (o *lifetimeObserverTrace) record(phase uint32, err error) {
+	value := phase<<8 | lifetimeObserverError(err)
+	if err != nil {
+		o.firstFault.CompareAndSwap(0, value)
+	}
+	o.state.Store(value)
+}
+func (o *lifetimeObserverTrace) bind(pid int) error {
+	o.record(1, nil)
+	err := o.base.bind(pid)
+	if err != nil {
+		o.record(3, err)
+	} else {
+		o.record(2, nil)
+	}
+	return err
+}
+func (o *lifetimeObserverTrace) waitExit() error {
+	o.record(4, nil)
+	err := o.base.waitExit()
+	if err != nil {
+		o.record(6, err)
+	} else {
+		o.record(5, nil)
+	}
+	return err
+}
+func (o *lifetimeObserverTrace) close() error {
+	o.record(7, nil)
+	err := o.base.close()
+	if err != nil {
+		o.record(9, err)
+	} else {
+		o.record(8, nil)
+	}
+	return err
+}
+func (o *lifetimeObserverTrace) labels(stage string) []string {
+	known := false
+	for _, candidate := range lifetimeDiagnosticStages {
+		known = known || stage == candidate
+	}
+	if !known {
+		return nil
+	}
+	labels := []string{"fixture-" + stage}
+	seen := map[uint32]bool{}
+	values := []uint32{o.state.Load()}
+	if fault := o.firstFault.Load(); fault != 0 {
+		values = append(values, fault)
+	}
+	for _, value := range values {
+		if seen[value] {
+			continue
+		}
+		seen[value] = true
+		phase, category := value>>8, value&255
+		if int(phase) < len(lifetimeObserverPhases) && int(category) < len(lifetimeObserverErrors) {
+			labels = append(labels, "observer-"+lifetimeObserverPhases[phase]+"-"+lifetimeObserverErrors[category])
+		}
+	}
+	return labels
+}
+func (f *lifetimeFixture) reportFailure(stage string) {
+	if !f.trace.reported.CompareAndSwap(false, true) {
+		return
+	}
+	for _, label := range f.trace.labels(stage) {
+		f.t.Run("lifetime-diagnostic/"+label, func(t *testing.T) {
+			t.Error("source-known fixture diagnostic; original assertion remains failed")
+		})
+	}
+}
+
 type lifetimeFixture struct {
+	trace                                            *lifetimeObserverTrace
 	launchPending                                    bool
 	afterStart                                       func()
 	guard                                            *managed.Guard
@@ -345,7 +517,7 @@ func newLifetimeFixture(t *testing.T) *lifetimeFixture {
 	if err != nil || !info.IsDir() || info.Mode().Perm() != 0700 {
 		t.Fatal("lifetime fixture directory invalid")
 	}
-	f := &lifetimeFixture{t: t, root: root, rootInfo: info}
+	f := &lifetimeFixture{t: t, root: root, rootInfo: info, trace: &lifetimeObserverTrace{}}
 	t.Cleanup(f.close)
 	executable, err := os.Executable()
 	if err != nil {
@@ -404,6 +576,8 @@ func (f *lifetimeFixture) launch(mode string, decorate func(*ownedProcess), obse
 		if decorate != nil {
 			decorate(f.owner)
 		}
+		f.trace.base = f.owner.observer
+		f.owner.observer = f.trace
 		if f.authorization != nil {
 			return &lifetimeContextTap{processLifetime: lifetime, observed: f.authorization}, nil
 		}
@@ -413,16 +587,19 @@ func (f *lifetimeFixture) launch(mode string, decorate func(*ownedProcess), obse
 	f.run = run
 	requestClose, replyClose := f.requestRead.Close(), f.replyWrite.Close()
 	if requestClose != nil || replyClose != nil {
+		f.reportFailure("inherited-endpoint-close")
 		f.t.Fatal("lifetime fixture inherited endpoint close failed")
 	}
 	f.requestRead, f.replyWrite = nil, nil
 	if err != nil || run == nil {
+		f.reportFailure("launch")
 		f.t.Fatal("lifetime fixture launch failed")
 	}
 }
 func (f *lifetimeFixture) write(b byte) {
 	f.t.Helper()
 	if n, err := f.requestWrite.Write([]byte{b}); err != nil || n != 1 {
+		f.reportFailure("control-write")
 		f.t.Fatal("lifetime fixture control write failed")
 	}
 }
@@ -430,6 +607,7 @@ func (f *lifetimeFixture) read(want byte) {
 	f.t.Helper()
 	var b [1]byte
 	if _, err := io.ReadFull(f.replyRead, b[:]); err != nil || b[0] != want {
+		f.reportFailure("control-reply")
 		f.t.Fatal("lifetime fixture control reply failed")
 	}
 }
@@ -438,6 +616,7 @@ func (f *lifetimeFixture) identity() (pid, sid, pgid int) {
 	f.write('i')
 	var data [24]byte
 	if _, err := io.ReadFull(f.replyRead, data[:]); err != nil {
+		f.reportFailure("identity-reply")
 		f.t.Fatal("lifetime fixture identity reply failed")
 	}
 	return int(binary.BigEndian.Uint64(data[0:8])), int(binary.BigEndian.Uint64(data[8:16])), int(binary.BigEndian.Uint64(data[16:24]))
