@@ -2623,8 +2623,20 @@ function Assert-DNSDohPlaintextBlock([string]$ID) {
     Assert-DNSDohFirewallAvailable
     foreach($protocol in @('TCP','UDP')){
         $active=Get-DNSDohPlaintextRule $ID $protocol 'ActiveStore'
+        $fullyEnforced=$false
+        if($active){
+            # MSFT_NetFirewallRule exposes a uint16 array; Full is code 1.
+            # NetSecurity may adapt that value to an enum or the Full label.
+            $statuses=@($active.EnforcementStatus)
+            if($statuses.Count -eq 1 -and $null -ne $statuses[0]){
+                $status=$statuses[0]
+                $label=($status -is [string] -or $status -is [Enum]) -and [string]$status -ceq 'Full'
+                $integer=$status.GetType() -in @([byte],[sbyte],[uint16],[int16],[uint32],[int32],[uint64],[int64])
+                $fullyEnforced=$label -or ($integer -and $status -eq 1)
+            }
+        }
         if(-not (Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore') -or
-            -not $active -or [string]$active.EnforcementStatus -cne 'Full'){
+            -not $active -or -not $fullyEnforced){
             throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy'
         }
     }
