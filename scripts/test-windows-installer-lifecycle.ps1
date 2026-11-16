@@ -14,6 +14,7 @@ if((git -C $project rev-parse HEAD).Trim() -cne $source -or $LASTEXITCODE -ne 0 
 . (Join-Path $PSScriptRoot 'windows-installer-common.ps1')
 . (Join-Path $PSScriptRoot 'windows-installer-state.ps1')
 . (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1')
+$script:uninstallBindingFailureCode=$null
 . (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1')
 $tokens=$null;$issues=$null
 $workflow=Join-Path $project 'internal\workflow\windows.ps1'
@@ -764,10 +765,15 @@ end;
 
             $stage='uninstall-redirected-licenses'
             $bindingRefused=$false
+            $refusalCode='no-refusal-observed'
             try {
                 $binding=Open-WorkflowUninstallBinding $Architecture
                 if($binding){Close-WorkflowUninstallBinding $binding}
-            } catch {$bindingRefused=$_.Exception.Message -ceq 'Registered AccessWeaver package directory is redirected or is not a directory'}
+            } catch {
+                $refusalCode=Get-InstallerUninstallBindingRefusalCategory $_.Exception.Message
+                $bindingRefused=$refusalCode -ceq 'package-directory-refused'
+            }
+            if(-not $bindingRefused){$script:uninstallBindingFailureCode=$refusalCode}
             Require $bindingRefused 'Controller uninstall inspection accepted the license junction'
             $logPath=Join-Path $capsule 'uninstall-redirected-licenses.log'
             $attempt=Native-Record $uninstaller @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/LOG='+$logPath)) @(1)
@@ -823,10 +829,15 @@ end;
                 Require ([IO.Directory]::GetFileSystemEntries($documentationTarget).Length -eq 1 -and
                     (Digest $documentationWitness) -ceq $documentationHash) 'Managed detection changed the documentation junction target'
                 $bindingRefused=$false
+                $refusalCode='no-refusal-observed'
                 try {
                     $binding=Open-WorkflowUninstallBinding $Architecture
                     if($binding){Close-WorkflowUninstallBinding $binding}
-                } catch {$bindingRefused=$_.Exception.Message -ceq 'Registered AccessWeaver package directory is redirected or is not a directory'}
+                } catch {
+                    $refusalCode=Get-InstallerUninstallBindingRefusalCategory $_.Exception.Message
+                    $bindingRefused=$refusalCode -ceq 'package-directory-refused'
+                }
+                if(-not $bindingRefused){$script:uninstallBindingFailureCode=$refusalCode}
                 Require $bindingRefused 'Controller uninstall inspection accepted redirected package documentation'
                 $controllerDocumentationRefusals+=,$case.phase
                 $script:detectionCases+=,@{phase=$case.phase;detected=$false;inspectionRefused=$true}
@@ -2066,6 +2077,7 @@ $eventDiagnostics=New-InstallerFirewallEventDiagnostic
 if(-not $complete){$eventDiagnostics=Read-FirewallEventDiagnostic}
 $originDiagnostics=[ordered]@{schemaVersion=1;source='captured-rule-properties';maxRecords=16;maxPropertyBytes=4096;records=@($script:firewallOriginObservations);truncated=$script:firewallOriginTruncated;unavailable=$script:firewallOriginUnavailable;extraNativeQueriesPerformed=$false;processOriginEstablished=$false}
 $record=[ordered]@{schemaVersion=61;nativeDocumentationRefusals=$nativeDocumentationRefusals;controllerDocumentationRefusals=$controllerDocumentationRefusals;uninstallLicenseRefusal=$uninstallLicenseRefusal;uninstallDataDetectionVerified=[bool]$uninstallDataDetectionVerified;uninstallDataRecoveryVerified=[bool]$uninstallDataRecoveryVerified;setupUpgradeBaseline=$setupUpgradeBaseline;setupUninstallRegistrationRefusal=$setupUninstallRegistrationRefusal;setupMarkerReplacement=$setupMarkerReplacement;postRestorationRefusal=$postRestorationRefusal;setupCompletionRefusal=$completionRefusal;setupDocumentationCompletionRefusal=$documentationCompletionRefusal;setupRetirementFlush=$setupRetirementFlush;setupCompletionReadbackVerified=$complete;installationPathRefusals=$pathRefusal;pendingMarkerAccess=$pendingMarkerAccess;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;runAttempt=$runAttempt;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+if($null -ne $script:uninstallBindingFailureCode){$record.uninstallBindingFailureCode=$script:uninstallBindingFailureCode}
 $record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $reportPath -Encoding utf8
 if(-not $complete){throw ('Disposable installer acceptance failed at '+$stage+' ('+$failureType+'); owned fixture retained on the disposable runner')}
 Write-Output 'Clean install, upgrade, reinstall, refused in-place downgrade, recovery-aware removal and previous-version rollback passed.'

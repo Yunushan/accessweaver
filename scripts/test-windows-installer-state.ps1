@@ -109,6 +109,15 @@ Write-Output 'Checkpoint integration preserves comparisons and global origin lim
 # Exercise the actual Native-Record wrapper with a fully synthetic invocation.
 # Parse/import its function only; never source the disposable installer body.
 . (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1')
+$packageRefusal='Registered AccessWeaver package directory is redirected or is not a directory'
+Assert-State ((Get-InstallerUninstallBindingRefusalCategory $packageRefusal) -ceq 'package-directory-refused') 'The package-directory refusal was not identified'
+Assert-State ((Get-InstallerUninstallBindingRefusalCategory 'Registered AccessWeaver installation ownership could not be verified') -ceq 'untrusted-owner') 'An earlier ownership refusal was confused with a package junction'
+Assert-State ((Get-InstallerUninstallBindingRefusalCategory 'AccessWeaver Setup is active or its mutex could not be inspected') -ceq 'setup-active-or-unavailable') 'Setup admission failure was confused with package inspection'
+foreach($message in @('PRIVATE_ACCOUNT PRIVATE_PATH PRIVATE_TOKEN',('prefix '+$packageRefusal),($packageRefusal+' suffix'),$packageRefusal.ToUpperInvariant(),('x'*4097),'')){
+    $code=Get-InstallerUninstallBindingRefusalCategory $message
+    Assert-State ($code -ceq 'unmapped-refusal' -and -not $code.Contains('PRIVATE')) 'Unrecognized or oversized native errors escaped the closed diagnostic category'
+}
+
 $nativeNodes=@($sourceAst.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq 'Native-Record'})
 Assert-State ($nativeNodes.Count -eq 1) 'Expected exactly one native record wrapper'
 . ([scriptblock]::Create($nativeNodes[0].Extent.Text))

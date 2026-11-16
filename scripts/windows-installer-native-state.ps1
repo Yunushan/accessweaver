@@ -1,5 +1,25 @@
 # Pure classification of already captured native-attempt metadata. No OS query,
 # process launch, native output, argument, basename or path is retained.
+function Get-InstallerUninstallBindingRefusalCategory([string]$Message) {
+    if($Message.Length -gt 4096){return 'unmapped-refusal'}
+    switch -CaseSensitive ($Message) {
+        'Registered AccessWeaver package directory is redirected or is not a directory' {return 'package-directory-refused'}
+        'Registered AccessWeaver installation ownership could not be verified' {return 'untrusted-owner'}
+        'Registered AccessWeaver installation access could not be verified' {return 'access-unavailable'}
+        'Registered AccessWeaver installation is writable by an untrusted principal' {return 'untrusted-writer'}
+        'Registered AccessWeaver installation must be a local Program Files directory' {return 'registered-path-refused'}
+        'Registered AccessWeaver installation directory is ambiguous' {return 'registered-path-ambiguous'}
+        'Registered AccessWeaver uninstall commands do not identify the installed uninstaller' {return 'registered-command-refused'}
+        'AccessWeaver uninstall registration is incomplete' {return 'registration-incomplete'}
+        'Unexpected alternate AccessWeaver machine registration' {return 'alternate-registration'}
+        'Reparse points are not supported in installation paths' {return 'ancestor-reparse-point'}
+        'AccessWeaver Setup is active or its mutex could not be inspected' {return 'setup-active-or-unavailable'}
+        'An AccessWeaver installation is incomplete. Retry the approved installer before uninstalling.' {return 'installation-pending'}
+        'AccessWeaver Setup recovery state could not be read. Ask an administrator to verify it before uninstalling.' {return 'recovery-unavailable'}
+        default {return 'unmapped-refusal'}
+    }
+}
+
 function Get-InstallerNativeToolClass([string]$Binary) {
     if($Binary.Length -gt 32768){return 'other'}
     $leaf=[IO.Path]::GetFileName($Binary)
