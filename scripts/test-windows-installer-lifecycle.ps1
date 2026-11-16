@@ -743,7 +743,11 @@ end;
 
     $stage='managed-detection-redirected-licenses'
     $installedLicenses=Join-Path $install 'licenses'
-    $savedLicenses=Join-Path $capsule 'saved-detection-licenses'
+    # Directory.Move requires the backup on the same volume as the installation.
+    # The uniquely owned installation is already checked before fixture mutation.
+    $savedLicenses=Join-Path $install 'saved-detection-licenses'
+    No-Reparse $savedLicenses
+    Require (-not (Test-Path -LiteralPath $savedLicenses -ErrorAction Stop)) 'License directory backup must be new'
     $redirectedLicenses=Join-Path $capsule 'redirected-detection-licenses'
     [void][IO.Directory]::CreateDirectory($redirectedLicenses)
     $witness=Join-Path $redirectedLicenses 'Go-runtime-LICENSE'
@@ -801,7 +805,9 @@ end;
     Assert-ManagedDetection 'after-license-directory-restoration' $builds[0] $true -UseRegisteredDirectory
 
     $stage='managed-detection-redirected-documentation'
-    $savedDocumentation=Join-Path $capsule 'saved-detection-documentation'
+    $savedDocumentation=Join-Path $install 'saved-detection-documentation'
+    No-Reparse $savedDocumentation
+    Require (-not (Test-Path -LiteralPath $savedDocumentation -ErrorAction Stop)) 'Documentation directory backup must be new'
     $documentationTarget=Join-Path $capsule 'documentation-junction-target'
     [void][IO.Directory]::CreateDirectory($documentationTarget)
     foreach($case in @(
