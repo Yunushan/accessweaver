@@ -43,14 +43,14 @@ import (
 
 const ordinaryCommandWorkerArgument = "--accessweaver-audit-commands-native-worker-v1"
 
-var ordinaryCommandCaseNames = []string{
+var ordinaryCommandCaseNames = append([]string{
 	"signed-required-audit-admission", "initialize-import-retained-head",
 	"audited-private-http-desktop", "read-only-export-verify",
 	"current-recorded-export-key-boundary", "actual-output-alias-admission",
 	"full-journal-reservation-refusal", "approved-recorded-foreground-run",
 	"recorded-foreground-output-cancellation-drain",
 	"private-command-workspace-cleanup",
-}
+}, windowsAliasDetailCaseNames[:]...)
 
 func windowsCommandReadSource(w *windowsCommandWorker, path string) ([]byte, error) {
 	if strings.EqualFold(path, w.engine) {
@@ -328,6 +328,7 @@ type windowsCommandWorker struct {
 	counter                                          uint32
 	desktopFailure                                   windowsDesktopStage
 	aliasFailure                                     windowsAliasFailure
+	aliasDetailExecuted, aliasDetailPassed           uint64
 }
 
 func (w *windowsCommandWorker) manifest() *windowsCommandWorker {
@@ -1441,13 +1442,16 @@ func runWindowsCommandCases(nonce []byte) (executed, passed uint64, desktopFailu
 	ctx, cancel := context.WithTimeout(context.Background(), 110*time.Second)
 	defer cancel()
 	root := &windowsCommandWorker{base: filepath.Join(stage, "child-slot", "work-"+hex.EncodeToString(nonce[:8])), sid: sid, engine: reviewed.Binary, p: reviewed, ctx: ctx}
-	if root.mkdirPrivate(root.base) != nil {
-		return 0, 0, windowsDesktopNoFailure
-	}
 	operations := []func() error{
 		root.requiredAdmission, root.importRoundTrip, func() error { return root.desktop(false) },
 		root.historicalRoundTrip, root.currentExport, root.aliasAdmission, root.capacityRefusal,
 		root.runApprovedAndRefusals, root.runFailuresAndCancellation,
+	}
+	if len(operations)+1 != windowsAliasDetailCaseOffset {
+		return 0, 0, windowsDesktopNoFailure
+	}
+	if root.mkdirPrivate(root.base) != nil {
+		return 0, 0, windowsDesktopNoFailure
 	}
 	for index, operation := range operations {
 		if ctx.Err() != nil {
@@ -1467,6 +1471,8 @@ func runWindowsCommandCases(nonce []byte) (executed, passed uint64, desktopFailu
 	if root.close() == nil {
 		passed |= cleanupBit
 	}
+	executed |= root.aliasDetailExecuted << windowsAliasDetailCaseOffset
+	passed |= root.aliasDetailPassed << windowsAliasDetailCaseOffset
 	return executed, passed, windowsDesktopStage(encodeWindowsCommandFailure(root.desktopFailure, root.aliasFailure))
 }
 func windowsInertReadyName(parent, pid uint32) string {
@@ -2216,7 +2222,47 @@ func (w *windowsCommandWorker) aliasPhase(variant, phase string) {
 	w.manifest().aliasFailure = makeWindowsAliasFailure(variant, phase)
 }
 
+func (w *windowsCommandWorker) aliasDetails(action, source, role string) (func(bool), error) {
+	mask, ok := windowsAliasDetailBits(action, source, role)
+	if !ok {
+		return nil, errOrdinary
+	}
+	root := w.manifest()
+	root.aliasDetailExecuted |= mask
+	root.aliasDetailPassed &^= mask
+	return func(passed bool) {
+		if passed {
+			root.aliasDetailPassed |= mask
+		}
+	}, nil
+}
+
+func windowsAliasSource(w *windowsCommandWorker, source string) string {
+	for _, item := range []struct{ path, kind string }{
+		{filepath.Join(w.base, "genesis.json"), "genesis"},
+		{filepath.Join(w.base, "head.json"), "head"},
+		{filepath.Join(w.directory, ".actor-key"), "key"},
+		{filepath.Join(w.directory, "events.journal"), "journal"},
+		{w.profilePath, "profile"},
+		{w.engine, "executable"},
+	} {
+		if strings.EqualFold(source, item.path) {
+			return item.kind
+		}
+	}
+	return ""
+}
+
 func windowsAliasAttempt(w *windowsCommandWorker, action, source, variant string, role int) (failure error) {
+	if role < 0 || role > 1 {
+		return errOrdinary
+	}
+	finish, detailErr := w.aliasDetails(action, windowsAliasSource(w, source), []string{"stdout", "stderr"}[role])
+	if detailErr != nil {
+		return detailErr
+	}
+	defer func() { finish(failure == nil) }()
+
 	w.aliasPhase(variant, "source-snapshot")
 	before := w.sources()
 	if before == nil {
@@ -2336,57 +2382,70 @@ func (w *windowsCommandWorker) aliasAdmission() (failure error) {
 		}
 	}
 	for _, action := range []string{"ui", "export-recorded", "run"} {
-		child.aliasPhase("pairwise", "prepare")
-		root := child.manifest()
-		root.counter++
-		path := filepath.Join(child.base, "pairwise-output-"+strconv.FormatUint(uint64(root.counter), 10)+".bin")
-		if child.ownFile(path, nil) != nil {
+		if windowsAliasPairwiseAttempt(child, action) != nil {
 			return errOrdinary
 		}
-		child.aliasPhase("pairwise", "destination-open")
-		destination, err := windowsAliasNew(child, path, "direct")
-		if err != nil {
-			if destination != nil {
-				_ = destination.close()
-			}
-			return errOrdinary
+
+	}
+	return nil
+}
+
+func windowsAliasPairwiseAttempt(child *windowsCommandWorker, action string) (failure error) {
+	finish, detailErr := child.aliasDetails(action, "pairwise", "pairwise")
+	if detailErr != nil {
+		return detailErr
+	}
+	defer func() { finish(failure == nil) }()
+	child.aliasPhase("pairwise", "prepare")
+	root := child.manifest()
+	root.counter++
+	path := filepath.Join(child.base, "pairwise-output-"+strconv.FormatUint(uint64(root.counter), 10)+".bin")
+	if child.ownFile(path, nil) != nil {
+		return errOrdinary
+	}
+	child.aliasPhase("pairwise", "destination-open")
+	destination, err := windowsAliasNew(child, path, "direct")
+	if err != nil {
+		if destination != nil {
+			_ = destination.close()
 		}
-		child.aliasPhase("pairwise", "source-snapshot")
-		before := child.sources()
-		child.aliasPhase("pairwise", "invoke")
-		out, notice, commandErr, watchdog := windowsAliasInvoke(child, action, destination.file, destination.file)
-		closeErr := destination.close()
-		content, readErr := windowsCommandReadDefault(path)
-		expected := errAuditOutputAlias
-		if action == "export-recorded" {
-			expected = audit.ErrExportDestination
-		} else if action == "run" {
-			expected = errAuditRunOutput
-		}
-		if watchdog {
-			child.aliasPhase("pairwise", "watchdog")
-			return errOrdinary
-		}
-		if phase := windowsAliasRefusalPhase(commandErr, expected, out, notice); phase != "" {
-			child.aliasPhase("pairwise", phase)
-			return errOrdinary
-		}
-		if closeErr != nil {
-			child.aliasPhase("pairwise", "destination-cleanup")
-			return errOrdinary
-		}
-		if readErr != nil || len(content) != 0 {
-			child.aliasPhase("pairwise", "source-readback")
-			return errOrdinary
-		}
-		child.aliasPhase("pairwise", "input-preservation")
-		if !child.preserved(before) {
-			return errOrdinary
-		}
-		child.aliasPhase("pairwise", "product-inventory")
-		if child.recordProducts() != nil {
-			return errOrdinary
-		}
+		return errOrdinary
+	}
+	child.aliasPhase("pairwise", "source-snapshot")
+	before := child.sources()
+	child.aliasPhase("pairwise", "invoke")
+	out, notice, commandErr, watchdog := windowsAliasInvoke(child, action, destination.file, destination.file)
+	closeErr := destination.close()
+	content, readErr := windowsCommandReadDefault(path)
+	expected := errAuditOutputAlias
+	if action == "export-recorded" {
+		expected = audit.ErrExportDestination
+	} else if action == "run" {
+		expected = errAuditRunOutput
+	}
+	if watchdog {
+		child.aliasPhase("pairwise", "watchdog")
+		return errOrdinary
+	}
+	if phase := windowsAliasRefusalPhase(commandErr, expected, out, notice); phase != "" {
+		child.aliasPhase("pairwise", phase)
+		return errOrdinary
+	}
+	if closeErr != nil {
+		child.aliasPhase("pairwise", "destination-cleanup")
+		return errOrdinary
+	}
+	if readErr != nil || len(content) != 0 {
+		child.aliasPhase("pairwise", "source-readback")
+		return errOrdinary
+	}
+	child.aliasPhase("pairwise", "input-preservation")
+	if !child.preserved(before) {
+		return errOrdinary
+	}
+	child.aliasPhase("pairwise", "product-inventory")
+	if child.recordProducts() != nil {
+		return errOrdinary
 	}
 	return nil
 }

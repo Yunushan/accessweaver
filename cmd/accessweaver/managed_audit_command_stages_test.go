@@ -4,6 +4,7 @@ package main
 
 import (
 	"errors"
+	"math/bits"
 	"testing"
 )
 
@@ -65,6 +66,29 @@ func windowsAliasRefusalPhase(commandErr, expected error, out, notice []byte) st
 	return ""
 }
 
+// Detail cases reuse unused bits in the existing executed/passed fields.
+const windowsAliasDetailCaseOffset = 10
+
+var windowsAliasDetailCaseNames = [...]string{
+	"alias-action-import", "alias-action-ui", "alias-action-export-recorded", "alias-action-run",
+	"alias-source-genesis", "alias-source-head", "alias-source-key", "alias-source-journal",
+	"alias-source-profile", "alias-source-executable", "alias-source-pairwise",
+	"alias-role-stdout", "alias-role-stderr", "alias-role-pairwise",
+}
+
+func windowsAliasDetailBits(action, source, role string) (uint64, bool) {
+	var mask uint64
+	for index, name := range windowsAliasDetailCaseNames {
+		if name == "alias-action-"+action || name == "alias-source-"+source || name == "alias-role-"+role {
+			mask |= 1 << index
+		}
+	}
+	if bits.OnesCount64(mask) != 3 {
+		return 0, false
+	}
+	return mask, true
+}
+
 func makeWindowsAliasFailure(variant, phase string) windowsAliasFailure {
 	for kind, name := range windowsAliasVariants {
 		if variant != name {
@@ -103,6 +127,10 @@ func decodeWindowsCommandFailure(value byte, failed uint64) (windowsDesktopStage
 	const desktopCase = uint64(1) << (5 + 2)
 	const capacityCase = uint64(1) << (5 + 6)
 	const aliasCase = uint64(1) << (5 + 5)
+	aliasDetails := failed & (((uint64(1) << len(windowsAliasDetailCaseNames)) - 1) << (5 + windowsAliasDetailCaseOffset))
+	if aliasDetails != 0 && failed&aliasCase == 0 {
+		return 0, 0, false
+	}
 	observed := failed & (desktopCase | capacityCase | aliasCase)
 	if value&128 != 0 {
 		alias := windowsAliasFailure(value & 127)
@@ -279,6 +307,46 @@ func TestWindowsAliasRefusalProjectionDropsPrivateDiagnostics(t *testing.T) {
 		}
 		if got != "" && !windowsAliasFailureValid(makeWindowsAliasFailure("direct", got)) {
 			t.Fatal("fixed refusal category cannot cross the existing protocol")
+		}
+	}
+}
+
+func TestWindowsAliasDetailProjectionDropsPrivateLabels(t *testing.T) {
+	const aliasCase = uint64(1) << (5 + 5)
+	if 5+windowsAliasDetailCaseOffset+len(windowsAliasDetailCaseNames) > 64 {
+		t.Fatal("alias detail cases exceed the existing reply fields")
+	}
+	var observed uint64
+	for _, action := range []string{"import", "ui", "export-recorded", "run"} {
+		for _, source := range []string{"genesis", "head", "key", "journal", "profile", "executable", "pairwise"} {
+			for _, role := range []string{"stdout", "stderr", "pairwise"} {
+				mask, ok := windowsAliasDetailBits(action, source, role)
+				if !ok || bits.OnesCount64(mask) != 3 {
+					t.Fatal("fixed detail case lost its command, input or output role")
+				}
+				observed |= mask
+				failed := mask << (5 + windowsAliasDetailCaseOffset)
+				code := encodeWindowsCommandFailure(0, makeWindowsAliasFailure("direct", "refusal-error"))
+				if _, _, ok := decodeWindowsCommandFailure(code, aliasCase|failed); !ok {
+					t.Fatal("detail cases lost the bound alias failure")
+				}
+				if _, _, ok := decodeWindowsCommandFailure(0, failed); ok {
+					t.Fatal("detail failure was accepted without its umbrella alias failure")
+				}
+			}
+		}
+	}
+	if observed != (uint64(1)<<len(windowsAliasDetailCaseNames))-1 {
+		t.Fatal("detail case labels are duplicate or unreachable")
+	}
+	for _, labels := range [][3]string{
+		{"PRIVATE_ACCOUNT_PATH", "genesis", "stdout"},
+		{"import", "PRIVATE_NATIVE_PATH", "stdout"},
+		{"ui", "head", "PRIVATE_STDERR"},
+		{"", "", ""},
+	} {
+		if mask, ok := windowsAliasDetailBits(labels[0], labels[1], labels[2]); ok || mask != 0 {
+			t.Fatal("private or unknown labels escaped the fixed detail projection")
 		}
 	}
 }
