@@ -245,7 +245,26 @@ func stageRequiredWindowsPolicy(f *ordinaryFixture) (*ordinaryPolicyFixture, err
 		clear(source)
 		return p, errOrdinary
 	}
-	enginePath := filepath.Join(f.root, "ciadpi.exe")
+	// The managed verifier checks the executable's adjacent subtree. Keep it
+	// separate from the ordinary user's deliberately writable child workspace.
+	engineRoot := filepath.Join(f.root, "approved-engine")
+	engineSD, err := windows.SecurityDescriptorFromString("O:BAD:P(A;OICI;FA;;;BA)(A;OICI;FA;;;SY)(A;OICI;FRFX;;;" + f.sid + ")")
+	if err != nil {
+		clear(source)
+		return p, errOrdinary
+	}
+	engineSA := windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: engineSD}
+	engineName, _ := windows.UTF16PtrFromString(engineRoot)
+	if windows.CreateDirectory(engineName, &engineSA) != nil {
+		clear(source)
+		return p, errOrdinary
+	}
+	runtime.KeepAlive(engineSD)
+	if f.record(engineRoot) != nil {
+		clear(source)
+		return p, errOrdinary
+	}
+	enginePath := filepath.Join(engineRoot, "ciadpi.exe")
 	if ordinaryStageFile(f, enginePath, source) != nil {
 		clear(source)
 		return p, errOrdinary
@@ -313,6 +332,18 @@ func stageRequiredWindowsPolicy(f *ordinaryFixture) (*ordinaryPolicyFixture, err
 	p.installation, p.acceptance, p.descriptor, err = ordinaryPolicySnapshot()
 	if err != nil {
 		return p, err
+	}
+	// Exercise the real signed-policy preview after the writable slot exists.
+	// This must read only; no engine launch or profile-store creation is allowed.
+	previewRoot := filepath.Join(slot, "preview-must-remain-absent")
+	previewContext, stopPreview := context.WithTimeout(context.Background(), 15*time.Second)
+	defer stopPreview()
+	plan, previewErr := engine.PreviewContext(previewContext, reviewed, previewRoot)
+	if previewErr != nil || !plan.Ready || !strings.EqualFold(plan.Binary, enginePath) {
+		return p, errOrdinary
+	}
+	if _, statErr := os.Lstat(previewRoot); !errors.Is(statErr, os.ErrNotExist) {
+		return p, errOrdinary
 	}
 	return p, nil
 }
@@ -1422,7 +1453,7 @@ func runWindowsCommandCases(nonce []byte) (executed, passed uint64, desktopFailu
 	}
 	reviewed, err := profile.Decode(bytes.NewReader(data))
 	clear(data)
-	if err != nil || !strings.EqualFold(reviewed.Binary, filepath.Join(stage, "ciadpi.exe")) || len(reviewed.Args) != 0 {
+	if err != nil || !strings.EqualFold(reviewed.Binary, filepath.Join(stage, "approved-engine", "ciadpi.exe")) || len(reviewed.Args) != 0 {
 		return 0, 0, windowsDesktopNoFailure
 	}
 	var token windows.Token
