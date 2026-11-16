@@ -2852,6 +2852,10 @@ function Assert-DNSDohPlaintextBlock([string]$ID) {
         if(-not $persistent){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: persistent rule missing'}
         if(-not $active){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: effective rule missing'}
         if(-not $fullyEnforced){
+            $labels=@(
+                'Invalid','Full','FirewallOffInProfile','CategoryOff','DisabledObject','InactiveProfile','LocalAddressResolutionEmpty','RemoteAddressResolutionEmpty','LocalPortResolutionEmpty','RemotePortResolutionEmpty','InterfaceResolutionEmpty','ApplicationResolutionEmpty',
+                'RemoteMachineEmpty','RemoteUserEmpty','LocalGlobalOpenPortsDisallowed','LocalAuthorizedApplicationsDisallowed','LocalFirewallRulesDisallowed','LocalConsecRulesDisallowed','NotTargetPlatform','OptimizedOut','LocalUserEmpty','TransportMachinesEmpty','TunnelMachinesEmpty','TupleResolutionEmpty'
+            )
             if($statuses.Count -eq 0 -or ($statuses.Count -eq 1 -and $null -eq $statuses[0])){
                 throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: enforcement status unavailable'
             }
@@ -2873,7 +2877,24 @@ function Assert-DNSDohPlaintextBlock([string]$ID) {
                 if($onlyFull){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: repeated Full statuses'}
                 if($onlyFullOrInactive -and $sawFull -and $sawInactive){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: mixed Full and InactiveProfile statuses'}
                 if($onlyFullOrInactive -and -not $sawFull -and $sawInactive){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: repeated InactiveProfile statuses'}
-                throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: enforcement status ambiguous'
+                # A documented non-Full member explains a refusal even when other
+                # entries are unrecognized. This never changes Full admission.
+                $diagnosed=$false
+                if($statuses.Count -le 32){
+                    foreach($entry in $statuses){
+                        $entryInteger=$null -ne $entry -and $entry.GetType() -in @([byte],[sbyte],[uint16],[int16],[uint32],[int32],[uint64],[int64])
+                        $entryKnown=-1
+                        if($entryInteger){
+                            if($entry -ge 0 -and $entry -le 23 -and $entry -ne 1){$entryKnown=[int]$entry}
+                        }elseif($entry -is [string] -or $entry -is [Enum]){
+                            for($index=0;$index -lt $labels.Count;$index++){
+                                if($index -ne 1 -and [string]$entry -ceq $labels[$index]){$entryKnown=$index;break}
+                            }
+                        }
+                        if($entryKnown -ge 0){$status=$entry;$integer=$entryInteger;$diagnosed=$true;break}
+                    }
+                }
+                if(-not $diagnosed){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: enforcement status ambiguous'}
             }
             # Only classify documented integer, enum or exact label representations.
             # Classification never authorizes a non-Full rule.
@@ -2881,10 +2902,6 @@ function Assert-DNSDohPlaintextBlock([string]$ID) {
             if($integer){
                 if($status -ge 0 -and $status -le 23){$knownStatus=[int]$status}
             }elseif($status -is [string] -or $status -is [Enum]){
-                $labels=@(
-                    'Invalid','Full','FirewallOffInProfile','CategoryOff','DisabledObject','InactiveProfile','LocalAddressResolutionEmpty','RemoteAddressResolutionEmpty','LocalPortResolutionEmpty','RemotePortResolutionEmpty','InterfaceResolutionEmpty','ApplicationResolutionEmpty',
-                    'RemoteMachineEmpty','RemoteUserEmpty','LocalGlobalOpenPortsDisallowed','LocalAuthorizedApplicationsDisallowed','LocalFirewallRulesDisallowed','LocalConsecRulesDisallowed','NotTargetPlatform','OptimizedOut','LocalUserEmpty','TransportMachinesEmpty','TunnelMachinesEmpty','TupleResolutionEmpty'
-                )
                 for($index=0;$index -lt $labels.Count;$index++){
                     if([string]$status -ceq $labels[$index]){$knownStatus=$index;break}
                 }

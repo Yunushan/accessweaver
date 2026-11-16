@@ -968,6 +968,22 @@ try {
             Assert-DNS ((Mutation-Count) -eq $before) 'doh-firewall-status-diagnostic-does-not-mutate'
         }
     }
+    foreach($code in 0..23){
+        if($code -eq 1){continue}
+        foreach($value in @([uint16]$code,$statusLabels[$code])){
+            New-DNSCase
+            Configure-DNS 'doh'
+            $id=(Read-DNSRecoverySnapshot).record.dohPlaintextBlockID
+            $before=Mutation-Count
+            # A private, unsupported member is never emitted or admitted.
+            $script:dohFirewallFault='enforcement-shape'
+            $script:dohFirewallEnforcement=@('Full',$value,'PRIVATE_PROVIDER_TEXT')
+            $message=''
+            try{Assert-DNSDohPlaintextBlock $id}catch{$message=$_.Exception.Message}
+            Assert-DNS ($message -ceq ('Managed DoH plaintext protection is missing from effective Windows Firewall policy: '+$statusLabels[$code])) 'doh-firewall-known-enforcement-reason'
+            Assert-DNS ((Mutation-Count) -eq $before) 'doh-firewall-status-diagnostic-does-not-mutate'
+        }
+    }
     foreach($case in @(
         @{value=$null;reason='enforcement status unavailable'},
         @{value=[uint16[]]@();reason='enforcement status unavailable'},
@@ -981,6 +997,7 @@ try {
         @{value=@([double]1,[double]5);reason='enforcement status ambiguous'},
         @{value=[uint16[]]@(1)*32;reason='repeated Full statuses'},
         @{value=[uint16[]]@(1)*33;reason='enforcement status ambiguous'},
+        @{value=(@([uint16]1)*32)+@([uint16]2);reason='enforcement status ambiguous'},
         @{value=@('Full','private provider text');reason='enforcement status ambiguous'},
         @{value='private provider text';reason='enforcement status unsupported'},
         @{value='16';reason='enforcement status unsupported'},
