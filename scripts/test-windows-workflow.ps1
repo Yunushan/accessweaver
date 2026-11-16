@@ -413,7 +413,7 @@ try {
         if($mode -like 'complete*'){
             Assert (-not $rejected -and $script:scanWrites -eq 1 -and $script:scanInstalls -eq 1) ('Complete '+$mode+' scan reaches only the mocked installer')
             $requireCommon=(@($script:scanSelectionArgs | Where-Object {$_ -ceq '--require-common'}).Count -eq 1)
-            if($mode -in @('complete','complete-implicit')){Assert (-not $requireCommon) 'Single-target scan does not require a common section'}
+            if($mode -in @('complete','complete-implicit')){Assert (-not $requireCommon) ('Single-target '+$mode+' scan does not require a common section')}
             else{Assert $requireCommon ('Multi-target '+$mode+' scan requires a common section')}
         }elseif($mode -like 'scan-*'){
             Assert ($rejected -and $script:scanWrites -eq 0 -and $script:scanInstalls -eq 0) ('Scan rejects '+$mode+' before saving or installation')
