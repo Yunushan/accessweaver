@@ -90,7 +90,9 @@ foreach($case in @(
     Reject {Assert-WindowsPublisherSignature $untrusted $publisherPin} 'An incomplete or untrusted Windows signature was accepted'
 }
 $publisherVerifier=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'verify-windows-installer-publisher.ps1'))
-Assert ($publisherVerifier -cmatch '(?s)VolumeRoot\(\$parents\[0\]\).*Open\(\$current,\$true\).*Open\(\$lockedPath,\$false\).*Get-FileHash -InputStream \$file.*Get-AuthenticodeSignature -LiteralPath \$lockedPath.*finally.*\$file\.Dispose\(\).*\$parents\[\$i\]\.Dispose\(\)') 'Publisher verification must hash the held handle and authenticate the same guarded volume path'
+$publisherHelper=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'windows-installer-common.ps1'))
+Assert ($publisherVerifier.Contains('Get-WindowsPublisherArtifactSHA256 $Artifact $PublisherCertificateSHA256 $ArtifactSHA256')) 'Publisher receipt must use the guarded verifier and the approved artifact pin'
+Assert ($publisherHelper -cmatch '(?s)VolumeRoot\(\$parents\[0\]\).*Open\(\$current,\$true\).*Open\(\$lockedPath,\$false\).*Get-FileHash -InputStream \$file.*Get-AuthenticodeSignature -LiteralPath \$lockedPath.*finally.*\$file\.Dispose\(\).*\$parents\[\$i\]\.Dispose\(\)') 'Publisher verification must hash the held handle and authenticate the same guarded volume path'
 if($env:OS -ceq 'Windows_NT'){
     Initialize-WindowsPublisherFileAccess
     $fixtureRoot=Join-Path ([IO.Path]::GetTempPath()) ('accessweaver-publisher-'+[Guid]::NewGuid().ToString('N'))
@@ -131,6 +133,8 @@ if($env:OS -ceq 'Windows_NT'){
 }
 $project=Split-Path -Parent $PSScriptRoot
 $setupScript=Join-Path $PSScriptRoot 'windows-installer.iss'
+$signingCallback=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'sign-windows-installer-artifact.ps1'))
+Assert ($signingCallback -cmatch '(?s)Assert-InstallerSigningStreamOnlyChange \$original \$signed.*Get-FileHash -InputStream \$signed.*Get-WindowsPublisherArtifactSHA256 \$candidate \$publisher \$expectedSignedSHA256.*Complete-InstallerSigning \$absolute \$originalSHA256 \$candidate \$signedSHA256') 'Signing callback must bind the compared and publisher-verified bytes through replacement'
 $installerSource=[IO.File]::ReadAllText($setupScript)
 $initialize=[regex]::Match($installerSource,'(?ms)^function InitializeUninstall: Boolean;.*?^end;').Value
 $prepare=[regex]::Match($installerSource,'(?ms)^function PrepareToInstall\(.*?^end;').Value
@@ -144,6 +148,7 @@ Assert ($replaceProbe.Contains('AWOpenReplaceProbe(Path, $00010080, $00000007, 0
 $installerBuild=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'build-windows-installer.ps1'))
 Assert ($installerBuild -cmatch '(?s)stage-docs.*Assert-InstallerPackageDirectories \$stage \$setupScript.*& \$Compiler') 'Installer build must check the staged directory tree before compiling it'
 Assert ($installerBuild -cmatch '(?s)Assert-InstallerSetupScript \$preprocessed.*Assert-InstallerPackageDirectories \$stage \$setupScript \$preprocessed') 'Installer build must verify coverage for each staged file in the compiled script'
+Assert ($installerBuild -cmatch '(?s)Get-WindowsPublisherArtifactSHA256 \$payload \$payloadSigning\.publisher.*\$identity=& \$payload.*Get-WindowsPublisherArtifactSHA256 \$artifact \$PublisherCertificateSHA256.*\$artifactHash\.Hash -ine \$verifiedInstaller.*Get-WindowsPublisherArtifactSHA256 \$evidencePayload \$payloadSigning\.publisher \$signedPayloadSHA256.*Assert-InstallerSBOMSubject.*\$verifiedInstaller.*Assert-InstallerSBOMSubject.*\$verifiedPayload.*installerSHA256=\$verifiedInstaller.*payloadSHA256=\$verifiedPayload') 'Signed build receipt must bind setup and copied payload to verified digests and SBOM subjects'
 $copyGuard=[regex]::Match($installerSource,'(?ms)^procedure AWCheckPackageCopyDestination;.*?^end;').Value
 Assert ($installerSource -cmatch '(?m)^Source: .*; BeforeInstall: AWCheckPackageCopyDestination\s*$' -and
     $copyGuard -cmatch '(?s)CurrentFilename.*ExpandConstant\(Destination\).*AWInstallationPathPreflight\(ExtractFileDir\(Destination\), True\).*AWCanReplaceInstalledFile\(Destination\).*Log\(Failure\).*Abort;') 'Every package file must recheck its destination immediately before copying'
@@ -378,6 +383,18 @@ try {
         [IO.File]::WriteAllBytes($payload,$bytes)
         Reject {Read-InstallerPEMachine $payload} ('Invalid '+$kind+' header accepted')
     }
+    function Assert-InstallerSigningOnlyChange([string]$Original,[string]$Signed) {
+        $source=[IO.File]::Open($Original,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        try {
+            $target=[IO.File]::Open($Signed,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+            try {
+                Assert-InstallerSigningStreamOnlyChange $source $target
+                Assert ($source.CanRead -and $target.CanRead) 'Signing comparison closed caller-owned file handles'
+            }
+            finally {$target.Dispose()}
+        } finally {$source.Dispose()}
+    }
+
     $original=Join-Path $fixture 'unsigned.exe'
     $signed=Join-Path $fixture 'signed.exe'
     # A minimal PE header plus arbitrary overlay bytes makes it possible to
@@ -409,6 +426,19 @@ try {
         [IO.File]::WriteAllBytes($signed,[byte[]]($signedBytes+@(1)))
         Reject {Assert-InstallerSigningOnlyChange $original $signed} 'Trailing bytes outside the certificate table were accepted'
     }
+    $subjectPath=Join-Path $fixture 'subject.cdx.json'
+    $subject=[ordered]@{bomFormat='CycloneDX';specVersion='1.6';metadata=@{component=@{
+        type='application';hashes=@(@{alg='SHA-256';content=('a'*64)})
+    }}}
+    [IO.File]::WriteAllText($subjectPath,($subject|ConvertTo-Json -Depth 10))
+    Assert-InstallerSBOMSubject $subjectPath ('a'*64)
+    Reject {Assert-InstallerSBOMSubject $subjectPath ('b'*64)} 'An SBOM for a different artifact matched the signed build'
+    $subject.metadata.component.hashes+=@{alg='SHA-256';content=('a'*64)}
+    [IO.File]::WriteAllText($subjectPath,($subject|ConvertTo-Json -Depth 10))
+    Reject {Assert-InstallerSBOMSubject $subjectPath ('a'*64)} 'The signed build accepted an ambiguous SBOM subject digest'
+    [IO.File]::WriteAllText($subjectPath,'{"notAnSBOM":true}')
+    Reject {Assert-InstallerSBOMSubject $subjectPath ('a'*64)} 'The signed build accepted invalid subject metadata'
+
     $handoffOriginal=Join-Path $fixture 'handoff-original.exe'
     $handoffSigned=Join-Path $fixture 'handoff-signed.exe'
     [IO.File]::WriteAllText($handoffOriginal,'fixture unsigned')

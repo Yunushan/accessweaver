@@ -75,6 +75,7 @@ try {
         Invoke-InstallerSigningContext $payloadSigning.signer $payloadSigning.publisher {
             & $callback -Artifact $payload
         }
+        $signedPayloadSHA256=Get-WindowsPublisherArtifactSHA256 $payload $payloadSigning.publisher
     }
     $identity=& $payload version --json
     if($LASTEXITCODE -ne 0){throw 'Cannot read staged runtime build identity'}
@@ -137,7 +138,7 @@ try {
     $artifact=Join-Path $project ('build\accessweaver-'+$Version+'-windows-'+$TargetArch+'-setup.exe')
     if($organizationSigning){
         $artifact=Join-Path (Join-Path $signingRoot 'signed') ([IO.Path]::GetFileName($artifact))
-        Assert-WindowsPublisherSignature (Microsoft.PowerShell.Security\Get-AuthenticodeSignature -LiteralPath $artifact) $PublisherCertificateSHA256
+        $verifiedInstaller=Get-WindowsPublisherArtifactSHA256 $artifact $PublisherCertificateSHA256
     }
     if((Get-FileHash -LiteralPath $buildInfoPath -Algorithm SHA256).Hash -ine $buildInfoDigest){throw 'Installer build metadata changed during compilation'}
     & python (Join-Path $project 'scripts\sbom.py') --binary $artifact --payload-sbom $payloadSBOM --windows-build-info-sha256 $buildInfoDigest --windows-staged-payload-sha256 $payloadFingerprint --compiler $Compiler --compiler-version $actualVersion.Groups[1].Value --compiler-license $compilerLicense --notices (Join-Path $stage 'licenses') --out ($artifact+'.cdx.json')
@@ -149,18 +150,23 @@ try {
     if($LASTEXITCODE -ne 0){throw 'Installer SBOM validation failed'}
     Copy-Item -LiteralPath $payloadSBOM -Destination (Join-Path $evidence 'payload-SBOM.cdx.json') -Force
     Copy-Item -LiteralPath (Join-Path $stage 'BUILD-INFO.json') -Destination (Join-Path $evidence 'payload-BUILD-INFO.json') -Force
-    Copy-Item -LiteralPath (Join-Path $stage 'accessweaver.exe') -Destination (Join-Path $evidence 'payload.exe') -Force
+    $evidencePayload=Join-Path $evidence 'payload.exe'
+    Copy-Item -LiteralPath $payload -Destination $evidencePayload -Force
     Copy-Item -LiteralPath (Join-Path $stage 'licenses') -Destination $evidence -Recurse -Force
     $artifactHash=Get-FileHash -LiteralPath $artifact -Algorithm SHA256
     if($organizationSigning){
+        if($artifactHash.Hash -ine $verifiedInstaller){throw 'Setup changed after publisher verification'}
+        $verifiedPayload=Get-WindowsPublisherArtifactSHA256 $evidencePayload $payloadSigning.publisher $signedPayloadSHA256
+        Assert-InstallerSBOMSubject ($artifact+'.cdx.json') $verifiedInstaller
+        Assert-InstallerSBOMSubject (Join-Path $evidence 'payload-SBOM.cdx.json') $verifiedPayload
         $signingReceipt=[ordered]@{
             schemaVersion=3
             scope='windows-organization-signed-installer-build'
             sourceCommit=$commit
             target='windows/'+$TargetArch
             version=$Version
-            installerSHA256=$artifactHash.Hash.ToLowerInvariant()
-            payloadSHA256=(Get-FileHash -LiteralPath $payload -Algorithm SHA256).Hash.ToLowerInvariant()
+            installerSHA256=$verifiedInstaller
+            payloadSHA256=$verifiedPayload
             buildInfoSHA256=$buildInfoDigest
             publisherCertificateSHA256=$PublisherCertificateSHA256.ToLowerInvariant()
             payloadPublisherCertificateSHA256=$payloadSigning.publisher.ToLowerInvariant()

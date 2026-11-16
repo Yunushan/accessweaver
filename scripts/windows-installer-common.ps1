@@ -265,6 +265,66 @@ function Assert-WindowsPublisherSignature($Signature,[string]$PublisherCertifica
     if($actual -ine $PublisherCertificateSHA256){throw 'Artifact publisher certificate differs from the approved certificate'}
 }
 
+function Get-WindowsPublisherArtifactSHA256([string]$Path,[string]$PublisherCertificateSHA256,[string]$ExpectedSHA256='') {
+    if($env:OS -cne 'Windows_NT'){throw 'Windows is required for Authenticode verification'}
+    $absolute=[IO.Path]::GetFullPath($Path)
+    if($absolute -notmatch '\A[A-Za-z]:\\[^:*?"<>|\x00-\x1f]+\.(exe|msi)\z'){
+        throw 'Expected a local Windows executable or MSI path'
+    }
+    Initialize-WindowsPublisherFileAccess
+    $root=[IO.Path]::GetPathRoot($absolute)
+    $parents=[Collections.Generic.List[Microsoft.Win32.SafeHandles.SafeFileHandle]]::new()
+    $handle=$null
+    $file=$null
+    try {
+        $parents.Add([AccessWeaver.PublisherFileAccess]::Open($root,$true))
+        $volume=[AccessWeaver.PublisherFileAccess]::VolumeRoot($parents[0])
+        $current=$volume
+        $parent=[IO.Path]::GetDirectoryName($absolute)
+        if($parent -ine $root){
+            foreach($component in $parent.Substring($root.Length).Split('\')){
+                $current=[IO.Path]::Combine($current,$component)
+                $parents.Add([AccessWeaver.PublisherFileAccess]::Open($current,$true))
+            }
+        }
+        $lockedPath=$volume+$absolute.Substring($root.Length)
+        $handle=[AccessWeaver.PublisherFileAccess]::Open($lockedPath,$false)
+        $file=[IO.FileStream]::new($handle,[IO.FileAccess]::Read)
+        if($file.Length -le 0 -or $file.Length -gt 512MB){throw 'Artifact is outside the verification size limit'}
+        $actual=(Microsoft.PowerShell.Utility\Get-FileHash -InputStream $file -Algorithm SHA256).Hash
+        if($ExpectedSHA256 -and $actual -ine $ExpectedSHA256){throw 'Artifact digest differs from the approved release digest'}
+        $signature=Microsoft.PowerShell.Security\Get-AuthenticodeSignature -LiteralPath $lockedPath
+        Assert-WindowsPublisherSignature $signature $PublisherCertificateSHA256
+    } finally {
+        try {
+            if($null -ne $file){$file.Dispose()}
+            elseif($null -ne $handle){$handle.Dispose()}
+        } finally {
+            for($i=$parents.Count-1;$i -ge 0;$i--){$parents[$i].Dispose()}
+        }
+    }
+    return $actual.ToLowerInvariant()
+}
+
+function Assert-InstallerSBOMSubject([string]$Path,[string]$ExpectedSHA256) {
+    $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if($stream.Length -le 0 -or $stream.Length -gt 16MB){throw 'Installer SBOM is outside the evidence size limit'}
+        $reader=[IO.StreamReader]::new($stream,[Text.UTF8Encoding]::new($false,$true),$false,4096,$true)
+        try {$document=Microsoft.PowerShell.Utility\ConvertFrom-Json -InputObject ($reader.ReadToEnd()) -ErrorAction Stop}
+        finally {$reader.Dispose()}
+        $component=$document.metadata.component
+        $hashes=@($component.hashes)
+        if($document -isnot [pscustomobject] -or $document.bomFormat -cne 'CycloneDX' -or $document.specVersion -cne '1.6' -or
+            $component -isnot [pscustomobject] -or $component.type -cne 'application' -or
+            $hashes.Count -ne 1 -or $hashes[0] -isnot [pscustomobject] -or
+            $hashes[0].alg -cne 'SHA-256' -or $hashes[0].content -isnot [string] -or $hashes[0].content -cnotmatch '\A[a-f0-9]{64}\z' -or
+            $hashes[0].content -ine $ExpectedSHA256){
+            throw 'Installer SBOM subject differs from the publisher-verified artifact'
+        }
+    } finally {$stream.Dispose()}
+}
+
 function Assert-InstallerSignerIdentity([string]$SigningTool,[string]$PublisherCertificateSHA256) {
     if($PublisherCertificateSHA256 -cnotmatch '\A[a-fA-F0-9]{64}\z' -or
         $SigningTool -cnotmatch '\A[A-Za-z]:\\[^:*?"<>|$%\x00-\x1f]+\.exe\z'){
@@ -355,10 +415,12 @@ function Complete-InstallerSigning([string]$Original,[string]$OriginalSHA256,[st
     Assert-InstallerSigningDigest $Original $SignedSHA256
 }
 
-function Assert-InstallerSigningOnlyChange([string]$Original,[string]$Signed) {
-    $before=[IO.BinaryReader]::new([IO.File]::Open($Original,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
+function Assert-InstallerSigningStreamOnlyChange([IO.Stream]$Original,[IO.Stream]$Signed) {
+    $Original.Position=0
+    $Signed.Position=0
+    $before=[IO.BinaryReader]::new($Original,[Text.Encoding]::UTF8,$true)
     try {
-        $after=[IO.BinaryReader]::new([IO.File]::Open($Signed,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
+        $after=[IO.BinaryReader]::new($Signed,[Text.Encoding]::UTF8,$true)
         try {
             $source=Get-InstallerSigningLayout $before
             $target=Get-InstallerSigningLayout $after

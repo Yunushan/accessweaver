@@ -23,11 +23,12 @@ try {
         if($LASTEXITCODE -ne 0){throw 'The organization signer failed for an installer artifact'}
         $signed=[IO.File]::Open($candidate,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
         try {
-            $signature=Microsoft.PowerShell.Security\Get-AuthenticodeSignature -LiteralPath $candidate
-            Assert-WindowsPublisherSignature $signature $publisher
-            Assert-InstallerSigningOnlyChange $absolute $candidate
-            $originalSHA256=(Get-FileHash -InputStream $original -Algorithm SHA256).Hash
-            $signedSHA256=(Get-FileHash -InputStream $signed -Algorithm SHA256).Hash
+            Assert-InstallerSigningStreamOnlyChange $original $signed
+            $original.Position=0
+            $signed.Position=0
+            $originalSHA256=(Microsoft.PowerShell.Utility\Get-FileHash -InputStream $original -Algorithm SHA256).Hash
+            $expectedSignedSHA256=(Microsoft.PowerShell.Utility\Get-FileHash -InputStream $signed -Algorithm SHA256).Hash
+            $signedSHA256=Get-WindowsPublisherArtifactSHA256 $candidate $publisher $expectedSignedSHA256
         } finally {$signed.Dispose()}
         $original.Dispose()
         Complete-InstallerSigning $absolute $originalSHA256 $candidate $signedSHA256
