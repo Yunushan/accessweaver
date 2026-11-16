@@ -145,9 +145,11 @@ def peer_result(value, now):
     assert type(value) is dict and set(value) == {"passed", "tcpIPv4", "udpIPv4", "tcpIPv6", "udpIPv6", "peer"}
     assert all(value[key] is True for key in ["passed", "tcpIPv4", "udpIPv4", "tcpIPv6", "udpIPv6"])
     peer = value["peer"]
-    assert type(peer) is dict and set(peer) == {"last_handshake_time_sec", "rx_bytes", "tx_bytes"}
-    assert all(type(v) is str and re.fullmatch("[0-9]{1,16}", v) for v in peer.values())
-    numbers = {key: int(v) for key, v in peer.items()}
+    assert type(peer) is dict and set(peer) == {"initiation_received", "last_handshake_time_sec", "rx_bytes", "tx_bytes"}
+    assert peer["initiation_received"] is True
+    counters = {key: peer[key] for key in ("last_handshake_time_sec", "rx_bytes", "tx_bytes")}
+    assert all(type(v) is str and re.fullmatch("[0-9]{1,16}", v) for v in counters.values())
+    numbers = {key: int(v) for key, v in counters.items()}
     assert now - 180 <= numbers["last_handshake_time_sec"] <= now + 5
     assert 0 < numbers["rx_bytes"] <= 1 << 40 and 0 < numbers["tx_bytes"] <= 1 << 40
     return {"tcpIPv4": True, "udpIPv4": True, "tcpIPv6": True, "udpIPv6": True,

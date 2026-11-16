@@ -9,7 +9,7 @@ import fixture_qualification as q
 class FixtureQualificationTests(unittest.TestCase):
     def peer(self):
         return {"passed": True, "tcpIPv4": True, "udpIPv4": True, "tcpIPv6": True, "udpIPv6": True,
-                "peer": {"last_handshake_time_sec": "1000", "rx_bytes": "128", "tx_bytes": "256"}}
+                "peer": {"initiation_received": True, "last_handshake_time_sec": "1000", "rx_bytes": "128", "tx_bytes": "256"}}
 
     def test_guest_guard_preserves_disposable_boundary(self):
         environment = {"GITHUB_ACTIONS": "true", "RUNNER_ENVIRONMENT": "github-hosted", "RUNNER_OS": "Linux", "RUNNER_ARCH": "X64"}
@@ -29,6 +29,10 @@ class FixtureQualificationTests(unittest.TestCase):
         for mutate in [lambda p: p.update(privateKey="PRIVATE_SYNTHETIC"),
                        lambda p: p.update(tcpIPv6=False), lambda p: p.update(passed="true"),
                        lambda p: p["peer"].update(private_key="PRIVATE_SYNTHETIC"),
+                       lambda p: p["peer"].pop("initiation_received"),
+                       lambda p: p["peer"].update(initiation_received=False),
+                       lambda p: p["peer"].update(initiation_received=1),
+                       lambda p: p["peer"].update(initiation_received="true"),
                        lambda p: p["peer"].update(rx_bytes="0"),
                        lambda p: p["peer"].update(tx_bytes="12\nPRIVATE_SYNTHETIC"),
                        lambda p: p["peer"].update(last_handshake_time_sec="1")]:
