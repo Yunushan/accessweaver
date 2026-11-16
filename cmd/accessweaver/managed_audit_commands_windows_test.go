@@ -1873,9 +1873,84 @@ func windowsRunReleased(w *windowsCommandWorker) error {
 		return fail(19)
 	}
 	if accounting.Active != 1 {
-		return fail(20)
+		return fail(windowsRunJobMismatch(w, accounting.Active))
 	}
 	return nil
+}
+
+// Diagnostic only: no mismatched accounting or foreign process is accepted.
+// Query only this disposable worker's assigned job; names/PIDs stay in memory.
+func windowsRunJobMismatch(w *windowsCommandWorker, active uint32) windowsRunReleaseStage {
+	if active == 0 {
+		return 21
+	}
+	if active > 8 {
+		return 22
+	}
+	var list struct {
+		Assigned, Count uint32
+		IDs             [8]uintptr
+	}
+	if windows.QueryInformationJobObject(0, windows.JobObjectBasicProcessIdList,
+		uintptr(unsafe.Pointer(&list)), uint32(unsafe.Sizeof(list)), nil) != nil {
+		return 23
+	}
+	if list.Count > 8 || list.Count != list.Assigned {
+		return 24
+	}
+	worker, err := os.Executable()
+	if err != nil {
+		return 31
+	}
+	foundWorker := false
+	stage := windowsRunReleaseStage(32)
+	for _, pid := range list.IDs[:list.Count] {
+		if pid == uintptr(os.Getpid()) {
+			foundWorker = true
+			continue
+		}
+		if pid == 0 || uint64(pid) > uint64(^uint32(0)) {
+			return 24
+		}
+		process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, uint32(pid))
+		if err != nil {
+			return 31
+		}
+		state, waitErr := windows.WaitForSingleObject(process, 0)
+		var image [32768]uint16
+		length := uint32(len(image))
+		imageErr := windows.QueryFullProcessImageName(process, 0, &image[0], &length)
+		closed := ordinaryClose(&process)
+		if waitErr != nil || imageErr != nil || !closed || length == 0 || length >= uint32(len(image)) ||
+			(state != uint32(windows.WAIT_TIMEOUT) && state != windows.WAIT_OBJECT_0) {
+			return 31
+		}
+		path := windows.UTF16ToString(image[:length])
+		live := state == uint32(windows.WAIT_TIMEOUT)
+		switch {
+		case strings.EqualFold(path, w.engine):
+			if live {
+				stage = 26
+			} else {
+				stage = 27
+			}
+		case strings.EqualFold(path, worker):
+			if live {
+				stage = 28
+			} else {
+				stage = 30
+			}
+		default:
+			if live {
+				return 29
+			}
+			return 30
+		}
+	}
+	if !foundWorker {
+		return 25
+	}
+	return stage
 }
 
 func (w *windowsCommandWorker) runAssertion(label string, valid bool) bool {

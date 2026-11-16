@@ -453,6 +453,9 @@ var windowsRunReleaseNames = [...]string{
 	"journal-record-before", "journal-name", "journal-open", "journal-lock", "journal-close",
 	"journal-record-after", "profile-lock-record", "profile-lock-inspect",
 	"job-accounting-query", "job-child-remains",
+	"job-active-zero", "job-active-overflow", "job-list-query", "job-list-inconsistent",
+	"job-worker-missing", "job-live-engine", "job-terminated-engine", "job-live-worker-peer",
+	"job-live-other", "job-terminated-other", "job-peer-probe", "job-worker-only-list",
 }
 
 func windowsRunReleaseValid(stage windowsRunReleaseStage, failed uint64) bool {
