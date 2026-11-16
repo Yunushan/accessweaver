@@ -394,6 +394,7 @@ func TestDarwinRemovalReceiptRecovery(t *testing.T) {
 			if e := f.intent.quarantinePublicAppUsing(ctx, f.resolve); e != nil {
 				t.Fatal(e)
 			}
+			completeOwnedRemovalFiles(t, f)
 			completeOwnedRemovalObjects(t, f)
 			completeOwnedQuarantinedApp(t, f)
 			calls := 0

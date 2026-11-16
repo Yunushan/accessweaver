@@ -37,6 +37,7 @@ func TestDarwinRemovalRegistrationRecovery(t *testing.T) {
 			if progress, e := f.intent.removeNextRegistrationUsing(ctx, f.resolve); e == nil || progress != (removalProgress{}) {
 				t.Fatal("registration retirement preceded payload removal", progress, e)
 			}
+			completeOwnedRemovalFiles(t, f)
 			completeOwnedRemovalObjects(t, f)
 			completeOwnedQuarantinedApp(t, f)
 			name := "desktop-" + f.intent.plan.DesktopRecordSHA256 + ".json"
