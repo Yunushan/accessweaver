@@ -104,7 +104,7 @@ type ordinaryFixture struct {
 	profileBaselineRoot                                                  ordinaryObject
 	password                                                             []uint16
 	imageHash                                                            [32]byte
-	process, thread, job, pipe, station, desktop, readyEvent             windows.Handle
+	process, thread, job, pipe, station, desktop                         windows.Handle
 	pid                                                                  uint32
 	accountCreated, accountRemoved, profileAbsentBefore, profileCaptured bool
 	stagingCreated                                                       bool
@@ -947,9 +947,6 @@ func (f *ordinaryFixture) launch() error {
 	if err != nil {
 		return errOrdinary
 	}
-	if f.commands && f.prepareWindowsReadyEvent() != nil {
-		return errOrdinary
-	}
 	if count, err := windows.ResumeThread(f.thread); err != nil || count != 1 {
 		return errOrdinary
 	}
@@ -1348,9 +1345,6 @@ func (f *ordinaryFixture) finish() {
 	if !ordinaryClose(&f.job) {
 		f.handlesClosed = false
 	}
-	if !ordinaryClose(&f.readyEvent) {
-		f.handlesClosed = false
-	}
 	if !f.processesEmpty {
 		f.cleanupOK = false
 	}
@@ -1570,7 +1564,7 @@ func (f *ordinaryFixture) report(t *testing.T) {
 		"cleanupComplete": f.cleanupOK, "passed": passed, "productionQualificationComplete": false,
 	}
 	if f.commands {
-		report["schemaVersion"] = 7
+		report["schemaVersion"] = 8
 		report["desktopFailureStage"] = windowsDesktopStageNames[f.desktopFailure]
 		report["aliasFailureVariant"], report["aliasFailureStage"] = windowsAliasFailureNames(f.aliasFailure)
 	}

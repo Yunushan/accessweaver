@@ -1511,23 +1511,19 @@ func runWindowsCommandCases(nonce []byte) (executed, passed uint64, desktopFailu
 	return executed, passed, windowsDesktopStage(encodeWindowsCommandFailure(root.desktopFailure, root.aliasFailure))
 }
 
-const windowsReadyEventUserRights = windows.READ_CONTROL | windows.SYNCHRONIZE | windows.EVENT_MODIFY_STATE
-
-func windowsInertReadyName(stage string, pid uint32) string {
-	// Bind this held object to the private random staging root and worker PID.
+func windowsInertReadyName(stage string, worker, child uint32) string {
 	digest := sha256.Sum256([]byte(strings.ToLower(filepath.Clean(stage))))
-	// The privileged parent and fresh normal logon can have different local
-	// namespaces. Opening this held Global event requires only its explicit ACL.
-	return "Global\\AccessWeaverOrdinaryReady-" + strconv.FormatUint(uint64(pid), 10) + "-" + hex.EncodeToString(digest[:16])
+	return "\\\\.\\pipe\\AccessWeaverOrdinaryReady-" + hex.EncodeToString(digest[:16]) + "-" +
+		strconv.FormatUint(uint64(worker), 10) + "-" + strconv.FormatUint(uint64(child), 10)
 }
 
-func windowsReadyEventDescriptor(handle windows.Handle, sid string) bool {
-	sd, err := windows.GetSecurityInfo(handle, windows.SE_KERNEL_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.LABEL_SECURITY_INFORMATION)
+func windowsReadyPipeDescriptor(handle windows.Handle, sid string) bool {
+	sd, err := windows.GetSecurityInfo(handle, windows.SE_KERNEL_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
 	if err != nil || !ordinaryDescriptor(sd, sid, true) {
 		return false
 	}
 	owner, _, err := sd.Owner()
-	if err != nil || owner.String() != "S-1-5-32-544" {
+	if err != nil || owner.String() != sid {
 		return false
 	}
 	acl, _, err := sd.DACL()
@@ -1538,7 +1534,7 @@ func windowsReadyEventDescriptor(handle windows.Handle, sid string) bool {
 		Revision, Reserved     byte
 		Size, Count, Reserved2 uint16
 	})(unsafe.Pointer(acl))
-	if header.Count != 3 {
+	if header.Count != 2 {
 		return false
 	}
 	seen := map[string]bool{}
@@ -1549,109 +1545,19 @@ func windowsReadyEventDescriptor(handle windows.Handle, sid string) bool {
 			return false
 		}
 		ace := (*windows.ACCESS_ALLOWED_ACE)(raw)
-		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Header.AceFlags != 0 {
+		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Header.AceFlags != 0 ||
+			(ace.Mask != windows.GENERIC_ALL && ace.Mask != 0x001f01ff) {
 			return false
 		}
 		principal := (*windows.SID)(unsafe.Add(raw, 8))
 		value := principal.String()
-		if seen[value] {
+		if seen[value] || (value != sid && value != "S-1-5-18") {
 			return false
 		}
 		seen[value] = true
-		switch value {
-		case "S-1-5-32-544", "S-1-5-18":
-			// Object creation may map GENERIC_ALL into EVENT_ALL_ACCESS.
-			if ace.Mask != windows.GENERIC_ALL && ace.Mask != 0x001f0003 {
-				return false
-			}
-		case sid:
-			if ace.Mask != windowsReadyEventUserRights {
-				return false
-			}
-		default:
-			return false
-		}
 	}
-	if !seen[sid] || !seen["S-1-5-32-544"] || !seen["S-1-5-18"] {
-		return false
-	}
-	// The parent is elevated; only this fixed test signal is explicitly medium
-	// so its fresh standard-account worker can modify it. Querying a label
-	// requires READ_CONTROL, not access to the object's audit SACL.
-	labelACL, _, err := sd.SACL()
-	if err != nil || labelACL == nil {
-		return false
-	}
-	labelHeader := (*struct {
-		Revision, Reserved     byte
-		Size, Count, Reserved2 uint16
-	})(unsafe.Pointer(labelACL))
-	if labelHeader.Size < 8 || labelHeader.Count != 1 {
-		return false
-	}
-	var labelRaw unsafe.Pointer
-	ok, _, _ := ordinaryAdvapi.NewProc("GetAce").Call(uintptr(unsafe.Pointer(labelACL)), 0, uintptr(unsafe.Pointer(&labelRaw)))
-	if ok == 0 || labelRaw == nil {
-		return false
-	}
-	label := (*windows.ACCESS_ALLOWED_ACE)(labelRaw)
-	if label.Header.AceType != 0x11 || label.Header.AceFlags != 0 || label.Header.AceSize < 16 || label.Mask != 1 {
-		return false // SYSTEM_MANDATORY_LABEL_ACE / NO_WRITE_UP only
-	}
-	principal := (*windows.SID)(unsafe.Add(labelRaw, 8))
-	return principal.IsValid() && uint32(label.Header.AceSize) >= 8+uint32(principal.Len()) &&
-		principal.String() == "S-1-16-8192"
-}
-
-func (f *ordinaryFixture) prepareWindowsReadyEvent() error {
-	sd, err := windows.SecurityDescriptorFromString("O:BAD:P(A;;GA;;;BA)(A;;GA;;;SY)(A;;0x00120002;;;" + f.sid + ")S:(ML;;NW;;;ME)")
-	if err != nil {
-		return errOrdinary
-	}
-	sa := windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
-	name, _ := windows.UTF16PtrFromString(windowsInertReadyName(f.root, f.pid))
-	handle, _, lastErr := ordinaryKernel.NewProc("CreateEventW").Call(uintptr(unsafe.Pointer(&sa)), 1, 0, uintptr(unsafe.Pointer(name)))
 	runtime.KeepAlive(sd)
-	f.readyEvent = windows.Handle(handle)
-	if handle == 0 || errors.Is(lastErr, windows.ERROR_ALREADY_EXISTS) || !windowsReadyEventDescriptor(f.readyEvent, f.sid) {
-		return errOrdinary
-	}
-	state, waitErr := windows.WaitForSingleObject(f.readyEvent, 0)
-	if waitErr != nil || state != uint32(windows.WAIT_TIMEOUT) {
-		return errOrdinary
-	}
-	return nil
-}
-
-func (w *windowsCommandWorker) resetWindowsReadyEvent() (failure error) {
-	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	name, _ := windows.UTF16PtrFromString(windowsInertReadyName(filepath.Dir(executable), uint32(os.Getpid())))
-	event, err := windows.OpenEvent(windowsReadyEventUserRights, false, name)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if !ordinaryClose(&event) {
-			failure = errors.Join(failure, errOrdinary)
-		}
-	}()
-	if !windowsReadyEventDescriptor(event, w.sid) {
-		return windows.ERROR_INVALID_SECURITY_DESCR
-	}
-	if err := windows.ResetEvent(event); err != nil {
-		return err
-	}
-	state, waitErr := windows.WaitForSingleObject(event, 0)
-	if waitErr != nil {
-		return waitErr
-	}
-	if state != uint32(windows.WAIT_TIMEOUT) {
-		return windows.ERROR_INVALID_DATA
-	}
-	return nil
+	return seen[sid] && seen["S-1-5-18"]
 }
 
 func ordinaryInertWindowsEngine() bool {
@@ -1661,36 +1567,45 @@ func ordinaryInertWindowsEngine() bool {
 	if len(os.Args) != 3 || os.Args[1] != "--ip" || os.Args[2] != "127.0.0.1" {
 		os.Exit(98)
 	}
-	// Readiness follows signal subscription and opens the exact object held by
-	// the privileged parent. A normal account never creates namespace objects.
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil || user == nil || user.User.Sid == nil {
 		os.Exit(99)
 	}
+	sid := user.User.Sid.String()
 	executable, err := os.Executable()
 	if err != nil {
 		os.Exit(100)
 	}
-	stage := filepath.Dir(filepath.Dir(executable))
-	name, _ := windows.UTF16PtrFromString(windowsInertReadyName(stage, uint32(os.Getppid())))
-	ready, err := windows.OpenEvent(windowsReadyEventUserRights, false, name)
+	sd, err := windows.SecurityDescriptorFromString("O:" + sid + "D:P(A;;GA;;;" + sid + ")(A;;GA;;;SY)")
 	if err != nil {
-		os.Exit(windowsInertEventFailureExit(err))
+		os.Exit(100)
 	}
-	if !windowsReadyEventDescriptor(ready, user.User.Sid.String()) {
+	sa := windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
+	stage := filepath.Dir(filepath.Dir(executable))
+	name, _ := windows.UTF16PtrFromString(windowsInertReadyName(stage, uint32(os.Getppid()), uint32(os.Getpid())))
+	// This is a metadata-only readiness endpoint, with no asynchronous data
+	// transfer or pending OVERLAPPED memory. First-instance and local-only flags
+	// prevent adopting a preexisting server or accepting remote clients.
+	ready, err := windows.CreateNamedPipe(name, windows.PIPE_ACCESS_DUPLEX|windows.FILE_FLAG_FIRST_PIPE_INSTANCE,
+		windows.PIPE_TYPE_MESSAGE|windows.PIPE_READMODE_MESSAGE|windows.PIPE_NOWAIT|windows.PIPE_REJECT_REMOTE_CLIENTS,
+		1, 1, 1, 0, &sa)
+	runtime.KeepAlive(sd)
+	if err != nil {
+		os.Exit(windowsInertReadyFailureExit(err))
+	}
+	if !windowsReadyPipeDescriptor(ready, sid) {
 		_ = ordinaryClose(&ready)
 		os.Exit(100)
 	}
-	state, waitErr := windows.WaitForSingleObject(ready, 0)
-	if waitErr != nil || state != uint32(windows.WAIT_TIMEOUT) {
+	// Listening follows signal subscription. An early client may already have
+	// connected (and closed); either state still proves the source is ready.
+	connectErr := windows.ConnectNamedPipe(ready, nil)
+	if connectErr != nil && !errors.Is(connectErr, windows.ERROR_PIPE_LISTENING) &&
+		!errors.Is(connectErr, windows.ERROR_PIPE_CONNECTED) && !errors.Is(connectErr, windows.ERROR_NO_DATA) {
 		_ = ordinaryClose(&ready)
-		os.Exit(102)
-	}
-	if windows.SetEvent(ready) != nil {
-		_ = ordinaryClose(&ready)
-		os.Exit(101)
+		os.Exit(windowsInertReadyFailureExit(connectErr))
 	}
 	time.Sleep(3 * time.Second)
 	signal.Stop(interrupts)
@@ -1699,6 +1614,45 @@ func ordinaryInertWindowsEngine() bool {
 	}
 	os.Exit(0)
 	return true
+}
+
+func windowsOwnedReadyPipe(w *windowsCommandWorker, childPID uint32) (ready, retry bool) {
+	process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, childPID)
+	if err != nil {
+		return false, false
+	}
+	defer func() {
+		if !ordinaryClose(&process) {
+			ready, retry = false, false
+		}
+	}()
+	var image [32768]uint16
+	length := uint32(len(image))
+	if windows.QueryFullProcessImageName(process, 0, &image[0], &length) != nil ||
+		length == 0 || length >= uint32(len(image)) || !strings.EqualFold(windows.UTF16ToString(image[:length]), w.engine) {
+		return false, false
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return false, false
+	}
+	name, _ := windows.UTF16PtrFromString(windowsInertReadyName(filepath.Dir(executable), uint32(os.Getpid()), childPID))
+	pipe, err := windows.CreateFile(name, windows.GENERIC_READ|windows.READ_CONTROL, 0, nil, windows.OPEN_EXISTING, 0, 0)
+	if err != nil {
+		return false, errors.Is(err, windows.ERROR_FILE_NOT_FOUND) || errors.Is(err, windows.ERROR_PIPE_BUSY) ||
+			errors.Is(err, windows.ERROR_PIPE_NOT_CONNECTED) || errors.Is(err, windows.ERROR_NO_DATA)
+	}
+	defer func() {
+		if !ordinaryClose(&pipe) {
+			ready, retry = false, false
+		}
+	}()
+	var serverPID uint32
+	if windows.GetNamedPipeServerProcessId(pipe, &serverPID) != nil || serverPID != childPID ||
+		!windowsReadyPipeDescriptor(pipe, w.sid) {
+		return false, false
+	}
+	return true, false
 }
 
 func windowsRunWaitReady(w *windowsCommandWorker) bool {
@@ -1721,30 +1675,11 @@ func windowsRunWaitReady(w *windowsCommandWorker) bool {
 			if childPID == 0 {
 				return false
 			}
-			process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, childPID)
-			if err != nil {
-				return false
+			ready, retry := windowsOwnedReadyPipe(w, childPID)
+			if ready {
+				return true
 			}
-			var image [32768]uint16
-			length := uint32(len(image))
-			imageErr := windows.QueryFullProcessImageName(process, 0, &image[0], &length)
-			closed := ordinaryClose(&process)
-			if imageErr != nil || !closed || length == 0 || length >= uint32(len(image)) || !strings.EqualFold(windows.UTF16ToString(image[:length]), w.engine) {
-				return false
-			}
-			executable, executableErr := os.Executable()
-			if executableErr != nil {
-				return false
-			}
-			name, _ := windows.UTF16PtrFromString(windowsInertReadyName(filepath.Dir(executable), uint32(os.Getpid())))
-			event, err := windows.OpenEvent(windows.SYNCHRONIZE|windows.READ_CONTROL, false, name)
-			if err == nil {
-				valid := windowsReadyEventDescriptor(event, w.sid)
-				status, waitErr := windows.WaitForSingleObject(event, 0)
-				closed := ordinaryClose(&event)
-				return valid && waitErr == nil && status == windows.WAIT_OBJECT_0 && closed
-			}
-			if !errors.Is(err, windows.ERROR_FILE_NOT_FOUND) {
+			if !retry {
 				return false
 			}
 		}
@@ -1752,6 +1687,7 @@ func windowsRunWaitReady(w *windowsCommandWorker) bool {
 	}
 	return false
 }
+
 func TestDisposableWindowsAuditCommands(t *testing.T) {
 	if _, present := os.LookupEnv("ACCESSWEAVER_DISPOSABLE_WINDOWS_AUDIT_COMMANDS_TEST"); !present {
 		t.Skip("explicit disposable hosted Windows command fixture only")
@@ -1943,16 +1879,6 @@ func (w *windowsCommandWorker) runApprovedAndRefusals() error {
 	if !w.runAssertion("run-stream", err == nil) {
 		return errOrdinary
 	}
-	if readyErr := child.resetWindowsReadyEvent(); readyErr != nil {
-		w.runAssertion("run-stream", false)
-		code := windowsInertEventFailureExit(readyErr)
-		for index, label := range []string{"run-error-event-access-absent", "run-error-event-handle-absent",
-			"run-error-event-parameter-absent", "run-error-event-security-absent",
-			"run-error-event-owner-absent", "run-error-event-privilege-absent", "run-error-event-path-absent"} {
-			w.runAssertion(label, code != 104+index)
-		}
-		return errOrdinary
-	}
 	before, err := windowsRunPreservedInputs(child)
 	if !w.runAssertion("run-input-snapshot", err == nil) {
 		return errOrdinary
@@ -1980,9 +1906,9 @@ func (w *windowsCommandWorker) runApprovedAndRefusals() error {
 		w.runAssertion(label, !exited || engineExit.ExitCode() != 98+index)
 	}
 
-	for index, label := range []string{"run-error-event-access-absent", "run-error-event-handle-absent",
-		"run-error-event-parameter-absent", "run-error-event-security-absent",
-		"run-error-event-owner-absent", "run-error-event-privilege-absent", "run-error-event-path-absent"} {
+	for index, label := range []string{"run-error-ready-access-absent", "run-error-ready-handle-absent",
+		"run-error-ready-parameter-absent", "run-error-ready-security-absent",
+		"run-error-ready-owner-absent", "run-error-ready-privilege-absent", "run-error-ready-path-absent"} {
 		w.runAssertion(label, !exited || engineExit.ExitCode() != 104+index)
 	}
 	if !w.runAssertion("run-command-return", err == nil) ||
@@ -2053,7 +1979,7 @@ func windowsRunOutputFailure(w *windowsCommandWorker, intent bool) (failure erro
 		label = "run-intent-output-failure"
 	}
 	child, err := w.newStream(label)
-	if err != nil || child.resetWindowsReadyEvent() != nil {
+	if err != nil {
 		return errOrdinary
 	}
 	before, err := windowsRunPreservedInputs(child)
@@ -2105,7 +2031,7 @@ func windowsRunOutputFailure(w *windowsCommandWorker, intent bool) (failure erro
 
 func windowsRunCancellation(w *windowsCommandWorker) (failure error) {
 	child, err := w.newStream("run-cancellation")
-	if err != nil || child.resetWindowsReadyEvent() != nil {
+	if err != nil {
 		return errOrdinary
 	}
 	before, err := windowsRunPreservedInputs(child)

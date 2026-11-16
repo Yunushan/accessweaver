@@ -88,9 +88,9 @@ var windowsRunDetailCaseNames = [...]string{
 	"run-error-input-absent", "run-error-journal-absent",
 	"run-error-inert-args-absent", "run-error-inert-token-absent", "run-error-inert-security-absent",
 	"run-error-inert-event-absent", "run-error-inert-existing-absent", "run-error-inert-close-absent",
-	"run-error-event-access-absent", "run-error-event-handle-absent", "run-error-event-parameter-absent",
-	"run-error-event-security-absent", "run-error-event-owner-absent",
-	"run-error-event-privilege-absent", "run-error-event-path-absent",
+	"run-error-ready-access-absent", "run-error-ready-handle-absent", "run-error-ready-parameter-absent",
+	"run-error-ready-security-absent", "run-error-ready-owner-absent",
+	"run-error-ready-privilege-absent", "run-error-ready-path-absent",
 	"run-launch-notice", "run-observed-journal", "run-notice-private",
 	"run-preserved-inputs", "run-released-resources", "run-stale-head-refusal",
 	"run-retained-head-export", "run-unapproved-profile", "run-unapproved-refusal",
@@ -414,8 +414,8 @@ func TestWindowsRunDetailProjectionIsClosedAndCaseBound(t *testing.T) {
 
 // Public Win32 codes only; native error strings and object names never cross
 // the worker protocol. Unknown errors retain the existing generic exit.
-func windowsInertEventFailureExit(err error) int {
-	if errors.Is(err, syscall.Errno(2)) { // an existing named event was not found
+func windowsInertReadyFailureExit(err error) int {
+	if errors.Is(err, syscall.Errno(2)) { // an existing named readiness endpoint was not found
 		return 110
 	}
 	for index, code := range []syscall.Errno{5, 6, 87, 1338, 1307, 1314, 3} {
@@ -426,18 +426,18 @@ func windowsInertEventFailureExit(err error) int {
 	return 101
 }
 
-func TestWindowsInertEventErrorProjectionDropsPrivateText(t *testing.T) {
-	if windowsInertEventFailureExit(errors.Join(syscall.Errno(2), errors.New("PRIVATE_ACCOUNT_PATH"))) != 110 {
-		t.Fatal("missing event was not reduced to the fixed path category")
+func TestWindowsInertReadyErrorProjectionDropsPrivateText(t *testing.T) {
+	if windowsInertReadyFailureExit(errors.Join(syscall.Errno(2), errors.New("PRIVATE_ACCOUNT_PATH"))) != 110 {
+		t.Fatal("missing readiness endpoint was not reduced to the fixed path category")
 	}
 	for index, code := range []syscall.Errno{5, 6, 87, 1338, 1307, 1314, 3} {
-		if windowsInertEventFailureExit(errors.Join(code, errors.New("PRIVATE_ACCOUNT_PATH"))) != 104+index {
-			t.Fatal("fixed event error category was lost")
+		if windowsInertReadyFailureExit(errors.Join(code, errors.New("PRIVATE_ACCOUNT_PATH"))) != 104+index {
+			t.Fatal("fixed readiness error category was lost")
 		}
 	}
 	for _, err := range []error{nil, errors.New("PRIVATE_NATIVE_ERROR"), syscall.Errno(9999)} {
-		if windowsInertEventFailureExit(err) != 101 {
-			t.Fatal("unknown event error escaped the fixed projection")
+		if windowsInertReadyFailureExit(err) != 101 {
+			t.Fatal("unknown readiness error escaped the fixed projection")
 		}
 	}
 }
