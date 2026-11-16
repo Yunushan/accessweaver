@@ -671,7 +671,8 @@
             "docs/DARWIN_AUDIT_STORAGE.md",
             "docs/qualification/795803e6ea88-windows-audit-storage.json",
             "docs/qualification/33c7737d97cd-linux-recorded-policy-audit.json",
-            "docs/qualification/1d0324fd35d3-native-audit-aliases.json"
+            "docs/qualification/1d0324fd35d3-native-audit-aliases.json",
+            "docs/qualification/5d23fa19aaf9-native-audit-foreground.json"
           ]
         },
         {

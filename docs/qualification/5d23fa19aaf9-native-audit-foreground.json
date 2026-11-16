@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "native-windows-audit-foreground-command-after-owned-pipe-readiness",
+  "sourceCommit": "5d23fa19aaf9a2e2e3337961f65aa43233e56cb8",
+  "sourceSHA256": {
+    "cmd/accessweaver/managed_audit_command_stages_test.go": "bca69a0268665bd99ab13d2a2910d8c810fe173df3549c4b954db4bd2d0e1722",
+    "cmd/accessweaver/managed_audit_commands_windows_test.go": "8a401c706630d56fa2ccdb19668bb01645fb46228b6be9f36936c295c8200f78",
+    "cmd/accessweaver/managed_audit_ordinary_windows_test.go": "b2cf9bd01169051dc67c58e409e7fd5162e694476b960c4218fd1fa157f6dcd8",
+    ".github/workflows/windows-audit-storage.yml": "15a1c303011037c4173020a75faa485a45eb4a54f9369dc43706dffa71e1942d"
+  },
+  "runID": 43981536711,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/43981536711",
+  "providerZIPDigestsVerified": 2,
+  "results": [
+    {
+      "architecture": "amd64",
+      "artifactID": 14283655881,
+      "artifactSHA256": "dbab89863806c9e03bb75850af37ca936e03fa6ff451a0249709805b6fb7818f",
+      "commandReportSchemaVersion": 8,
+      "passedCommandCases": 64,
+      "totalCommandCases": 74,
+      "failedCommandCases": [
+        "pid-bound-pipe",
+        "worker-exit",
+        "exact-owned-cleanup",
+        "approved-recorded-foreground-run",
+        "run-released-resources"
+      ],
+      "unexecutedCommandCases": [
+        "recorded-foreground-output-cancellation-drain",
+        "run-stale-head-refusal",
+        "run-retained-head-export",
+        "run-unapproved-profile",
+        "run-unapproved-refusal"
+      ],
+      "commandCleanupComplete": false,
+      "ordinaryProcessPassed": true,
+      "ordinaryProcessCleanupComplete": true,
+      "commandQualificationComplete": false
+    },
+    {
+      "architecture": "arm64",
+      "artifactID": 14283830412,
+      "artifactSHA256": "14ca4421d35d9c8c0ef9e79d4e9a05246ec63cc8e3c80a3c900778b076925c38",
+      "commandReportSchemaVersion": 8,
+      "passedCommandCases": 64,
+      "totalCommandCases": 74,
+      "failedCommandCases": [
+        "pid-bound-pipe",
+        "worker-exit",
+        "exact-owned-cleanup",
+        "approved-recorded-foreground-run",
+        "run-released-resources"
+      ],
+      "unexecutedCommandCases": [
+        "recorded-foreground-output-cancellation-drain",
+        "run-stale-head-refusal",
+        "run-retained-head-export",
+        "run-unapproved-profile",
+        "run-unapproved-refusal"
+      ],
+      "commandCleanupComplete": false,
+      "ordinaryProcessPassed": true,
+      "ordinaryProcessCleanupComplete": true,
+      "commandQualificationComplete": false
+    }
+  ],
+  "interpretation": [
+    "The approved foreground run returns successfully on AMD64 and ARM64, and its launch notice, journal observations, privacy and input preservation checks pass.",
+    "The following run-released-resources check fails on both architectures. The fixed schema-8 receipt cannot distinguish its lock, inventory, ownership and job assertions.",
+    "Only 64 of 74 command cases pass on each architecture; cancellation and later refusal checks remain unexecuted, and exact command cleanup remains incomplete.",
+    "Both ordinary-process prerequisites pass all 15 cases with cleanup. This does not qualify the recorded-command lifecycle.",
+    "Subsequent schema-9 diagnostics add one fixed stage byte: ordinary replies remain 56 bytes and command replies become 58 bytes. No private paths, accounts or native error text are retained."
+  ],
+  "productionCodeChanged": false,
+  "rawJobLogsFetched": false,
+  "productionQualificationComplete": false,
+  "readinessGatesPromoted": []
+}
