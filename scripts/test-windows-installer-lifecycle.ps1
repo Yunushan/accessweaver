@@ -727,7 +727,7 @@ end;
     $stage='managed-detection-hard-linked-controller'
     $uninstallerDigest=Digest (Join-Path $install 'unins000.exe')
     $detectedCore=Join-Path $install 'accessweaver.exe'
-    $linkedCore=Join-Path $capsule 'detection-controller-link.exe'
+    $linkedCore=Join-Path $install 'detection-controller-link.exe'
     $null=New-Item -ItemType HardLink -Path $linkedCore -Target $detectedCore -ErrorAction Stop
     try {
         Require ((Digest $linkedCore) -ceq $builds[0].payloadSha256) 'Hard-linked detection fixture does not match the approved bytes'
@@ -1004,7 +1004,7 @@ end;
     foreach($case in $replacementCases){
         $subject=Join-Path $install $case.file
         $subjectName=$case.file.Replace('\','-')
-        $alias=Join-Path $capsule ('upgrade-alias-'+$subjectName)
+        $alias=Join-Path $install ('upgrade-alias-'+$subjectName)
         $upgradeLog=Join-Path $capsule ('upgrade-alias-'+$subjectName+'.log')
         $original=Digest $subject
         $null=New-Item -ItemType HardLink -Path $alias -Target $subject -ErrorAction Stop
@@ -1673,7 +1673,7 @@ end;
         @{name='execution-denied-controller-refused';kind='denied';nativeErrors=@(5)}
     )){
         $stage='restoration-launch-'+$case.kind;$caseRecord=$null
-        $hardlinkSource=Join-Path $capsule 'hardlink-controller-source.exe'
+        $hardlinkSource=Join-Path $install 'hardlink-controller-source.exe'
         try {
             switch($case.kind){
                 'missing' {[IO.File]::Delete($core)}
