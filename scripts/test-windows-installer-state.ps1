@@ -186,3 +186,139 @@ foreach($message in @('Timed out: PRIVATE_OTHER.exe','Tool failed: unins000.exe 
     Assert-State ((Get-InstallerNativeFailureCategory $privateBinary $message) -ceq 'other-native-error') 'Unrecognized native error was attributed to a timeout or exit'
 }
 Write-Output 'Synthetic native-attempt reset, exception, privacy and unchanged deadline checks passed; no processes launched.'
+
+
+& {
+    param([string]$DiagnosticScriptRoot=$PSScriptRoot)
+    # Closed protection diagnostic contracts: in-memory ACLs and fake owners only.
+    $testAdmin=[Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
+    $testUsers=[Security.Principal.SecurityIdentifier]::new('S-1-5-32-545')
+    $syntheticSID='S-1-5-21-101-202-303-404'
+    $guardTokens=$null;$guardErrors=$null
+    $guardAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $DiagnosticScriptRoot '..\internal\workflow\windows.ps1'),[ref]$guardTokens,[ref]$guardErrors)
+    Assert-State (-not $guardErrors.Count) 'ACL source did not parse'
+    $aclNode=@($guardAst.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq 'Assert-WorkflowUninstallACL'})
+    Assert-State ($aclNode.Count -eq 1) 'Expected one actual ACL decision function'
+    . ([scriptblock]::Create($aclNode[0].Extent.Text))
+    $script:installerOriginalACL=(Get-Command Assert-WorkflowUninstallACL).ScriptBlock
+    $sourceTokens=$null;$sourceErrors=$null
+    $sourceAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $DiagnosticScriptRoot 'test-windows-installer-lifecycle.ps1'),[ref]$sourceTokens,[ref]$sourceErrors)
+    Assert-State (-not $sourceErrors.Count) 'Installer diagnostic wrappers did not parse'
+    foreach($name in @('Assert-WorkflowUninstallACL','Assert-WorkflowUninstallProtection')){
+        $selected=@($sourceAst.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
+        Assert-State ($selected.Count -eq 1) 'Expected one pass-through diagnostic wrapper'
+        . ([scriptblock]::Create($selected[0].Extent.Text))
+    }
+    $script:installerAdministratorSID=$syntheticSID
+    $stage='synthetic-protection-initial'
+    $script:installerProtectionDiagnosticStage=$null
+    $script:installerProtectionRole='controller'
+    $script:installerProtectionDiagnostic=$null
+    $writeMessage='Registered AccessWeaver installation is writable by an untrusted principal'
+    $shape=@('schemaVersion','scope','aclKind','failureCategory','ownerClass','writerClass','matchedWriteBits',
+        'inherited','inheritanceFlags','propagationFlags','aclSnapshotReadCompleted','offendingAceFound')
+    $snapshots=0
+    foreach($case in @(
+        @{acl=[Security.AccessControl.FileSecurity]::new();kind=[Security.AccessControl.FileSystemAccessRule];read=[Security.AccessControl.FileSystemRights]::ReadAndExecute;write=[Security.AccessControl.FileSystemRights]::Write;wanted='file';scope='controller'},
+        @{acl=[Security.AccessControl.DirectorySecurity]::new();kind=[Security.AccessControl.FileSystemAccessRule];read=[Security.AccessControl.FileSystemRights]::ReadAndExecute;write=[Security.AccessControl.FileSystemRights]::Write;wanted='directory';scope='controller'},
+        @{acl=[Security.AccessControl.RegistrySecurity]::new();kind=[Security.AccessControl.RegistryAccessRule];read=[Security.AccessControl.RegistryRights]::ReadKey;write=[Security.AccessControl.RegistryRights]::SetValue;wanted='registry';scope='registration'}
+    )){
+        $case.acl.SetOwner($testAdmin)
+        $case.acl.AddAccessRule($case.kind::new($testAdmin,$case.write,'Allow'))
+        $case.acl.AddAccessRule($case.kind::new($testUsers,$case.read,'Allow'))
+        $script:installerProtectionDiagnostic=$null
+        $accepted=@(Assert-WorkflowUninstallACL $case.acl ([int]$case.write))
+        Assert-State ($accepted.Count -eq 0 -and $null -eq $script:installerProtectionDiagnostic) 'Wrapper changed a successful ACL outcome'
+        $case.acl.AddAccessRule($case.kind::new($testUsers,$case.write,'Allow'))
+        $refused=$false
+        try{Assert-WorkflowUninstallACL $case.acl ([int]$case.write)}catch{$refused=$_.Exception.Message -ceq $writeMessage}
+        Assert-State $refused 'Wrapper changed the original writable ACL refusal'
+        $diag=$script:installerProtectionDiagnostic
+        Assert-State ($diag.aclKind -ceq $case.wanted -and $diag.scope -ceq $case.scope -and $diag.ownerClass -ceq 'administrators' -and
+            $diag.writerClass -ceq 'users' -and $diag.matchedWriteBits -eq [int]$case.write -and $diag.offendingAceFound -and
+            $diag.aclSnapshotReadCompleted -and -not $diag.inherited -and $diag.failureCategory -ceq 'untrusted-writer') 'ACL snapshot classification differs from the actual refusal'
+        Assert-State (@($diag.Keys | Where-Object {$_ -cnotin $shape}).Count -eq 0 -and $diag.Count -eq $shape.Count) 'Diagnostic acquired an unreviewed field'
+        $first=$diag
+        try{Assert-WorkflowUninstallACL $case.acl ([int]$case.write)}catch{}
+        Assert-State ([object]::ReferenceEquals($first,$script:installerProtectionDiagnostic)) 'Later refusals replaced the first diagnostic'
+        $public=$diag | ConvertTo-Json -Compress
+        Assert-State ($public.Length -le 1024 -and -not $public.Contains($syntheticSID)) 'ACL identity escaped the bounded diagnostic'
+        $snapshots++
+        $script:wrapperAcl=$case.acl;$script:wrapperWrite=[int]$case.write
+    }
+    $previousDiagnostic=$script:installerProtectionDiagnostic
+    $stage='synthetic-protection-next'
+    try{Assert-WorkflowUninstallACL $script:wrapperAcl $script:wrapperWrite}catch{}
+    Assert-State (-not [object]::ReferenceEquals($previousDiagnostic,$script:installerProtectionDiagnostic) -and
+        $script:installerProtectionDiagnosticStage -ceq $stage) 'A previous stage diagnostic was attributed to a later protection failure'
+    $privateRoot='C:\PRIVATE_ACCOUNT\PRIVATE_INSTALL'
+    foreach($entry in @(
+        @{path=$privateRoot;role='installation-directory'},
+        @{path='C:\PRIVATE_ACCOUNT';role='program-files-parent'},
+        @{path=($privateRoot+'\docs\assets');role='package-docs-assets'},
+        @{path=($privateRoot+'\licenses');role='package-licenses'},
+        @{path=($privateRoot+'\unins003.exe');role='uninstaller'},
+        @{path=($privateRoot+'\unins003.dat');role='uninstall-data'},
+        @{path=($privateRoot+'\PRIVATE_TOKEN');role='unknown'}
+    )){
+        Assert-State ((Get-InstallerProtectionPathRole $entry.path $privateRoot 'C:\PRIVATE_ACCOUNT') -ceq $entry.role) 'Private path was not reduced to the expected fixed role'
+    }
+    $specific=[Security.AccessControl.FileSecurity]::new();$specific.SetOwner($testAdmin)
+    $specific.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($syntheticSID),[Security.AccessControl.FileSystemRights]::Write,'Allow'))
+    $current=Get-InstallerACLFailureDiagnostic $specific ([int][Security.AccessControl.FileSystemRights]::Write) 'PRIVATE_PATH' $writeMessage $syntheticSID
+    Assert-State ($current.writerClass -ceq 'current-administrator' -and $current.scope -ceq 'unknown') 'Current fixture administrator was not privately classified'
+    $inherited=[Security.AccessControl.DirectorySecurity]::new();$inherited.SetOwner($testAdmin)
+    $inherited.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-3-0'),[Security.AccessControl.FileSystemRights]::Write,
+        [Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit',[Security.AccessControl.PropagationFlags]::InheritOnly,'Allow'))
+    & $script:installerOriginalACL $inherited ([int][Security.AccessControl.FileSystemRights]::Write)
+    $inactive=Get-InstallerACLFailureDiagnostic $inherited ([int][Security.AccessControl.FileSystemRights]::Write) 'program-files-parent' $writeMessage $syntheticSID
+    Assert-State (-not $inactive.offendingAceFound -and $inactive.matchedWriteBits -eq 0) 'Inherit-only rights were confused with a writable current object'
+    $unknown=Get-InstallerACLFailureDiagnostic ([pscustomobject]@{PRIVATE_ACCOUNT='PRIVATE_TOKEN'}) 1 'PRIVATE_PATH' 'PRIVATE_ERROR' 'PRIVATE_SID'
+    foreach($diag in @($current,$inactive,$unknown)){
+        $public=$diag | ConvertTo-Json -Compress
+        foreach($private in @('PRIVATE_',$syntheticSID,$privateRoot,$writeMessage)){
+            Assert-State (-not $public.Contains($private)) 'Private input or raw error escaped the ACL diagnostic'
+        }
+        Assert-State ($public.Length -le 1024) 'ACL diagnostic exceeds its envelope'
+    }
+    $install=$privateRoot;$programFiles='C:\PRIVATE_ACCOUNT'
+    $script:installerProtectionRole='unknown';$script:installerProtectionDiagnostic=$null;$script:protectionCalls=0
+    $script:wrapperAcl=$specific;$script:wrapperWrite=[int][Security.AccessControl.FileSystemRights]::Write
+    $script:installerOriginalProtection={param($Path)
+        $script:protectionCalls++
+        Assert-WorkflowUninstallACL $script:wrapperAcl $script:wrapperWrite
+    }
+    $refused=$false
+    try{Assert-WorkflowUninstallProtection ($install+'\licenses')}catch{$refused=$_.Exception.Message -ceq $writeMessage}
+    Assert-State ($refused -and $script:protectionCalls -eq 1 -and $script:installerProtectionRole -ceq 'unknown' -and
+        $script:installerProtectionDiagnostic.scope -ceq 'package-licenses') 'Protected-call forwarding or role cleanup changed'
+    & {
+        function Get-InstallerACLFailureDiagnostic {throw 'Synthetic diagnostic fault'}
+        $script:installerProtectionDiagnostic=$null;$refused=$false
+        try{Assert-WorkflowUninstallACL $script:wrapperAcl $script:wrapperWrite}catch{$refused=$_.Exception.Message -ceq $writeMessage}
+        Assert-State ($refused -and $null -eq $script:installerProtectionDiagnostic) 'Diagnostic failure replaced or swallowed the controller refusal'
+    }
+    & {
+        function Get-InstallerProtectionPathRole {throw 'Synthetic diagnostic role fault'}
+        $script:installerOriginalProtection={param($Path) return 'unchanged-success'}
+        $value=Assert-WorkflowUninstallProtection ($install+'\licenses')
+        Assert-State ($value -ceq 'unchanged-success' -and $script:installerProtectionRole -ceq 'unknown') 'Role diagnostic fault changed the protected operation return'
+    }
+    $emit=@($sourceAst.EndBlock.Statements | Where-Object {
+        $_ -is [Management.Automation.Language.IfStatementAst] -and $_.Extent.Text.Contains('$record.uninstallProtectionDiagnostic=')
+    })
+    Assert-State ($emit.Count -eq 1) 'Expected one failure-only diagnostic projection'
+    foreach($case in @(
+        @{complete=$false;current=$true;present=$true;emit=$true},
+        @{complete=$true;current=$true;present=$true;emit=$false},
+        @{complete=$false;current=$false;present=$true;emit=$false},
+        @{complete=$false;current=$true;present=$false;emit=$false}
+    )){
+        $complete=$case.complete;$record=[ordered]@{schemaVersion=61}
+        $script:installerProtectionDiagnostic=if($case.present){$current}else{$null}
+        $script:installerProtectionDiagnosticStage=if($case.current){$stage}else{'synthetic-earlier-stage'}
+        . ([scriptblock]::Create($emit[0].Extent.Text))
+        Assert-State ($record.Contains('uninstallProtectionDiagnostic') -eq $case.emit) 'Diagnostic changed successful report shape or disclosed stale-stage evidence'
+    }
+    Write-Output 'Synthetic ACL diagnostics preserve original decisions, first-fault ownership and privacy; no native state queried.'
+}

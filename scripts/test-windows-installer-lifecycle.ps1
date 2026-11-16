@@ -6,7 +6,11 @@ if($env:OS -ne 'Windows_NT' -or $env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_
 $source=$env:GITHUB_SHA;$sourceRef=$env:GITHUB_REF;$run=$env:GITHUB_RUN_ID;$runAttempt=$env:GITHUB_RUN_ATTEMPT
 if($source -cnotmatch '^[a-f0-9]{40}$' -or $sourceRef -cnotmatch '^refs/heads/[A-Za-z0-9_./-]+$' -or $run -notmatch '^[0-9]+$' -or $runAttempt -cnotmatch '\A[1-9][0-9]{0,19}\z'){throw 'Missing source-bound hosted context'}
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
-try {$admin=([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)} finally {$identity.Dispose()}
+$script:installerAdministratorSID=$null
+try {
+    $admin=([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if($admin){try {$script:installerAdministratorSID=$identity.User.Value} catch {}}
+} finally {$identity.Dispose()}
 if(-not $admin){throw 'Disposable installer acceptance requires an already elevated hosted token'}
 if([Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant() -cne @{amd64='x64';arm64='arm64'}[$Architecture]){throw 'Installer acceptance requires a matching native host'}
 $project=[IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
@@ -26,6 +30,35 @@ foreach($name in @('No-Reparse','Quote-Arg','Native-Argument','New-ToolCapture',
     if($nodes.Count -ne 1){throw 'Expected one fixed product process/inspection helper'}
     . ([scriptblock]::Create($nodes[0].Extent.Text))
 }
+
+# Pass-through test instrumentation. Every protected operation still calls its
+# original controller function; diagnostic errors never replace its outcome.
+$script:installerOriginalACL=(Get-Command Assert-WorkflowUninstallACL).ScriptBlock
+$script:installerOriginalProtection=(Get-Command Assert-WorkflowUninstallProtection).ScriptBlock
+$script:installerProtectionRole='unknown'
+$script:installerProtectionDiagnostic=$null
+$script:installerProtectionDiagnosticStage=$null
+function Assert-WorkflowUninstallACL($Acl,[int]$WriteRights) {
+    try {& $script:installerOriginalACL $Acl $WriteRights}
+    catch {
+        if($null -eq $script:installerProtectionDiagnostic -or $script:installerProtectionDiagnosticStage -cne $stage){
+            try {
+                $script:installerProtectionDiagnostic=Get-InstallerACLFailureDiagnostic $Acl $WriteRights $script:installerProtectionRole $_.Exception.Message $script:installerAdministratorSID
+                $script:installerProtectionDiagnosticStage=$stage
+            } catch {}
+        }
+        throw
+    }
+}
+function Assert-WorkflowUninstallProtection([string]$Path) {
+    $previousRole=$script:installerProtectionRole
+    try {
+        $script:installerProtectionRole='unknown'
+        try {$script:installerProtectionRole=Get-InstallerProtectionPathRole $Path $install $programFiles} catch {}
+        & $script:installerOriginalProtection $Path
+    } finally {$script:installerProtectionRole=$previousRole}
+}
+
 function Require([bool]$ok,[string]$message){if(-not $ok){$script:assertionFailure=$message;$frames=@(Get-PSCallStack);if($frames.Count -gt 1){$script:assertionFailureLine=$frames[1].ScriptLineNumber};throw $message}}
 function Digest([string]$path){return (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()}
 function Assert-SetupCompletionReadback([string]$Log) {
@@ -2084,6 +2117,7 @@ if(-not $complete){$eventDiagnostics=Read-FirewallEventDiagnostic}
 $originDiagnostics=[ordered]@{schemaVersion=1;source='captured-rule-properties';maxRecords=16;maxPropertyBytes=4096;records=@($script:firewallOriginObservations);truncated=$script:firewallOriginTruncated;unavailable=$script:firewallOriginUnavailable;extraNativeQueriesPerformed=$false;processOriginEstablished=$false}
 $record=[ordered]@{schemaVersion=61;nativeDocumentationRefusals=$nativeDocumentationRefusals;controllerDocumentationRefusals=$controllerDocumentationRefusals;uninstallLicenseRefusal=$uninstallLicenseRefusal;uninstallDataDetectionVerified=[bool]$uninstallDataDetectionVerified;uninstallDataRecoveryVerified=[bool]$uninstallDataRecoveryVerified;setupUpgradeBaseline=$setupUpgradeBaseline;setupUninstallRegistrationRefusal=$setupUninstallRegistrationRefusal;setupMarkerReplacement=$setupMarkerReplacement;postRestorationRefusal=$postRestorationRefusal;setupCompletionRefusal=$completionRefusal;setupDocumentationCompletionRefusal=$documentationCompletionRefusal;setupRetirementFlush=$setupRetirementFlush;setupCompletionReadbackVerified=$complete;installationPathRefusals=$pathRefusal;pendingMarkerAccess=$pendingMarkerAccess;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;runAttempt=$runAttempt;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 if($null -ne $script:uninstallBindingFailureCode){$record.uninstallBindingFailureCode=$script:uninstallBindingFailureCode}
+if(-not $complete -and $null -ne $script:installerProtectionDiagnostic -and $script:installerProtectionDiagnosticStage -ceq $stage){$record.uninstallProtectionDiagnostic=$script:installerProtectionDiagnostic}
 $record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $reportPath -Encoding utf8
 if(-not $complete){throw ('Disposable installer acceptance failed at '+$stage+' ('+$failureType+'); owned fixture retained on the disposable runner')}
 Write-Output 'Clean install, upgrade, reinstall, refused in-place downgrade, recovery-aware removal and previous-version rollback passed.'
