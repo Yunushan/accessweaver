@@ -2856,6 +2856,23 @@ function Assert-DNSDohPlaintextBlock([string]$ID) {
                 throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: enforcement status unavailable'
             }
             if($statuses.Count -ne 1){
+                # Diagnose only bounded, source-known shapes. Every array here still refuses.
+                $onlyFull=$statuses.Count -le 32;$onlyFullOrInactive=$onlyFull
+                $sawFull=$false;$sawInactive=$false
+                if($onlyFullOrInactive){
+                    foreach($entry in $statuses){
+                        $entryInteger=$null -ne $entry -and $entry.GetType() -in @([byte],[sbyte],[uint16],[int16],[uint32],[int32],[uint64],[int64])
+                        $entryLabel=$entry -is [string] -or $entry -is [Enum]
+                        $entryFull=($entryLabel -and [string]$entry -ceq 'Full') -or ($entryInteger -and $entry -eq 1)
+                        $entryInactive=($entryLabel -and [string]$entry -ceq 'InactiveProfile') -or ($entryInteger -and $entry -eq 5)
+                        $onlyFull=$onlyFull -and $entryFull
+                        $onlyFullOrInactive=$onlyFullOrInactive -and ($entryFull -or $entryInactive)
+                        $sawFull=$sawFull -or $entryFull;$sawInactive=$sawInactive -or $entryInactive
+                    }
+                }
+                if($onlyFull){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: repeated Full statuses'}
+                if($onlyFullOrInactive -and $sawFull -and $sawInactive){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: mixed Full and InactiveProfile statuses'}
+                if($onlyFullOrInactive -and -not $sawFull -and $sawInactive){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: repeated InactiveProfile statuses'}
                 throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: enforcement status ambiguous'
             }
             # Only classify documented integer, enum or exact label representations.
