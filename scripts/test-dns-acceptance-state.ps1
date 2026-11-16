@@ -949,7 +949,11 @@ try {
         $refusals=@($productCatalog.entries | Where-Object {
             $_.literal.StartsWith('Managed DoH plaintext protection is missing from effective Windows Firewall policy: ',[StringComparison]::Ordinal)
         })
-        Assert-A ($refusals.Count -eq 28 -and $productCatalog.entries.Count -le 1024) 'source-literal-catalog'
+        Assert-A ($refusals.Count -eq 31 -and $productCatalog.entries.Count -le 1024) 'source-literal-catalog'
+        foreach($shape in @('repeated Full statuses','mixed Full and InactiveProfile statuses','repeated InactiveProfile statuses')){
+            $literal='Managed DoH plaintext protection is missing from effective Windows Firewall policy: '+$shape
+            Assert-A (@($refusals | Where-Object {$_.literal -ceq $literal}).Count -eq 1) 'source-literal-catalog'
+        }
         foreach($refusal in $refusals){
             $match=Get-NativeDNSFailureMarker $productCatalog '' ('PRIVATE_ACCOUNT '+$refusal.literal+' PRIVATE_TOKEN')
             Assert-A ($match.lines.Count -eq 1 -and $match.lines[0] -eq $refusal.lines[0] -and
