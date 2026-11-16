@@ -270,6 +270,12 @@ Write-Output 'Synthetic native-attempt reset, exception, privacy and unchanged d
     # The native refusal retained an inherited registry writer outside the old
     # closed classes. Classify only fixed roles/families, never the actual SID.
     foreach($entry in @(
+        @{sid='S-1-3-1';wanted='creator-group'},
+        @{sid='S-1-3-4';wanted='owner-rights'},
+        @{sid='S-1-5-10';wanted='principal-self'},
+        @{sid='S-1-5-2';wanted=('well-known-'+[int][Security.Principal.WellKnownSidType]::NetworkSid)},
+        @{sid='S-1-5-3';wanted=('well-known-'+[int][Security.Principal.WellKnownSidType]::BatchSid)},
+        @{sid='S-1-5-7';wanted=('well-known-'+[int][Security.Principal.WellKnownSidType]::AnonymousSid)},
         @{sid='S-1-5-32-547';wanted='power-users'},
         @{sid='S-1-5-4';wanted='interactive'},
         @{sid='S-1-5-6';wanted='service-logon'},
@@ -303,6 +309,8 @@ Write-Output 'Synthetic native-attempt reset, exception, privacy and unchanged d
         Assert-State ((Get-InstallerACLPrincipalClass $invalid '') -ceq 'other') 'Invalid or excessive identifier acquired a principal family'
     }
     Assert-State ((Get-InstallerACLPrincipalClass $syntheticSID $syntheticSID) -ceq 'current-administrator') 'Account family replaced the exact current administrator classification'
+    Assert-State ((Get-InstallerACLPrincipalClass 'S-1-9-101-202-303-404' '') -ceq 'other') 'Unclassified identifier was confused with a standard type'
+    Assert-State ((Get-InstallerACLPrincipalClass 'S-1-5-2' 'S-1-5-2') -ceq 'current-administrator') 'Standard type replaced the exact current administrator classification'
     $inherited=[Security.AccessControl.DirectorySecurity]::new();$inherited.SetOwner($testAdmin)
     $inherited.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-3-0'),[Security.AccessControl.FileSystemRights]::Write,
         [Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit',[Security.AccessControl.PropagationFlags]::InheritOnly,'Allow'))

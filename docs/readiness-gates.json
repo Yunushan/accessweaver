@@ -184,7 +184,8 @@
             "docs/qualification/03aa58615a16-debian-managed-reboot.json",
             "docs/qualification/03aa58615a16-debian-apt-dpkg-lifecycle.json",
             "docs/qualification/03aa58615a16-debian-filtered-lifecycle.json",
-            "docs/qualification/03aa58615a16-debian-arm64-dpkg-lifecycle.json"
+            "docs/qualification/03aa58615a16-debian-arm64-dpkg-lifecycle.json",
+            "docs/qualification/43385d49f54c-installer-registration-refusal.json"
           ]
         }
       ]

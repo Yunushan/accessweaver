@@ -73,6 +73,9 @@ function Get-InstallerACLPrincipalClass([string]$SID,[string]$AdministratorSID) 
         'S-1-5-11' {return 'authenticated-users'}
         'S-1-5-32-545' {return 'users'}
         'S-1-3-0' {return 'creator-owner'}
+        'S-1-3-1' {return 'creator-group'}
+        'S-1-3-4' {return 'owner-rights'}
+        'S-1-5-10' {return 'principal-self'}
         'S-1-5-32-547' {return 'power-users'}
         'S-1-5-4' {return 'interactive'}
         'S-1-5-6' {return 'service-logon'}
@@ -94,6 +97,19 @@ function Get-InstallerACLPrincipalClass([string]$SID,[string]$AdministratorSID) 
         if($SID -cmatch '^S-1-15-3(?:-[0-9]+)+$'){return 'application-capability'}
         if($SID -cmatch '^S-1-15-2(?:-[0-9]+)+$'){return 'application-package'}
         if($SID -cmatch '^S-1-5-21(?:-[0-9]+)+$'){return 'account-domain'}
+        # Only framework-defined standard type codes may leave this fallback.
+        # IsWellKnown compares the SID value; no account-name resolution occurs.
+        try {
+            $identifier=[Security.Principal.SecurityIdentifier]::new($SID)
+            $types=@([Enum]::GetValues([Security.Principal.WellKnownSidType]))
+            if($types.Count -gt 256){return 'other'}
+            foreach($type in $types){
+                $code=[int]$type
+                if($code -ge 0 -and $code -le 255 -and $identifier.IsWellKnown($type)){
+                    return ('well-known-'+$code.ToString([Globalization.CultureInfo]::InvariantCulture))
+                }
+            }
+        } catch {}
     }
     return 'other'
 }

@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "provider-bound-native-installer-registration-protection-refusal",
+  "sourceCommit": "43385d49f54cc53ca6e859e4e3faea364d6105b3",
+  "repository": "Yunushan/accessweaver",
+  "sourceRef": "refs/heads/codex/dns-adapter-coverage",
+  "workflow": ".github/workflows/installer-lifecycle.yml",
+  "runID": 43879694033,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/43879694033",
+  "verifiedProviderZIPDigests": 2,
+  "immutableProducerSourceSHA256": {
+    "scripts/windows-installer-native-state.ps1": "f56e092ef23d8bd5ce77c0f29a915368a8946922e4687812e81f66fed6ac1272",
+    "scripts/test-windows-installer-lifecycle.ps1": "b135532ec041762baecf2384e8ad96bf98dc654dbe9d37d3c5cad53513e7aa01"
+  },
+  "results": [
+    {
+      "sourceCommit": "43385d49f54cc53ca6e859e4e3faea364d6105b3",
+      "run": 43879694033,
+      "architecture": "amd64",
+      "artifact": 14235872702,
+      "artifactSHA256": "413897e66ac4eba33d68c862295d4185acdd46ac73e01b17d00b915ed8ba911c",
+      "stage": "uninstall-redirected-licenses",
+      "sourceLine": 814,
+      "uninstallBindingFailureCode": "untrusted-writer",
+      "passed": false,
+      "ownedFixturesRemoved": false,
+      "productionQualificationComplete": false,
+      "uninstallProtectionDiagnostic": {
+        "schemaVersion": 1,
+        "scope": "registration",
+        "aclKind": "registry",
+        "failureCategory": "untrusted-writer",
+        "ownerClass": "administrators",
+        "writerClass": "other",
+        "matchedWriteBits": 65542,
+        "inherited": true,
+        "inheritanceFlags": 0,
+        "propagationFlags": 0,
+        "aclSnapshotReadCompleted": true,
+        "offendingAceFound": true
+      }
+    },
+    {
+      "sourceCommit": "43385d49f54cc53ca6e859e4e3faea364d6105b3",
+      "run": 43879694033,
+      "architecture": "arm64",
+      "artifact": 14234708228,
+      "artifactSHA256": "c22ad7bc88074b8400cc72d93234a9dc48c37a53513358b2a9b4d19484c3f8c0",
+      "stage": "uninstall-redirected-licenses",
+      "sourceLine": 814,
+      "uninstallBindingFailureCode": "untrusted-writer",
+      "passed": false,
+      "ownedFixturesRemoved": false,
+      "productionQualificationComplete": false,
+      "uninstallProtectionDiagnostic": {
+        "schemaVersion": 1,
+        "scope": "registration",
+        "aclKind": "registry",
+        "failureCategory": "untrusted-writer",
+        "ownerClass": "administrators",
+        "writerClass": "other",
+        "matchedWriteBits": 65542,
+        "inherited": true,
+        "inheritanceFlags": 0,
+        "propagationFlags": 0,
+        "aclSnapshotReadCompleted": true,
+        "offendingAceFound": true
+      }
+    }
+  ],
+  "interpretation": [
+    "Both targets refuse inherited write access on the uninstall registry registration before reaching the intended redirected-license refusal.",
+    "The owner is classified as administrators and the writer remains other after the existing family extension. The raw principal identifier/account name was not retained and its actual identity is not established.",
+    "Neither failed report verifies complete lifecycle success or owned-fixture removal. No later lifecycle phase or complete installed-product qualification follows from these reports."
+  ],
+  "nextDiagnostic": {
+    "sourceSHA256": {
+      "scripts/windows-installer-native-state.ps1": "5227eb868e0269c1411b6596b2982dbfbf17b5874566280b5b98ef9ead3136e7",
+      "scripts/test-windows-installer-state.ps1": "bd58ef09b46c4e84beed1267e8e6214a603c8d1d2dc37e33de49982dd69a811a"
+    },
+    "fixedAdditionalRoles": [
+      "creator-group",
+      "owner-rights",
+      "principal-self"
+    ],
+    "fallback": "well-known- plus a framework-defined WellKnownSidType numeric code; not a raw SID, RID or account identifier",
+    "wellKnownTypeCodeRange": [
+      0,
+      255
+    ],
+    "maximumFrameworkTypesExamined": 256,
+    "frameworkAPI": "https://learn.microsoft.com/en-us/dotnet/api/system.security.principal.securityidentifier.iswellknown?view=net-10.0",
+    "accountNameResolutionPerformed": false,
+    "productTrustGuardChanged": false,
+    "nativeClassificationPending": true,
+    "powerShell51Assertions": 122,
+    "powerShell7Assertions": 122
+  },
+  "rawJobLogsFetched": false,
+  "actualPrincipalIdentityEstablished": false,
+  "nativeLifecycleQualified": false,
+  "productionQualificationComplete": false,
+  "readinessGatesPromoted": []
+}
