@@ -13,21 +13,38 @@ try {
     if($absolute -notmatch '\A[A-Za-z]:\\[^:*?"<>|\x00-\x1f]+\.(exe|msi)\z'){
         throw 'Expected a local Windows executable or MSI path'
     }
-    $entry=Get-Item -LiteralPath $absolute -Force
-    if($entry.PSIsContainer){throw 'Expected an artifact file'}
-    for($path=$absolute;$path;$path=[IO.Path]::GetDirectoryName($path)){
-        $item=Get-Item -LiteralPath $path -Force
-        if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Artifact path includes a reparse point'}
-        if($path -ieq [IO.Path]::GetPathRoot($path)){break}
-    }
-    $file=[IO.File]::Open($absolute,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    Initialize-WindowsPublisherFileAccess
+    $root=[IO.Path]::GetPathRoot($absolute)
+    $parents=[Collections.Generic.List[Microsoft.Win32.SafeHandles.SafeFileHandle]]::new()
+    $handle=$null
+    $file=$null
     try {
+        $parents.Add([AccessWeaver.PublisherFileAccess]::Open($root,$true))
+        $volume=[AccessWeaver.PublisherFileAccess]::VolumeRoot($parents[0])
+        $current=$volume
+        $parent=[IO.Path]::GetDirectoryName($absolute)
+        if($parent -ine $root){
+            foreach($component in $parent.Substring($root.Length).Split('\')){
+                $current=[IO.Path]::Combine($current,$component)
+                $parents.Add([AccessWeaver.PublisherFileAccess]::Open($current,$true))
+            }
+        }
+        $lockedPath=$volume+$absolute.Substring($root.Length)
+        $handle=[AccessWeaver.PublisherFileAccess]::Open($lockedPath,$false)
+        $file=[IO.FileStream]::new($handle,[IO.FileAccess]::Read)
         if($file.Length -le 0 -or $file.Length -gt 512MB){throw 'Artifact is outside the verification size limit'}
-        $actual=(Get-FileHash -InputStream $file -Algorithm SHA256).Hash
+        $actual=(Microsoft.PowerShell.Utility\Get-FileHash -InputStream $file -Algorithm SHA256).Hash
         if($actual -ine $ArtifactSHA256){throw 'Artifact digest differs from the approved release digest'}
-        $signature=Microsoft.PowerShell.Security\Get-AuthenticodeSignature -LiteralPath $absolute
+        $signature=Microsoft.PowerShell.Security\Get-AuthenticodeSignature -LiteralPath $lockedPath
         Assert-WindowsPublisherSignature $signature $PublisherCertificateSHA256
-    } finally {$file.Dispose()}
+    } finally {
+        try {
+            if($null -ne $file){$file.Dispose()}
+            elseif($null -ne $handle){$handle.Dispose()}
+        } finally {
+            for($i=$parents.Count-1;$i -ge 0;$i--){$parents[$i].Dispose()}
+        }
+    }
     [ordered]@{
         schemaVersion=1
         scope='windows-publisher-signature'
@@ -36,6 +53,7 @@ try {
         embeddedSignatureVerified=$true
         timestampPresent=$true
     } | ConvertTo-Json -Compress
+    exit 0
 } catch {
     [Console]::Error.WriteLine('Windows publisher verification failed. Check the approved digests, local artifact, Windows trust and timestamp.')
     exit 1

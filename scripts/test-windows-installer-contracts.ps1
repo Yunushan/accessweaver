@@ -1,4 +1,4 @@
-# Pure target/identity contracts and synthetic PE headers. Nothing is executed.
+# Target and identity contracts, synthetic PE headers, and inert native path guards.
 [CmdletBinding()]
 param()
 $ErrorActionPreference='Stop'
@@ -88,6 +88,46 @@ foreach($case in @(
     $untrusted=$signature.Clone()
     $untrusted[$case.key]=$case.value
     Reject {Assert-WindowsPublisherSignature $untrusted $publisherPin} 'An incomplete or untrusted Windows signature was accepted'
+}
+$publisherVerifier=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'verify-windows-installer-publisher.ps1'))
+Assert ($publisherVerifier -cmatch '(?s)VolumeRoot\(\$parents\[0\]\).*Open\(\$current,\$true\).*Open\(\$lockedPath,\$false\).*Get-FileHash -InputStream \$file.*Get-AuthenticodeSignature -LiteralPath \$lockedPath.*finally.*\$file\.Dispose\(\).*\$parents\[\$i\]\.Dispose\(\)') 'Publisher verification must hash the held handle and authenticate the same guarded volume path'
+if($env:OS -ceq 'Windows_NT'){
+    Initialize-WindowsPublisherFileAccess
+    $fixtureRoot=Join-Path ([IO.Path]::GetTempPath()) ('accessweaver-publisher-'+[Guid]::NewGuid().ToString('N'))
+    $fixtureDirectory=Join-Path $fixtureRoot 'artifact'
+    $relocated=Join-Path $fixtureRoot 'relocated'
+    $alias=Join-Path $fixtureRoot 'alias'
+    $artifact=Join-Path $fixtureDirectory 'inert.exe'
+    [void][IO.Directory]::CreateDirectory($fixtureDirectory)
+    $directoryGuard=$null
+    $volumeGuard=$null
+    $fileGuard=$null
+    try {
+        [IO.File]::WriteAllText($artifact,'inert authenticode path fixture')
+        [IO.Directory]::Move($fixtureDirectory,$relocated)
+        [IO.Directory]::Move($relocated,$fixtureDirectory)
+        [void](New-Item -ItemType Junction -Path $alias -Target $fixtureDirectory)
+        Reject {([AccessWeaver.PublisherFileAccess]::Open($alias,$true)).Dispose()} 'Publisher parent guard followed a junction'
+
+        $drive=[IO.Path]::GetPathRoot($artifact)
+        $volumeGuard=[AccessWeaver.PublisherFileAccess]::Open($drive,$true)
+        $volume=[AccessWeaver.PublisherFileAccess]::VolumeRoot($volumeGuard)
+        $protectedDirectory=$volume+$fixtureDirectory.Substring($drive.Length)
+        $protectedArtifact=$volume+$artifact.Substring($drive.Length)
+        $directoryGuard=[AccessWeaver.PublisherFileAccess]::Open($protectedDirectory,$true)
+        Reject {[IO.Directory]::Move($fixtureDirectory,$relocated)} 'The held publisher directory was renamed'
+        $fileGuard=[AccessWeaver.PublisherFileAccess]::Open($protectedArtifact,$false)
+        Reject {([IO.File]::OpenWrite($artifact)).Dispose()} 'The held publisher artifact could be opened for writing'
+    } finally {
+        if($null -ne $fileGuard){$fileGuard.Dispose()}
+        if($null -ne $directoryGuard){$directoryGuard.Dispose()}
+        if($null -ne $volumeGuard){$volumeGuard.Dispose()}
+        if([IO.Directory]::Exists($relocated)){[IO.Directory]::Move($relocated,$fixtureDirectory)}
+        [IO.File]::Delete($artifact)
+        if([IO.Directory]::Exists($alias)){[IO.Directory]::Delete($alias)}
+        [IO.Directory]::Delete($fixtureDirectory)
+        [IO.Directory]::Delete($fixtureRoot)
+    }
 }
 $project=Split-Path -Parent $PSScriptRoot
 $setupScript=Join-Path $PSScriptRoot 'windows-installer.iss'

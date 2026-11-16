@@ -170,6 +170,81 @@ function Assert-InstallerSetupScript([string]$Path, [string]$TargetArch, [string
     return $actual
 }
 
+function Initialize-WindowsPublisherFileAccess {
+    if('AccessWeaver.PublisherFileAccess' -as [type]){return}
+    Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
+using System;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+
+namespace AccessWeaver
+{
+    public static class PublisherFileAccess
+    {
+        [StructLayout(LayoutKind.Sequential)]
+        private struct AttributeTagInfo
+        {
+            public FileAttributes Attributes;
+            public uint ReparseTag;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern SafeFileHandle CreateFileW(string path, uint access, FileShare sharing,
+            IntPtr security, uint disposition, uint flags, IntPtr template);
+
+        [DllImport("kernel32.dll", ExactSpelling = true)]
+        private static extern bool GetFileInformationByHandleEx(SafeFileHandle file, int informationClass,
+            out AttributeTagInfo information, uint size);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern uint GetFinalPathNameByHandleW(SafeFileHandle file, StringBuilder path,
+            uint capacity, uint flags);
+
+        public static string VolumeRoot(SafeFileHandle directory)
+        {
+            const uint VolumeNameGuid = 1;
+            const string prefix = @"\\?\Volume";
+            var buffer = new StringBuilder(64);
+            uint length = GetFinalPathNameByHandleW(directory, buffer, (uint)buffer.Capacity, VolumeNameGuid);
+            string path = buffer.ToString();
+            Guid volume;
+            if (length == 0 || length >= buffer.Capacity ||
+                !path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || !path.EndsWith("\\", StringComparison.Ordinal) ||
+                !Guid.TryParseExact(path.Substring(prefix.Length, path.Length - prefix.Length - 1), "B", out volume))
+                throw new IOException("Artifact requires a local volume root");
+
+            return path;
+        }
+
+        public static SafeFileHandle Open(string path, bool directory)
+        {
+            const uint FileListDirectory = 1;
+            const uint GenericRead = 0x80000000;
+            const uint OpenExisting = 3;
+            const uint OpenReparsePoint = 0x00200000;
+            const uint BackupSemantics = 0x02000000;
+            const int FileAttributeTagInfo = 9;
+            // Keep each path component open without write or delete sharing.
+            var handle = CreateFileW(path, directory ? FileListDirectory : GenericRead, FileShare.Read,
+                IntPtr.Zero, OpenExisting, OpenReparsePoint | (directory ? BackupSemantics : 0), IntPtr.Zero);
+            AttributeTagInfo info;
+            if (handle.IsInvalid || !GetFileInformationByHandleEx(handle, FileAttributeTagInfo,
+                out info, (uint)Marshal.SizeOf(typeof(AttributeTagInfo))) ||
+                (info.Attributes & FileAttributes.ReparsePoint) != 0 ||
+                ((info.Attributes & FileAttributes.Directory) != 0) != directory)
+            {
+                handle.Dispose();
+                throw new IOException("Artifact path is inaccessible, redirected or has the wrong type");
+            }
+            return handle;
+        }
+    }
+}
+'@
+}
+
 function Assert-WindowsPublisherSignature($Signature,[string]$PublisherCertificateSHA256) {
     if($PublisherCertificateSHA256 -cnotmatch '\A[a-fA-F0-9]{64}\z'){
         throw 'Expected a SHA-256 fingerprint of the approved publisher certificate'
