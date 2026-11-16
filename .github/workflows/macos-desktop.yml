@@ -11,6 +11,8 @@ on:
       - scripts/*macos*product*
       - scripts/build-macos-installer.py
       - scripts/macos_installer.py
+      - scripts/verify_macos_installer_publisher.py
+      - scripts/test_macos*.py
       - scripts/macos_package_archive.py
       - scripts/test-macos-installer-lifecycle.py
       - scripts/sbom.py

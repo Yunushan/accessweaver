@@ -396,7 +396,7 @@ with patch.object(publisher, "tool"), patch.object(publisher, "publish_staged_fi
                     "commit": auth[0], "version": auth[1], "helper_sha256": "d" * 64,
                     "manifest_sha256": "b" * 64, "payload_sha256": "c" * 64,
                 })
-                self.assertEqual(stage.call_args.args[:5], (snapshot.parent / "expanded", TEAM, "arm64", "d" * 64, destination))
+                self.assertEqual(stage.call_args.args[:5], (snapshot.parent / "expanded", TEAM, "arm64", "d" * 64, destination.resolve()))
                 self.assertEqual(stage.call_args.args[-1], "e" * 64)
                 self.assertEqual(result["deploymentRelease"], {
                     "sourceCommit": auth[0], "version": auth[1], "manifestSHA256": "b" * 64, "payloadSHA256": "c" * 64,
