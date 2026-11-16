@@ -1511,7 +1511,11 @@ func runWindowsCommandCases(nonce []byte) (executed, passed uint64, desktopFailu
 	return executed, passed, windowsDesktopStage(encodeWindowsCommandFailure(root.desktopFailure, root.aliasFailure))
 }
 func windowsInertReadyName(parent, pid uint32) string {
-	return "Local\\AccessWeaverOrdinaryReady-" + strconv.FormatUint(uint64(parent), 10) + "-" + strconv.FormatUint(uint64(pid), 10)
+	// The fresh worker can run in service session zero, where the explicit
+	// Local namespace may deny this normal logon account object creation.
+	// Global event creation needs no mapping/symlink creation privilege.
+	// Keep the PID-bound name, exact user/SYSTEM DACL and collision refusal.
+	return "Global\\AccessWeaverOrdinaryReady-" + strconv.FormatUint(uint64(parent), 10) + "-" + strconv.FormatUint(uint64(pid), 10)
 }
 func ordinaryInertWindowsEngine() bool {
 	if !strings.EqualFold(filepath.Base(os.Args[0]), "ciadpi.exe") {
