@@ -64,6 +64,8 @@ The later [current-source public diagnostic checkpoint](qualification/e6490f5d15
 
 macOS amd64/arm64 also have partial signed administrator policy through a fixed paired root-owned local-APFS source. [Native policy contracts and disposable acceptance](MACOS_MANAGED_POLICY.md) describe root-only CLI enrollment/update/rotation/recovery, protected Mach-O/bundle inputs, sanitized foreground launch and unqualified deployment/recovery boundaries. Both native architecture jobs must pass for the actual candidate.
 
+At exact source 86090c94048212d56561a62e33681cb3c858d32e, [both native desktop jobs](https://github.com/Yunushan/accessweaver/actions/runs/43835341109) passed on Intel and Apple Silicon. The [independently authenticated receipt](qualification/86090c940482-macos-desktop.json) verifies both provider ZIP digests, all 122 attested subjects before content parsing, and ten real identity/digest rejection probes. Both candidates passed actual package-content, component/product lifecycle, default LaunchServices controller, removal-inspection and bounded helper write-fault recovery validation. This historical unsigned cohort does not qualify publisher signing/notarization, full product removal, whole-product interruption/reboot/power-loss recovery, interactive Finder behavior, every supported OS version or intended managed endpoints. All readiness statuses remain unchanged.
+
 Use a compatible local proxy or external configured core. Zapret2 is not offered; legacy Zapret is limited to `tpws` SOCKS mode in this adapter. Some external proxy tools may change system proxy settings themselves. Native network extensions, signing/notarization and rollback remain planned.
 
 ## Android

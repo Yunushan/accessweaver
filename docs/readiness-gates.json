@@ -385,6 +385,7 @@
           "status": "partial",
           "evidence": [
             "docs/PLATFORMS.md",
+            "docs/qualification/86090c940482-macos-desktop.json",
             "scripts/check-native-environment.cjs",
             "scripts/check-native-environment.test.cjs",
             ".github/workflows/ci.yml"
