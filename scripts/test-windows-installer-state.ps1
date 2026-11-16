@@ -267,6 +267,42 @@ Write-Output 'Synthetic native-attempt reset, exception, privacy and unchanged d
     $specific.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($syntheticSID),[Security.AccessControl.FileSystemRights]::Write,'Allow'))
     $current=Get-InstallerACLFailureDiagnostic $specific ([int][Security.AccessControl.FileSystemRights]::Write) 'PRIVATE_PATH' $writeMessage $syntheticSID
     Assert-State ($current.writerClass -ceq 'current-administrator' -and $current.scope -ceq 'unknown') 'Current fixture administrator was not privately classified'
+    # The native refusal retained an inherited registry writer outside the old
+    # closed classes. Classify only fixed roles/families, never the actual SID.
+    foreach($entry in @(
+        @{sid='S-1-5-32-547';wanted='power-users'},
+        @{sid='S-1-5-4';wanted='interactive'},
+        @{sid='S-1-5-6';wanted='service-logon'},
+        @{sid='S-1-5-19';wanted='local-service'},
+        @{sid='S-1-5-20';wanted='network-service'},
+        @{sid='S-1-5-12';wanted='restricted'},
+        @{sid='S-1-5-33';wanted='write-restricted'},
+        @{sid='S-1-15-2-1';wanted='all-application-packages'},
+        @{sid='S-1-15-2-2';wanted='all-restricted-application-packages'},
+        @{sid='S-1-5-32-999';wanted='builtin-other'},
+        @{sid='S-1-5-80-101-202-303-404-505';wanted='service-account'},
+        @{sid='S-1-15-3-101-202';wanted='application-capability'},
+        @{sid='S-1-15-2-101-202';wanted='application-package'},
+        @{sid='S-1-5-21-101-202-303-405';wanted='account-domain'}
+    )){
+        Assert-State ((Get-InstallerACLPrincipalClass $entry.sid '') -ceq $entry.wanted) 'Closed principal family classification differs'
+        $registry=[Security.AccessControl.RegistrySecurity]::new()
+        # The inherited ACE and write bits reproduce the public native receipt.
+        $registry.SetSecurityDescriptorSddlForm(('O:BAG:BAD:(A;;KA;;;BA)(A;ID;0x10006;;;'+$entry.sid+')'))
+        $script:installerProtectionDiagnostic=$null
+        $refused=$false
+        try{Assert-WorkflowUninstallACL $registry 0x000d0026}catch{$refused=$_.Exception.Message -ceq $writeMessage}
+        $classified=$script:installerProtectionDiagnostic
+        Assert-State ($refused -and $classified.writerClass -ceq $entry.wanted -and
+            $classified.scope -ceq 'registration' -and $classified.inherited -and
+            $classified.matchedWriteBits -eq 0x10006 -and $classified.offendingAceFound) 'Diagnostic principal classification changed the actual inherited registry writer refusal'
+        $public=$classified | ConvertTo-Json -Compress
+        Assert-State ($public.Length -le 1024 -and -not $public.Contains($entry.sid)) 'A principal identifier escaped the family diagnostic'
+    }
+    foreach($invalid in @('PRIVATE_SID',('S-1-5-21-'+('1'*185)),'S-1-5-21-101-PRIVATE_TOKEN')){
+        Assert-State ((Get-InstallerACLPrincipalClass $invalid '') -ceq 'other') 'Invalid or excessive identifier acquired a principal family'
+    }
+    Assert-State ((Get-InstallerACLPrincipalClass $syntheticSID $syntheticSID) -ceq 'current-administrator') 'Account family replaced the exact current administrator classification'
     $inherited=[Security.AccessControl.DirectorySecurity]::new();$inherited.SetOwner($testAdmin)
     $inherited.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-3-0'),[Security.AccessControl.FileSystemRights]::Write,
         [Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit',[Security.AccessControl.PropagationFlags]::InheritOnly,'Allow'))

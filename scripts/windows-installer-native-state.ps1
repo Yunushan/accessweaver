@@ -73,10 +73,28 @@ function Get-InstallerACLPrincipalClass([string]$SID,[string]$AdministratorSID) 
         'S-1-5-11' {return 'authenticated-users'}
         'S-1-5-32-545' {return 'users'}
         'S-1-3-0' {return 'creator-owner'}
+        'S-1-5-32-547' {return 'power-users'}
+        'S-1-5-4' {return 'interactive'}
+        'S-1-5-6' {return 'service-logon'}
+        'S-1-5-19' {return 'local-service'}
+        'S-1-5-20' {return 'network-service'}
+        'S-1-5-12' {return 'restricted'}
+        'S-1-5-33' {return 'write-restricted'}
+        'S-1-15-2-1' {return 'all-application-packages'}
+        'S-1-15-2-2' {return 'all-restricted-application-packages'}
     }
     if(-not $SID){return 'unavailable'}
     if($SID.Length -le 184 -and $SID -cmatch '^S-1-[0-9]+(?:-[0-9]+){1,15}$' -and
         $SID -ceq $AdministratorSID){return 'current-administrator'}
+    # Families are diagnostic classes only; no relative identifier is emitted.
+    # The caller's exact SID match takes precedence over the account family.
+    if($SID.Length -le 184 -and $SID -cmatch '^S-1-[0-9]+(?:-[0-9]+){1,15}$'){
+        if($SID -cmatch '^S-1-5-32-[0-9]+$'){return 'builtin-other'}
+        if($SID -cmatch '^S-1-5-80(?:-[0-9]+)+$'){return 'service-account'}
+        if($SID -cmatch '^S-1-15-3(?:-[0-9]+)+$'){return 'application-capability'}
+        if($SID -cmatch '^S-1-15-2(?:-[0-9]+)+$'){return 'application-package'}
+        if($SID -cmatch '^S-1-5-21(?:-[0-9]+)+$'){return 'account-domain'}
+    }
     return 'other'
 }
 function Get-InstallerACLFailureDiagnostic($Acl,[int]$WriteRights,[string]$Role,[string]$Message,[string]$AdministratorSID) {
