@@ -1,0 +1,1282 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "provider-bound-native-dns-observer-cohort-and-corrected-wire-followup",
+  "repository": "Yunushan/accessweaver",
+  "sourceRef": "refs/heads/codex/dns-adapter-coverage",
+  "qualificationScope": "Fixed public source-bound driver observations from two historical native DNS cohorts; no complete DNS, reboot, traffic or production qualification.",
+  "verifiedProviderZIPDigests": 20,
+  "ordinaryDNS": {
+    "sourceCommit": "8b9184de225d0da6151c5e9a26e88c26ed02dcbf",
+    "workflow": ".github/workflows/native-doh.yml",
+    "runID": 43872082061,
+    "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/43872082061",
+    "sourceSHA256": {
+      "scripts/test-native-doh.ps1": "65d79e43c8806a7a7681690ac1f2a10e29c4cfba42a24b5b3cdb42f27dba5fa3",
+      "scripts/native-doh-scenario.ps1": "f47543f08743069505e4431d586a48125f181bb0553e16b55d5f15be8be94e8a",
+      "scripts/dns-acceptance-state.ps1": "30d1350688ff323660f06a6cf663d914535b801cf0fc6c9be0001bdab440bbcf",
+      "scripts/test-dns-acceptance-state.ps1": "71f6fa51fe1a2adbcf73dcc26e9f3d51f2c6db928eee62663077bbfa482ce04e",
+      "scripts/check-native-environment.cjs": "cf56a8253f0444ec6cb8c8bf92249151165d8bd4061985c8a0e8df0df2aea562",
+      ".github/workflows/native-doh.yml": "60e7de4a26cb70528b9f625c96df8ac4ebd88a893b62a24f5ce272b6f6c18276",
+      "internal/workflow/windows.ps1": "a316172da5104e3c61bb955a64fe29943748e05e5a58a775c47fe81f1d8d6ec8",
+      "internal/workflow/manager.go": "9846bb5109dc37154e554516140e24f29875946bd90cd4069a680db042906f12",
+      "cmd/accessweaver/system.go": "a951e33ebbe7815b33fd3210ae39ec688730d6697283dc0b3c53b17290682a7c",
+      "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+      "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00"
+    },
+    "passed": 2,
+    "failed": 16,
+    "results": [
+      {
+        "target": "dnscrypt/missing-snapshot/amd64",
+        "artifact": 14230699645,
+        "artifactSHA256": "f458dae0097ec3ba6d2bf04e5e1f787c68de848b9f55e2c173e2b241cea8b05b",
+        "outcome": "failed",
+        "code": "native-roundtrip-failed",
+        "configureExitCode": 0,
+        "restoreExitCode": 1,
+        "cleanupExitCode": 0,
+        "snapshotRemoved": true,
+        "serviceRemoved": true,
+        "cliCount": 5,
+        "processesJoined": 5,
+        "missingSnapshotScenario": {
+          "outcome": "failed",
+          "code": "journal-retry",
+          "configurationAttempted": true,
+          "emergencyStateVerified": true
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "a316172da5104e3c61bb955a64fe29943748e05e5a58a775c47fe81f1d8d6ec8",
+          "observations": [
+            {
+              "action": "recover",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 2,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                6069
+              ],
+              "schemaVersion": 1
+            },
+            {
+              "action": "recover",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 3,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [],
+              "schemaVersion": 1
+            },
+            {
+              "action": "dns-restore",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 4,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                3411
+              ],
+              "schemaVersion": 1
+            }
+          ],
+          "catalogAvailable": true
+        }
+      },
+      {
+        "target": "dnscrypt/missing-snapshot/arm64",
+        "artifact": 14235932082,
+        "artifactSHA256": "aaea4a45368e772aefc3597fd7df211251d04cde1347afac98782bd3378c9893",
+        "outcome": "failed",
+        "code": "native-roundtrip-failed",
+        "configureExitCode": 1,
+        "restoreExitCode": 1,
+        "cleanupExitCode": 0,
+        "snapshotRemoved": true,
+        "serviceRemoved": true,
+        "cliCount": 3,
+        "processesJoined": 3,
+        "missingSnapshotScenario": {
+          "outcome": "failed",
+          "code": "configuration",
+          "configurationAttempted": true,
+          "emergencyStateVerified": true
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "a316172da5104e3c61bb955a64fe29943748e05e5a58a775c47fe81f1d8d6ec8",
+          "observations": [
+            {
+              "action": "dns",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 1,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [],
+              "schemaVersion": 1
+            },
+            {
+              "action": "dns-restore",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 2,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                3411
+              ],
+              "schemaVersion": 1
+            }
+          ],
+          "catalogAvailable": true
+        }
+      },
+      {
+        "target": "dnscrypt/remove-all/amd64",
+        "artifact": 14237165157,
+        "artifactSHA256": "960acf8142ba33f5b019bbc373afa9eb5dd63dc0bafbb9bbcca4d3ec0c26a00d",
+        "outcome": "passed",
+        "code": "none",
+        "configureExitCode": 0,
+        "restoreExitCode": -1,
+        "cleanupExitCode": 0,
+        "snapshotRemoved": true,
+        "serviceRemoved": true,
+        "cliCount": 2,
+        "processesJoined": 2,
+        "scenario": {
+          "outcome": "passed",
+          "code": "none",
+          "operationCode": "none",
+          "restorationCode": "none",
+          "verificationCode": "none",
+          "configurationAttempted": true,
+          "configurationAccepted": true,
+          "configuredStateVerified": true,
+          "restorationAccepted": true,
+          "restoredStateVerified": true,
+          "restoredResolverVerified": true
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "a316172da5104e3c61bb955a64fe29943748e05e5a58a775c47fe81f1d8d6ec8",
+          "observations": [],
+          "catalogAvailable": true
+        }
+      },
+      {
+        "target": "dnscrypt/remove-all/arm64",
+        "artifact": 14233233226,
+        "artifactSHA256": "e3800d189f60445acfe542c161a15770d68c14b4258003f02db0a7f87c693de7",
+        "outcome": "failed",
+        "code": "native-scenario",
+        "configureExitCode": 1,
+        "restoreExitCode": -1,
+        "cleanupExitCode": 0,
+        "snapshotRemoved": false,
+        "serviceRemoved": true,
+        "cliCount": 2,
+        "processesJoined": 2,
+        "scenario": {
+          "outcome": "failed",
+          "code": "operation-failed",
+          "operationCode": "configuration",
+          "restorationCode": "none",
+          "verificationCode": "none",
+          "configurationAttempted": true,
+          "configurationAccepted": false,
+          "configuredStateVerified": false,
+          "restorationAccepted": true,
+          "restoredStateVerified": true,
+          "restoredResolverVerified": true
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "a316172da5104e3c61bb955a64fe29943748e05e5a58a775c47fe81f1d8d6ec8",
+          "observations": [
+            {
+              "action": "dns",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 1,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [],
+              "schemaVersion": 1
+            }
+          ],
+          "catalogAvailable": true
+        }
+      },
+      {
+        "target": "dnscrypt/roundtrip/amd64",
+        "artifact": 14236476274,
+        "artifactSHA256": "a5265afac710077084a668f692318d6b7e3fd9a43a7b733ed611d2a6df0a8e62",
+        "outcome": "failed",
+        "code": "native-scenario",
+        "configureExitCode": 0,
+        "restoreExitCode": 1,
+        "cleanupExitCode": 1,
+        "snapshotRemoved": false,
+        "serviceRemoved": false,
+        "cliCount": 3,
+        "processesJoined": 3,
+        "scenario": {
+          "outcome": "failed",
+          "code": "restore-failed",
+          "operationCode": "none",
+          "restorationCode": "restoration",
+          "verificationCode": "restored-state",
+          "configurationAttempted": true,
+          "configurationAccepted": true,
+          "configuredStateVerified": true,
+          "restorationAccepted": false,
+          "restoredStateVerified": false,
+          "restoredResolverVerified": false
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "a316172da5104e3c61bb955a64fe29943748e05e5a58a775c47fe81f1d8d6ec8",
+          "observations": [
+            {
+              "action": "dns-restore",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 2,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                3497
+              ],
+              "schemaVersion": 1
+            },
+            {
+              "action": "remove",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 3,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [],
+              "schemaVersion": 1
+            }
+          ],
+          "catalogAvailable": true
+        }
+      },
+      {
+        "target": "dnscrypt/roundtrip/arm64",
+        "artifact": 14231884018,
+        "artifactSHA256": "732a01a55e0fdd209c8d3db3bff906dbaa5e422237c1c8e11e8a182c853906ea",
+        "outcome": "failed",
+        "code": "native-scenario",
+        "configureExitCode": 1,
+        "restoreExitCode": 1,
+        "cleanupExitCode": 0,
+        "snapshotRemoved": false,
+        "serviceRemoved": true,
+        "cliCount": 3,
+        "processesJoined": 3,
+        "scenario": {
+          "outcome": "failed",
+          "code": "operation-failed",
+          "operationCode": "configuration",
+          "restorationCode": "restoration",
+          "verificationCode": "none",
+          "configurationAttempted": true,
+          "configurationAccepted": false,
+          "configuredStateVerified": false,
+          "restorationAccepted": false,
+          "restoredStateVerified": true,
+          "restoredResolverVerified": true
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "a316172da5104e3c61bb955a64fe29943748e05e5a58a775c47fe81f1d8d6ec8",
+          "observations": [
+            {
+              "action": "dns",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 1,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [],
+              "schemaVersion": 1
+            },
+            {
+              "action": "dns-restore",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 2,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                3411
+              ],
+              "schemaVersion": 1
+            }
+          ],
+          "catalogAvailable": true
+        }
+      },
+      {
+        "target": "dnscrypt/service-loss/amd64",
+        "artifact": 14232423861,
+        "artifactSHA256": "bacada34d669ce6971c9486572e0695420eb734bea47a602fd77e3e2933a8c1d",
+        "outcome": "failed",
+        "code": "native-roundtrip-failed",
+        "configureExitCode": 0,
+        "restoreExitCode": 1,
+        "cleanupExitCode": 0,
+        "snapshotRemoved": true,
+        "serviceRemoved": true,
+        "cliCount": 3,
+        "processesJoined": 3,
+        "scenario": {
+          "outcome": "failed",
+          "code": "restore-failed",
+          "operationCode": "none",
+          "restorationCode": "restoration",
+          "verificationCode": "restored-state",
+          "configurationAttempted": true,
+          "configurationAccepted": true,
+          "configuredStateVerified": true,
+          "restorationAccepted": false,
+          "restoredStateVerified": false,
+          "restoredResolverVerified": false
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "a316172da5104e3c61bb955a64fe29943748e05e5a58a775c47fe81f1d8d6ec8",
+          "observations": [
+            {
+              "action": "dns-restore",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 2,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                3497
+              ],
+              "schemaVersion": 1
+            }
+          ],
+          "catalogAvailable": true
+        }
+      },
+      {
+        "target": "dnscrypt/service-loss/arm64",
+        "artifact": 14233279272,
+        "artifactSHA256": "d97f81ff33518946475610c1605cd78d3ac77062b4f2565cc4fc324a39a6abbf",
+        "outcome": "failed",
+        "code": "native-scenario",
+        "configureExitCode": 1,
+        "restoreExitCode": 1,
+        "cleanupExitCode": 0,
+        "snapshotRemoved": false,
+        "serviceRemoved": true,
+        "cliCount": 3,
+        "processesJoined": 3,
+        "scenario": {
+          "outcome": "failed",
+          "code": "operation-failed",
+          "operationCode": "configuration",
+          "restorationCode": "restoration",
+          "verificationCode": "none",
+          "configurationAttempted": true,
+          "configurationAccepted": false,
+          "configuredStateVerified": false,
+          "restorationAccepted": false,
+          "restoredStateVerified": true,
+          "restoredResolverVerified": true
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "a316172da5104e3c61bb955a64fe29943748e05e5a58a775c47fe81f1d8d6ec8",
+          "observations": [
+            {
+              "action": "dns",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 1,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [],
+              "schemaVersion": 1
+            },
+            {
+              "action": "dns-restore",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 2,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                3411
+              ],
+              "schemaVersion": 1
+            }
+          ],
+          "catalogAvailable": true
+        }
+      },
+      {
+        "target": "dnscrypt/service-reactivation/amd64",
+        "artifact": 14236146424,
+        "artifactSHA256": "c5b037dfbc80db91638dde387b44ccfbd292382091bdc309d866a95403e78dc9",
+        "outcome": "failed",
+        "code": "native-scenario",
+        "configureExitCode": 0,
+        "restoreExitCode": 1,
+        "cleanupExitCode": 1,
+        "snapshotRemoved": false,
+        "serviceRemoved": false,
+        "cliCount": 4,
+        "processesJoined": 4,
+        "scenario": {
+          "outcome": "failed",
+          "code": "restore-failed",
+          "operationCode": "none",
+          "restorationCode": "restoration",
+          "verificationCode": "restored-state",
+          "configurationAttempted": true,
+          "configurationAccepted": true,
+          "configuredStateVerified": true,
+          "restorationAccepted": false,
+          "restoredStateVerified": false,
+          "restoredResolverVerified": false
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "a316172da5104e3c61bb955a64fe29943748e05e5a58a775c47fe81f1d8d6ec8",
+          "observations": [
+            {
+              "action": "dns-restore",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 3,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                3497
+              ],
+              "schemaVersion": 1
+            },
+            {
+              "action": "remove",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 4,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [],
+              "schemaVersion": 1
+            }
+          ],
+          "catalogAvailable": true
+        }
+      },
+      {
+        "target": "dnscrypt/service-reactivation/arm64",
+        "artifact": 14235032026,
+        "artifactSHA256": "f3c57676c68f6598061eef456d506ef857c221450aa53aa6faf06430369bd0bf",
+        "outcome": "failed",
+        "code": "native-scenario",
+        "configureExitCode": 1,
+        "restoreExitCode": 1,
+        "cleanupExitCode": 0,
+        "snapshotRemoved": false,
+        "serviceRemoved": true,
+        "cliCount": 3,
+        "processesJoined": 3,
+        "scenario": {
+          "outcome": "failed",
+          "code": "operation-failed",
+          "operationCode": "configuration",
+          "restorationCode": "restoration",
+          "verificationCode": "none",
+          "configurationAttempted": true,
+          "configurationAccepted": false,
+          "configuredStateVerified": false,
+          "restorationAccepted": false,
+          "restoredStateVerified": true,
+          "restoredResolverVerified": true
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "a316172da5104e3c61bb955a64fe29943748e05e5a58a775c47fe81f1d8d6ec8",
+          "observations": [
+            {
+              "action": "dns",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 1,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [],
+              "schemaVersion": 1
+            },
+            {
+              "action": "dns-restore",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 2,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                3411
+              ],
+              "schemaVersion": 1
+            }
+          ],
+          "catalogAvailable": true
+        }
+      },
+      {
+        "target": "dnscrypt/verification-failure/amd64",
+        "artifact": 14234129050,
+        "artifactSHA256": "5ec344bb23895f08b7bc9f3b36b65b01e631ed174faa37c6efdd4be3346b3975",
+        "outcome": "passed",
+        "code": "none",
+        "configureExitCode": 1,
+        "restoreExitCode": -1,
+        "cleanupExitCode": 0,
+        "snapshotRemoved": true,
+        "serviceRemoved": true,
+        "cliCount": 2,
+        "processesJoined": 2,
+        "rollbackScenario": {
+          "outcome": "passed",
+          "code": "none",
+          "operationCode": "none",
+          "configurationAttempted": true
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "a316172da5104e3c61bb955a64fe29943748e05e5a58a775c47fe81f1d8d6ec8",
+          "observations": [
+            {
+              "action": "dns",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 1,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                3243
+              ],
+              "schemaVersion": 1
+            }
+          ],
+          "catalogAvailable": true
+        }
+      },
+      {
+        "target": "dnscrypt/verification-failure/arm64",
+        "artifact": 14234603146,
+        "artifactSHA256": "e8ee0176d49278939f6967277987c139180c1783b955232081f3645f004ed2f1",
+        "outcome": "failed",
+        "code": "native-roundtrip-failed",
+        "configureExitCode": 1,
+        "restoreExitCode": -1,
+        "cleanupExitCode": 0,
+        "snapshotRemoved": true,
+        "serviceRemoved": true,
+        "cliCount": 2,
+        "processesJoined": 2,
+        "rollbackScenario": {
+          "outcome": "failed",
+          "code": "operation-failed",
+          "operationCode": "effects-observation",
+          "configurationAttempted": true
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "a316172da5104e3c61bb955a64fe29943748e05e5a58a775c47fe81f1d8d6ec8",
+          "observations": [
+            {
+              "action": "dns",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 1,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [],
+              "schemaVersion": 1
+            }
+          ],
+          "catalogAvailable": true
+        }
+      },
+      {
+        "target": "doh/journal-recovery/amd64",
+        "artifact": 14234756752,
+        "artifactSHA256": "cd450d2fa337b067cf4ce5d7d1d150bc150c072798cee7165bab065fbd85f67e",
+        "outcome": "failed",
+        "code": "native-roundtrip-failed",
+        "configureExitCode": -1,
+        "restoreExitCode": -1,
+        "cleanupExitCode": -1,
+        "snapshotRemoved": true,
+        "serviceRemoved": false,
+        "cliCount": 0,
+        "processesJoined": 0,
+        "journalScenario": {
+          "outcome": "failed",
+          "code": "baseline",
+          "restoredStateVerified": false,
+          "restoredResolverVerified": false,
+          "emergencyStateVerified": false
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "a316172da5104e3c61bb955a64fe29943748e05e5a58a775c47fe81f1d8d6ec8",
+          "observations": [],
+          "catalogAvailable": true
+        }
+      },
+      {
+        "target": "doh/journal-recovery/arm64",
+        "artifact": 14234100444,
+        "artifactSHA256": "0ecb4469792aa5cb4522b97797bda1b291a282b898315a0c70e2d25f017a2be7",
+        "outcome": "failed",
+        "code": "native-roundtrip-failed",
+        "configureExitCode": 1,
+        "restoreExitCode": 1,
+        "cleanupExitCode": -1,
+        "snapshotRemoved": true,
+        "serviceRemoved": false,
+        "cliCount": 2,
+        "processesJoined": 2,
+        "journalScenario": {
+          "outcome": "failed",
+          "code": "first-configuration",
+          "restoredStateVerified": false,
+          "restoredResolverVerified": false,
+          "emergencyStateVerified": true
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "a316172da5104e3c61bb955a64fe29943748e05e5a58a775c47fe81f1d8d6ec8",
+          "observations": [
+            {
+              "action": "dns",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 1,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                2628
+              ],
+              "schemaVersion": 1
+            },
+            {
+              "action": "dns-restore",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 2,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                3411
+              ],
+              "schemaVersion": 1
+            }
+          ],
+          "catalogAvailable": true
+        }
+      },
+      {
+        "target": "doh/roundtrip/amd64",
+        "artifact": 14235134195,
+        "artifactSHA256": "a5276c8b8ec0e61cd958391ef808c2bd86fc0c8d932039727632f230260955a0",
+        "outcome": "failed",
+        "code": "native-roundtrip-failed",
+        "configureExitCode": 1,
+        "restoreExitCode": 1,
+        "cleanupExitCode": -1,
+        "snapshotRemoved": true,
+        "serviceRemoved": false,
+        "cliCount": 2,
+        "processesJoined": 2,
+        "scenario": {
+          "outcome": "failed",
+          "code": "operation-failed",
+          "operationCode": "configuration",
+          "restorationCode": "restoration",
+          "verificationCode": "none",
+          "configurationAttempted": true,
+          "configurationAccepted": false,
+          "configuredStateVerified": false,
+          "restorationAccepted": false,
+          "restoredStateVerified": true,
+          "restoredResolverVerified": true
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "a316172da5104e3c61bb955a64fe29943748e05e5a58a775c47fe81f1d8d6ec8",
+          "observations": [
+            {
+              "action": "dns",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 1,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                2628
+              ],
+              "schemaVersion": 1
+            },
+            {
+              "action": "dns-restore",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 2,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                3411
+              ],
+              "schemaVersion": 1
+            }
+          ],
+          "catalogAvailable": true
+        }
+      },
+      {
+        "target": "doh/roundtrip/arm64",
+        "artifact": 14233533579,
+        "artifactSHA256": "72af8aeb0cb504b2ce512e6792c3044e14b61317e341f8d8347e7141fbf96272",
+        "outcome": "failed",
+        "code": "native-roundtrip-failed",
+        "configureExitCode": 1,
+        "restoreExitCode": 1,
+        "cleanupExitCode": -1,
+        "snapshotRemoved": true,
+        "serviceRemoved": false,
+        "cliCount": 2,
+        "processesJoined": 2,
+        "scenario": {
+          "outcome": "failed",
+          "code": "operation-failed",
+          "operationCode": "configuration",
+          "restorationCode": "restoration",
+          "verificationCode": "none",
+          "configurationAttempted": true,
+          "configurationAccepted": false,
+          "configuredStateVerified": false,
+          "restorationAccepted": false,
+          "restoredStateVerified": true,
+          "restoredResolverVerified": true
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "a316172da5104e3c61bb955a64fe29943748e05e5a58a775c47fe81f1d8d6ec8",
+          "observations": [
+            {
+              "action": "dns",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 1,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                2628
+              ],
+              "schemaVersion": 1
+            },
+            {
+              "action": "dns-restore",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 2,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                3411
+              ],
+              "schemaVersion": 1
+            }
+          ],
+          "catalogAvailable": true
+        }
+      },
+      {
+        "target": "doh/static-ipv6/amd64",
+        "artifact": 14235489681,
+        "artifactSHA256": "8b5717a06280272d54fbb508db57d45d8610f3bed4990d6ce1ed210489043130",
+        "outcome": "failed",
+        "code": "native-roundtrip-failed",
+        "configureExitCode": 1,
+        "restoreExitCode": 1,
+        "cleanupExitCode": -1,
+        "snapshotRemoved": true,
+        "serviceRemoved": false,
+        "cliCount": 2,
+        "processesJoined": 2,
+        "scenario": {
+          "outcome": "failed",
+          "code": "operation-failed",
+          "operationCode": "configuration",
+          "restorationCode": "restoration",
+          "verificationCode": "none",
+          "configurationAttempted": true,
+          "configurationAccepted": false,
+          "configuredStateVerified": false,
+          "restorationAccepted": false,
+          "restoredStateVerified": true,
+          "restoredResolverVerified": true
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "a316172da5104e3c61bb955a64fe29943748e05e5a58a775c47fe81f1d8d6ec8",
+          "observations": [
+            {
+              "action": "dns",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 1,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                2628
+              ],
+              "schemaVersion": 1
+            },
+            {
+              "action": "dns-restore",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 2,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                3411
+              ],
+              "schemaVersion": 1
+            }
+          ],
+          "catalogAvailable": true
+        }
+      },
+      {
+        "target": "doh/static-ipv6/arm64",
+        "artifact": 14235315209,
+        "artifactSHA256": "bb7676e37a07c218b191985a30d18bf608ade95e594458a1195f05b0ee4db5e9",
+        "outcome": "failed",
+        "code": "native-roundtrip-failed",
+        "configureExitCode": 1,
+        "restoreExitCode": 1,
+        "cleanupExitCode": -1,
+        "snapshotRemoved": true,
+        "serviceRemoved": false,
+        "cliCount": 2,
+        "processesJoined": 2,
+        "scenario": {
+          "outcome": "failed",
+          "code": "operation-failed",
+          "operationCode": "configuration",
+          "restorationCode": "restoration",
+          "verificationCode": "none",
+          "configurationAttempted": true,
+          "configurationAccepted": false,
+          "configuredStateVerified": false,
+          "restorationAccepted": false,
+          "restoredStateVerified": true,
+          "restoredResolverVerified": true
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "a316172da5104e3c61bb955a64fe29943748e05e5a58a775c47fe81f1d8d6ec8",
+          "observations": [
+            {
+              "action": "dns",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 1,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                2628
+              ],
+              "schemaVersion": 1
+            },
+            {
+              "action": "dns-restore",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 2,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                3411
+              ],
+              "schemaVersion": 1
+            }
+          ],
+          "catalogAvailable": true
+        }
+      }
+    ]
+  },
+  "correctedWire": {
+    "sourceCommit": "bc5bd74965c497560f4c999ce0bc6af85b757d39",
+    "workflow": ".github/workflows/native-doh-wire.yml",
+    "runID": 43889587105,
+    "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/43889587105",
+    "sourceSHA256": {
+      "scripts/test-native-doh.ps1": "65d79e43c8806a7a7681690ac1f2a10e29c4cfba42a24b5b3cdb42f27dba5fa3",
+      "scripts/native-doh-scenario.ps1": "f47543f08743069505e4431d586a48125f181bb0553e16b55d5f15be8be94e8a",
+      "scripts/dns-acceptance-state.ps1": "30d1350688ff323660f06a6cf663d914535b801cf0fc6c9be0001bdab440bbcf",
+      "scripts/test-dns-acceptance-state.ps1": "71f6fa51fe1a2adbcf73dcc26e9f3d51f2c6db928eee62663077bbfa482ce04e",
+      "scripts/check-native-environment.cjs": "cf56a8253f0444ec6cb8c8bf92249151165d8bd4061985c8a0e8df0df2aea562",
+      ".github/workflows/native-doh.yml": "60e7de4a26cb70528b9f625c96df8ac4ebd88a893b62a24f5ce272b6f6c18276",
+      "internal/workflow/windows.ps1": "41db30f7c3d37b3bacdff07058fd09f31e32c96a72df7bf58ceecea25de966cc",
+      "internal/workflow/manager.go": "9846bb5109dc37154e554516140e24f29875946bd90cd4069a680db042906f12",
+      "cmd/accessweaver/system.go": "a951e33ebbe7815b33fd3210ae39ec688730d6697283dc0b3c53b17290682a7c",
+      "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+      "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+      "scripts/native-dns-query.ps1": "dab4a40901443cdc8cc45f5217d02739cec6790d34ccd62499b6d3b17c7b7b0e",
+      "scripts/native-dns-query/main_windows.go": "acdabf1e7e8189fb769c9a188f2c6e4cc2e456264e09f19b57ea86db74a37a48",
+      "scripts/native-dns-query/main_windows_test.go": "eeda487cbf5f067e4ca5b34b2160bf531332da65a936cf0fffae13596d090caa",
+      "scripts/native-dns-direct/direct.go": "3a0e965a95113499da90d7209fc222b5fb1811e7c407ec68ad6a2b6488cea7bd",
+      "scripts/native-dns-direct/direct_test.go": "53866a55c14c7d46a7db12d3b97443e87b3af4a9c07c3dc71d85352916e22582",
+      "scripts/native-dns-recovery-observation.ps1": "0fe86eeba8fa32ed04135c32815eb1f0c07d85e2fa4badc11d7061b956e9944e",
+      "scripts/test-native-dns-query-contracts.ps1": "2e8420b2264c54b0a19b2b464f5c3ebd74be3b4da530ae8c9440f687b6f084b0",
+      "scripts/native-doh-baseline-evidence.ps1": "22f08623ceabb81dc860d00fe79262d74b1d05687d8873cb7ccc088ff36a7e79",
+      "scripts/dns-wire-ip-policy.cjs": "4ef726c45d7085c70300e632341bf0e454c847fee648cd43fce499938bf9b5c5",
+      "scripts/dns-wire-ip-stdin.cjs": "dd00f588ebc9d91bdca5aca5f675dea5a19b25d71d99406263c12b5d234c0331",
+      "scripts/native-doh-ip-binding.ps1": "790ba9a5186bd4a3e54a96dc03f35439509f4856c9d5b2780925620217f28bb0",
+      "docs/qualification/3e2314a8de82-ip-authority-http2.json": "f283959a6b8267a5a576e2d0b1725728d9647276db8421242c3f3b54716c703c",
+      "scripts/read-native-ndis-phases.ps1": "f1af74724a00265a5b2a88868518e019e077ecc9ed71632380213751a0d7dc96",
+      "scripts/ndis-private-phases.cjs": "9b5015b6bb6c1730527936024bb4e08038c9926623d0b09180bc8281d64023ae",
+      "scripts/native-doh-phase-evidence.ps1": "24b5ce8dc96e5ef59edb09a5e54e37893ff4737ba3d50cf9aaba5e757d67c4ef",
+      "scripts/test-ndis-private-phases.cjs": "6f8b58a86672c8bd996f89da4b654d8fac7683a4385e6a6458f2b3a6391aa3c9",
+      "scripts/native-doh-netevent-wire.ps1": "d1cc4c758f0d3577efc21794058a3080b39883c15dbc71532a5975fa7165c052",
+      "scripts/test-native-doh-netevent-contracts.ps1": "bdd7c0b6a5ef78fc7e9c547fa7d26b356b7e9a1e1b555c50127965b72f4b1715",
+      "scripts/test-native-dns-answer-contracts.ps1": "c075a1363de70c0780aa7df16b5b5b95d7a4e0c79d1fa2f77580ca4927dc5d7c",
+      "scripts/native-netevent-control.ps1": "3d157d483aa010666d65249e898cb71c917d923e3ed0046b80e2972076d6e0b1",
+      "scripts/netevent-control-operation.ps1": "147b1d5772ab65da2d7eef0790f70dc5b779880e6d411acc13ee864a47c070aa",
+      "scripts/native-doh-offload-plan.ps1": "6fcd202c6df94339555fefb3cd791483744ea9813bff6371f3cdb92806a4c4c9",
+      "scripts/doh-offload-operation.ps1": "6548176b036308a80cf802940585f97de9102f753be5038bef43ad8813d88bb6",
+      "scripts/native-offload-state.ps1": "fb12b941676bc792cacfe17fdfa26b5a0bb03fa85ae1cf98da29ef88711f7290",
+      "scripts/native-doh-route-state.ps1": "0b7ace73631dcc2d9448c7986436c46d99bfde1809109f9974251ea09f89831a",
+      "scripts/native-ipv6-route-table.ps1": "d5679cff72d40bccd319f1b1de3dbac873d645503494d5da4eca8a9b1fba69ed",
+      "scripts/native-etl-header.cs": "2624836059feb17a5b284bc8c9abbdb46978231fe4b7e319b0354ca6dfdadb5a",
+      "scripts/read-native-etl-loss.ps1": "e54c62b9550bb10d288997e1a32a84c7b0a45883bdec2eb48e9a6b9db66535e7",
+      "scripts/extract-native-ndis.ps1": "cc0f5a88d4ef43e8b77f77e94112ddeca049eefc0e7772618af92391c52deaf9",
+      "scripts/ndis-frame-converter.cjs": "c4e7923eb9d904a4ad138b095033064ab62550e6c26a00551fd9c5068098f8f7",
+      "scripts/ndis-private-convert.cjs": "ff56ac3be7537508a6cd2de89602e0bd7b981062c7df485fd8f3e7e34d25a787",
+      "scripts/native-dns-wire.ps1": "628ca31341babc247390d14dfcadea2d772d33a666570edbbd6c6b05ebee2850",
+      "scripts/test-dns-wire-native-contracts.ps1": "4af781a7e51c184efab8f826a6be41672df4135e9b452aafe836ae8e83095f6a",
+      "scripts/dns-wire-evidence.cjs": "a97a74930831fca28146b1b043f26b9b26cca6eb5d0e56587bc4cbb2fa9eaf81",
+      "scripts/dns-wire-stdin.cjs": "b05d259e94b3f89555c645cc9205b922ae6418bf99bfa56581abdb72fa205fa0",
+      ".github/workflows/native-doh-wire.yml": "a2ec33616a3ee7a7c4ef62e2efcf0d0ca9a0505d82514f2771c61af27008a5ff"
+    },
+    "passed": 0,
+    "failed": 2,
+    "results": [
+      {
+        "source": "bc5bd74965c497560f4c999ce0bc6af85b757d39",
+        "run": 43889587105,
+        "arch": "amd64",
+        "artifact": 14240745119,
+        "artifactSHA256": "566e5bc7cb6a7da4ad2cdba52eac38904149397c932d430e2bfb079a9c3408a8",
+        "sourceHashesVerified": true,
+        "outcome": "failed",
+        "code": "native-roundtrip-failed",
+        "method": "doh",
+        "scenarioKind": "roundtrip",
+        "captureStage": "complete",
+        "componentStage": "not-started",
+        "componentFailureCode": "none",
+        "staticPhase": "not-started",
+        "staticFailurePhase": "none",
+        "staticFailureCode": "none",
+        "environmentVerified": true,
+        "binaryVerified": true,
+        "nativeProcessVerified": true,
+        "snapshotRemoved": true,
+        "serviceRemoved": false,
+        "outputOverflow": false,
+        "captureFailed": false,
+        "diagnosticWaitExceeded": false,
+        "queryBinaryVerified": true,
+        "queryProbeReady": true,
+        "resolverVerificationRejected": false,
+        "configuredDuringRejectedApply": false,
+        "installedComponentVerified": false,
+        "forwarderFailed": false,
+        "encryptedTrafficObserved": false,
+        "nativeDnsQualified": false,
+        "productionQualificationComplete": false,
+        "configureExitCode": 1,
+        "restoreExitCode": 1,
+        "cleanupExitCode": -1,
+        "cliCount": 2,
+        "processesJoined": 2,
+        "configureElapsedMilliseconds": 20562,
+        "ordinaryResolverAnswers": 0,
+        "restoredResolverAnswers": 2,
+        "componentHTTPStatus": 0,
+        "componentRequestAttempts": 0,
+        "scenario": {
+          "outcome": "failed",
+          "code": "operation-failed",
+          "operationCode": "configuration",
+          "restorationCode": "restoration",
+          "verificationCode": "none",
+          "baselineCaptured": true,
+          "configurationAttempted": true,
+          "configurationAccepted": false,
+          "configuredStateVerified": false,
+          "resolverPassed": false,
+          "restorationAttempted": true,
+          "restorationAccepted": false,
+          "restoredStateVerified": true,
+          "restoredResolverVerified": true
+        },
+        "wire": {
+          "outcome": "failed",
+          "phase": "complete",
+          "failurePhase": "product-configuration",
+          "decoderCode": "none",
+          "processFailureCode": "none",
+          "toolFailure": false,
+          "rawCapturePublished": false,
+          "productionQualificationComplete": false,
+          "toolProcesses": 15,
+          "toolProcessesJoined": 15,
+          "tlsFlows": 0,
+          "outboundEncryptedRecords": 0,
+          "inboundEncryptedRecords": 0
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "41db30f7c3d37b3bacdff07058fd09f31e32c96a72df7bf58ceecea25de966cc",
+          "observations": [
+            {
+              "action": "dns",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 1,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                2640
+              ],
+              "schemaVersion": 1
+            },
+            {
+              "action": "dns-restore",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 2,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                3423
+              ],
+              "schemaVersion": 1
+            }
+          ],
+          "catalogAvailable": true
+        }
+      },
+      {
+        "source": "bc5bd74965c497560f4c999ce0bc6af85b757d39",
+        "run": 43889587105,
+        "arch": "arm64",
+        "artifact": 14238607842,
+        "artifactSHA256": "c8015f90350ff172013a364e8894d6a8297660e7c4d929c09156530c52d036ee",
+        "sourceHashesVerified": true,
+        "outcome": "failed",
+        "code": "native-roundtrip-failed",
+        "method": "doh",
+        "scenarioKind": "roundtrip",
+        "captureStage": "complete",
+        "componentStage": "not-started",
+        "componentFailureCode": "none",
+        "staticPhase": "not-started",
+        "staticFailurePhase": "none",
+        "staticFailureCode": "none",
+        "environmentVerified": true,
+        "binaryVerified": true,
+        "nativeProcessVerified": true,
+        "snapshotRemoved": true,
+        "serviceRemoved": false,
+        "outputOverflow": false,
+        "captureFailed": false,
+        "diagnosticWaitExceeded": false,
+        "queryBinaryVerified": true,
+        "queryProbeReady": true,
+        "resolverVerificationRejected": false,
+        "configuredDuringRejectedApply": false,
+        "installedComponentVerified": false,
+        "forwarderFailed": false,
+        "encryptedTrafficObserved": false,
+        "nativeDnsQualified": false,
+        "productionQualificationComplete": false,
+        "configureExitCode": 1,
+        "restoreExitCode": 1,
+        "cleanupExitCode": -1,
+        "cliCount": 2,
+        "processesJoined": 2,
+        "configureElapsedMilliseconds": 25649,
+        "ordinaryResolverAnswers": 0,
+        "restoredResolverAnswers": 2,
+        "componentHTTPStatus": 0,
+        "componentRequestAttempts": 0,
+        "scenario": {
+          "outcome": "failed",
+          "code": "operation-failed",
+          "operationCode": "configuration",
+          "restorationCode": "restoration",
+          "verificationCode": "none",
+          "baselineCaptured": true,
+          "configurationAttempted": true,
+          "configurationAccepted": false,
+          "configuredStateVerified": false,
+          "resolverPassed": false,
+          "restorationAttempted": true,
+          "restorationAccepted": false,
+          "restoredStateVerified": true,
+          "restoredResolverVerified": true
+        },
+        "wire": {
+          "outcome": "failed",
+          "phase": "complete",
+          "failurePhase": "product-configuration",
+          "decoderCode": "none",
+          "processFailureCode": "none",
+          "toolFailure": false,
+          "rawCapturePublished": false,
+          "productionQualificationComplete": false,
+          "toolProcesses": 15,
+          "toolProcessesJoined": 15,
+          "tlsFlows": 0,
+          "outboundEncryptedRecords": 0,
+          "inboundEncryptedRecords": 0
+        },
+        "commandFailureLiterals": {
+          "projectionFailed": false,
+          "observationOverflow": false,
+          "sourceSHA256": "41db30f7c3d37b3bacdff07058fd09f31e32c96a72df7bf58ceecea25de966cc",
+          "observations": [
+            {
+              "action": "dns",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 1,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                2640
+              ],
+              "schemaVersion": 1
+            },
+            {
+              "action": "dns-restore",
+              "catalogAvailable": true,
+              "scanTruncated": false,
+              "ordinal": 2,
+              "projectionFailed": false,
+              "matchOverflow": false,
+              "sourceLiteralLines": [
+                3423
+              ],
+              "schemaVersion": 1
+            }
+          ],
+          "catalogAvailable": true
+        }
+      }
+    ]
+  },
+  "literalSourceMapping": {
+    "8b9184de225d0da6151c5e9a26e88c26ed02dcbf": [
+      {
+        "source": "internal/workflow/windows.ps1",
+        "line": 2628,
+        "literal": "Managed DoH plaintext protection is missing from effective Windows Firewall policy"
+      },
+      {
+        "source": "internal/workflow/windows.ps1",
+        "line": 3243,
+        "literal": "Resolver verification failed; original DNS settings restored: the ordinary resolver did not return valid A and AAAA answers"
+      },
+      {
+        "source": "internal/workflow/windows.ps1",
+        "line": 3411,
+        "literal": "No original DNS snapshot exists; no settings were changed"
+      },
+      {
+        "source": "internal/workflow/windows.ps1",
+        "line": 3497,
+        "literal": "Adapter DNS settings changed during restoration; review current settings and retain the recovery snapshot"
+      },
+      {
+        "source": "internal/workflow/windows.ps1",
+        "line": 6069,
+        "literal": "DNS recovery snapshot is missing without a verified restoration receipt"
+      }
+    ],
+    "bc5bd74965c497560f4c999ce0bc6af85b757d39": [
+      {
+        "source": "internal/workflow/windows.ps1",
+        "line": 2640,
+        "literal": "Managed DoH plaintext protection is missing from effective Windows Firewall policy"
+      },
+      {
+        "source": "internal/workflow/windows.ps1",
+        "line": 3423,
+        "literal": "No original DNS snapshot exists; no settings were changed"
+      }
+    ]
+  },
+  "interpretation": [
+    "The ordinary cohort has two passing negative/cleanup scenarios and sixteen failures; a nonzero configure exit in the verification-failure scenario is expected and is not independently a defect.",
+    "Both corrected-source wire reports still observe the effective-firewall refusal literal during configuration. The numeric Full compatibility correction does not resolve the native refusal in this cohort.",
+    "The corrected wire reports independently verify original state/resolver recovery, snapshot retirement and joined processes, while neither qualifies encrypted traffic.",
+    "Three ordinary AMD64 DNSCrypt scenarios configured successfully and then observed the explicit-restoration drift refusal. The family, compared override values and cause of drift were not retained.",
+    "ARM64 DNSCrypt failures have no matched source literal; an empty match is not proof that no error occurred. Dynamic/native failures remain unclassified.",
+    "The missing-snapshot scenario intentionally exercises the missing-receipt refusal; observing that literal is not proof of the later retry failure's cause.",
+    "False snapshotRemoved means retirement was not verified and does not independently prove that a snapshot remains.",
+    "Actual persistent/effective firewall rule presence and enforcement status values must be established before changing the enforcement requirement. Restoration concurrency fences remain required."
+  ],
+  "rawJobLogsOrCapturesFetched": false,
+  "nativeDoHFailureResolved": false,
+  "nativeDNSCryptRestorationFailureResolved": false,
+  "encryptedWireQualified": false,
+  "rebootQualified": false,
+  "productionQualificationComplete": false,
+  "readinessGatesPromoted": []
+}

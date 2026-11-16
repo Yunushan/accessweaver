@@ -4,7 +4,7 @@
   "sourceCommit": "8b9184de225d0da6151c5e9a26e88c26ed02dcbf",
   "repository": "Yunushan/accessweaver",
   "sourceRef": "refs/heads/codex/dns-adapter-coverage",
-  "workflow": ".github/workflows/native-doh.yml",
+  "workflow": ".github/workflows/native-doh-wire.yml",
   "runID": 43872081980,
   "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/43872081980",
   "verifiedProviderZIPDigests": 2,
