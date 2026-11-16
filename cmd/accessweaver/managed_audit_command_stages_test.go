@@ -5,6 +5,7 @@ package main
 import (
 	"errors"
 	"math/bits"
+	"syscall"
 	"testing"
 )
 
@@ -87,6 +88,9 @@ var windowsRunDetailCaseNames = [...]string{
 	"run-error-input-absent", "run-error-journal-absent",
 	"run-error-inert-args-absent", "run-error-inert-token-absent", "run-error-inert-security-absent",
 	"run-error-inert-event-absent", "run-error-inert-existing-absent", "run-error-inert-close-absent",
+	"run-error-event-access-absent", "run-error-event-handle-absent", "run-error-event-parameter-absent",
+	"run-error-event-security-absent", "run-error-event-owner-absent",
+	"run-error-event-privilege-absent", "run-error-event-path-absent",
 	"run-launch-notice", "run-observed-journal", "run-notice-private",
 	"run-preserved-inputs", "run-released-resources", "run-stale-head-refusal",
 	"run-retained-head-export", "run-unapproved-profile", "run-unapproved-refusal",
@@ -404,6 +408,30 @@ func TestWindowsRunDetailProjectionIsClosedAndCaseBound(t *testing.T) {
 	for _, label := range []string{"PRIVATE_ACCOUNT_PATH", "PRIVATE_NATIVE_ERROR", ""} {
 		if mask, ok := windowsRunDetailBit(label); ok || mask != 0 {
 			t.Fatal("unknown or private foreground detail escaped its fixed vocabulary")
+		}
+	}
+}
+
+// Public Win32 codes only; native error strings and object names never cross
+// the worker protocol. Unknown errors retain the existing generic exit.
+func windowsInertEventFailureExit(err error) int {
+	for index, code := range []syscall.Errno{5, 6, 87, 1338, 1307, 1314, 3} {
+		if errors.Is(err, code) {
+			return 104 + index
+		}
+	}
+	return 101
+}
+
+func TestWindowsInertEventErrorProjectionDropsPrivateText(t *testing.T) {
+	for index, code := range []syscall.Errno{5, 6, 87, 1338, 1307, 1314, 3} {
+		if windowsInertEventFailureExit(errors.Join(code, errors.New("PRIVATE_ACCOUNT_PATH"))) != 104+index {
+			t.Fatal("fixed event error category was lost")
+		}
+	}
+	for _, err := range []error{nil, errors.New("PRIVATE_NATIVE_ERROR"), syscall.Errno(9999)} {
+		if windowsInertEventFailureExit(err) != 101 {
+			t.Fatal("unknown event error escaped the fixed projection")
 		}
 	}
 }

@@ -1539,7 +1539,7 @@ func ordinaryInertWindowsEngine() bool {
 	handle, _, lastErr := ordinaryKernel.NewProc("CreateEventW").Call(uintptr(unsafe.Pointer(&sa)), 1, 1, uintptr(unsafe.Pointer(name)))
 	runtime.KeepAlive(sd)
 	if handle == 0 {
-		os.Exit(101)
+		os.Exit(windowsInertEventFailureExit(lastErr))
 	}
 	ready := windows.Handle(handle)
 	if errors.Is(lastErr, windows.ERROR_ALREADY_EXISTS) {
@@ -1819,6 +1819,11 @@ func (w *windowsCommandWorker) runApprovedAndRefusals() error {
 		w.runAssertion(label, !exited || engineExit.ExitCode() != 98+index)
 	}
 
+	for index, label := range []string{"run-error-event-access-absent", "run-error-event-handle-absent",
+		"run-error-event-parameter-absent", "run-error-event-security-absent",
+		"run-error-event-owner-absent", "run-error-event-privilege-absent", "run-error-event-path-absent"} {
+		w.runAssertion(label, !exited || engineExit.ExitCode() != 104+index)
+	}
 	if !w.runAssertion("run-command-return", err == nil) ||
 		!w.runAssertion("run-launch-notice", string(notice) == windowsRunLaunchNotice) ||
 		!w.runAssertion("run-observed-journal", windowsRunObserved(child, observed, "intent", "accepted", "completed") == nil) ||
