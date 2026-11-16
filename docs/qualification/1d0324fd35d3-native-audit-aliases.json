@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "native-windows-audit-alias-admission-after-engine-fixture-isolation",
+  "sourceCommit": "1d0324fd35d38213e084523390885d5d195204c0",
+  "sourceSHA256": {
+    "cmd/accessweaver/managed_audit_command_stages_test.go": "39d78788b3399c6bf828df55c15083d9f0c6fe61549427de53f586af82f91376",
+    "cmd/accessweaver/managed_audit_commands_windows_test.go": "e603570c75c17ea09d1aabd9dd999b3039e8b00b678e0422f1436a8e6b348b04",
+    "cmd/accessweaver/managed_audit_ordinary_windows_test.go": "d2521862ad362b788a9a9bdef17017b550e9cf0889f1bca5605e976cc7938aa0",
+    ".github/workflows/windows-audit-storage.yml": "239ac67299656f13b797957fc4e60e838ffb87c92ad7218c616906f9d3354387"
+  },
+  "runID": 43958715537,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/43958715537",
+  "providerZIPDigestsVerified": 2,
+  "results": [
+    {
+      "architecture": "amd64",
+      "artifactID": 14274153224,
+      "artifactSHA256": "05da9330710cf7edf555304f7f9d3c4113715be6274cb58e7d72eb068e479379",
+      "providerZIPDigestVerified": true,
+      "commandReportSchemaVersion": 4,
+      "aliasAdmissionPassed": true,
+      "passedAliasDetailGroups": [
+        "alias-action-import",
+        "alias-action-ui",
+        "alias-action-export-recorded",
+        "alias-action-run",
+        "alias-source-genesis",
+        "alias-source-head",
+        "alias-source-key",
+        "alias-source-journal",
+        "alias-source-profile",
+        "alias-source-executable",
+        "alias-source-pairwise",
+        "alias-role-stdout",
+        "alias-role-stderr",
+        "alias-role-pairwise"
+      ],
+      "firstFunctionalFailure": "approved-recorded-foreground-run",
+      "commandCleanupComplete": false,
+      "ordinaryProcessPassed": true,
+      "ordinaryProcessCleanupComplete": true,
+      "commandQualificationComplete": false
+    },
+    {
+      "architecture": "arm64",
+      "artifactID": 14275252660,
+      "artifactSHA256": "fea58b12f58853efd80599c2fc851a19df7a898723b005eacabe47ced0825ab2",
+      "providerZIPDigestVerified": true,
+      "commandReportSchemaVersion": 4,
+      "aliasAdmissionPassed": true,
+      "passedAliasDetailGroups": [
+        "alias-action-import",
+        "alias-action-ui",
+        "alias-action-export-recorded",
+        "alias-action-run",
+        "alias-source-genesis",
+        "alias-source-head",
+        "alias-source-key",
+        "alias-source-journal",
+        "alias-source-profile",
+        "alias-source-executable",
+        "alias-source-pairwise",
+        "alias-role-stdout",
+        "alias-role-stderr",
+        "alias-role-pairwise"
+      ],
+      "firstFunctionalFailure": "approved-recorded-foreground-run",
+      "commandCleanupComplete": false,
+      "ordinaryProcessPassed": true,
+      "ordinaryProcessCleanupComplete": true,
+      "commandQualificationComplete": false
+    }
+  ],
+  "productionAdmissionChanged": false,
+  "productionQualificationComplete": false
+}

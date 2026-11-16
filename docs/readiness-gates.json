@@ -68,7 +68,8 @@
             "docs/qualification/8b9184de225d-doh-full-status.json",
             "docs/qualification/8b9184de225d-dns-observer-followup.json",
             "docs/qualification/520a3053b245-doh-refusal-diagnostics.json",
-            "docs/qualification/7a963d7c64d9-doh-raw-cim.json"
+            "docs/qualification/7a963d7c64d9-doh-raw-cim.json",
+            "docs/qualification/7a963d7c64d9-native-doh-typed-status.json"
           ]
         },
         {
@@ -669,7 +670,8 @@
             "docs/WINDOWS_AUDIT_STORAGE.md",
             "docs/DARWIN_AUDIT_STORAGE.md",
             "docs/qualification/795803e6ea88-windows-audit-storage.json",
-            "docs/qualification/33c7737d97cd-linux-recorded-policy-audit.json"
+            "docs/qualification/33c7737d97cd-linux-recorded-policy-audit.json",
+            "docs/qualification/1d0324fd35d3-native-audit-aliases.json"
           ]
         },
         {
