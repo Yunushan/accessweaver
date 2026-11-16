@@ -62,7 +62,8 @@
             "scripts/test-windows-reboot-contracts.ps1",
             "scripts/test-windows-dns-journal.ps1",
             "scripts/test-dns-recovery-contracts.ps1",
-            "docs/qualification/3ae6417cb9a8-dns-native-recovery.json"
+            "docs/qualification/3ae6417cb9a8-dns-native-recovery.json",
+            "docs/qualification/80cf5cfbe5fb-native-dns-refusals.json"
           ]
         },
         {
