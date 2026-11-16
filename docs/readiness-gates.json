@@ -239,6 +239,7 @@
             "scripts/check-vulnerabilities.sh",
             "scripts/check-vulnerability-report.py",
             "scripts/test_vulnerability_report.py",
+            "docs/qualification/5be8ae093e4d-vulnerability-matrix.json",
             "scripts/security-tools/go.mod",
             ".github/workflows/ci.yml",
             ".github/workflows/release.yml",
