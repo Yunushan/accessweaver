@@ -37,6 +37,11 @@ jobs:
           architecture: ${{ matrix.sdkarch }}
       - name: Verify native host and SDK identity
         run: node scripts/check-native-environment.cjs
+      - name: Fixed command receipt protocol contracts
+        shell: pwsh
+        run: |
+          go test ./cmd/accessweaver -run '^TestWindows(CommandFailureStageRoundTripAndCaseBinding|AliasFailureProjectionRejectsUnknownAndPrivateLabels)$' -count=1 -timeout=2m
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Native file identity and bound input output admission
         env:
           ACCESSWEAVER_DISPOSABLE_WINDOWS_AUDIT_STORAGE_TEST: '1'

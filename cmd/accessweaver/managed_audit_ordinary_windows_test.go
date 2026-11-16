@@ -86,49 +86,11 @@ type ordinaryPending struct {
 var ordinaryUnfinishedIO []*ordinaryPending
 var ordinaryCloseFailure bool
 
-// The worker may publish only these fixed labels for a failed desktop assertion.
-type windowsDesktopStage byte
-
-const (
-	windowsDesktopNoFailure windowsDesktopStage = iota
-	windowsDesktopStream
-	windowsDesktopStartup
-	windowsDesktopLaunchPath
-	windowsDesktopLaunchFileACL
-	windowsDesktopLaunchDirectoryACL
-	windowsDesktopLaunchContents
-	windowsDesktopHTTPAdmission
-	windowsDesktopHTTPMutation
-	windowsDesktopHTTPDenials
-	windowsDesktopShutdown
-	windowsDesktopCleanup
-	windowsDesktopJournal
-	windowsDesktopExport
-	windowsDesktopReopen
-)
-
-var windowsDesktopStageNames = [...]string{
-	windowsDesktopNoFailure:          "none",
-	windowsDesktopStream:             "stream",
-	windowsDesktopStartup:            "startup",
-	windowsDesktopLaunchPath:         "launch-path",
-	windowsDesktopLaunchFileACL:      "launch-file-acl",
-	windowsDesktopLaunchDirectoryACL: "launch-directory-acl",
-	windowsDesktopLaunchContents:     "launch-contents",
-	windowsDesktopHTTPAdmission:      "http-admission",
-	windowsDesktopHTTPMutation:       "http-mutation",
-	windowsDesktopHTTPDenials:        "http-denials",
-	windowsDesktopShutdown:           "shutdown",
-	windowsDesktopCleanup:            "cleanup",
-	windowsDesktopJournal:            "journal",
-	windowsDesktopExport:             "export",
-	windowsDesktopReopen:             "reopen",
-}
-
 const ordinaryReplySize = 56
 
 type ordinaryFixture struct {
 	desktopFailure                                                       windowsDesktopStage
+	aliasFailure                                                         windowsAliasFailure
 	commands, policyInstalled, policyRemoved, privateChildRemoved        bool
 	childSlot                                                            string
 	cleanupPolicy                                                        func() error
@@ -1106,16 +1068,11 @@ func (f *ordinaryFixture) exchange() error {
 		names := []string{"worker-primary-token", "worker-loaded-profile-hkcu", "worker-native-image", "worker-isolated-console-interrupt", "worker-public-recording-support-contract"}
 		if f.commands {
 			names = append(names, ordinaryCommandCaseNames...)
-			stage := windowsDesktopStage(reply[ordinaryReplySize])
-			const desktopCase = uint64(1) << (5 + 2)
-			const capacityCase = uint64(1) << (5 + 6)
-			failed := executed &^ passed
-			if int(stage) >= len(windowsDesktopStageNames) ||
-				(stage == windowsDesktopNoFailure && failed&desktopCase != 0) ||
-				(stage != windowsDesktopNoFailure && failed&(desktopCase|capacityCase) == 0) {
+			desktop, alias, valid := decodeWindowsCommandFailure(reply[ordinaryReplySize], executed&^passed)
+			if !valid {
 				return errOrdinary
 			}
-			f.desktopFailure = stage
+			f.desktopFailure, f.aliasFailure = desktop, alias
 		}
 		var failure error
 		for bit, id := range names {
@@ -1607,8 +1564,9 @@ func (f *ordinaryFixture) report(t *testing.T) {
 		"cleanupComplete": f.cleanupOK, "passed": passed, "productionQualificationComplete": false,
 	}
 	if f.commands {
-		report["schemaVersion"] = 2
+		report["schemaVersion"] = 3
 		report["desktopFailureStage"] = windowsDesktopStageNames[f.desktopFailure]
+		report["aliasFailureVariant"], report["aliasFailureStage"] = windowsAliasFailureNames(f.aliasFailure)
 	}
 	data, err := json.MarshalIndent(report, "", "  ")
 	workspace := os.Getenv("GITHUB_WORKSPACE")

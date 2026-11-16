@@ -327,6 +327,7 @@ type windowsCommandWorker struct {
 	cancel                                           context.CancelFunc
 	counter                                          uint32
 	desktopFailure                                   windowsDesktopStage
+	aliasFailure                                     windowsAliasFailure
 }
 
 func (w *windowsCommandWorker) manifest() *windowsCommandWorker {
@@ -1466,7 +1467,7 @@ func runWindowsCommandCases(nonce []byte) (executed, passed uint64, desktopFailu
 	if root.close() == nil {
 		passed |= cleanupBit
 	}
-	return executed, passed, root.desktopFailure
+	return executed, passed, windowsDesktopStage(encodeWindowsCommandFailure(root.desktopFailure, root.aliasFailure))
 }
 func windowsInertReadyName(parent, pid uint32) string {
 	return "Local\\AccessWeaverOrdinaryReady-" + strconv.FormatUint(uint64(parent), 10) + "-" + strconv.FormatUint(uint64(pid), 10)
@@ -2211,7 +2212,12 @@ func windowsAliasInvoke(w *windowsCommandWorker, action string, stdout, stderr *
 	return out, notice, err, <-stopped
 }
 
+func (w *windowsCommandWorker) aliasPhase(variant, phase string) {
+	w.manifest().aliasFailure = makeWindowsAliasFailure(variant, phase)
+}
+
 func windowsAliasAttempt(w *windowsCommandWorker, action, source, variant string, role int) (failure error) {
+	w.aliasPhase(variant, "source-snapshot")
 	before := w.sources()
 	if before == nil {
 		return errOrdinary
@@ -2224,9 +2230,13 @@ func windowsAliasAttempt(w *windowsCommandWorker, action, source, variant string
 	if err != nil || sourceState.Kind != fileidentity.Regular {
 		return errOrdinary
 	}
+	w.aliasPhase(variant, "destination-open")
 	destination, err := windowsAliasNew(w, source, variant)
 	defer func() {
 		if destination.close() != nil {
+			if failure == nil {
+				w.aliasPhase(variant, "destination-cleanup")
+			}
 			failure = errOrdinary
 		}
 	}()
@@ -2239,6 +2249,7 @@ func windowsAliasAttempt(w *windowsCommandWorker, action, source, variant string
 	} else {
 		stderr = destination.file
 	}
+	w.aliasPhase(variant, "invoke")
 	out, notice, commandErr, watchdog := windowsAliasInvoke(w, action, stdout, stderr)
 	expected := errAuditOutputAlias
 	switch action {
@@ -2249,16 +2260,30 @@ func windowsAliasAttempt(w *windowsCommandWorker, action, source, variant string
 	case "run":
 		expected = errAuditRunOutput
 	}
-	if watchdog || !errors.Is(commandErr, expected) || len(out) != 0 || len(notice) != 0 ||
-		!w.preserved(before) || w.recordProducts() != nil {
+	if watchdog {
+		w.aliasPhase(variant, "watchdog")
 		return errOrdinary
 	}
+	if !errors.Is(commandErr, expected) || len(out) != 0 || len(notice) != 0 {
+		w.aliasPhase(variant, "refusal")
+		return errOrdinary
+	}
+	w.aliasPhase(variant, "input-preservation")
+	if !w.preserved(before) {
+		return errOrdinary
+	}
+	w.aliasPhase(variant, "product-inventory")
+	if w.recordProducts() != nil {
+		return errOrdinary
+	}
+	w.aliasPhase(variant, "source-readback")
 	current, err := windowsCommandReadSource(w, source)
 	afterState, stateErr := fileidentity.FromPath(source, false)
 	if err != nil || stateErr != nil || !bytes.Equal(original, current) ||
 		afterState.Kind != sourceState.Kind || afterState.ID != sourceState.ID {
 		return errOrdinary
 	}
+	w.aliasPhase(variant, "profile-inventory")
 	entries, err := os.ReadDir(filepath.Join(w.state, "profiles"))
 	if err != nil || len(entries) != 0 {
 		return errOrdinary
@@ -2266,7 +2291,13 @@ func windowsAliasAttempt(w *windowsCommandWorker, action, source, variant string
 	return nil
 }
 
-func (w *windowsCommandWorker) aliasAdmission() error {
+func (w *windowsCommandWorker) aliasAdmission() (failure error) {
+	w.aliasPhase("none", "prepare")
+	defer func() {
+		if failure == nil {
+			w.manifest().aliasFailure = 0
+		}
+	}()
 	child, err := w.newStream("aliases")
 	if err != nil {
 		return errOrdinary
@@ -2286,8 +2317,11 @@ func (w *windowsCommandWorker) aliasAdmission() error {
 		for _, source := range sources {
 			for _, variant := range []string{"direct", "case", "hardlink", "ads"} {
 				for role := 0; role < roles; role++ {
-					if time.Now().After(deadline) || child.ctx.Err() != nil ||
-						windowsAliasAttempt(child, action, source, variant, role) != nil {
+					if time.Now().After(deadline) || child.ctx.Err() != nil {
+						child.aliasPhase(variant, "budget")
+						return errOrdinary
+					}
+					if windowsAliasAttempt(child, action, source, variant, role) != nil {
 						return errOrdinary
 					}
 				}
@@ -2302,12 +2336,14 @@ func (w *windowsCommandWorker) aliasAdmission() error {
 		}
 	}
 	for _, action := range []string{"ui", "export-recorded", "run"} {
+		child.aliasPhase("pairwise", "prepare")
 		root := child.manifest()
 		root.counter++
 		path := filepath.Join(child.base, "pairwise-output-"+strconv.FormatUint(uint64(root.counter), 10)+".bin")
 		if child.ownFile(path, nil) != nil {
 			return errOrdinary
 		}
+		child.aliasPhase("pairwise", "destination-open")
 		destination, err := windowsAliasNew(child, path, "direct")
 		if err != nil {
 			if destination != nil {
@@ -2315,7 +2351,9 @@ func (w *windowsCommandWorker) aliasAdmission() error {
 			}
 			return errOrdinary
 		}
+		child.aliasPhase("pairwise", "source-snapshot")
 		before := child.sources()
+		child.aliasPhase("pairwise", "invoke")
 		out, notice, commandErr, watchdog := windowsAliasInvoke(child, action, destination.file, destination.file)
 		closeErr := destination.close()
 		content, readErr := windowsCommandReadDefault(path)
@@ -2325,9 +2363,28 @@ func (w *windowsCommandWorker) aliasAdmission() error {
 		} else if action == "run" {
 			expected = errAuditRunOutput
 		}
-		if watchdog || closeErr != nil || readErr != nil || len(content) != 0 ||
-			!errors.Is(commandErr, expected) || len(out) != 0 || len(notice) != 0 ||
-			!child.preserved(before) || child.recordProducts() != nil {
+		if watchdog {
+			child.aliasPhase("pairwise", "watchdog")
+			return errOrdinary
+		}
+		if !errors.Is(commandErr, expected) || len(out) != 0 || len(notice) != 0 {
+			child.aliasPhase("pairwise", "refusal")
+			return errOrdinary
+		}
+		if closeErr != nil {
+			child.aliasPhase("pairwise", "destination-cleanup")
+			return errOrdinary
+		}
+		if readErr != nil || len(content) != 0 {
+			child.aliasPhase("pairwise", "source-readback")
+			return errOrdinary
+		}
+		child.aliasPhase("pairwise", "input-preservation")
+		if !child.preserved(before) {
+			return errOrdinary
+		}
+		child.aliasPhase("pairwise", "product-inventory")
+		if child.recordProducts() != nil {
 			return errOrdinary
 		}
 	}
