@@ -419,7 +419,8 @@
             ".github/workflows/ci.yml",
             "internal/logfile/writer_test.go",
             "scripts/test-unix-controller.py",
-            "docs/qualification/77a884e7c213-local-linux-core.json"
+            "docs/qualification/77a884e7c213-local-linux-core.json",
+            "docs/qualification/57bc58e23c89-local-linux-core.json"
           ]
         },
         {

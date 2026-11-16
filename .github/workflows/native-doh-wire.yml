@@ -25,6 +25,7 @@ on:
       - 'scripts/test-ndis-private-phases.cjs'
       - 'scripts/native-doh-netevent-wire.ps1'
       - 'scripts/test-native-doh-netevent-contracts.ps1'
+      - 'scripts/test-native-dns-answer-contracts.ps1'
       - 'scripts/native-netevent-control.ps1'
       - 'scripts/netevent-control-operation.ps1'
       - 'scripts/native-doh-offload-plan.ps1'
@@ -111,6 +112,13 @@ jobs:
         run: |
           node scripts/test-ndis-private-phases.cjs
           if($LASTEXITCODE -ne 0){throw 'Pure phase attribution contracts failed'}
+      - name: Verify native DNS answer selector source contracts
+        run: |
+          & ./scripts/test-native-dns-answer-contracts.ps1
+          if (-not $?) { throw 'Core DNS answer selector contracts failed' }
+          $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-native-dns-answer-contracts.ps1 -RequireWindowsPowerShell
+          if ($LASTEXITCODE -ne 0) { throw 'Stock DNS answer selector contracts failed' }
       - name: Verify product NetEvent lifecycle source contracts
         run: |
           $fixed=Join-Path $env:RUNNER_TEMP ('accessweaver-netevent-source-'+[Guid]::NewGuid().ToString('N'))
