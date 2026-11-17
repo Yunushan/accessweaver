@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "18347ee978d2477a5b5829b92120299b970cfd1f",
+  "sourceFiles": 904,
+  "sourceDigest": "bcaf1e59c2a00b269a44b002741de85ccc5176590c231478c6336fb017b128d2",
+  "branch": "codex/history-list-66ecef2",
+  "run": 42306501551,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/42306501551",
+  "scope": "Source-built real-controller browser acceptance in the pinned ordinary-user Linux Playwright environment",
+  "browsers": [
+    {
+      "project": "chromium",
+      "registered": 51,
+      "passed": 51,
+      "skipped": 0,
+      "failed": 0,
+      "retries": 0,
+      "binarySHA256": "a5c34b1c8caad1a9f531d4a5944efc1bf38c44e7fdcfdef035107439b73c0fad"
+    },
+    {
+      "project": "firefox",
+      "registered": 51,
+      "passed": 51,
+      "skipped": 0,
+      "failed": 0,
+      "retries": 0,
+      "binarySHA256": "a5c34b1c8caad1a9f531d4a5944efc1bf38c44e7fdcfdef035107439b73c0fad"
+    },
+    {
+      "project": "webkit",
+      "registered": 51,
+      "passed": 51,
+      "skipped": 0,
+      "failed": 0,
+      "retries": 0,
+      "binarySHA256": "a5c34b1c8caad1a9f531d4a5944efc1bf38c44e7fdcfdef035107439b73c0fad"
+    }
+  ],
+  "modalSave": {
+    "reports": 12,
+    "checksPerReport": 12,
+    "checksPassed": 144,
+    "scenarios": [
+      "guided-success",
+      "json-success",
+      "guided-failure",
+      "json-failure"
+    ]
+  },
+  "localValidation": {
+    "nodeTests": 178,
+    "nodePassed": 174,
+    "nodeSkippedActualGoWire": 4,
+    "linuxAPIUiaccessCLINormalRaceVet": "passed",
+    "affectedCompileOnlyChecks": 20,
+    "compileTargets": 10
+  },
+  "evidenceSHA256": {
+    "provider-browser-suite-status-metadata.json": "dcdeb9fabc323a8726d4308c48ea0bd3f75440549f5ac3e042840a584136cf56",
+    "browser-suite-status-reports.json": "92aef265a020157f9970c248f0c1e217a04d49e1d5125effe396ae8c123b9a9c",
+    "modal-keyboard-reports.json": "f474a3851804de796079314b1b3830c81cb33a31056caa3b0e4666466fb1fb6b",
+    "author-validation.json": "2d1fbccc0fdfc83539ca77c8dcd817be0c6ad544ce9b56c311acaffd606bbaa1",
+    "source-freeze.json": "4363677453a013b0c1da8dee5c83e0d3832dc813b33a67c95343e21ee335b5c1",
+    "cross-compile-receipt.json": "ef09f28363803915e719b47c3aed4311a03a12a75fc55e5abc242dd1965f1c1f"
+  },
+  "qualificationLimits": [
+    "No native screen-reader assessment or full accessibility gate qualification",
+    "No signed or installed desktop, traffic, reboot or complete production qualification",
+    "No formal readiness gate promoted"
+  ],
+  "productionQualificationComplete": false,
+  "gatesPromoted": false,
+  "retainedEvidence": "Closed-schema numeric case and fixed keyboard reports; raw logs, screenshots, full Playwright artifacts and private controller data were not read or published",
+  "observedCorrections": [
+    "Keep Preview disabled through an actual runtime poll during a pending save",
+    "Preserve the real scroll, feedback and native disclosure keyboard stops",
+    "Give the history detail preview and history record list distinct localized landmark names"
+  ],
+  "previousFailedRun": {
+    "sourceCommit": "66ecef2ab4d3b1d32ce078c68ad32856cd250c88",
+    "run": 42304947344,
+    "result": "All three browsers registered51/passed50;case38 landmark-unique; all twelve delayed-save reports passed",
+    "limits": "The preview-name assertions passed, but the history list and containing section still shared a name. This failed run remains retained and is not qualification evidence."
+  }
+}

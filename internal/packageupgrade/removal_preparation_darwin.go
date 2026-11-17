@@ -19,7 +19,7 @@ const maxRemovalPreparations = 32
 
 // Incomplete bundles live outside the authority history. They are bounded and
 // preserved, never guessed to be old state or recursively cleaned on retry.
-func (s *deploymentStore) openRemovalPreparationDirectory() (result *os.File, failure error) {
+func (s *deploymentStore) openRemovalPreparationDirectory(resumeName string) (*os.File, error) {
 	dir, e := darwintrust.CreateDirectoryAt(s.parent, removalPreparationRoot, s.owner)
 	created := e == nil
 	if errors.Is(e, unix.EEXIST) {
@@ -52,12 +52,14 @@ func (s *deploymentStore) openRemovalPreparationDirectory() (result *os.File, fa
 	if e != nil {
 		return fail(e)
 	}
+	resuming := false
 	for _, entry := range entries {
 		if !recordName.MatchString(entry.Name()) || !entry.IsDir() {
 			return fail(errors.New("unknown removal preparation object; preserve and inspect"))
 		}
+		resuming = resuming || entry.Name() == resumeName
 	}
-	if len(entries) >= maxRemovalPreparations {
+	if len(entries) >= maxRemovalPreparations && !resuming {
 		return fail(errors.New("removal preparation capacity exhausted; preserve and inspect"))
 	}
 	if created {
@@ -69,6 +71,34 @@ func (s *deploymentStore) openRemovalPreparationDirectory() (result *os.File, fa
 		return fail(e)
 	}
 	return dir, nil
+}
+
+// A reserved bundle has entered the live authority but its exchange may have
+// been interrupted. Only sealed removal recovery may resolve that reservation.
+func (s *deploymentStore) refuseReservedRemoval(entries []os.DirEntry) error {
+	for _, entry := range entries {
+		if !recordName.MatchString(entry.Name()) {
+			continue
+		}
+		// Ordinary commit staging may have been interrupted in its initial
+		// private mode. Inspect the marker name even in that directory.
+		dir, e := darwintrust.OpenDirectoryAt(s.root, entry.Name(), s.owner)
+		if e != nil {
+			return e
+		}
+		var marker unix.Stat_t
+		e = unix.Fstatat(int(dir.Fd()), removalFenceName, &marker, unix.AT_SYMLINK_NOFOLLOW)
+		if closeErr := dir.Close(); closeErr != nil {
+			return errors.Join(e, closeErr)
+		}
+		if e == nil {
+			return errors.New("a reserved removal must be resolved before changing the deployment")
+		}
+		if !errors.Is(e, unix.ENOENT) {
+			return e
+		}
+	}
+	return nil
 }
 
 func (s *deploymentStore) checkRemovalPreimage(f removalFence, plan removalPlan, staging string) error {

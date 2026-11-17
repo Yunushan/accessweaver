@@ -318,35 +318,22 @@ func TestRotationTransactionFailureNeverPublishesReplacement(t *testing.T) {
 	}
 }
 func FuzzVerifyRotation(f *testing.F) {
+	fixture := deterministicFuzzRotation(f)
 	f.Add([]byte(`null`))
 	f.Add([]byte(`{"schemaVersion":1}`))
-	// A deterministic valid prior source lets fuzzing reach outer parsing and
-	// signature handling without installing any native policy or persisting keys.
-	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
-	private := ed25519.NewKeyFromSeed(make([]byte, 32))
-	public := private.Public().(ed25519.PublicKey)
-	payload, _ := json.Marshal(Policy{SchemaVersion: 1, Revision: 1, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)})
-	envelope, err := Sign(payload, private, now)
-	if err != nil {
-		f.Fatal(err)
-	}
-	prior, err := PrepareInstallation(envelope, public, now, 0)
-	if err != nil {
-		f.Fatal(err)
-	}
-	newPrivate := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{1}, 32))
-	newPublic := newPrivate.Public().(ed25519.PublicKey)
-	payload, _ = json.Marshal(Policy{SchemaVersion: 1, Revision: 2, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)})
-	next, err := Sign(payload, newPrivate, now)
-	if err != nil {
-		f.Fatal(err)
-	}
-	rotation, err := SignRotation(prior, next, newPublic, private, now)
-	if err != nil {
-		f.Fatal(err)
-	}
-	f.Add(rotation)
-	f.Fuzz(func(t *testing.T, data []byte) { _, _ = VerifyRotation(prior, data, public, now) })
+	f.Add(fixture.rotation)
+	f.Fuzz(func(t *testing.T, data []byte) {
+		before := bytes.Clone(data)
+		review, err := VerifyRotation(fixture.prior, data, fixture.oldPublic, fixture.now)
+		if !bytes.Equal(before, data) {
+			t.Fatal("rotation verification changed input bytes")
+		}
+		if err == nil {
+			assertFuzzRotation(t, fixture, data, review)
+		} else if review.SignatureValid || review.RuntimeEnforced {
+			t.Fatal("rejected rotation returned usable review")
+		}
+	})
 }
 
 func TestAuthorizedRotationCannotResetRevisionOrIgnoreReplacementValidity(t *testing.T) {

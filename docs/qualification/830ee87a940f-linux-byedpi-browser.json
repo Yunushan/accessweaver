@@ -1,0 +1,164 @@
+{
+  "sourceCommit": "830ee87a940ffaecc337ab37ae2ab38236e4e0e2",
+  "sourceTree": "3278dcd3b65fd70d8687a372b1040d512684741a",
+  "goVersion": "go version go1.27.4 linux/amd64",
+  "controllerSHA256": "47334f84ddbed7fef9cf662ea04361f6e55ee3cc2afc3b562304984c33dd1a17",
+  "engineRelease": "v0.17.3",
+  "engineArchiveURL": "https://github.com/hufrea/byedpi/releases/download/v0.17.3/byedpi-17.3-x86_64.tar.gz",
+  "engineArchiveSHA256": "98f73c32eacb571ebd88d790f6376ed9e70f02d44c1fe862472ecea75cd7117d",
+  "engineSHA256": "c70e87c6168af1832b21641a98bb53e3500b1daf6a5df8bfd22fac4a9294abda",
+  "schemaVersion": 1,
+  "scope": "Linux AMD64 Chrome for Testing SOCKS5 application traffic and proxy DNS with real ByeDPI",
+  "ordinaryUser": true,
+  "zeroLinuxCapabilities": true,
+  "loopbackOnlyNetworkNamespace": true,
+  "tlsTargetLocal": true,
+  "probeClients": "Python sockets",
+  "probeSourceSHA256": "5923ca7be2977f15c5277867f6ad40f9799f1454529050a3b0969a1dfe611f24",
+  "syntheticDNSRulesRequested": true,
+  "tests": [
+    {
+      "name": "duplicate-foreground-run-refused",
+      "passed": true
+    },
+    {
+      "name": "direct-tls-ipv4-control",
+      "passed": true
+    },
+    {
+      "name": "socks-connect-tls-ipv4",
+      "passed": true
+    },
+    {
+      "name": "direct-tls-ipv6-control",
+      "passed": true
+    },
+    {
+      "name": "socks-connect-tls-ipv6",
+      "passed": true
+    },
+    {
+      "name": "socks-connect-tls-localhost-domain",
+      "passed": true
+    },
+    {
+      "name": "socks-udp-associate-ipv4",
+      "passed": true
+    },
+    {
+      "name": "socks-udp-associate-ipv6",
+      "passed": true
+    },
+    {
+      "name": "sigterm-reaps-engine-and-closes-listener",
+      "passed": true
+    },
+    {
+      "name": "controller-starts-owned-upstream-engine",
+      "passed": true
+    },
+    {
+      "name": "engine-crash-observed-and-controller-lock-released",
+      "passed": true
+    },
+    {
+      "name": "mismatched-engine-digest-refused-without-listener",
+      "passed": true
+    },
+    {
+      "name": "unguided-http-marker-control",
+      "passed": true
+    },
+    {
+      "name": "direct-http-host-unmodified-without-dns",
+      "passed": true
+    },
+    {
+      "name": "guided-included-http-host-modified",
+      "passed": true
+    },
+    {
+      "name": "guided-nested-excluded-http-host-unmodified",
+      "passed": true
+    },
+    {
+      "name": "guided-unlisted-http-host-unmodified",
+      "passed": true
+    },
+    {
+      "name": "guided-included-ipv6-http-host-modified",
+      "passed": true
+    },
+    {
+      "name": "chromium-direct-numeric-http-control",
+      "passed": true
+    },
+    {
+      "name": "chromium-direct-name-lookup-blocked",
+      "passed": true
+    },
+    {
+      "name": "chromium-proxied-included-http",
+      "passed": true
+    },
+    {
+      "name": "chromium-proxied-nested-exclusion-http",
+      "passed": true
+    },
+    {
+      "name": "chromium-proxied-unlisted-http",
+      "passed": true
+    },
+    {
+      "name": "chromium-proxied-ipv6-https",
+      "passed": true
+    },
+    {
+      "name": "chromium-proxy-loss-refuses-direct-fallback",
+      "passed": true
+    },
+    {
+      "name": "guided-dns-and-http-rules",
+      "passed": true
+    }
+  ],
+  "allChecksPassed": true,
+  "productionQualificationComplete": false,
+  "browser": {
+    "browserVersion": "157.0.8103.78",
+    "browserArchiveURL": "https://storage.googleapis.com/chrome-for-testing-public/157.0.8103.78/linux64/chrome-headless-shell-linux64.zip",
+    "browserArchiveSHA256": "f90329720fb61e5a76da9b6b509b6ad12a484c9c5df0359403e935177c6d153a",
+    "browserArchiveBytes": 127965683,
+    "browserArchiveProviderCRC32C": "qqb3Pw==",
+    "browserArchiveProviderGeneration": "1794360554878369",
+    "browserArchiveProviderChecksumMatched": true,
+    "browserExecutableSHA256": "8e4c5db8c070059cb570a05c171dfcaec022d46334722ec3a16376614d687a96",
+    "localLibraryArtifacts": [
+      {
+        "package": "libnss3",
+        "version": "2:3.120-1ubuntu2.2",
+        "sha256": "7c5843f5e49c10c267893ae7f13af6032ed1b96e7c1ae586a5f44435f804dd85"
+      },
+      {
+        "package": "libnspr4",
+        "version": "2:4.38.2-1ubuntu1",
+        "sha256": "2f28284b35765aaccad1785ab017425e1ca378c395256331f9c662d04335d43f"
+      },
+      {
+        "package": "libasound2t64",
+        "version": "1.2.15.3-1ubuntu1.1",
+        "sha256": "96e20cf5c9095ef54ba46fccffea5c01cf2de17a1012c5683a67e43504a6d726"
+      }
+    ]
+  },
+  "browserSandboxDisabled": false,
+  "browserTLSFixtureSPKIPinned": true,
+  "browserTLSFixtureKey": "ECDSA P-256",
+  "host": "Ubuntu WSL",
+  "probeSource": "scripts/test-linux-byedpi-traffic.py",
+  "hostResolverAndPortSettingDigestsPreserved": true,
+  "preliminaryFixtureCorrections": [
+    "Set the IPv6 browser control to request HTTPS",
+    "Replace the Ed25519 fixture certificate after the browser and origin had no shared TLS signature algorithm"
+  ]
+}

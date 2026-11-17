@@ -1,0 +1,199 @@
+{
+  "schemaVersion": 1,
+  "scope": "unsigned-versioned-macos-deployment-exact-workflow-attempt",
+  "repository": "Yunushan/accessweaver",
+  "workflow": ".github/workflows/macos-deployment.yml",
+  "sourceCommit": "06207cdb850a96e5282062245605f95da8bcb33c",
+  "sourceRef": "refs/heads/codex/qualified-readiness-followup",
+  "runID": 44074069414,
+  "runAttempt": 1,
+  "verificationCommit": "fce7bd00a67eeb9ea0d00e5d366bac28ef358a13",
+  "targets": [
+    {
+      "target": "darwin/amd64",
+      "runID": 44074069414,
+      "attestationRunAttempt": 1,
+      "jobId": 134007436323,
+      "artifactId": 14324573363,
+      "artifactSHA256": "deb9dddd93b434c4d3ed9f0fa3be4dcf0739460c1ed06f9106ecf4bc0bbb2ce2",
+      "reportSchema": 5,
+      "wrongAttemptRefused": true,
+      "subjects": [
+        {
+          "file": "0.1.0-alpha-BUILD-INFO.json",
+          "sha256": "ecdd3751d595bc423b99d10cf850a4f579af34e42297bbb13114938970b33fa1"
+        },
+        {
+          "file": "0.1.0-alpha-INSTALL-MANIFEST.json",
+          "sha256": "19cdc270bb1510935e086b1c7a933a2085466ec0887d2cad5f563393e27b75f3"
+        },
+        {
+          "file": "0.1.0-alpha-SCRIPT-MANIFEST.json",
+          "sha256": "e7712ada0dfab694945e5500f8b84ef3eeafa9197338a63e9f7452e4910aa9a7"
+        },
+        {
+          "file": "0.1.0-alpha-compiler-artifact.json",
+          "sha256": "fc8c1ec8201e0f94f7250760776ed93cbe6afd81881941bef49280f6c8dbd7ed"
+        },
+        {
+          "file": "0.1.0-alpha-helper-SBOM.cdx.json",
+          "sha256": "baeaedae1f4300d2b9f35c41f6706814849be99145424c7b0de7bcdb040d22fe"
+        },
+        {
+          "file": "0.1.0-alpha-payload-SBOM.cdx.json",
+          "sha256": "6e24d395e711b8d74c2037df41e6fed433c524264223f6e8d43cb99d363d4c67"
+        },
+        {
+          "file": "0.1.1-alpha-BUILD-INFO.json",
+          "sha256": "ee5bc274e25f948b89addf269f0461c6448d32675b1395cef32d953ab21952e3"
+        },
+        {
+          "file": "0.1.1-alpha-INSTALL-MANIFEST.json",
+          "sha256": "00a63241511618a28d4300c5bf62168cd224f79f785d29e4ed0e49bd1c6f82a0"
+        },
+        {
+          "file": "0.1.1-alpha-SCRIPT-MANIFEST.json",
+          "sha256": "fe14224a6e1c307fb81fbfdca46d1ef18735a68c5d8257bdc58b652fc489c7bc"
+        },
+        {
+          "file": "0.1.1-alpha-compiler-artifact.json",
+          "sha256": "1ff7ad1b2c171444f9b172a76b28c69fdac0e0934fd4b28290c389c52ea03dae"
+        },
+        {
+          "file": "0.1.1-alpha-helper-SBOM.cdx.json",
+          "sha256": "6c6beac27f69961c607dca76652d5b24e254a348311ea38fb470e7157e19620a"
+        },
+        {
+          "file": "0.1.1-alpha-payload-SBOM.cdx.json",
+          "sha256": "2dbae6867ed8826d9e396bfbe47995c7f28b8edfe9a0fb184a0d41ec84a58a3d"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-amd64-deployment-experimental.pkg",
+          "sha256": "6a20d02e00c0b182c73d05b82f98b53e09395e0e5fef9a3ac7fd8b086384c507"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-amd64-deployment-experimental.pkg.cdx.json",
+          "sha256": "d56138449511ab0ec9a46829bad80469095d8d4874aac00517ec49a7e55c0880"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-darwin-amd64-deployment-experimental.pkg",
+          "sha256": "9f2d89fcdd8f0acaa980c9f8f79723c5d70c1d203e0d827370a3034ad40d4c69"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-darwin-amd64-deployment-experimental.pkg.cdx.json",
+          "sha256": "f60a617a67998e4236c9f7952b40fb990aa7d578074f58553a40c83d2d5f7517"
+        },
+        {
+          "file": "accessweaver-launcher-darwin-amd64-experimental.zip",
+          "sha256": "c868364ffb6f4236a748285714ca36c215b0a1076e6e0ab68a64b95f89a68f96"
+        },
+        {
+          "file": "lifecycle-artifact.json",
+          "sha256": "1a34787b598af79b2a0dd342ef1589b364cdb1346bd57789109c8d1e33fbe1b2"
+        }
+      ],
+      "operations": 13,
+      "readOnlyDetectionChecks": 15,
+      "hostedRejections": 5,
+      "publisherSignatureVerified": false,
+      "notarized": false,
+      "productionQualificationComplete": false
+    },
+    {
+      "target": "darwin/arm64",
+      "runID": 44074069414,
+      "attestationRunAttempt": 1,
+      "jobId": 134007436775,
+      "artifactId": 14325431455,
+      "artifactSHA256": "1b68fb80e78bbe4d0a224f32dd64535ec22b62b4410b080c0a4f69af26a947d0",
+      "reportSchema": 5,
+      "wrongAttemptRefused": true,
+      "subjects": [
+        {
+          "file": "0.1.0-alpha-BUILD-INFO.json",
+          "sha256": "e2dc1ee2c9ed28d3337d4792075b2b1c274a7cdaaa34dd7eab66a0b169bb7445"
+        },
+        {
+          "file": "0.1.0-alpha-INSTALL-MANIFEST.json",
+          "sha256": "52e210894513ed5da2cada76a609ed3ed60f230135ca0a4681d3f070f9976215"
+        },
+        {
+          "file": "0.1.0-alpha-SCRIPT-MANIFEST.json",
+          "sha256": "5f338f70728d899b1d576b67a91a28d989bec144843f75663e9c5be99ec2c134"
+        },
+        {
+          "file": "0.1.0-alpha-compiler-artifact.json",
+          "sha256": "bbeda1350d839d32e98dfc365db77a503388e76482e5709d5b6b55348a4ffd94"
+        },
+        {
+          "file": "0.1.0-alpha-helper-SBOM.cdx.json",
+          "sha256": "bb5c1b23bbf65004873860e9268d7567a81b2878d7dbb02304ae1b733f6dfb08"
+        },
+        {
+          "file": "0.1.0-alpha-payload-SBOM.cdx.json",
+          "sha256": "86878796b10e12e666888568429540fad4fb22ae96ea3b64f92f62012c866da9"
+        },
+        {
+          "file": "0.1.1-alpha-BUILD-INFO.json",
+          "sha256": "336ae717004cef8e8891cb96861c83cb8d819fd9f35a3a8fa8c967147a959591"
+        },
+        {
+          "file": "0.1.1-alpha-INSTALL-MANIFEST.json",
+          "sha256": "1ab5df43500ac83cc991a355ffef928d8dddcf0c2f10f05a8777e0574873776c"
+        },
+        {
+          "file": "0.1.1-alpha-SCRIPT-MANIFEST.json",
+          "sha256": "b0ff73e4214225aaa3d9ca5cad6dd7e4b1fb281f5e8182081dd1754f454d1afc"
+        },
+        {
+          "file": "0.1.1-alpha-compiler-artifact.json",
+          "sha256": "449709ef9d7c2bbaec8182ce0f04382fb8bf8b40ebc1dd0fc769381988b93d3b"
+        },
+        {
+          "file": "0.1.1-alpha-helper-SBOM.cdx.json",
+          "sha256": "c09d7599dcf86d9200dd72057dd6f514ad80f222fbf7e352b0cb4ab2770d6e4e"
+        },
+        {
+          "file": "0.1.1-alpha-payload-SBOM.cdx.json",
+          "sha256": "b9e6b335999702e7936b7a8e06f00519cb1bc7e61c886224e6c745978ccf3dfe"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-arm64-deployment-experimental.pkg",
+          "sha256": "0870db059583d20c92a08a93d4c8fca4315e94e581b7c12e7607324a78e0e742"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-arm64-deployment-experimental.pkg.cdx.json",
+          "sha256": "cac4f291ba9768042dbbdc672d01faa90d56a8c06b428d1be5ffde9a32b7ddc2"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-darwin-arm64-deployment-experimental.pkg",
+          "sha256": "6c63de61db6a44a0c939c53f648d86abcf23e69bee17e892885a5f42bc1c3df6"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-darwin-arm64-deployment-experimental.pkg.cdx.json",
+          "sha256": "c6e13a2e649e4be1b3879dff725fbdd3f13b70ccf365ad24c69591c32f374862"
+        },
+        {
+          "file": "accessweaver-launcher-darwin-arm64-experimental.zip",
+          "sha256": "cf1f23e6215305bc38d5685ca5498957dba18f0b6751395e248b9d6849b5f971"
+        },
+        {
+          "file": "lifecycle-artifact.json",
+          "sha256": "f3c5e299f87d6fb3aef1cef378bdf58918facd0ae9060a7a29b0080bed17b191"
+        }
+      ],
+      "operations": 13,
+      "readOnlyDetectionChecks": 15,
+      "hostedRejections": 5,
+      "publisherSignatureVerified": false,
+      "notarized": false,
+      "productionQualificationComplete": false
+    }
+  ],
+  "publisherSignatureVerified": false,
+  "notarized": false,
+  "productUninstallQualified": false,
+  "rebootOrPowerLossQualified": false,
+  "managedEndpointQualified": false,
+  "productionQualificationComplete": false
+}

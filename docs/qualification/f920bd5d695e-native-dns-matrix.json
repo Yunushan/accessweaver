@@ -1,0 +1,255 @@
+{
+  "schemaVersion": 1,
+  "scope": "source-bound-native-windows-dns-matrix",
+  "repository": "Yunushan/accessweaver",
+  "workflow": ".github/workflows/native-doh.yml",
+  "sourceCommit": "f920bd5d695e0251e02005c3c0fca90eac2f6890",
+  "sourceRef": "refs/heads/codex/dns-adapter-coverage",
+  "runId": 44068502498,
+  "counts": {
+    "passed": 6,
+    "failed": 12
+  },
+  "results": [
+    {
+      "name": "native-dns-dnscrypt-missing-snapshot-windows-amd64",
+      "jobId": 133988351604,
+      "artifactId": 14323558113,
+      "artifactSHA256": "ae658521785574d2cfd1ccbe6ef1fad026f3ea33e82c809499733097ebd7f9ff",
+      "outcome": "passed",
+      "code": "none",
+      "refusal": null,
+      "udpWildcardBaseline": {
+        "outcome": "observed",
+        "ipv4": false,
+        "ipv6": false
+      }
+    },
+    {
+      "name": "native-dns-dnscrypt-missing-snapshot-windows-arm64",
+      "jobId": 133988351245,
+      "artifactId": 14322173979,
+      "artifactSHA256": "2f92942be5baffc60f8b0af19ebd3c8b570e610a622c415619e16e3418e380e2",
+      "outcome": "failed",
+      "code": "native-roundtrip-failed",
+      "refusal": "dnscrypt-port-53-in-use",
+      "udpWildcardBaseline": {
+        "outcome": "observed",
+        "ipv4": true,
+        "ipv6": false
+      }
+    },
+    {
+      "name": "native-dns-dnscrypt-remove-all-windows-amd64",
+      "jobId": 133988352236,
+      "artifactId": 14323669246,
+      "artifactSHA256": "bd1b2efef7d9b10dd052ba05c18b1c4bb9e62e70bd4592778c7ba54351060d71",
+      "outcome": "passed",
+      "code": "none",
+      "refusal": null,
+      "udpWildcardBaseline": {
+        "outcome": "observed",
+        "ipv4": false,
+        "ipv6": false
+      }
+    },
+    {
+      "name": "native-dns-dnscrypt-remove-all-windows-arm64",
+      "jobId": 133988351246,
+      "artifactId": 14320989380,
+      "artifactSHA256": "8fb122eda8744f5c31a5d00c07e1bc60ba1c0a1c89879bad518b01eefa54a1c1",
+      "outcome": "failed",
+      "code": "native-scenario",
+      "refusal": "dnscrypt-port-53-in-use",
+      "udpWildcardBaseline": {
+        "outcome": "observed",
+        "ipv4": true,
+        "ipv6": false
+      }
+    },
+    {
+      "name": "native-dns-dnscrypt-roundtrip-windows-amd64",
+      "jobId": 133988351357,
+      "artifactId": 14323113806,
+      "artifactSHA256": "751baa0004901d8beb50e296f95b905566d769f444a629f7b47315b17c74da54",
+      "outcome": "passed",
+      "code": "none",
+      "refusal": null,
+      "udpWildcardBaseline": {
+        "outcome": "observed",
+        "ipv4": false,
+        "ipv6": false
+      }
+    },
+    {
+      "name": "native-dns-dnscrypt-roundtrip-windows-arm64",
+      "jobId": 133988351585,
+      "artifactId": 14324690264,
+      "artifactSHA256": "a4e480e18ff493bec5c79dc878f6a2b01ab053b6465faae3037cbdc4830edffb",
+      "outcome": "failed",
+      "code": "native-scenario",
+      "refusal": "dnscrypt-port-53-in-use",
+      "udpWildcardBaseline": {
+        "outcome": "observed",
+        "ipv4": true,
+        "ipv6": false
+      }
+    },
+    {
+      "name": "native-dns-dnscrypt-service-loss-windows-amd64",
+      "jobId": 133988352386,
+      "artifactId": 14323199598,
+      "artifactSHA256": "032340746974656afb0e7edcde6f1c13af263fb8eb04405f05f2d5c22123b4c2",
+      "outcome": "passed",
+      "code": "none",
+      "refusal": null,
+      "udpWildcardBaseline": {
+        "outcome": "observed",
+        "ipv4": false,
+        "ipv6": false
+      }
+    },
+    {
+      "name": "native-dns-dnscrypt-service-loss-windows-arm64",
+      "jobId": 133988351195,
+      "artifactId": 14322400518,
+      "artifactSHA256": "5b8299bdf77f2c87a4421f62fbab0f53a1711f13787e3bb75cba74f3b749eecd",
+      "outcome": "failed",
+      "code": "native-scenario",
+      "refusal": "dnscrypt-port-53-in-use",
+      "udpWildcardBaseline": {
+        "outcome": "observed",
+        "ipv4": true,
+        "ipv6": false
+      }
+    },
+    {
+      "name": "native-dns-dnscrypt-service-reactivation-windows-amd64",
+      "jobId": 133988351607,
+      "artifactId": 14324122712,
+      "artifactSHA256": "3cb1bf8956c80682139059ed453b6c401b3aa5f70bfa43df07e7b21b5423fb44",
+      "outcome": "passed",
+      "code": "none",
+      "refusal": null,
+      "udpWildcardBaseline": {
+        "outcome": "observed",
+        "ipv4": false,
+        "ipv6": false
+      }
+    },
+    {
+      "name": "native-dns-dnscrypt-service-reactivation-windows-arm64",
+      "jobId": 133988351299,
+      "artifactId": 14321503708,
+      "artifactSHA256": "6db3d9aa032bc5bf4272398c6040998e1c86b26d8026d604fe3410f56c9c21c6",
+      "outcome": "failed",
+      "code": "native-scenario",
+      "refusal": "dnscrypt-port-53-in-use",
+      "udpWildcardBaseline": {
+        "outcome": "observed",
+        "ipv4": true,
+        "ipv6": false
+      }
+    },
+    {
+      "name": "native-dns-dnscrypt-verification-failure-windows-amd64",
+      "jobId": 133988351215,
+      "artifactId": 14323977056,
+      "artifactSHA256": "8c7c97cfaf30cda30a89731f9679c56a6ca69d2259e46a5e128a9c2f62acd687",
+      "outcome": "passed",
+      "code": "none",
+      "refusal": null,
+      "udpWildcardBaseline": {
+        "outcome": "observed",
+        "ipv4": false,
+        "ipv6": false
+      }
+    },
+    {
+      "name": "native-dns-dnscrypt-verification-failure-windows-arm64",
+      "jobId": 133988351475,
+      "artifactId": 14322719360,
+      "artifactSHA256": "f677c255bcc1a8a0a65f0e5d4f9cf566ffca379ee434375f5314913842f7dee6",
+      "outcome": "failed",
+      "code": "native-roundtrip-failed",
+      "refusal": "dnscrypt-port-53-in-use",
+      "udpWildcardBaseline": {
+        "outcome": "observed",
+        "ipv4": true,
+        "ipv6": false
+      }
+    },
+    {
+      "name": "native-dns-doh-journal-recovery-windows-amd64",
+      "jobId": 133988351477,
+      "artifactId": 14323188824,
+      "artifactSHA256": "4630c0f235e4a5daa12a4a06049d083414506b683e3f85c024b767f497fc43be",
+      "outcome": "failed",
+      "code": "native-roundtrip-failed",
+      "refusal": "doh-effective-firewall-mixed-full-inactive",
+      "udpWildcardBaseline": null
+    },
+    {
+      "name": "native-dns-doh-journal-recovery-windows-arm64",
+      "jobId": 133988350691,
+      "artifactId": 14322036087,
+      "artifactSHA256": "8a5835d5f5004daeaa5b8b1fc8545c7046f5f98fb2c15322523b819a46686d12",
+      "outcome": "failed",
+      "code": "native-roundtrip-failed",
+      "refusal": "doh-effective-firewall-mixed-full-inactive",
+      "udpWildcardBaseline": null
+    },
+    {
+      "name": "native-dns-doh-roundtrip-windows-amd64",
+      "jobId": 133988351289,
+      "artifactId": 14323231486,
+      "artifactSHA256": "db04a038be4268ea12ccd01073a7c4b69d3fe9b128331af33547e952496f3921",
+      "outcome": "failed",
+      "code": "native-roundtrip-failed",
+      "refusal": "doh-effective-firewall-mixed-full-inactive",
+      "udpWildcardBaseline": null
+    },
+    {
+      "name": "native-dns-doh-roundtrip-windows-arm64",
+      "jobId": 133988351513,
+      "artifactId": 14322413350,
+      "artifactSHA256": "e69ae578a534db3aa93b7b4b14f0c82e30b2864da9096e07308b365d160ae624",
+      "outcome": "failed",
+      "code": "native-roundtrip-failed",
+      "refusal": "doh-effective-firewall-mixed-full-inactive",
+      "udpWildcardBaseline": null
+    },
+    {
+      "name": "native-dns-doh-static-ipv6-windows-amd64",
+      "jobId": 133988351226,
+      "artifactId": 14323116961,
+      "artifactSHA256": "8de9bc2e3ce799777701f03a6fabc9959dca57a0c2c3b819512d758913987919",
+      "outcome": "failed",
+      "code": "native-roundtrip-failed",
+      "refusal": "static-fixture-incomplete-ipv4-registry-baseline",
+      "udpWildcardBaseline": null,
+      "captureStage": "registry-missing-ipv4",
+      "captureProgress": {
+        "selected": true,
+        "adapterOrdinal": 1,
+        "adapterTotal": 3
+      },
+      "staticFailureCode": "read-registry-missing",
+      "configureExitCode": -1
+    },
+    {
+      "name": "native-dns-doh-static-ipv6-windows-arm64",
+      "jobId": 133988351372,
+      "artifactId": 14322226422,
+      "artifactSHA256": "9c207255dd46d7239d6b4d4695319ebfe8843df36054ffd5d24e4a546c9b3e40",
+      "outcome": "failed",
+      "code": "native-roundtrip-failed",
+      "refusal": "doh-effective-firewall-mixed-full-inactive",
+      "udpWildcardBaseline": null
+    }
+  ],
+  "boundSourceFilesPerReport": 11,
+  "encryptedTransportQualified": false,
+  "rebootQualified": false,
+  "productionQualificationComplete": false
+}

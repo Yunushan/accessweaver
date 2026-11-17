@@ -1,0 +1,862 @@
+# Run inside the same disposable VMware guest before and after its external reboot.
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory)][ValidateSet('Prepare','Verify')][string]$Phase,
+    [Parameter(Mandatory)][ValidatePattern('\A[a-f0-9]{32}\z')][string]$RunID,
+    [Parameter(Mandatory)][ValidateSet('amd64','arm64')][string]$Architecture,
+    [Parameter(Mandatory)][string]$Version,
+    [Parameter(Mandatory)][ValidatePattern('\A[a-fA-F0-9]{64}\z')][string]$SetupSHA256,
+    [Parameter(Mandatory)][ValidatePattern('\A[a-fA-F0-9]{64}\z')][string]$PayloadSHA256,
+    [Parameter(Mandatory)][ValidatePattern('\A[a-fA-F0-9]{64}\z')][string]$PublisherCertificateSHA256,
+    [string]$PreviousVersion='',
+    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousPayloadSHA256='',
+    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousPayloadSBOMSHA256='',
+    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousPayloadPublisherCertificateSHA256='',
+    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousSetupSHA256='',
+    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousPublisherCertificateSHA256='',
+    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PayloadPublisherCertificateSHA256='',
+    [Parameter(Mandatory)][ValidatePattern('\A[a-fA-F0-9]{64}\z')][string]$PayloadSBOMSHA256,
+    [Parameter(Mandatory)][ValidatePattern('\A[a-fA-F0-9]{64}\z')][string]$FixtureSHA256,
+    [Parameter(Mandatory)][ValidatePattern('\A[a-fA-F0-9]{64}\z')][string]$DetectorSHA256,
+    [Parameter(Mandatory)][ValidatePattern('\A[a-fA-F0-9]{64}\z')][string]$CommonSHA256,
+    [Parameter(Mandatory)][ValidatePattern('\A[a-fA-F0-9]{64}\z')][string]$PublisherVerifierSHA256,
+    [Parameter(Mandatory)][ValidatePattern('\A[a-fA-F0-9]{64}\z')][string]$BuildInfoSHA256,
+    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousBuildInfoSHA256='',
+    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousUninstallerSHA256='',
+    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousUninstallDataSHA256='',
+    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousStagedPayloadSHA256='',
+    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$CandidateStagedPayloadSHA256=''
+)
+$ErrorActionPreference='Stop'
+$ProgressPreference='SilentlyContinue'
+
+function Assert-LaterGuestBoot([string]$Before,[string]$After){
+    $previous=0L;$current=0L
+    if($Before -cnotmatch '\A[0-9]{18}\z' -or $After -cnotmatch '\A[0-9]{18}\z' -or
+       -not [long]::TryParse($Before,[ref]$previous) -or -not [long]::TryParse($After,[ref]$current) -or
+       $current -le $previous){
+        throw 'The guest boot did not advance'
+    }
+}
+function Write-NewRebootEvidence([string]$Path,$Data){
+    $encoding=[Text.UTF8Encoding]::new($false,$true)
+    $bytes=$encoding.GetBytes(($Data|ConvertTo-Json -Depth 5 -Compress))
+    if($bytes.Length -gt 8192){throw 'Installer reboot evidence exceeds the size limit'}
+    $staged=Join-Path (Split-Path -Parent $Path) ([guid]::NewGuid().ToString('N')+'.tmp')
+    $file=[IO.File]::Open($staged,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    try {
+        try {
+            $file.Write($bytes,0,$bytes.Length)
+            $file.Flush($true)
+        } finally {$file.Dispose()}
+        [IO.File]::Move($staged,$Path)
+    } finally {[IO.File]::Delete($staged)}
+}
+function Read-RebootEvidence([string]$Path,[ValidateRange(1,65536)][int]$MaximumBytes=8192,[ref]$SHA256){
+    Assert-RebootPath $Path
+    $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        $length=$stream.Length
+        if($length -le 0 -or $length -gt $MaximumBytes){throw 'Installer reboot evidence is outside the size limit'}
+        $bytes=[byte[]]::new([int]$length)
+        $offset=0
+        while($offset -lt $bytes.Length){
+            $count=$stream.Read($bytes,$offset,$bytes.Length-$offset)
+            if($count -eq 0){throw 'Installer reboot evidence was truncated'}
+            $offset+=$count
+        }
+        if($stream.ReadByte() -ne -1){throw 'Installer reboot evidence grew'}
+    } finally {$stream.Dispose()}
+    $text=[Text.UTF8Encoding]::new($false,$true).GetString($bytes)
+    if($text -cnotmatch '\A[\x20\t\r\n]*\{'){throw 'Expected a reboot evidence JSON object'}
+    $record=ConvertFrom-Json -InputObject $text -ErrorAction Stop
+    if($null -ne $SHA256){
+        $hash=[Security.Cryptography.SHA256]::Create()
+        try {$SHA256.Value=[BitConverter]::ToString($hash.ComputeHash($bytes)).Replace('-','').ToLowerInvariant()}
+        finally {$hash.Dispose()}
+    }
+    return $record
+}
+function Get-RebootInstallMode([string]$Version,[string]$PayloadSHA256,[string]$PreviousVersion,[string]$PreviousPayloadSHA256,
+        [string]$PreviousPayloadSBOMSHA256,[string]$PreviousPayloadPublisherSHA256){
+    if(-not ($PreviousVersion -or $PreviousPayloadSHA256 -or $PreviousPayloadSBOMSHA256 -or $PreviousPayloadPublisherSHA256)){
+        return 'clean'
+    }
+    if(-not $PreviousVersion -or $Version -ceq $PreviousVersion -or $PayloadSHA256 -ieq $PreviousPayloadSHA256){
+        throw 'Upgrade qualification requires a distinct approved previous release'
+    }
+    foreach($pin in @($PreviousPayloadSHA256,$PreviousPayloadSBOMSHA256,$PreviousPayloadPublisherSHA256)){
+        if($pin -notmatch '\A[a-fA-F0-9]{64}\z'){throw 'Upgrade qualification requires approved previous payload, SBOM and publisher digests'}
+    }
+    return 'upgrade'
+}
+function Test-RebootDowngradeInputs([string]$InstallMode,[string]$SetupSHA256,[string]$PreviousSetupSHA256,[string]$PreviousPublisherSHA256){
+    if(-not $PreviousSetupSHA256 -and -not $PreviousPublisherSHA256){return $false}
+    if($InstallMode -cne 'upgrade' -or $PreviousSetupSHA256 -notmatch '\A[a-fA-F0-9]{64}\z' -or
+        $PreviousPublisherSHA256 -notmatch '\A[a-fA-F0-9]{64}\z' -or $PreviousSetupSHA256 -ieq $SetupSHA256){
+        throw 'Downgrade qualification requires a distinct approved older setup and publisher identity'
+    }
+    return $true
+}
+function Assert-RebootUpgradeOrder($Comparison,[string]$PreviousVersion,[string]$Version){
+    if($Comparison.currentVersion -cne $PreviousVersion -or $Comparison.version -cne $Version -or
+        $Comparison.updateAvailable -isnot [bool] -or -not $Comparison.updateAvailable){
+        throw 'The approved candidate is not newer than the installed baseline'
+    }
+}
+function Get-RebootQualificationSchema([string]$InstallMode,[string]$PriorUninstaller,[string]$PriorData,
+        [string]$PriorFootprint,[string]$CandidateFootprint) {
+    $verifyFootprint=[bool]($PriorFootprint -or $CandidateFootprint)
+    if(-not $PriorUninstaller -and -not $PriorData -and -not $verifyFootprint){return 14}
+    if($InstallMode -cne 'upgrade' -or $PriorUninstaller -notmatch '\A[a-fA-F0-9]{64}\z' -or
+       $PriorData -notmatch '\A[a-fA-F0-9]{64}\z'){
+        throw 'Legacy migration qualification requires both approved prior uninstaller file digests on an upgrade'
+    }
+    if($verifyFootprint){
+        if($PriorFootprint -notmatch '\A[a-fA-F0-9]{64}\z' -or
+           $CandidateFootprint -notmatch '\A[a-fA-F0-9]{64}\z' -or $PriorFootprint -ieq $CandidateFootprint){
+            throw 'Retirement qualification requires distinct approved prior and candidate compiled inventories'
+        }
+        return 16
+    }
+    return 15
+}
+
+function Assert-RebootIdentity($Record,$Expected){
+    if($Expected.schemaVersion -ge 15 -and (
+       $Record.legacyRegistrationMigrated -isnot [bool] -or -not $Record.legacyRegistrationMigrated -or
+       $Record.previousUninstallerSHA256 -cne $Expected.previousUninstallerSHA256 -or
+       $Record.previousUninstallDataSHA256 -cne $Expected.previousUninstallDataSHA256)){
+        throw 'Prepared reboot evidence differs from the approved legacy migration'
+    }
+    if($Expected.schemaVersion -eq 16 -and (
+       $Record.legacyPackageFootprintVerified -isnot [bool] -or -not $Record.legacyPackageFootprintVerified -or
+       ($Record.retiredPackageFileCount -isnot [int] -and $Record.retiredPackageFileCount -isnot [long]) -or
+       $Record.retiredPackageFileCount -ne $Expected.retiredPackageFileCount -or
+       $Record.previousStagedPayloadSHA256 -cne $Expected.previousStagedPayloadSHA256 -or
+       $Record.candidateStagedPayloadSHA256 -cne $Expected.candidateStagedPayloadSHA256)){
+        throw 'Prepared reboot evidence differs from the approved package footprint'
+    }
+    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne $Expected.schemaVersion -or
+       $Record.runID -cne $Expected.runID -or $Record.architecture -cne $Expected.architecture -or
+       $Record.installMode -cne $Expected.installMode -or $Record.previousVersion -cne $Expected.previousVersion -or
+       $Record.previousPayloadSHA256 -cne $Expected.previousPayloadSHA256 -or
+       $Record.previousPayloadSBOMSHA256 -cne $Expected.previousPayloadSBOMSHA256 -or
+       $Record.previousPayloadPublisherSHA256 -cne $Expected.previousPayloadPublisherSHA256 -or
+       $Record.previousBuildInfoSHA256 -isnot [string] -or
+       $Record.previousBuildInfoSHA256 -cne $Expected.previousBuildInfoSHA256 -or
+       ($Expected.installMode -ceq 'upgrade' -and $Record.previousBuildInfoSHA256 -cnotmatch '\A[a-f0-9]{64}\z') -or
+       ($Expected.installMode -ceq 'clean' -and $Record.previousBuildInfoSHA256 -cne '') -or
+       $Record.setupUpgradeBaselineVerified -isnot [bool] -or
+       $Record.setupUpgradeBaselineVerified -ne ($Expected.installMode -ceq 'upgrade') -or
+       $Record.setupWrongBaselineRefusedWithStatePreserved -isnot [bool] -or
+       $Record.setupWrongBaselineRefusedWithStatePreserved -ne ($Expected.installMode -ceq 'upgrade') -or
+       $Record.previousPayloadTrustVerified -isnot [bool] -or
+       $Record.previousPayloadTrustVerified -ne ($Expected.installMode -ceq 'upgrade') -or
+       $Record.previousSetupSHA256 -cne $Expected.previousSetupSHA256 -or
+       $Record.previousPublisherSHA256 -cne $Expected.previousPublisherSHA256 -or
+       $Record.userProfilePreservedThroughUpgrade -isnot [bool] -or
+       $Record.userProfilePreservedThroughUpgrade -ne ($Expected.installMode -ceq 'upgrade') -or
+       $Record.version -cne $Expected.version -or $Record.setupSHA256 -cne $Expected.setupSHA256 -or
+       $Record.payloadSHA256 -cne $Expected.payloadSHA256 -or $Record.publisherSHA256 -cne $Expected.publisherSHA256 -or
+       $Record.payloadSBOMSHA256 -cne $Expected.payloadSBOMSHA256 -or
+       $Record.buildInfoSHA256 -isnot [string] -or $Record.buildInfoSHA256 -cnotmatch '\A[a-f0-9]{64}\z' -or
+       $Record.buildInfoSHA256 -cne $Expected.buildInfoSHA256 -or
+       $Record.payloadPublisherSHA256 -cne $Expected.payloadPublisherSHA256 -or
+       $Record.guestID -cne $Expected.guestID -or $Record.userSID -cne $Expected.userSID -or
+       $Record.detectorSHA256 -cne $Expected.detectorSHA256 -or $Record.fixtureSHA256 -cne $Expected.fixtureSHA256 -or
+       $Record.commonSHA256 -cne $Expected.commonSHA256 -or $Record.publisherVerifierSHA256 -cne $Expected.publisherVerifierSHA256 -or
+       $Record.uninstallerSHA256 -isnot [string] -or $Record.uninstallerSHA256 -cnotmatch '\A[a-f0-9]{64}\z' -or
+       ($Record.setupExitCode -isnot [int] -and $Record.setupExitCode -isnot [long]) -or $Record.setupExitCode -notin @(0,3010) -or
+       $Record.installedTreeSHA256 -isnot [string] -or $Record.installedTreeSHA256 -cnotmatch '\A[a-f0-9]{64}\z' -or
+       $Record.registrationSHA256 -isnot [string] -or $Record.registrationSHA256 -cnotmatch '\A[a-f0-9]{64}\z' -or
+       $Record.userProfileSHA256 -isnot [string] -or $Record.userProfileSHA256 -cnotmatch '\A[a-f0-9]{64}\z'){
+        throw 'The independently approved candidate differs from the prepared reboot run'
+    }
+}
+function Assert-RebootPath([string]$Path){
+    $root=[IO.Path]::GetPathRoot($Path)
+    $current=$root
+    foreach($component in $Path.Substring($root.Length).Split('\')){
+        $current=[IO.Path]::Combine($current,$component)
+        $entry=Get-Item -LiteralPath $current -Force -ErrorAction Stop
+        if($entry.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Reboot fixture path includes an alias'}
+    }
+}
+function Get-RebootDigest([string]$Path,[switch]$AllowEmpty){
+    Assert-RebootPath $Path
+    $entry=Get-Item -LiteralPath $Path -Force
+    if($entry.PSIsContainer){throw 'Expected an ordinary fixture file'}
+    $file=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if(($file.Length -eq 0 -and -not $AllowEmpty) -or $file.Length -gt 512MB){throw 'Fixture file is outside the verification size limit'}
+        return (Get-FileHash -InputStream $file -Algorithm SHA256).Hash.ToLowerInvariant()
+    } finally {$file.Dispose()}
+}
+function Open-ApprovedRebootScript([string]$Path,[string]$ExpectedSHA256){
+    Assert-RebootPath $Path
+    $file=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if($file.Length -le 0 -or $file.Length -gt 1MB -or
+            (Get-FileHash -InputStream $file -Algorithm SHA256).Hash -ine $ExpectedSHA256){
+            throw 'Installer reboot script differs from the approved source'
+        }
+        return $file
+    } catch {
+        $file.Dispose()
+        throw
+    }
+}
+function Get-RebootMetadataDigest($Value){
+    $bytes=[Text.UTF8Encoding]::new($false,$true).GetBytes((ConvertTo-Json -InputObject $Value -Depth 6 -Compress))
+    $hash=[Security.Cryptography.SHA256]::Create()
+    try {return [BitConverter]::ToString($hash.ComputeHash($bytes)).Replace('-','').ToLowerInvariant()}
+    finally {$hash.Dispose()}
+}
+function Get-RebootAccessDescriptor($Security){
+    $sections=[Security.AccessControl.AccessControlSections]'Owner,Group,Access'
+    $descriptor=$Security.GetSecurityDescriptorSddlForm($sections)
+    if([string]::IsNullOrEmpty($descriptor) -or $descriptor.Length -gt 65536){
+        throw 'Installed security descriptor is missing or outside the fixture bounds'
+    }
+    return $descriptor
+}
+function Get-RebootInstalledTreeDigest([string]$Directory){
+    Assert-RebootPath $Directory
+    $rootItem=Get-Item -LiteralPath $Directory -Force -ErrorAction Stop
+    if(-not $rootItem.PSIsContainer -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint)){
+        throw 'Installed package root is not an ordinary directory'
+    }
+    $rootState=[ordered]@{attributes=[int]$rootItem.Attributes;
+        access=(Get-RebootAccessDescriptor (Get-Acl -LiteralPath $Directory -ErrorAction Stop))}
+    $pending=[Collections.Generic.Queue[string]]::new()
+    $pending.Enqueue($Directory)
+    $records=[Collections.Generic.SortedDictionary[string,object]]::new([StringComparer]::Ordinal)
+    $total=0L
+    while($pending.Count){
+        $parent=$pending.Dequeue()
+        foreach($path in [IO.Directory]::EnumerateFileSystemEntries($parent)){
+            if($records.Count -ge 4096){throw 'Installed package contains too many entries'}
+            $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+            if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Installed package contains an alias'}
+            $relative=$path.Substring($Directory.Length+1)
+            $record=[ordered]@{path=$relative;attributes=[int]$item.Attributes;
+                access=(Get-RebootAccessDescriptor (Get-Acl -LiteralPath $path -ErrorAction Stop))}
+            if($item.PSIsContainer){
+                $record.kind='directory'
+                $pending.Enqueue($path)
+            }else{
+                $total+=$item.Length
+                if($total -gt 512MB){throw 'Installed package exceeds the fingerprint budget'}
+                $record.kind='file'
+                $record.size=$item.Length
+                $record.sha256=Get-RebootDigest $path -AllowEmpty
+            }
+            $records.Add($relative,$record)
+        }
+    }
+    if(-not $records.Count){throw 'Installed package is empty'}
+    return Get-RebootMetadataDigest ([ordered]@{root=$rootState;entries=@($records.Values)})
+}
+function Get-RebootRegistrationFingerprint($Key){
+    if($null -eq $Key -or $Key.SubKeyCount -ne 0 -or $Key.ValueCount -le 0 -or $Key.ValueCount -gt 256){
+        throw 'Installed machine registration is missing or outside the fixture bounds'
+    }
+    $names=$Key.GetValueNames()
+    if($names.Count -ne $Key.ValueCount){throw 'Machine registration changed during inspection'}
+    [Array]::Sort($names,[StringComparer]::Ordinal)
+    $records=foreach($name in $names){
+        $kind=$Key.GetValueKind($name)
+        $value=$Key.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        if($null -eq $value){throw 'Machine registration changed during inspection'}
+        [ordered]@{name=$name;kind=$kind.ToString();value=$value}
+    }
+    $sections=[Security.AccessControl.AccessControlSections]'Owner,Group,Access'
+    $access=Get-RebootAccessDescriptor ($Key.GetAccessControl($sections))
+    return Get-RebootMetadataDigest ([ordered]@{access=$access;values=@($records)})
+}
+function Get-RebootRegistrationDigest {
+    $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
+    $key=$null
+    try {
+        $key=$base.OpenSubKey($registrationKey,$false)
+        return Get-RebootRegistrationFingerprint $key
+    } finally {
+        if($null -ne $key){$key.Dispose()}
+        $base.Dispose()
+    }
+}
+function Assert-RebootInstalledState($Saved,[string]$TreeSHA256,[string]$RegistrationSHA256){
+    if($Saved.installedTreeSHA256 -cne $TreeSHA256){throw 'Installed package tree changed across reboot'}
+    if($Saved.registrationSHA256 -cne $RegistrationSHA256){throw 'Machine registration changed across reboot'}
+}
+function Get-RebootRetiredPackageFootprint([object[]]$Previous,[object[]]$Candidate,[Collections.IDictionary]$PriorPins,[Collections.IDictionary]$CandidatePins){
+    $prior=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::OrdinalIgnoreCase)
+    $next=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach($file in $Previous){$prior.Add($file.path,$file)}
+    foreach($file in $Candidate){$next.Add($file.path,$file)}
+    foreach($name in @('accessweaver.exe','SBOM.cdx.json','BUILD-INFO.json')){
+        if(-not $prior.ContainsKey($name) -or $prior[$name].sha256 -ine $PriorPins[$name] -or
+           -not $next.ContainsKey($name) -or $next[$name].sha256 -ine $CandidatePins[$name]){
+            throw 'Compiled package inventories differ from the approved release identities'
+        }
+    }
+    $bindingPath='docs\windows-retired-payload.sha256'
+    if(-not $next.ContainsKey($bindingPath)){throw 'Candidate inventory lacks its retirement binding'}
+    $retired=@($Previous | Where-Object {-not $next.ContainsKey($_.path)})
+    if(-not $retired.Count){throw 'Selected legacy packages have no retired files to qualify'}
+    return @{files=$retired;binding=$next[$bindingPath]}
+}
+function Assert-RebootRetiredPackageFiles([string]$Directory,[object[]]$Files,[switch]$Present){
+    Assert-RebootPath $Directory
+    foreach($file in $Files){
+        $path=Join-Path $Directory $file.path
+        try {$item=Get-Item -LiteralPath $path -Force -ErrorAction Stop}
+        catch [Management.Automation.ItemNotFoundException] {
+            if($Present){throw 'An approved prior package file is missing'}
+            continue
+        }
+        if(-not $Present){throw 'An approved retired package file is still present'}
+        if($item.PSIsContainer -or $item.Length -ne $file.size -or
+           (Get-RebootDigest $path -AllowEmpty) -cne $file.sha256){
+            throw 'An installed prior package file differs from its approved inventory'
+        }
+    }
+}
+function Assert-RebootRetirementBinding([string]$Directory,$Binding,[string]$PreviousSHA256){
+    $path=Join-Path $Directory $Binding.path
+    Assert-RebootPath $path
+    $stream=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if($stream.Length -le 0 -or $stream.Length -gt 256 -or $stream.Length -ne $Binding.size -or
+           (Get-FileHash -InputStream $stream -Algorithm SHA256).Hash -ine $Binding.sha256){
+            throw 'Installed retirement binding differs from the approved candidate inventory'
+        }
+        $stream.Position=0
+        $reader=[IO.StreamReader]::new($stream,[Text.UTF8Encoding]::new($false,$true),$false,256,$true)
+        try {$text=$reader.ReadToEnd()} finally {$reader.Dispose()}
+        if($text -cnotmatch ('\Aretirement-plan-sha256=[a-f0-9]{64}\r\nprior-payload-sha256='+$PreviousSHA256+'\r\n\z')){
+            throw 'Installed retirement binding differs from the approved prior package inventory'
+        }
+    } finally {$stream.Dispose()}
+}
+
+function Assert-RebootPackageRemoved([string]$Directory){
+    if(-not (Test-Path -LiteralPath $Directory -ErrorAction Stop)){return}
+    Assert-RebootPath $Directory
+    $entries=[IO.Directory]::EnumerateFileSystemEntries($Directory).GetEnumerator()
+    try {
+        if($entries.MoveNext()){throw 'Installed package files remain after uninstall'}
+    } finally {$entries.Dispose()}
+}
+function Assert-RebootRestorationJournal([string]$ManagedRoot){
+    $logs=Join-Path $ManagedRoot 'logs'
+    Assert-RebootPath $logs
+    $journals=@(Get-ChildItem -LiteralPath $logs -Filter 'workflow-*.json' -Force -ErrorAction Stop |
+        Select-Object -First 2)
+    if($journals.Count -ne 1 -or $journals[0].PSIsContainer -or
+        $journals[0].Name -cnotmatch '\Aworkflow-[a-f0-9]{32}\.json\z'){
+        throw 'Expected one restoration journal from uninstall'
+    }
+    $digest=''
+    $journal=Read-RebootEvidence $journals[0].FullName -MaximumBytes 64KB -SHA256 ([ref]$digest)
+    if($journal.action -isnot [string] -or $journal.action -cne 'remove-all' -or
+        $journal.state -isnot [string] -or $journal.state -cne 'succeeded'){
+        throw 'Uninstall restoration journal did not confirm success'
+    }
+    return $digest
+}
+function Get-GuestBoot {
+    $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+    if(@($os).Count -ne 1 -or $os.LastBootUpTime -isnot [datetime]){throw 'Cannot establish the current guest boot'}
+    return $os.LastBootUpTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
+}
+function Assert-RebootPublisher([string]$Path,[string]$ArtifactSHA256,[string]$PublisherSHA256){
+    # A successful PowerShell script can return without updating LASTEXITCODE.
+    $previousExit=Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+    if($null -ne $previousExit){$previousExitValue=$previousExit.Value}
+    try {
+        $global:LASTEXITCODE=0
+        $output=@(& $publisher -Artifact $Path -ArtifactSHA256 $ArtifactSHA256 -PublisherCertificateSHA256 $PublisherSHA256)
+        $code=$global:LASTEXITCODE
+    } finally {
+        if($null -ne $previousExit){$global:LASTEXITCODE=$previousExitValue}
+        else{Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue}
+    }
+    if($code -ne 0 -or $output.Count -ne 1 -or $output[0] -isnot [string] -or
+       $output[0].Length -gt 4096 -or $output[0].IndexOf([char]0) -ge 0 -or $output[0] -cnotmatch '\A[\x20\t\r\n]*\{'){
+        throw 'Authenticode verification did not return a publisher receipt'
+    }
+    $receipt=ConvertFrom-Json -InputObject $output[0] -ErrorAction Stop
+    $fields=@('schemaVersion','scope','artifactSHA256','publisherCertificateSHA256','embeddedSignatureVerified','timestampPresent')
+    if($receipt -isnot [pscustomobject] -or @($receipt.PSObject.Properties).Count -ne $fields.Count -or
+       @($receipt.PSObject.Properties.Name | Where-Object {$_ -cnotin $fields}).Count -ne 0 -or
+       ($receipt.schemaVersion -isnot [int] -and $receipt.schemaVersion -isnot [long]) -or $receipt.schemaVersion -ne 1 -or
+       $receipt.scope -isnot [string] -or $receipt.scope -cne 'windows-publisher-signature' -or
+       $receipt.artifactSHA256 -isnot [string] -or $receipt.artifactSHA256 -cne $ArtifactSHA256.ToLowerInvariant() -or
+       $receipt.publisherCertificateSHA256 -isnot [string] -or $receipt.publisherCertificateSHA256 -cne $PublisherSHA256.ToLowerInvariant() -or
+       $receipt.embeddedSignatureVerified -isnot [bool] -or -not $receipt.embeddedSignatureVerified -or
+       $receipt.timestampPresent -isnot [bool] -or -not $receipt.timestampPresent){
+        throw 'Authenticode publisher receipt did not match the approved artifact and certificate'
+    }
+}
+function Invoke-ApprovedInstaller([string]$Path,[string[]]$Arguments,[switch]$AllowRestartRequired,[int[]]$ExpectedExitCode=@(0),[string]$OutputPath,
+    [string]$ApprovedSHA256,[string]$ApprovedPublisherSHA256){
+    if(-not $ExpectedExitCode.Count -or ($AllowRestartRequired -and ($ExpectedExitCode.Count -ne 1 -or $ExpectedExitCode[0] -ne 0))){throw 'Conflicting installer exit expectations'}
+    $capture=@{}
+    if($OutputPath){
+        if(Test-Path -LiteralPath $OutputPath -ErrorAction Stop){throw 'Fixture output path already exists'}
+        $capture.RedirectStandardOutput=$OutputPath
+    }
+    if([bool]$ApprovedSHA256 -ne [bool]$ApprovedPublisherSHA256){throw 'Both artifact and publisher digests are required'}
+    $guard=$null
+    try {
+        if($ApprovedSHA256){
+            Assert-RebootPath $Path
+            $guard=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+            Assert-RebootPublisher $Path $ApprovedSHA256 $ApprovedPublisherSHA256
+        }
+        $process=Start-Process -FilePath $Path -ArgumentList $Arguments -WindowStyle Hidden -PassThru @capture
+    } finally {
+        # Keep verified bytes bound through process creation. Release the read
+        # handle before waiting so the uninstaller can remove its own files.
+        if($null -ne $guard){$guard.Dispose()}
+    }
+    try {
+        if(-not $process.WaitForExit(180000)){
+            # Retain the process and its installer guard through the actual exit.
+            $process.WaitForExit()
+            throw 'Installer exceeded the guest fixture deadline'
+        }
+        $code=$process.ExitCode
+        if($code -notin $ExpectedExitCode -and (-not $AllowRestartRequired -or $code -ne 3010)){
+            throw 'Installer did not complete successfully'
+        }
+        return $code
+    } finally {$process.Dispose()}
+}
+function Get-RebootUpgradeArguments([string[]]$Pins,[string]$Log) {
+    return @(('/AWUpgradeFrom='+($Pins -join ',')),('/LOG="'+$Log+'"'))
+}
+function Assert-RebootSetupLog([string]$Path,[string[]]$ExpectedMarkers,[long]$Maximum=4MB){
+    Assert-RebootPath $Path
+    $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if($stream.Length -le 0 -or $stream.Length -gt $Maximum){throw 'Installer log exceeds fixture bounds'}
+        $length=$stream.Length
+        $markerIndex=0
+        $reader=[IO.StreamReader]::new($stream,[Text.Encoding]::UTF8,$true,4096,$true)
+        try {
+            while($null -ne ($line=$reader.ReadLine())){
+                $message=$line -creplace '\A[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{3})?[ \t]+',''
+                $message=$message.TrimEnd()
+                if($markerIndex -lt $ExpectedMarkers.Count -and $message -ceq $ExpectedMarkers[$markerIndex]){
+                    $markerIndex++
+                }elseif($message -cin $ExpectedMarkers){
+                    throw 'Installer log markers are out of order or repeated'
+                }
+            }
+            if($stream.Length -ne $length){throw 'Installer log changed during inspection'}
+            if($markerIndex -ne $ExpectedMarkers.Count){throw 'Installer log did not confirm the expected lifecycle checks'}
+        } finally {$reader.Dispose()}
+    } finally {$stream.Dispose()}
+}
+function Save-RebootFixtureProfile([string]$Controller,[string]$UserStore,[string]$InputPath,[string]$ProfileID,
+    [string]$ControllerSHA256,[string]$ControllerPublisherSHA256){
+    if(-not $ControllerSHA256 -or -not $ControllerPublisherSHA256){throw 'Profile import requires approved controller and publisher digests'}
+    $profile=[ordered]@{version=1;id=$ProfileID;name='Installer reboot preservation fixture';engine='byedpi';args=@()
+        routing=@{includeDomains=@();excludeDomains=@();applications=@()}
+        probe=@{host='example.invalid';port=443;tls=$true;timeoutSeconds=5}}
+    Write-NewRebootEvidence $InputPath $profile
+    $previousHome=$env:ACCESSWEAVER_HOME
+    try {
+        $env:ACCESSWEAVER_HOME=$UserStore
+        [void](Invoke-ApprovedInstaller $Controller @('import',('"'+$InputPath+'"')) -ApprovedSHA256 $ControllerSHA256 -ApprovedPublisherSHA256 $ControllerPublisherSHA256)
+    } finally {$env:ACCESSWEAVER_HOME=$previousHome}
+}
+function Assert-RebootUserProfile([string]$Path,[string]$Digest){
+    if((Get-RebootDigest $Path) -cne $Digest){throw 'Saved user profile changed during installer lifecycle'}
+}
+function Assert-RebootProfileReadable([string]$Controller,[string]$ControllerSHA256,[string]$UserStore,[string]$ProfileID,[string]$OutputPath){
+    Assert-RebootPath $Controller
+    $previousHome=$env:ACCESSWEAVER_HOME
+    $guard=[IO.File]::Open($Controller,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if((Get-FileHash -InputStream $guard -Algorithm SHA256).Hash -ine $ControllerSHA256){
+            throw 'Installed controller differs from the approved payload'
+        }
+        $env:ACCESSWEAVER_HOME=$UserStore
+        [void](Invoke-ApprovedInstaller $Controller @('show',$ProfileID) -OutputPath $OutputPath)
+        $record=Read-RebootEvidence $OutputPath
+        if($record -isnot [pscustomobject] -or $record.id -cne $ProfileID -or
+           $record.name -cne 'Installer reboot preservation fixture' -or $record.engine -cne 'byedpi' -or $record.version -ne 1){
+            throw 'Installed controller did not read the saved fixture profile'
+        }
+    } finally {
+        $env:ACCESSWEAVER_HOME=$previousHome
+        $guard.Dispose()
+    }
+}
+function Assert-InstalledDetection([bool]$Detected,[string]$CandidateVersion=$Version,[string]$CandidateSHA256=$PayloadSHA256,[string]$UninstallerDigest='',[string]$CandidateSBOMSHA256=$PayloadSBOMSHA256,
+        [string]$CandidateBuildInfoSHA256=$BuildInfoSHA256,[string]$CandidatePublisherSHA256=$PayloadPublisherCertificateSHA256,
+        [string]$UninstallDataDigest=''){
+    $arguments=@{
+        Version=$CandidateVersion;Architecture=$Architecture;PayloadSHA256=$CandidateSHA256;
+        UninstallerSHA256=$UninstallerDigest;PayloadSBOMSHA256=$CandidateSBOMSHA256;
+        BuildInfoSHA256=$CandidateBuildInfoSHA256;PayloadPublisherSHA256=$CandidatePublisherSHA256
+    }
+    if($UninstallDataDigest){$arguments.UninstallDataSHA256=$UninstallDataDigest}
+    $output=@(& $detector @arguments 2>&1)
+    if($LASTEXITCODE -ne 0){throw 'Installed candidate detection could not complete'}
+    if($Detected){
+        if($output.Count -ne 1 -or $output[0] -cne 'AccessWeaver detected'){throw 'Approved installed payload was not detected'}
+    } elseif($output.Count -ne 0){throw 'Unexpected approved installation already exists'}
+}
+function Assert-InstalledPublisher([string]$ArtifactSHA256=$PayloadSHA256,[string]$PublisherSHA256=$PayloadPublisherCertificateSHA256) {
+    Assert-RebootPublisher $controller $ArtifactSHA256 $PublisherSHA256
+}
+function Assert-RegistrationAbsent {
+    foreach($view in @([Microsoft.Win32.RegistryView]::Registry64,[Microsoft.Win32.RegistryView]::Registry32)){
+        $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,$view)
+        $registration=$null
+        try {
+            $registration=$base.OpenSubKey($registrationKey,$false)
+            if($null -ne $registration){throw 'An AccessWeaver machine registration already exists'}
+        } finally {
+            if($null -ne $registration){$registration.Dispose()}
+            $base.Dispose()
+        }
+    }
+}
+
+if($env:OS -cne 'Windows_NT' -or $Architecture -cnotin @('amd64','arm64') -or
+   [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -cne @{amd64='X64';arm64='Arm64'}[$Architecture] -or
+   -not [Environment]::Is64BitProcess -or (Get-CimInstance Win32_ComputerSystem).Model -notmatch 'VMware'){
+    throw 'A matching native VMware guest is required'
+}
+$identity=[Security.Principal.WindowsIdentity]::GetCurrent()
+try {
+    if($identity.IsSystem -or -not ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){
+        throw 'An elevated disposable guest token is required'
+    }
+    $userSID=$identity.User.Value
+} finally {$identity.Dispose()}
+$userAppData=[Environment]::GetFolderPath('ApplicationData')
+if(-not [IO.Path]::IsPathRooted($userAppData)){throw 'Expected a local disposable guest user profile'}
+Assert-RebootPath $userAppData
+$userStore=Join-Path $userAppData 'AccessWeaver'
+$profileID='installer-reboot-'+$RunID
+$userProfile=Join-Path $userStore ('profiles\'+$profileID+'.json')
+$programFiles=[Environment]::GetFolderPath('ProgramFiles')
+$tools=Join-Path $programFiles 'VMware\VMware Tools\vmtoolsd.exe'
+Assert-RebootPath $tools
+$marker=@(& $tools --cmd 'info-get guestinfo.accessweaverParity' 2>$null)
+if($LASTEXITCODE -ne 0 -or ($marker -join '').Trim() -cne 'AccessWeaver-Clean-Windows-Test'){
+    throw 'The disposable VMware identity does not match'
+}
+
+$guestInfo=Get-CimInstance Win32_ComputerSystemProduct -ErrorAction Stop
+$guestUUID=[guid]::Empty
+if(@($guestInfo).Count -ne 1 -or -not [guid]::TryParseExact([string]$guestInfo.UUID,'D',[ref]$guestUUID) -or
+   $guestUUID -eq [guid]::Empty -or $guestUUID.ToString('D') -ceq 'ffffffff-ffff-ffff-ffff-ffffffffffff'){
+    throw 'Cannot bind the reboot fixture to this guest'
+}
+$common=Join-Path $PSScriptRoot 'windows-installer-common.ps1'
+$detector=Join-Path $PSScriptRoot 'detect-windows-installer.ps1'
+$publisher=Join-Path $PSScriptRoot 'verify-windows-installer-publisher.ps1'
+$scriptGuards=[Collections.Generic.List[IO.FileStream]]::new()
+try {
+    $scriptGuards.Add((Open-ApprovedRebootScript $PSCommandPath $FixtureSHA256))
+    $scriptGuards.Add((Open-ApprovedRebootScript $common $CommonSHA256))
+    $scriptGuards.Add((Open-ApprovedRebootScript $detector $DetectorSHA256))
+    $scriptGuards.Add((Open-ApprovedRebootScript $publisher $PublisherVerifierSHA256))
+    . $common
+    Assert-InstallerReleaseVersion $Version
+    $installMode=Get-RebootInstallMode $Version $PayloadSHA256 $PreviousVersion $PreviousPayloadSHA256 $PreviousPayloadSBOMSHA256 $PreviousPayloadPublisherCertificateSHA256
+    if(($installMode -ceq 'upgrade') -ne [bool]$PreviousBuildInfoSHA256){
+        throw 'Upgrade qualification requires an approved prior build metadata digest'
+    }
+    if($installMode -ceq 'upgrade'){Assert-InstallerReleaseVersion $PreviousVersion}
+    $testDowngrade=Test-RebootDowngradeInputs $installMode $SetupSHA256 $PreviousSetupSHA256 $PreviousPublisherCertificateSHA256
+    $schema=Get-RebootQualificationSchema $installMode $PreviousUninstallerSHA256 $PreviousUninstallDataSHA256 $PreviousStagedPayloadSHA256 $CandidateStagedPayloadSHA256
+    $legacyMigration=$schema -ge 15
+    $footprint=$null
+    if($schema -eq 16){
+        $previousInventory=Join-Path $PSScriptRoot 'previous-payload-files.txt'
+        $candidateInventory=Join-Path $PSScriptRoot 'payload-files.txt'
+        Assert-RebootPath $previousInventory
+        Assert-RebootPath $candidateInventory
+        $previousFiles=@(Read-InstallerPayloadInventory $previousInventory $PreviousStagedPayloadSHA256)
+        $candidateFiles=@(Read-InstallerPayloadInventory $candidateInventory $CandidateStagedPayloadSHA256)
+        $previousPins=@{'accessweaver.exe'=$PreviousPayloadSHA256;'SBOM.cdx.json'=$PreviousPayloadSBOMSHA256;'BUILD-INFO.json'=$PreviousBuildInfoSHA256}
+        $candidatePins=@{'accessweaver.exe'=$PayloadSHA256;'SBOM.cdx.json'=$PayloadSBOMSHA256;'BUILD-INFO.json'=$BuildInfoSHA256}
+        $footprint=Get-RebootRetiredPackageFootprint $previousFiles $candidateFiles $previousPins $candidatePins
+    }
+    $priorUninstallerPins=@{}
+    if($legacyMigration){
+        $priorUninstallerPins.UninstallerDigest=$PreviousUninstallerSHA256
+        $priorUninstallerPins.UninstallDataDigest=$PreviousUninstallDataSHA256
+    }
+    $setup=Join-Path $PSScriptRoot 'setup.exe'
+    $install=Join-Path $programFiles 'AccessWeaver'
+    $controller=Join-Path $install 'accessweaver.exe'
+    $uninstaller=Join-Path $install 'unins000.exe'
+    $registrationKey='SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{B13D4677-4660-4E63-B3DB-03077ACBB092}_is1'
+    $capsule=Join-Path $programFiles ('AccessWeaver reboot fixture '+$RunID)
+    $baseline=Join-Path $capsule 'prepared.json'
+    $report=Join-Path $capsule 'result.json'
+    if(-not $PayloadPublisherCertificateSHA256){$PayloadPublisherCertificateSHA256=$PublisherCertificateSHA256}
+    $expected=[ordered]@{schemaVersion=$schema;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
+        previousVersion=$PreviousVersion;previousPayloadSHA256=$PreviousPayloadSHA256.ToLowerInvariant();
+        previousPayloadSBOMSHA256=$PreviousPayloadSBOMSHA256.ToLowerInvariant();
+        setupUpgradeBaselineVerified=$false;setupWrongBaselineRefusedWithStatePreserved=$false;previousBuildInfoSHA256=$PreviousBuildInfoSHA256.ToLowerInvariant();
+        previousPayloadPublisherSHA256=$PreviousPayloadPublisherCertificateSHA256.ToLowerInvariant();previousPayloadTrustVerified=$false;
+        previousSetupSHA256=$PreviousSetupSHA256.ToLowerInvariant();previousPublisherSHA256=$PreviousPublisherCertificateSHA256.ToLowerInvariant();
+        userProfilePreservedThroughUpgrade=$false;
+        setupSHA256=$SetupSHA256.ToLowerInvariant();payloadSHA256=$PayloadSHA256.ToLowerInvariant();
+        payloadSBOMSHA256=$PayloadSBOMSHA256.ToLowerInvariant();buildInfoSHA256=$BuildInfoSHA256.ToLowerInvariant();guestID=$guestUUID.ToString('D');
+        publisherSHA256=$PublisherCertificateSHA256.ToLowerInvariant();
+        payloadPublisherSHA256=$PayloadPublisherCertificateSHA256.ToLowerInvariant();userSID=$userSID;
+        detectorSHA256=$DetectorSHA256.ToLowerInvariant();fixtureSHA256=$FixtureSHA256.ToLowerInvariant();
+        commonSHA256=$CommonSHA256.ToLowerInvariant();publisherVerifierSHA256=$PublisherVerifierSHA256.ToLowerInvariant()}
+    if($legacyMigration){
+        $expected.previousUninstallerSHA256=$PreviousUninstallerSHA256.ToLowerInvariant()
+        $expected.previousUninstallDataSHA256=$PreviousUninstallDataSHA256.ToLowerInvariant()
+        $expected.legacyRegistrationMigrated=$false
+    }
+    if($footprint){
+        $expected.previousStagedPayloadSHA256=$PreviousStagedPayloadSHA256.ToLowerInvariant()
+        $expected.candidateStagedPayloadSHA256=$CandidateStagedPayloadSHA256.ToLowerInvariant()
+        $expected.retiredPackageFileCount=$footprint.files.Count
+        $expected.legacyPackageFootprintVerified=$false
+    }
+    $boot=Get-GuestBoot
+    $managed=Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'AccessWeaver'
+
+    if($Phase -ceq 'Prepare'){
+        if($installMode -ceq 'clean'){
+            Assert-RegistrationAbsent
+            if(Test-Path -LiteralPath $install){throw 'Clean qualification requires an unused installation directory'}
+        }
+        if((Test-Path -LiteralPath $capsule) -or (Test-Path -LiteralPath $userStore) -or
+           (Test-Path -LiteralPath $managed) -or (Test-Path -LiteralPath 'HKLM:\SOFTWARE\Policies\AccessWeaver') -or
+           @(Get-Service -Name 'AccessWeaver-*' -ErrorAction SilentlyContinue).Count){
+            throw 'The reboot fixture requires an unused guest and run identifier'
+        }
+        Assert-RebootPath $programFiles
+        [void][IO.Directory]::CreateDirectory($capsule)
+        $pending=Join-Path $capsule 'started.json'
+        Write-NewRebootEvidence $pending $expected
+        $stage='publisher'
+        try {
+            $profileInput=Join-Path $capsule 'profile-input.json'
+            if($installMode -ceq 'upgrade'){
+                $stage='previous-installation'
+                if($footprint){Assert-RebootRetiredPackageFiles $install $footprint.files -Present}
+                Assert-RebootPath $controller
+                $guard=[IO.File]::Open($controller,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+                try {
+                    Assert-InstalledDetection $true $PreviousVersion $PreviousPayloadSHA256 -CandidateSBOMSHA256 $PreviousPayloadSBOMSHA256 -CandidateBuildInfoSHA256 $PreviousBuildInfoSHA256 -CandidatePublisherSHA256 $PreviousPayloadPublisherCertificateSHA256 @priorUninstallerPins
+                    Assert-InstalledPublisher $PreviousPayloadSHA256 $PreviousPayloadPublisherCertificateSHA256
+                    $expected.previousPayloadTrustVerified=$true
+                    $comparison=@(& $controller system check-version $Version 2>$null) -join ""
+                    if($LASTEXITCODE -ne 0 -or $comparison.Length -gt 4096){throw 'Previous controller could not compare release versions'}
+                    Assert-RebootUpgradeOrder (ConvertFrom-Json -InputObject $comparison -ErrorAction Stop) $PreviousVersion $Version
+                    $stage='user-profile-before-upgrade'
+                    Save-RebootFixtureProfile $controller $userStore $profileInput $profileID $PreviousPayloadSHA256 $PreviousPayloadPublisherCertificateSHA256
+                    $expected.userProfileSHA256=Get-RebootDigest $userProfile
+                } finally {$guard.Dispose()}
+            }
+            $stage='publisher'
+            Assert-RebootPath $setup
+            $setupGuard=[IO.File]::Open($setup,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+            try {
+                Assert-RebootPublisher $setup $SetupSHA256 $PublisherCertificateSHA256
+                $setupArguments=@('/SP-','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/RESTARTEXITCODE=3010','/NOICONS')
+                $setupLog=Join-Path $capsule 'setup.log'
+                $approvedArguments=$setupArguments+@('/LOG="'+$setupLog+'"')
+                $completionMarker='AccessWeaver installed payload and registration verified. Pending installation record retired.'
+                $expectedMarkers=@($completionMarker)
+                if($installMode -ceq 'upgrade'){
+                    $stage='upgrade-baseline-refusal'
+                    $before=@{installedTreeSHA256=(Get-RebootInstalledTreeDigest $install);registrationSHA256=(Get-RebootRegistrationDigest)}
+                    $pins=@($PreviousVersion,$PreviousPayloadSHA256.ToLowerInvariant(),
+                        $PreviousPayloadSBOMSHA256.ToLowerInvariant(),$PreviousBuildInfoSHA256.ToLowerInvariant())
+                    if($legacyMigration){$pins+=@($expected.previousUninstallerSHA256,$expected.previousUninstallDataSHA256)}
+                    $wrongPins=$pins.Clone()
+                    $wrongPins[3]=if($pins[3][0] -ceq '0'){'1'+$pins[3].Substring(1)}else{'0'+$pins[3].Substring(1)}
+                    $refusalLog=Join-Path $capsule 'rejected-upgrade.log'
+                    $refusalArguments=$setupArguments+(Get-RebootUpgradeArguments $wrongPins $refusalLog)
+                    [void](Invoke-ApprovedInstaller $setup $refusalArguments -ExpectedExitCode 7)
+                    Assert-RebootSetupLog $refusalLog @('PrepareToInstall failed: The installed AccessWeaver release differs from the approved upgrade baseline.')
+                    $stage='upgrade-baseline-refusal-readback'
+                    Assert-RebootInstalledState $before (Get-RebootInstalledTreeDigest $install) (Get-RebootRegistrationDigest)
+                    if($legacyMigration){
+                        $stage='legacy-uninstall-data-refusal'
+                        $wrongLegacyPins=$pins.Clone()
+                        $wrongLegacyPins[5]=if($pins[5][0] -ceq '0'){'1'+$pins[5].Substring(1)}else{'0'+$pins[5].Substring(1)}
+                        $legacyRefusalLog=Join-Path $capsule 'rejected-legacy-uninstall-data.log'
+                        $legacyRefusalArguments=$setupArguments+(Get-RebootUpgradeArguments $wrongLegacyPins $legacyRefusalLog)
+                        [void](Invoke-ApprovedInstaller $setup $legacyRefusalArguments -ExpectedExitCode @(3,4,7))
+                        Assert-RebootSetupLog $legacyRefusalLog @('AccessWeaver protected registration or legacy approval refused.')
+                        Assert-RebootInstalledState $before (Get-RebootInstalledTreeDigest $install) (Get-RebootRegistrationDigest)
+                    }
+                    Assert-InstalledDetection $true $PreviousVersion $PreviousPayloadSHA256 -CandidateSBOMSHA256 $PreviousPayloadSBOMSHA256 -CandidateBuildInfoSHA256 $PreviousBuildInfoSHA256 -CandidatePublisherSHA256 $PreviousPayloadPublisherCertificateSHA256 @priorUninstallerPins
+                    Assert-RebootUserProfile $userProfile $expected.userProfileSHA256
+                    $expected.setupWrongBaselineRefusedWithStatePreserved=$true
+
+                    $approvedArguments=$setupArguments+(Get-RebootUpgradeArguments $pins $setupLog)
+                    $baselineMarker='AccessWeaver approved upgrade baseline verified.'
+                    if($legacyMigration){
+                        $expectedMarkers=@($baselineMarker,$baselineMarker,'AccessWeaver approved legacy registration retired.',$completionMarker)
+                    } else {$expectedMarkers=@($baselineMarker,$baselineMarker,$completionMarker)}
+                }
+                $stage='install'
+                $expected.setupExitCode=Invoke-ApprovedInstaller $setup $approvedArguments -AllowRestartRequired
+                Assert-RebootSetupLog $setupLog $expectedMarkers
+                $expected.setupUpgradeBaselineVerified=$installMode -ceq 'upgrade'
+                if($legacyMigration){$expected.legacyRegistrationMigrated=$true}
+            } finally {$setupGuard.Dispose()}
+            $stage='installed-before-reboot'
+            if($footprint){
+                $stage='retired-package-files'
+                Assert-RebootRetiredPackageFiles $install $footprint.files
+                Assert-RebootRetirementBinding $install $footprint.binding $expected.previousStagedPayloadSHA256
+                $expected.legacyPackageFootprintVerified=$true
+                $stage='installed-before-reboot'
+            }
+            Assert-InstalledDetection $true
+            Assert-InstalledPublisher
+            $expected.boot=$boot
+            $expected.uninstallerSHA256=Get-RebootDigest $uninstaller
+            Assert-RebootPublisher $uninstaller $expected.uninstallerSHA256 $PublisherCertificateSHA256
+            Assert-InstalledDetection $true -UninstallerDigest $expected.uninstallerSHA256
+            $expected.installedTreeSHA256=Get-RebootInstalledTreeDigest $install
+            $expected.registrationSHA256=Get-RebootRegistrationDigest
+            if($installMode -ceq 'upgrade'){
+                $stage='user-profile-after-upgrade'
+                Assert-RebootUserProfile $userProfile $expected.userProfileSHA256
+                $expected.userProfilePreservedThroughUpgrade=$true
+            }else{
+                $stage='user-profile-prepare'
+                Save-RebootFixtureProfile $controller $userStore $profileInput $profileID $PayloadSHA256 $PayloadPublisherCertificateSHA256
+                $expected.userProfileSHA256=Get-RebootDigest $userProfile
+            }
+            Write-NewRebootEvidence $baseline $expected
+        } catch {
+            Write-NewRebootEvidence $report @{schemaVersion=$schema;runID=$RunID;stage=$stage;passed=$false}
+            throw 'Windows installer reboot preparation failed. Retain the disposable guest for review.'
+        }
+        Write-Output 'Prepared the approved installation. Reboot the disposable guest before verification.'
+        return
+    }
+
+    if(Test-Path -LiteralPath $report -ErrorAction Stop){throw 'The prepared run is already consumed'}
+    $saved=Read-RebootEvidence $baseline
+    Assert-RebootIdentity $saved $expected
+    Assert-LaterGuestBoot $saved.boot $boot
+    Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=$schema;runID=$RunID}
+    $result=[ordered]@{schemaVersion=$schema;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
+        previousVersion=$expected.previousVersion;previousPayloadSHA256=$expected.previousPayloadSHA256;
+        previousPayloadSBOMSHA256=$expected.previousPayloadSBOMSHA256;previousPayloadPublisherSHA256=$expected.previousPayloadPublisherSHA256;
+        previousBuildInfoSHA256=$expected.previousBuildInfoSHA256;setupUpgradeBaselineVerified=$saved.setupUpgradeBaselineVerified;
+        setupWrongBaselineRefusedWithStatePreserved=$saved.setupWrongBaselineRefusedWithStatePreserved;
+        previousPayloadTrustVerified=$saved.previousPayloadTrustVerified;
+        previousSetupSHA256=$expected.previousSetupSHA256;previousPublisherSHA256=$expected.previousPublisherSHA256;
+        downgradeRequested=$testDowngrade;downgradeRefused=$false;downgradeStatePreserved=$false;
+        userProfilePreservedThroughUpgrade=$saved.userProfilePreservedThroughUpgrade;
+        setupSHA256=$expected.setupSHA256;payloadSHA256=$expected.payloadSHA256;publisherSHA256=$expected.publisherSHA256;
+        payloadPublisherSHA256=$expected.payloadPublisherSHA256;
+        payloadSBOMSHA256=$expected.payloadSBOMSHA256;installedPayloadSBOMVerified=$false;installedPayloadPublisherVerified=$false;
+        buildInfoSHA256=$expected.buildInfoSHA256;installedBuildInfoVerified=$false;
+        detectorSHA256=$expected.detectorSHA256;fixtureSHA256=$expected.fixtureSHA256;
+        commonSHA256=$expected.commonSHA256;publisherVerifierSHA256=$expected.publisherVerifierSHA256;
+        uninstallerSHA256=$saved.uninstallerSHA256;installedTreeSHA256=$saved.installedTreeSHA256;registrationSHA256=$saved.registrationSHA256;
+        installedTreeVerified=$false;registrationPreserved=$false;packageFilesRemoved=$false;restorationJournalSHA256='';
+        userProfileVerifiedAfterReboot=$false;userProfileOpenedByInstalledController=$false;userProfilePreservedAfterUninstall=$false;setupExitCode=$saved.setupExitCode;setupRequestedRestart=($saved.setupExitCode -eq 3010);
+        guestRebootVerified=$true;installedPayloadVerifiedBeforeRestart=$true;installedPayloadVerified=$false;uninstallerIdentityVerified=$false;
+        registrationRemoved=$false;passed=$false;stage='installed-after-reboot'}
+    if($legacyMigration){
+        $result.previousUninstallerSHA256=$expected.previousUninstallerSHA256
+        $result.previousUninstallDataSHA256=$expected.previousUninstallDataSHA256
+        $result.legacyRegistrationMigrated=$saved.legacyRegistrationMigrated
+    }
+    if($footprint){
+        $result.previousStagedPayloadSHA256=$expected.previousStagedPayloadSHA256
+        $result.candidateStagedPayloadSHA256=$expected.candidateStagedPayloadSHA256
+        $result.retiredPackageFileCount=$expected.retiredPackageFileCount
+        $result.legacyPackageFootprintVerified=$false
+    }
+    try {
+        Assert-InstalledDetection $true -UninstallerDigest $saved.uninstallerSHA256
+        $result.installedPayloadVerified=$true
+        $result.installedPayloadSBOMVerified=$true
+        $result.installedBuildInfoVerified=$true
+        $result.stage='installed-publisher'
+        Assert-InstalledPublisher
+        $result.installedPayloadPublisherVerified=$true
+        $result.stage='installed-state'
+        Assert-RebootInstalledState $saved (Get-RebootInstalledTreeDigest $install) (Get-RebootRegistrationDigest)
+        $result.installedTreeVerified=$true
+        $result.registrationPreserved=$true
+        if($footprint){
+            $result.stage='retired-package-files-after-reboot'
+            Assert-RebootRetiredPackageFiles $install $footprint.files
+            Assert-RebootRetirementBinding $install $footprint.binding $expected.previousStagedPayloadSHA256
+            $result.legacyPackageFootprintVerified=$true
+        }
+        $result.stage='user-profile-after-reboot'
+        Assert-RebootUserProfile $userProfile $saved.userProfileSHA256
+        $result.userProfileVerifiedAfterReboot=$true
+        $result.stage='installed-controller-profile-read'
+        Assert-RebootProfileReadable $controller $PayloadSHA256 $userStore $profileID (Join-Path $capsule 'profile-readback.json')
+        Assert-RebootUserProfile $userProfile $saved.userProfileSHA256
+        $result.userProfileOpenedByInstalledController=$true
+        if($testDowngrade){
+            $result.stage='downgrade-publisher'
+            $olderSetup=Join-Path $PSScriptRoot 'previous-setup.exe'
+            Assert-RebootPath $olderSetup
+            $downgradeLog=Join-Path $capsule 'downgrade.log'
+            if(Test-Path -LiteralPath $downgradeLog -ErrorAction Stop){throw 'Downgrade log already exists'}
+            $olderGuard=[IO.File]::Open($olderSetup,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+            try {
+                Assert-RebootPublisher $olderSetup $PreviousSetupSHA256 $PreviousPublisherCertificateSHA256
+                $result.stage='downgrade-refusal'
+                [void](Invoke-ApprovedInstaller $olderSetup @('/SP-','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/NOICONS',('/LOG="'+$downgradeLog+'"')) -ExpectedExitCode 1)
+            } finally {$olderGuard.Dispose()}
+            Assert-RebootSetupLog $downgradeLog @('A newer AccessWeaver version is installed. Use a current or newer installer. This installer will not downgrade it.') 1MB
+            $result.downgradeRefused=$true
+            $result.stage='downgrade-readback'
+            Assert-InstalledDetection $true -UninstallerDigest $saved.uninstallerSHA256
+            Assert-RebootInstalledState $saved (Get-RebootInstalledTreeDigest $install) (Get-RebootRegistrationDigest)
+            Assert-RebootUserProfile $userProfile $saved.userProfileSHA256
+            $result.downgradeStatePreserved=$true
+        }
+        $result.stage='uninstall'
+        if(Test-Path -LiteralPath $managed -ErrorAction Stop){throw 'Uninstall requires a fresh restoration journal'}
+        [void](Invoke-ApprovedInstaller $uninstaller @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -ApprovedSHA256 $saved.uninstallerSHA256 -ApprovedPublisherSHA256 $PublisherCertificateSHA256)
+        $result.uninstallerIdentityVerified=$true
+        $result.stage='removal-readback'
+        $deadline=[Diagnostics.Stopwatch]::StartNew()
+        while((Test-Path -LiteralPath $uninstaller) -and $deadline.Elapsed.TotalSeconds -lt 20){Start-Sleep -Milliseconds 200}
+        Assert-InstalledDetection $false
+        Assert-RegistrationAbsent
+        $result.registrationRemoved=$true
+        Assert-RebootPackageRemoved $install
+        $result.packageFilesRemoved=$true
+        $result.stage='restoration-journal'
+        $result.restorationJournalSHA256=Assert-RebootRestorationJournal $managed
+        $result.stage='user-profile-after-uninstall'
+        Assert-RebootUserProfile $userProfile $saved.userProfileSHA256
+        $result.userProfilePreservedAfterUninstall=$true
+        $result.passed=$true
+        $result.stage='complete'
+    } catch {
+        throw 'Windows installer reboot verification failed. Retain the disposable guest for review.'
+    } finally {
+        Write-NewRebootEvidence $report $result
+    }
+    $result | ConvertTo-Json -Compress
+} finally {
+    foreach($guard in $scriptGuards){$guard.Dispose()}
+}

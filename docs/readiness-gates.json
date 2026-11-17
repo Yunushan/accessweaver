@@ -26,8 +26,30 @@
           "acceptance": "Selected and unselected applications have independently verified TCP, UDP, DNS and IPv4/IPv6 paths for each supported routing mode.",
           "status": "partial",
           "evidence": [
+            "docs/qualification/adb10502a18a-linux-managed-byedpi.json",
+            "docs/qualification/402dca260f4b-native-wiresock-lifecycle.json",
+            "docs/qualification/3ba0b0e4b20a-native-wiresock-lifecycle.json",
+            "docs/qualification/2d65f3430e6b-native-wiresock-lifecycle.json",
+            "docs/qualification/222e4ba89d09-native-wiresock-lifecycle.json",
+            "docs/qualification/0ed689757cbd-native-wiresock-lifecycle.json",
+            "scripts/test-windows-wiresock-evidence.ps1",
+            "docs/qualification/830ee87a940f-linux-byedpi-traffic.json",
+            "docs/qualification/830ee87a940f-linux-byedpi-dns-rules.json",
+            "docs/qualification/830ee87a940f-linux-byedpi-browser.json",
+            "scripts/test-linux-byedpi-traffic.py",
+            "docs/qualification/f283f4a449a9-wiresock-uninstall-registration-readback-contracts.json",
             "scripts/test-windows-wiresock.ps1",
-            "build/vm-tests/sandbox/results/wgpeer-self-test/self-test.json"
+            "scripts/test-windows-native-wiresock.ps1",
+            "docs/qualification/1b66e9c3bafb-native-wiresock-lifecycle.json",
+            "docs/qualification/20ac1ac28b96-native-wiresock-lifecycle.json",
+            "docs/qualification/a95ff588e668-native-wiresock-lifecycle.json",
+            "docs/qualification/66b0bf6def2a-native-wiresock-lifecycle.json",
+            "docs/qualification/a387bcba8661-native-wiresock-lifecycle.json",
+            "docs/qualification/8228725c7a8c-native-wiresock-lifecycle.json",
+            "docs/SPLITWIRE_IMPLEMENTATION.md",
+            "docs/qualification/4216e0e67f8f-native-wiresock-lifecycle.json",
+            "docs/qualification/0a0ace501720-native-wiresock-lifecycle.json",
+            "docs/qualification/bc5bd74965c4-wiresock-status-grammar.json"
           ]
         },
         {
@@ -35,8 +57,23 @@
           "acceptance": "DoH and DNSCrypt work through the ordinary OS resolver and restore DHCP/static state after failure and reboot.",
           "status": "failed",
           "evidence": [
-            "build/vm-tests/sandbox/results/reboot-results.json",
-            "docs/SPLITWIRE_IMPLEMENTATION.md"
+            "docs/SPLITWIRE_IMPLEMENTATION.md",
+            "docs/qualification/22cf0abb5da8-dns-restore-readback.json",
+            "scripts/test-windows-reboot.ps1",
+            "scripts/test-windows-reboot-contracts.ps1",
+            "scripts/test-windows-dns-journal.ps1",
+            "scripts/test-dns-recovery-contracts.ps1",
+            "docs/qualification/3ae6417cb9a8-dns-native-recovery.json",
+            "docs/qualification/80cf5cfbe5fb-native-dns-refusals.json",
+            "docs/qualification/8b9184de225d-doh-full-status.json",
+            "docs/qualification/8b9184de225d-dns-observer-followup.json",
+            "docs/qualification/520a3053b245-doh-refusal-diagnostics.json",
+            "docs/qualification/7a963d7c64d9-doh-raw-cim.json",
+            "docs/qualification/7a963d7c64d9-native-doh-typed-status.json",
+            "docs/qualification/4ac16aaf7b17-dnscrypt-port-admission.json",
+            "docs/qualification/4296e45911c1-native-dns-matrix.json",
+            "docs/qualification/f920bd5d695e-native-dns-matrix.json",
+            "docs/qualification/f920bd5d695e-native-doh-wire.json"
           ]
         },
         {
@@ -53,7 +90,14 @@
           "acceptance": "Discord/PTB/SplitCord install, start, removal, clean mode and repair pass interactive tests, including text/voice and cleanup.",
           "status": "failed",
           "evidence": [
-            "build/vm-tests/sandbox/applications-v1-results.json"
+            "docs/SPLITWIRE_IMPLEMENTATION.md",
+            "scripts/test-windows-apps.ps1",
+            "scripts/test-windows-app-evidence.ps1",
+            "scripts/test-windows-drover-restore.ps1",
+            "scripts/test-windows-workflow.ps1",
+            "docs/qualification/241f61b770d1-splitcord-registered-discovery-contracts.json",
+            "docs/qualification/38e1743ef9fb-application-live-process-contracts.json",
+            "docs/qualification/f7d7e9b85325-windows-sandbox-application-policy.json"
           ]
         }
       ]
@@ -70,7 +114,8 @@
             "internal/workflow/manager_test.go",
             "cmd/accessweaver/system_wait_test.go",
             "internal/engine/lifecycle_test.go",
-            "scripts/test-unix-controller.py"
+            "scripts/test-unix-controller.py",
+            "docs/qualification/16632c4b2a7f-linux-package-active-reboot.json"
           ]
         },
         {
@@ -80,7 +125,8 @@
           "evidence": [
             "scripts/test-windows-workflow.ps1",
             "internal/workflow/windows.ps1",
-            "internal/managed/recovery_empty_test.go"
+            "internal/managed/recovery_empty_test.go",
+            "docs/qualification/bc5bd74965c4-wiresock-status-grammar.json"
           ]
         },
         {
@@ -98,7 +144,10 @@
             "internal/workflow/output_test.go",
             "cmd/accessweaver/system_output_test.go",
             "internal/api/workflow_output_test.go",
-            "internal/workflow/metadata_output_test.go"
+            "internal/workflow/metadata_output_test.go",
+            "docs/qualification/67068364c8e8-firefox-sustained-rss.json",
+            "docs/qualification/f920bd5d695e-firefox-sustained-rss.json",
+            "docs/qualification/bc5bd74965c4-browser-rss-roles.json"
           ]
         },
         {
@@ -121,8 +170,41 @@
           "acceptance": "Install, upgrade, reboot, downgrade and uninstall pass from clean and previously installed states on the supported matrix.",
           "status": "failed",
           "evidence": [
-            "build/vm-tests/sandbox/results/reboot-results.json",
-            "scripts/test-windows-integration.ps1"
+            "scripts/test-windows-integration.ps1",
+            "scripts/test-windows-installer-lifecycle.ps1",
+            "docs/SPLITWIRE_IMPLEMENTATION.md",
+            "scripts/test-windows-installer-reboot.ps1",
+            "scripts/test-windows-installer-reboot-contracts.ps1",
+            "docs/qualification/56924863f63e-installer-lifecycle.json",
+            "docs/qualification/16632c4b2a7f-linux-deb-lifecycle.json",
+            "docs/LINUX_DEBIAN_DEPLOYMENT.md",
+            "docs/qualification/4caa86d5b6d0-linux-apt-repository.json",
+            ".github/workflows/linux-package-lifecycle.yml",
+            "docs/qualification/227b43d8500e-linux-package-candidate.json",
+            "docs/qualification/874ff6941ef4-local-debian-candidate.json",
+            "docs/qualification/d6227a18b894-local-debian-candidate.json",
+            "docs/qualification/16632c4b2a7f-linux-packaged-managed-policy.json",
+            "docs/qualification/16632c4b2a7f-linux-packaged-byedpi.json",
+            "docs/qualification/16632c4b2a7f-linux-package-reboot.json",
+            "docs/qualification/16632c4b2a7f-linux-package-active-reboot.json",
+            "docs/qualification/fc603251a130-linux-package-reboot.json",
+            "docs/qualification/0c9c8fd3806c-linux-package-reboot.json",
+            "docs/qualification/16632c4b2a7f-linux-package-arm64-reboot.json",
+            "docs/qualification/5ac640dede08-debian-reboot-payload.json",
+            "docs/qualification/5ac640dede08-debian-reboot-arm64-payload.json",
+            "docs/qualification/d57c7c8d8a97-hosted-debian-amd64.json",
+            "docs/qualification/03aa58615a16-debian-managed-reboot.json",
+            "docs/qualification/03aa58615a16-debian-apt-dpkg-lifecycle.json",
+            "docs/qualification/03aa58615a16-debian-filtered-lifecycle.json",
+            "docs/qualification/03aa58615a16-debian-arm64-dpkg-lifecycle.json",
+            "docs/qualification/43385d49f54c-installer-registration-refusal.json",
+            "docs/qualification/ed049b12e54e-installer-terminal-server-refusal.json",
+            "docs/WINDOWS_INSTALLER_REGISTRATION.md",
+            "scripts/test-windows-installer-protected-publication.ps1",
+            "docs/qualification/7c6c341a9ab6-native-protected-windows-installer.json",
+            "docs/qualification/f920bd5d695e-native-protected-windows-installer.json",
+            "docs/qualification/f920bd5d695e-native-macos-desktop.json",
+            "docs/qualification/f920bd5d695e-native-debian-lifecycle.json"
           ]
         }
       ]
@@ -180,10 +262,14 @@
             "scripts/check-vulnerabilities.sh",
             "scripts/check-vulnerability-report.py",
             "scripts/test_vulnerability_report.py",
+            "docs/qualification/5be8ae093e4d-vulnerability-matrix.json",
+            "docs/qualification/9d6760f17a4a-go-vulnerability-matrix.json",
+            "docs/qualification/ca713f51184e-go-package-coverage.json",
             "scripts/security-tools/go.mod",
             ".github/workflows/ci.yml",
             ".github/workflows/release.yml",
-            "scripts/fixtures/wgpeer/go.mod"
+            "scripts/fixtures/wgpeer/go.mod",
+            "docs/qualification/4a1c4bbcedf0-wireguard-fixture-initiation.json"
           ]
         }
       ]
@@ -202,7 +288,8 @@
             "scripts/build-windows-installer.ps1",
             "internal/buildinfo/info_test.go",
             "scripts/verify-release.py",
-            "dist/readiness-preview/BUILD-MANIFEST.json"
+            "docs/qualification/3cf97b25366e-archives.json",
+            "docs/qualification/65b3803c473b-preview-execution-attestations.json"
           ]
         },
         {
@@ -214,7 +301,16 @@
             "scripts/verify_release_provenance.py",
             "scripts/test_release_provenance.py",
             "scripts/check_provenance_rejections.py",
-            "docs/RELEASE_PROVENANCE.md"
+            "scripts/verify-windows-installer-publisher.ps1",
+            "scripts/sign-windows-installer-artifact.ps1",
+            "scripts/test-windows-installer-contracts.ps1",
+            "scripts/verify_macos_installer_publisher.py",
+            "scripts/build-macos-deployment.py",
+            "scripts/signed_release_manifest.py",
+            "scripts/test_signed_release_manifest.py",
+            "scripts/test_macos_installer_publisher.py",
+            "docs/RELEASE_PROVENANCE.md",
+            "docs/qualification/dffccc878ac6-windows-signing-handoff.json"
           ]
         },
         {
@@ -241,8 +337,20 @@
             ".github/workflows/release.yml",
             "scripts/release_archive.py",
             "scripts/test_release_archive.py",
+            "scripts/package-hosted-release.sh",
+            "scripts/verify_release_rebuild.py",
+            "scripts/test_release_rebuild.py",
             ".gitattributes",
-            "docs/TESTING.md"
+            "docs/TESTING.md",
+            "docs/qualification/3cf97b25366e-archives.json",
+            "docs/qualification/6ac8f17181e0-local-portable-rebuild.json",
+            "docs/qualification/77a884e7c213-local-portable-rebuild.json",
+            "docs/qualification/53abc0178c85-local-portable-rebuild.json",
+            "docs/qualification/1c3f86a30f5c-portable-cross-environment-rebuild.json",
+            "docs/qualification/7f76605d73d9-pinned-packaging-rebuild.json",
+            "docs/qualification/65b3803c473b-hosted-preview-rebuild.json",
+            "docs/qualification/236e7db983a9-portable-qualification.json",
+            "docs/qualification/f920bd5d695e-portable-qualification.json"
           ]
         },
         {
@@ -251,7 +359,11 @@
           "status": "partial",
           "evidence": [
             "internal/workflow/release_test.go",
-            "internal/workflow/windows.ps1"
+            "internal/workflow/windows.ps1",
+            "docs/qualification/1ae29f62cc66-windows-release-discovery-contracts.json",
+            "scripts/signed_release_manifest.py",
+            "scripts/test_signed_release_manifest.py",
+            "docs/RELEASE_PROVENANCE.md"
           ]
         }
       ]
@@ -268,7 +380,21 @@
             "docs/PLATFORMS.md",
             "scripts/check-native-environment.cjs",
             "scripts/check-native-environment.test.cjs",
-            "scripts/test-windows-integration.ps1"
+            "scripts/test-windows-integration.ps1",
+            "docs/qualification/cdb06ec00147-wiresock-native-installer-contracts.json",
+            "docs/qualification/0e0188639313-wiresock-uninstall-registration-contracts.json",
+            "docs/qualification/2f5cb2334c95-wiresock-explicit-disconnect-contracts.json",
+            "docs/qualification/2f5cb2334c95-native-wiresock-lifecycle.json",
+            "docs/qualification/b24bb3f7fae0-native-wiresock-lifecycle.json",
+            "docs/qualification/d7a693165920-native-wiresock-lifecycle.json",
+            "docs/qualification/7844abda8564-native-wiresock-lifecycle.json",
+            "docs/qualification/cdb06ec00147-native-download-transports.json",
+            "docs/qualification/20ac1ac28b96-native-wiresock-trust.json",
+            "docs/qualification/1b66e9c3bafb-native-wiresock-lifecycle.json",
+            "docs/qualification/20ac1ac28b96-native-wiresock-lifecycle.json",
+            "docs/qualification/a95ff588e668-native-wiresock-lifecycle.json",
+            "docs/qualification/66b0bf6def2a-native-wiresock-lifecycle.json",
+            "docs/qualification/f6e55a959f07-native-wiresock-lifecycle.json"
           ]
         },
         {
@@ -288,6 +414,7 @@
           "status": "partial",
           "evidence": [
             "docs/PLATFORMS.md",
+            "docs/qualification/86090c940482-macos-desktop.json",
             "scripts/check-native-environment.cjs",
             "scripts/check-native-environment.test.cjs",
             ".github/workflows/ci.yml"
@@ -322,7 +449,11 @@
           "evidence": [
             ".github/workflows/ci.yml",
             "internal/logfile/writer_test.go",
-            "scripts/test-unix-controller.py"
+            "scripts/test-unix-controller.py",
+            "docs/qualification/77a884e7c213-local-linux-core.json",
+            "docs/qualification/57bc58e23c89-local-linux-core.json",
+            "docs/qualification/86090c940482-local-linux-core.json",
+            "docs/qualification/4061b28c965e-local-linux-core.json"
           ]
         },
         {
@@ -333,7 +464,14 @@
             "web/app.test.cjs",
             "scripts/browser-tests/desktop.spec.cjs",
             ".github/workflows/browser.yml",
-            "docs/TESTING.md"
+            "docs/TESTING.md",
+            "docs/qualification/beb4db7be0c7-browser-runtime-status-acceptance.json",
+            "docs/qualification/f9ca4d5c8001-browser-runtime-language-reset.json",
+            "docs/qualification/c856935f8aaa-local-linux-browser.json",
+            "docs/qualification/415d704e363b-local-webkit-styles.json",
+            "docs/qualification/1ed0fa951710-integrated-browser-styles.json",
+            "docs/qualification/d57c7c8d8a97-dashboard-browser-acceptance.json",
+            "docs/qualification/eec0a50e3b29-browser-managed-history.json"
           ]
         },
         {
@@ -353,8 +491,24 @@
         {
           "id": "validation.performance",
           "acceptance": "Measure startup, UI responsiveness, CPU/RAM/handles, throughput, latency and long-duration stability against published budgets.",
-          "status": "missing",
-          "evidence": []
+          "status": "partial",
+          "evidence": [
+            "docs/PERFORMANCE.md",
+            "scripts/browser-tests/performance-budgets.json",
+            "docs/qualification/7cbda587c8aa-dns-family-normal.json",
+            "docs/qualification/593b59fb450d-browser-soak-attempt.json",
+            "docs/qualification/c856935f8aaa-local-webkit-performance.json",
+            "docs/qualification/415d704e363b-local-webkit-styles.json",
+            "docs/qualification/1ed0fa951710-integrated-browser-styles.json",
+            "docs/qualification/1ed0fa951710-local-webkit-soak.json",
+            "docs/qualification/2e0f6f4b7f30-local-webkit-baseline-miss.json",
+            "docs/qualification/2e0f6f4b7f30-local-webkit-baseline-repeat.json",
+            "docs/qualification/2d1e263f7fc6-local-webkit-editor-timings.json",
+            "docs/qualification/d57c7c8d8a97-dashboard-webkit.json",
+            "docs/qualification/d57c7c8d8a97-dashboard-browser-acceptance.json",
+            "docs/qualification/eec0a50e3b29-local-webkit-editor-timings.json",
+            "docs/qualification/bc5bd74965c4-browser-rss-roles.json"
+          ]
         },
         {
           "id": "validation.qualification",
@@ -362,7 +516,8 @@
           "status": "partial",
           "evidence": [
             "docs/TESTING.md",
-            "docs/SPLITWIRE_IMPLEMENTATION.md"
+            "docs/SPLITWIRE_IMPLEMENTATION.md",
+            "docs/qualification/4a1c4bbcedf0-wireguard-fixture-initiation.json"
           ]
         }
       ]
@@ -374,14 +529,18 @@
         {
           "id": "product.accessibility",
           "acceptance": "Verify keyboard-only use, focus management, screen readers, contrast, zoom and reduced motion across every screen and modal.",
-          "status": "unverified",
+          "status": "partial",
           "evidence": [
             "web/index.html",
             "web/app.css",
             "web/app.js",
             "scripts/browser-tests/accessibility.cjs",
             "scripts/browser-tests/desktop.spec.cjs",
-            "docs/TESTING.md"
+            "docs/TESTING.md",
+            "docs/qualification/a7fb7a0eeefe-browser-keyboard-forced-colors.json",
+            "docs/qualification/ce23df4eb329-browser-keyboard-forced-colors.json",
+            "docs/qualification/9f4615c228b7-browser-history-focus.json",
+            "docs/qualification/beb4db7be0c7-browser-runtime-status-acceptance.json"
           ]
         },
         {
@@ -390,7 +549,8 @@
           "status": "partial",
           "evidence": [
             "web/locales.js",
-            "web/app.test.cjs"
+            "web/app.test.cjs",
+            "docs/qualification/f9ca4d5c8001-browser-runtime-language-reset.json"
           ]
         },
         {
@@ -436,6 +596,7 @@
           "acceptance": "Administrator-enforced local policy controls permitted engines, executable provenance, inputs, downloads and privileged operations; ordinary users cannot alter policy or bypass it within the managed installation.",
           "status": "partial",
           "evidence": [
+            "docs/qualification/adb10502a18a-linux-managed-byedpi.json",
             "internal/managed/guard.go",
             "internal/managed/authorization.go",
             "internal/managed/authorization_test.go",
@@ -454,8 +615,6 @@
             "internal/managed/provenance_windows.go",
             "internal/managed/guard_test.go",
             "internal/profile/policy_test.go",
-            "internal/engine/policy_test.go",
-            "internal/workflow/policy_test.go",
             "internal/api/policy_test.go",
             "internal/nativepath/paths_windows_test.go",
             "docs/MANAGED_CONFIGURATION.md",
@@ -467,6 +626,7 @@
           "acceptance": "Versioned administrator configuration can be signed, reviewed, imported/exported and applied with deterministic precedence; invalid, unsigned, stale or tampered configuration is rejected while preserving the last known state.",
           "status": "partial",
           "evidence": [
+            "docs/qualification/adb10502a18a-linux-managed-byedpi.json",
             "internal/managed/policy.go",
             "internal/managed/policy_test.go",
             "cmd/accessweaver/managed.go",
@@ -500,15 +660,40 @@
             "scripts/build-windows-installer.ps1",
             "scripts/windows-installer.iss",
             "scripts/test-windows-integration.ps1",
+            "scripts/test-windows-installer-lifecycle.ps1",
             "scripts/test-windows-installer.ps1",
-            ".github/workflows/ci.yml"
+            ".github/workflows/ci.yml",
+            "docs/qualification/16632c4b2a7f-linux-deb-lifecycle.json",
+            "docs/LINUX_DEBIAN_DEPLOYMENT.md",
+            "docs/qualification/4caa86d5b6d0-linux-apt-repository.json",
+            ".github/workflows/linux-package-lifecycle.yml",
+            "docs/qualification/227b43d8500e-linux-package-candidate.json",
+            "docs/qualification/16632c4b2a7f-linux-packaged-managed-policy.json",
+            "docs/qualification/16632c4b2a7f-linux-packaged-byedpi.json",
+            "docs/qualification/16632c4b2a7f-linux-package-reboot.json",
+            "docs/qualification/16632c4b2a7f-linux-package-active-reboot.json",
+            "docs/qualification/16632c4b2a7f-linux-package-arm64-reboot.json"
           ]
         },
         {
           "id": "enterprise.audit",
           "acceptance": "Local administrative/user action events are attributable, redacted, bounded, tamper-evident and exportable to existing log collectors; support exports enforce documented consent and secret-handling rules.",
-          "status": "missing",
-          "evidence": []
+          "status": "partial",
+          "evidence": [
+            "docs/qualification/4914ada21b27-release-windows-audit-commands.json",
+            "docs/qualification/eb5395fba156-release-windows-audit-commands.json",
+            "docs/AUDIT_EVENTS.md",
+            "docs/RECORDED_AUDIT_EXPORT.md",
+            "docs/WINDOWS_AUDIT_STORAGE.md",
+            "docs/DARWIN_AUDIT_STORAGE.md",
+            "docs/qualification/795803e6ea88-windows-audit-storage.json",
+            "docs/qualification/33c7737d97cd-linux-recorded-policy-audit.json",
+            "docs/qualification/1d0324fd35d3-native-audit-aliases.json",
+            "docs/qualification/5d23fa19aaf9-native-audit-foreground.json",
+            "docs/qualification/4905915e1a4c-native-audit-commands.json",
+            "docs/qualification/native-identity-handle-count-refusals.json",
+            "docs/qualification/820fd9e9a736-native-audit-and-diagnostic-contract.json"
+          ]
         },
         {
           "id": "enterprise.management",
@@ -517,7 +702,21 @@
           "evidence": [
             "scripts/windows-installer.iss",
             "scripts/test-windows-integration.ps1",
-            "docs/WINDOWS_WORKFLOWS.md"
+            "scripts/detect-windows-installer.ps1",
+            "scripts/test-windows-installer-lifecycle.ps1",
+            "docs/WINDOWS_WORKFLOWS.md",
+            "cmd/accessweaver-installer/main.go",
+            "scripts/test-macos-deployment-package.py",
+            "docs/qualification/f920bd5d695e-versioned-macos-deployment.json",
+            "docs/qualification/06207cdb850a-macos-deployment-attempt.json",
+            "docs/MACOS_MANAGED_POLICY.md",
+            "docs/qualification/16632c4b2a7f-linux-deb-lifecycle.json",
+            "docs/LINUX_DEBIAN_DEPLOYMENT.md",
+            "docs/qualification/4caa86d5b6d0-linux-apt-repository.json",
+            ".github/workflows/linux-package-lifecycle.yml",
+            "docs/qualification/227b43d8500e-linux-package-candidate.json",
+            "docs/qualification/16632c4b2a7f-linux-packaged-managed-policy.json",
+            "docs/qualification/16632c4b2a7f-linux-package-reboot.json"
           ]
         }
       ]
@@ -529,16 +728,24 @@
         {
           "id": "operations.support",
           "acceptance": "Publish owned support channels, severity handling, escalation and supported-version/end-of-life commitments that maintainers can meet.",
-          "status": "missing",
+          "status": "partial",
           "evidence": [
-            "SECURITY.md"
+            "SECURITY.md",
+            "docs/SUPPORT_POLICY.md",
+            "docs/SUPPORT.md",
+            ".github/ISSUE_TEMPLATE/bug_report.yml",
+            ".github/ISSUE_TEMPLATE/config.yml"
           ]
         },
         {
           "id": "operations.incidents",
           "acceptance": "Exercise incident response, compromised dependency/update response, release revocation and recovery runbooks.",
-          "status": "missing",
-          "evidence": []
+          "status": "partial",
+          "evidence": [
+            "docs/INCIDENT_RESPONSE.md",
+            "scripts/test_signed_release_manifest.py",
+            "docs/qualification/fa28695b38da-policy-incident-drill.json"
+          ]
         },
         {
           "id": "operations.observability",
@@ -565,7 +772,11 @@
           "status": "partial",
           "evidence": [
             ".github/workflows/ci.yml",
-            ".github/workflows/release.yml"
+            ".github/workflows/release.yml",
+            "scripts/publish_prerelease.py",
+            "scripts/test_publish_prerelease.py",
+          "docs/RELEASE_PROVENANCE.md",
+          "docs/qualification/65b3803c473b-portable-release-recovery.json"
           ]
         }
       ]
@@ -580,7 +791,9 @@
           "status": "partial",
           "evidence": [
             "internal/logfile/writer.go",
-            "internal/workflow/manager.go"
+            "internal/workflow/manager.go",
+            "docs/qualification/22cf0abb5da8-dns-restore-readback.json",
+            "docs/qualification/3ae6417cb9a8-dns-native-recovery.json"
           ]
         },
         {
@@ -636,11 +849,11 @@
     }
   ],
   "nextActions": [
-    "Complete native regression validation for bounded logs and durable workflow shutdown.",
-    "Unify version/source identity across runtime and release artifacts.",
-    "Resolve DNSCrypt and interactive Windows app failures in the full disposable VM.",
-    "Implement administrator-enforced local policy, signed configuration and managed deployment with tested privilege boundaries.",
-    "Complete independent security review, platform-native qualification, signing and operational ownership."
+    "Complete native encrypted-DNS transport, failure/reboot recovery, representative routing/ISP and interactive application acceptance; retain every failed observation.",
+    "Qualify the actual installed candidate across the ten-target desktop matrix, including standard-user/admin behavior, upgrade/reboot/downgrade/uninstall and intended managed endpoint deployment.",
+    "Meet the published performance budgets in sustained and eight-hour installed acceptance, resolving retained Firefox/WebKit failures; complete assistive-technology and four-language UI review.",
+    "Finish verified publisher signing, release provenance/independent rebuild, controlled delivery and build/release restoration; verify the maintainer-owned support intake and private reporting paths, and assign escalation and supported-version ownership.",
+    "Complete hostile cross-user/runtime security, private audit/support collector integration and operational incident/revocation exercises on intended managed desktop endpoints."
   ],
   "scope": {
     "confirmedByUser": "Desktop quality + managed deployment",

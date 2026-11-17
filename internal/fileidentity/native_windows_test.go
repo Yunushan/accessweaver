@@ -47,7 +47,24 @@ func requireDisposableWindowsIdentityHost(t *testing.T) {
 // Registered before TempDir so its cleanup runs after all fixture cleanup and
 // records the final test state. This evidence qualifies this source-built test
 // only; it does not grant publication or production readiness.
-func reportDisposableWindowsIdentity(t *testing.T) {
+type windowsIdentityCase struct {
+	Name    string `json:"name"`
+	Passed  bool   `json:"passed"`
+	Skipped bool   `json:"skipped"`
+}
+
+type windowsIdentityProbeCounts struct {
+	MeasuredTypes       *windowsIdentityHandleWindow `json:"measuredTypes,omitempty"`
+	Replay              *windowsIdentityHandleReplay `json:"failureReplay,omitempty"`
+	HandlesBefore       uint64                       `json:"handlesBefore"`
+	HandlesAfter        uint64                       `json:"handlesAfter"`
+	ThreadRecordsBefore int                          `json:"threadRecordsBefore"`
+	ThreadRecordsAfter  int                          `json:"threadRecordsAfter"`
+	GCCyclesBefore      uint64                       `json:"gcCyclesBefore"`
+	GCCyclesAfter       uint64                       `json:"gcCyclesAfter"`
+}
+
+func reportDisposableWindowsIdentity(t *testing.T, cases []windowsIdentityCase, counts *windowsIdentityProbeCounts) {
 	t.Helper()
 	workspace := os.Getenv("GITHUB_WORKSPACE")
 	absolute, absoluteErr := filepath.Abs(workspace)
@@ -111,28 +128,35 @@ func reportDisposableWindowsIdentity(t *testing.T) {
 		t.Error("native identity evidence test image hash failed")
 		return
 	}
+	passed := !t.Failed() && len(cases) == 8
+	for _, item := range cases {
+		passed = passed && item.Passed && !item.Skipped
+	}
 	report := struct {
-		SchemaVersion                   int    `json:"schemaVersion"`
-		SourceCommit                    string `json:"sourceCommit"`
-		RunID                           string `json:"runID"`
-		TestName                        string `json:"testName"`
-		Platform                        string `json:"platform"`
-		Arch                            string `json:"arch"`
-		RuntimeGoVersion                string `json:"runtimeGoVersion"`
-		RunnerArch                      string `json:"runnerArch"`
-		RunnerEnvironment               string `json:"runnerEnvironment"`
-		ImageOS                         string `json:"imageOS"`
-		ImageVersion                    string `json:"imageVersion"`
-		TestImageSHA256                 string `json:"testImageSHA256"`
-		Passed                          bool   `json:"passed"`
-		Scope                           string `json:"scope"`
-		ProductionQualificationComplete bool   `json:"productionQualificationComplete"`
+		Cases                           []windowsIdentityCase       `json:"cases"`
+		ProbeCounts                     *windowsIdentityProbeCounts `json:"probeCounts,omitempty"`
+		SchemaVersion                   int                         `json:"schemaVersion"`
+		SourceCommit                    string                      `json:"sourceCommit"`
+		RunID                           string                      `json:"runID"`
+		TestName                        string                      `json:"testName"`
+		Platform                        string                      `json:"platform"`
+		Arch                            string                      `json:"arch"`
+		RuntimeGoVersion                string                      `json:"runtimeGoVersion"`
+		RunnerArch                      string                      `json:"runnerArch"`
+		RunnerEnvironment               string                      `json:"runnerEnvironment"`
+		ImageOS                         string                      `json:"imageOS"`
+		ImageVersion                    string                      `json:"imageVersion"`
+		TestImageSHA256                 string                      `json:"testImageSHA256"`
+		Passed                          bool                        `json:"passed"`
+		Scope                           string                      `json:"scope"`
+		ProductionQualificationComplete bool                        `json:"productionQualificationComplete"`
 	}{
-		SchemaVersion: 1, SourceCommit: commit, RunID: runID, TestName: t.Name(),
+		SchemaVersion: 4, SourceCommit: commit, RunID: runID, TestName: t.Name(),
+		Cases: cases, ProbeCounts: counts,
 		Platform: runtime.GOOS, Arch: runtime.GOARCH, RuntimeGoVersion: runtime.Version(),
 		RunnerArch: os.Getenv("RUNNER_ARCH"), RunnerEnvironment: os.Getenv("RUNNER_ENVIRONMENT"),
 		ImageOS: imageOS, ImageVersion: imageVersion, TestImageSHA256: hex.EncodeToString(digest.Sum(nil)),
-		Passed: !t.Failed(), Scope: "source-built-native-file-identity", ProductionQualificationComplete: false,
+		Passed: passed, Scope: "source-built-native-file-identity", ProductionQualificationComplete: false,
 	}
 	data, marshalErr := json.MarshalIndent(report, "", "  ")
 	if marshalErr != nil || len(data) > 4096 {
@@ -206,9 +230,11 @@ func identityWindowsJunction(t *testing.T, target, path string) {
 	}
 }
 
+var windowsIdentityGetProcessHandleCount = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetProcessHandleCount")
+
 func identityWindowsHandleCount(t *testing.T) uint32 {
 	t.Helper()
-	procedure := windows.NewLazySystemDLL("kernel32.dll").NewProc("GetProcessHandleCount")
+	procedure := windowsIdentityGetProcessHandleCount
 	if procedure.Find() != nil {
 		t.Fatal("fixture handle-count API unavailable")
 	}
@@ -234,7 +260,20 @@ func TestWindowsLocalDiskNameAdmission(t *testing.T) {
 
 func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 	requireDisposableWindowsIdentityHost(t)
-	t.Cleanup(func() { reportDisposableWindowsIdentity(t) })
+	cases := make([]windowsIdentityCase, 0, 8)
+	var probeCounts *windowsIdentityProbeCounts
+	// Fixed source-owned subtest labels only. No native errors or paths enter
+	// the receipt, and a skipped subtest cannot become native acceptance.
+	run := func(name string, operation func(*testing.T)) {
+		result := windowsIdentityCase{Name: name}
+		result.Passed = t.Run(name, func(child *testing.T) {
+			defer func() { result.Skipped = child.Skipped() }()
+			operation(child)
+		})
+		result.Passed = result.Passed && !result.Skipped
+		cases = append(cases, result)
+	}
+	t.Cleanup(func() { reportDisposableWindowsIdentity(t, cases, probeCounts) })
 	directory := t.TempDir()
 	path := filepath.Join(directory, "Identity.txt")
 	content := []byte("native metadata leaves contents and offsets alone")
@@ -251,7 +290,7 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 		t.Fatal("borrowed disk handle lacks native identity")
 	}
 
-	t.Run("drive-root-native-and-ordinary-handle-parity", func(t *testing.T) {
+	run("drive-root-native-and-ordinary-handle-parity", func(t *testing.T) {
 		root := filepath.VolumeName(directory) + `\`
 		file, err := os.Open(root)
 		if err != nil {
@@ -270,7 +309,7 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 		}
 	})
 
-	t.Run("full-native-id-aliases-and-borrowed-lifetime", func(t *testing.T) {
+	run("full-native-id-aliases-and-borrowed-lifetime", func(t *testing.T) {
 		var identity windowsIDInfo
 		connection, err := file.SyscallConn()
 		if err != nil {
@@ -320,7 +359,7 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 		}
 	})
 
-	t.Run("metadata-only-access-and-ads-base-identity", func(t *testing.T) {
+	run("metadata-only-access-and-ads-base-identity", func(t *testing.T) {
 		stream := path + ":identity-stream"
 		streamData := []byte("separate stream")
 		if os.WriteFile(stream, streamData, 0600) != nil {
@@ -370,7 +409,7 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 		}
 	})
 
-	t.Run("write-only-and-append-only-borrowed-outputs", func(t *testing.T) {
+	run("write-only-and-append-only-borrowed-outputs", func(t *testing.T) {
 		appendOnly, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
 		if err != nil {
 			t.Fatal("fixture append-only output unavailable")
@@ -421,7 +460,7 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 			t.Fatal("write-only identity queries changed output contents")
 		}
 	})
-	t.Run("relative-absolute-directory-and-nofollow-links", func(t *testing.T) {
+	run("relative-absolute-directory-and-nofollow-links", func(t *testing.T) {
 		for _, target := range []string{filepath.Base(path), path} {
 			name := "relative-link"
 			if filepath.IsAbs(target) {
@@ -486,7 +525,7 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 		}
 	})
 
-	t.Run("directories-pipes-and-fixed-errors", func(t *testing.T) {
+	run("directories-pipes-and-fixed-errors", func(t *testing.T) {
 		state, err := FromPath(directory, false)
 		if err != nil || state.Kind != Directory {
 			t.Fatal("directory metadata misclassified")
@@ -528,7 +567,7 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 		}
 	})
 
-	t.Run("owned-metadata-probes-close-on-success-and-failure", func(t *testing.T) {
+	run("owned-metadata-probes-close-on-success-and-failure", func(t *testing.T) {
 		// Warm the fixed runtime metric before a full equivalent probe batch.
 		// Process-wide handle counts also include runtime thread resources;
 		// the numeric diagnostics below do not change the measured assertion.
@@ -541,6 +580,10 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 			return gcSamples[0].Value.Uint64()
 		}
 		_ = readGCCycles()
+		// Warm the observation APIs before the original workload, so their
+		// first resolution is not counted as a change during the batch.
+		_, _ = identityWindowsHandleKinds(true)
+		_ = identityWindowsHandleCount(t)
 		for iteration := 0; iteration < 32; iteration++ {
 			if _, err := FromPath(path, true); err != nil {
 				t.Fatal("fixture identity warmup failed")
@@ -555,6 +598,7 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 		runtime.GC()
 		beforeThreads, _ := runtime.ThreadCreateProfile(nil)
 		beforeGC := readGCCycles()
+		beforeTypes, _ := identityWindowsHandleKinds(true)
 		before := identityWindowsHandleCount(t)
 		for iteration := 0; iteration < 32; iteration++ {
 			if _, err := FromPath(path, true); err != nil {
@@ -567,12 +611,20 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 		after := identityWindowsHandleCount(t)
 		afterThreads, _ := runtime.ThreadCreateProfile(nil)
 		afterGC := readGCCycles()
+		afterTypes, _ := identityWindowsHandleKinds(true)
+		probeCounts = &windowsIdentityProbeCounts{
+			MeasuredTypes: identityWindowsMeasuredHandleTypes(beforeTypes, afterTypes, before, after),
+			HandlesBefore: uint64(before), HandlesAfter: uint64(after),
+			ThreadRecordsBefore: beforeThreads, ThreadRecordsAfter: afterThreads,
+			GCCyclesBefore: beforeGC, GCCyclesAfter: afterGC,
+		}
 		t.Logf("metadata probe aggregate counts: handles-before=%d handles-after=%d thread-create-records-before=%d thread-create-records-after=%d GC-cycles-before=%d GC-cycles-after=%d", before, after, beforeThreads, afterThreads, beforeGC, afterGC)
-		if after > before+1 {
+		if !windowsIdentityMetadataHandlesClosed(before, after, probeCounts.MeasuredTypes) {
+			probeCounts.Replay = identityWindowsReplayHandleGrowth(t, path, filepath.Join(directory, "missing-probe"))
 			t.Fatal("owned metadata probe handles accumulated")
 		}
 	})
-	t.Run("every-thread-impersonation-level-refuses", func(t *testing.T) {
+	run("every-thread-impersonation-level-refuses", func(t *testing.T) {
 		runtime.LockOSThread()
 		restored := true
 		defer func() {

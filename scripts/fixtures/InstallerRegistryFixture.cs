@@ -15,6 +15,19 @@ public static class InstallerRegistryFixture
     private static extern int RegOpenKeyExW(SafeRegistryHandle parent, string subKey,
         uint options, uint access, out SafeRegistryHandle key);
 
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern int RegDeleteKeyExW(SafeRegistryHandle parent, string subKey,
+        uint view, uint reserved);
+
+    public static void DeleteEmptyDeniedLeaf64(RegistryKey parent, string name)
+    {
+        if (parent == null || String.IsNullOrEmpty(name) || name.IndexOf('\\') >= 0 ||
+            !name.StartsWith("AccessWeaver-registration-denied-", StringComparison.Ordinal))
+            throw new ArgumentException("Expected one owned access-denial fixture leaf");
+        int status = RegDeleteKeyExW(parent.Handle, name, 0x0100, 0);
+        if (status != 0) throw new Win32Exception(status);
+    }
+
     public static int QueryStatus64(RegistryKey machine, string subKey)
     {
         SafeRegistryHandle key;

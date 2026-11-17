@@ -1,0 +1,672 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "independently-authenticated-native-macos-desktop-lifecycle",
+  "sourceCommit": "86090c94048212d56561a62e33681cb3c858d32e",
+  "repository": "Yunushan/accessweaver",
+  "sourceRef": "refs/heads/codex/dns-adapter-coverage",
+  "workflow": ".github/workflows/macos-desktop.yml",
+  "runID": 43835341109,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/43835341109",
+  "qualificationScope": "Unsigned experimental public desktop and product lifecycle on disposable native Intel and Apple Silicon hosts, bound only to this historical source cohort.",
+  "verification": {
+    "immutableSourceVerifier": "scripts/verify_macos_desktop_provenance.py",
+    "sourceSHA256": {
+      "scripts/verify_macos_desktop_provenance.py": "64bbcbc328976de1b2a3c28323e883d684fffd7328f3d1f7560bb3748d7f3ebb",
+      ".github/workflows/macos-desktop.yml": "2d1ebbc5fa8214ab7426efad9cf93a9c0e6a061f53d836e81ed9bc4dbadec641"
+    },
+    "providerZIPDigestsVerified": 2,
+    "subjectsAuthenticatedBeforeContentParsing": 122,
+    "independentIdentityAndDigestRejectionProbes": 10,
+    "candidateExecutablesOrPackagesExecutedLocally": false,
+    "rawDiagnosticsFetched": false,
+    "credentialValuesRetained": false
+  },
+  "targets": [
+    {
+      "target": "darwin/amd64",
+      "jobID": 133190441369,
+      "jobConclusion": "success",
+      "providerArtifact": {
+        "id": 14230681483,
+        "name": "macos-desktop-candidate-amd64",
+        "bytes": 149923496,
+        "digest": "sha256:a43cc628df0553586e556725d2d8189a701f13f30791f0f6d635491ebf9a49cf",
+        "providerDigestVerified": true
+      },
+      "candidateFilesIncludingBundle": 62,
+      "outerZIPFiles": 63,
+      "independentVerification": {
+        "subjectsVerified": 61,
+        "authenticatedBeforeParsing": true,
+        "hostedRunnerRequired": true,
+        "rejectionChecks": {
+          "rejected": [
+            "--source-digest",
+            "--source-ref",
+            "--signer-workflow",
+            "--repo",
+            "changed-subject-digest"
+          ],
+          "realBundleVerifiedBeforeAndAfter": true
+        },
+        "subjects": [
+          {
+            "file": "0.1.0-alpha-BUILD-INFO.json",
+            "sha256": "a877badeefbd44a54f9e9c70d53ca29ac06169cdb6e3a6d09d4b38994ea7bf4e"
+          },
+          {
+            "file": "0.1.0-alpha-INSTALL-MANIFEST.json",
+            "sha256": "ec4c5736561551b9e8e1fb0d79f3073c7d62bf140060e9914ffcaa09fb34c258"
+          },
+          {
+            "file": "0.1.0-alpha-SCRIPT-MANIFEST.json",
+            "sha256": "6cc7ca146d5023d83940744be789deff9b77f4eafccf94fe0d1a499b017d9242"
+          },
+          {
+            "file": "0.1.0-alpha-compiler-artifact.json",
+            "sha256": "3dd5f301bbb21657a5dc12d8662ee4ae8fe451bf05688fadb43dba0bf0b1918b"
+          },
+          {
+            "file": "0.1.0-alpha-helper-SBOM.cdx.json",
+            "sha256": "1cf06a7cb45fb91d600a51caab487d479a38e0c2589481887dd2862338dd264c"
+          },
+          {
+            "file": "0.1.0-alpha-payload-SBOM.cdx.json",
+            "sha256": "a41b4984f38ca1e9513f9f8dbf9180f24d8dd520f45e21c81550fdee726dbbec"
+          },
+          {
+            "file": "0.1.1-alpha-BUILD-INFO.json",
+            "sha256": "b7b87ec61a89815c4af6d61f33c20de75ede053e73ac99b6e2566227f6e29be4"
+          },
+          {
+            "file": "0.1.1-alpha-INSTALL-MANIFEST.json",
+            "sha256": "a2fb482b1be4825e7fb41eb8f7c23689bd42435ec23e70f222ea3dc5c0f4b546"
+          },
+          {
+            "file": "0.1.1-alpha-SCRIPT-MANIFEST.json",
+            "sha256": "05f953a63ec5bfc53e703ffa2b39352f0c833055413d9c39185807708501299d"
+          },
+          {
+            "file": "0.1.1-alpha-compiler-artifact.json",
+            "sha256": "983c3f281871e072a226b3e5fb44e63bd61de05443b6a19291503641eb6ca0a9"
+          },
+          {
+            "file": "0.1.1-alpha-helper-SBOM.cdx.json",
+            "sha256": "22f844532ff0e0db3f9ad5f86de84bbec56e233ef75d117318a411655f2ef480"
+          },
+          {
+            "file": "0.1.1-alpha-payload-SBOM.cdx.json",
+            "sha256": "f68b65659e84584c66036b562dfec4d10aa9cbb933cced9f6684188a29ad1ca0"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-amd64-deployment-experimental.pkg",
+            "sha256": "cbb699d4134b141d958c8999dc79b1213f86eef1f88cb9cabfe69e1b245850f3"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-amd64-deployment-experimental.pkg.cdx.json",
+            "sha256": "2033d26671d5d1d6e181e6e619a8d2e6912b3da3a82aab886458a2df9759ea0d"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-amd64-desktop-application-experimental.pkg",
+            "sha256": "2b10b5f78b1111ab65f35ca67759ff2335b71a43ed0f21d9013a903609f16c18"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-amd64-desktop-application-experimental.pkg.cdx.json",
+            "sha256": "0fbebd2c0e0c18ad20564e81bc910f0432b11ee229e4a214bd3c837b0054d914"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-amd64-desktop-metadata-experimental.pkg",
+            "sha256": "72509867422876e7b81be36c42bb229172b6640d69cf16714231ee5c5fb8567c"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-amd64-desktop-metadata-experimental.pkg.cdx.json",
+            "sha256": "9efffd7a9ffce5d51d4d6a5d7e2d36e968770ada134b9985e569d73d876e262c"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-amd64-desktop-product-application-experimental.pkg",
+            "sha256": "2a033a6b289fd10486c1710d64794aeacd3de5374ecb83eb3541bfafcaec6be6"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-amd64-desktop-product-application-experimental.pkg.cdx.json",
+            "sha256": "4bf3f92bca30d3a90a333219825dc184455c79b5035a30ebea5c12310bf2c5af"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-amd64-desktop-product-experimental.pkg",
+            "sha256": "8bfdbabf0cc1aecb6bd023e031c970448a3479c4e130051f7894d8dfc164a7d5"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-amd64-desktop-product-experimental.pkg.cdx.json",
+            "sha256": "c24449fab51799b949fe9f419e1c09150247cfa8c9ac22ccf9c8df33f76ce51b"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-amd64-deployment-experimental.pkg",
+            "sha256": "ae375d45d49fe500bea757ab9e83445040fd6298f9f86ab632414f2dd1302e44"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-amd64-deployment-experimental.pkg.cdx.json",
+            "sha256": "eac4932a7e9453f0747b5e260a2b97b3444ea3d625f72658a6577697bfd24530"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-amd64-desktop-application-experimental.pkg",
+            "sha256": "e6d6803ee345e4c39b2577a68abd94bae03ed3470dcc00b9a77985ef98caced9"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-amd64-desktop-application-experimental.pkg.cdx.json",
+            "sha256": "52a535ec1c1ea4dbca6e84ea7e99449d299fb23f0aaeb226b3ac8e3e6bc3227f"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-amd64-desktop-metadata-experimental.pkg",
+            "sha256": "74db645e3d77284f1bcf248bb646b74050a83f91352f88da69092f3e4f501b28"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-amd64-desktop-metadata-experimental.pkg.cdx.json",
+            "sha256": "3a7d6e847a411be5b9c272e47bc0bdcfb63d2d446befa4c2384f4e068b219252"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-amd64-desktop-product-application-experimental.pkg",
+            "sha256": "3d4f89b8f10cc45a9ccfc31b13015bebeae4741d0b9d3a3cef8a090b72aa6ed8"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-amd64-desktop-product-application-experimental.pkg.cdx.json",
+            "sha256": "556521bd9c1b8167e76e5531f30b67e160c06d48f4ecd62be3ba39dbf43b7a6a"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-amd64-desktop-product-experimental.pkg",
+            "sha256": "9dd29d81060216e55d5184b36b5858bbd49d26047ba506219ab780d127ef621f"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-amd64-desktop-product-experimental.pkg.cdx.json",
+            "sha256": "540cc186fd5f96d1b0222f72a5b57cd5c2ea5e6f7f9e1425ccba3138288df6b6"
+          },
+          {
+            "file": "accessweaver-launcher-0.1.0-alpha-darwin-amd64-experimental.zip",
+            "sha256": "3ea0ba2369b35f4539835b9a73ebc3789093230cb4e333db11238cee37fefa02"
+          },
+          {
+            "file": "accessweaver-launcher-darwin-amd64-experimental.zip",
+            "sha256": "d32a1a5d04e79f86b61de874ec50029c16183b239880c71041ed4ea6fb2855a7"
+          },
+          {
+            "file": "desktop-0.1.0-alpha-BUILD-INFO.json",
+            "sha256": "a877badeefbd44a54f9e9c70d53ca29ac06169cdb6e3a6d09d4b38994ea7bf4e"
+          },
+          {
+            "file": "desktop-0.1.0-alpha-DESKTOP-RECORD.json",
+            "sha256": "9984b1067f567e116aca9513622e7cbf37dcb4269e28b07d83dc41b21d248a80"
+          },
+          {
+            "file": "desktop-0.1.0-alpha-application-SCRIPT-MANIFEST.json",
+            "sha256": "ca7bea0da533eedb8778931298775d96ed954fb1f3c367e226236e86e7e4a1a2"
+          },
+          {
+            "file": "desktop-0.1.0-alpha-application-helper-SBOM.cdx.json",
+            "sha256": "a349f9e12463d60d058a2c7327734132916fc08a0deadb18c29ee8c661100b06"
+          },
+          {
+            "file": "desktop-0.1.0-alpha-compiler-artifact.json",
+            "sha256": "90653ca3591a7a53503ba478f7f0f739c49899e3077866fd2ad4ded1c2240fbd"
+          },
+          {
+            "file": "desktop-0.1.0-alpha-metadata-SCRIPT-MANIFEST.json",
+            "sha256": "862d1306e1cb1b5c7360979aa3b49278422df3f042da6d32540ec99eae770396"
+          },
+          {
+            "file": "desktop-0.1.0-alpha-metadata-helper-SBOM.cdx.json",
+            "sha256": "4f94bb71b2158c1f415f8003d0c0be9ae44078393f856e3e40cbef04e49abe6b"
+          },
+          {
+            "file": "desktop-0.1.1-alpha-BUILD-INFO.json",
+            "sha256": "b7b87ec61a89815c4af6d61f33c20de75ede053e73ac99b6e2566227f6e29be4"
+          },
+          {
+            "file": "desktop-0.1.1-alpha-DESKTOP-RECORD.json",
+            "sha256": "0bdcd4dbb70ec2bdab37acadb4927b36b2c883f5b33e9b685ee1de8c2a17943a"
+          },
+          {
+            "file": "desktop-0.1.1-alpha-application-SCRIPT-MANIFEST.json",
+            "sha256": "5cc405f426ef224abb2db89e7867f10e43ace5deeaee03a2117ae655bf315dd5"
+          },
+          {
+            "file": "desktop-0.1.1-alpha-application-helper-SBOM.cdx.json",
+            "sha256": "795323ef05d4ef3cd37b43d8cf89b1ed38f8e8df4accd064eb8d820c70ecf850"
+          },
+          {
+            "file": "desktop-0.1.1-alpha-compiler-artifact.json",
+            "sha256": "e393db82744c4d9ef58059aa3c96e3f84be3fb2cb84448dc09333c958d638903"
+          },
+          {
+            "file": "desktop-0.1.1-alpha-metadata-SCRIPT-MANIFEST.json",
+            "sha256": "f47c2ad267b1d8b3433e2f349626d19c3161972a56cb48f8c2de52d355bb6cfe"
+          },
+          {
+            "file": "desktop-0.1.1-alpha-metadata-helper-SBOM.cdx.json",
+            "sha256": "cb0bec63e3db1f99305a774a1aff94f0411de04731443624f5edbc0445edb246"
+          },
+          {
+            "file": "desktop-lifecycle-artifact.json",
+            "sha256": "da2c5e1fe95e28c2b1ea8180bfa366ee7907d9706298ba0ff3f9301cf70f85f1"
+          },
+          {
+            "file": "product-0.1.0-alpha-DISTRIBUTION.xml",
+            "sha256": "dc0e269e6aa536d9439d0cf117491dca4287fa4816da67262016c0f98ebd7f7d"
+          },
+          {
+            "file": "product-0.1.0-alpha-compiler-artifact.json",
+            "sha256": "414b978e9dd92071f9fbee89852b41747d6e977e446a46a96074df6f2ab1b3ba"
+          },
+          {
+            "file": "product-0.1.1-alpha-DISTRIBUTION.xml",
+            "sha256": "ee1ed530eb30d1433e40466719ecc2b99e6a2c28631f49dad3881d096d7b3a7c"
+          },
+          {
+            "file": "product-0.1.1-alpha-compiler-artifact.json",
+            "sha256": "a1ed4a2eba428f72ce568085033c35693e92a56d43fb8df933e3245042973a27"
+          },
+          {
+            "file": "product-application-0.1.0-alpha-application-SCRIPT-MANIFEST.json",
+            "sha256": "4adef7c83bbd10c12f5684f13e7b3aa556c143ed0261a9b23c588a06494a7be6"
+          },
+          {
+            "file": "product-application-0.1.0-alpha-application-helper-SBOM.cdx.json",
+            "sha256": "5777bfe698db281d9728ebdc7f1c9107fc820b3ce2a44d36e02b81de7d5f28fe"
+          },
+          {
+            "file": "product-application-0.1.0-alpha-compiler-artifact.json",
+            "sha256": "708a6a0b8083090bbc5c7feef05ab951a60f809e9a3bde5fbe58e57ef07fe053"
+          },
+          {
+            "file": "product-application-0.1.1-alpha-application-SCRIPT-MANIFEST.json",
+            "sha256": "2173de87c0ffdaafb8a4dd8e14c906e030984290e94a46d99405b8c6762dd214"
+          },
+          {
+            "file": "product-application-0.1.1-alpha-application-helper-SBOM.cdx.json",
+            "sha256": "51583dc79b5617f0d801786016e4265f324ffebb62418179b10dd15419e13808"
+          },
+          {
+            "file": "product-application-0.1.1-alpha-compiler-artifact.json",
+            "sha256": "2d19d6e978260d9cac80c00a015b270e29f1b1a05aaa25f964cefd830e9555b8"
+          },
+          {
+            "file": "product-lifecycle-artifact.json",
+            "sha256": "52041c71b63dcc1355ed2f11d6dd03f06381c6b24f744f0e650383351acae08e"
+          },
+          {
+            "file": "product-recovery-artifact.json",
+            "sha256": "b1520db7f0e7eb26c1b2ecc8503cda974395d14bbfe223036057d9d119a83ddb"
+          }
+        ]
+      },
+      "nativeDesktopSummary": {
+        "lifecycleRunID": "43835341109",
+        "actualInstallerOperations": 21,
+        "actualCoreDeactivationOperations": 1,
+        "publicAppSelectionCases": 5,
+        "launchServicesDefaultControllerVerified": true,
+        "productArchiveConstructionVerified": true,
+        "singleProductLifecycleQualified": false,
+        "finderInteractiveQualificationComplete": false,
+        "singleProductDistributionQualified": false,
+        "publisherSignatureVerified": false,
+        "productionQualificationComplete": false,
+        "productLifecycle": {
+          "actualSingleProductInstallerOperations": 12,
+          "actualStandaloneAppRefusals": 1,
+          "actualCoreDeactivations": 1,
+          "publicAppSelectionCases": 9,
+          "privateLaunchServicesControllerVerified": true,
+          "actualSingleProductLifecycleVerified": true,
+          "singleProductDistributionQualified": false,
+          "productionQualificationComplete": false
+        },
+        "productWriteFaultRecovery": {
+          "actualPackageHelperWriteFaultCases": 2,
+          "actualRootHelperCommands": 8,
+          "explicitAbandonments": 2,
+          "actualWholeProductRecoveryReinstalls": 2,
+          "retainedPartialCopiesVerified": 2,
+          "wholeProductInterruptionRecoveryQualified": false,
+          "productionQualificationComplete": false
+        },
+        "productRemovalInspection": {
+          "actualPackagedHelperInspectionCommands": 22,
+          "completeInventories": 3,
+          "preservingRefusals": 19,
+          "fixedScope": "core-history-public-app-registrations-incoming-receipts",
+          "deletionPerformed": false,
+          "productUninstallQualified": false,
+          "productionQualificationComplete": false
+        }
+      }
+    },
+    {
+      "target": "darwin/arm64",
+      "jobID": 133190441930,
+      "jobConclusion": "success",
+      "providerArtifact": {
+        "id": 14228322842,
+        "name": "macos-desktop-candidate-arm64",
+        "bytes": 141005582,
+        "digest": "sha256:78e575232ce601538f078c17dc17709c796c860e457b97d988377bc1d5d666f4",
+        "providerDigestVerified": true
+      },
+      "candidateFilesIncludingBundle": 62,
+      "outerZIPFiles": 63,
+      "independentVerification": {
+        "subjectsVerified": 61,
+        "authenticatedBeforeParsing": true,
+        "hostedRunnerRequired": true,
+        "rejectionChecks": {
+          "rejected": [
+            "--source-digest",
+            "--source-ref",
+            "--signer-workflow",
+            "--repo",
+            "changed-subject-digest"
+          ],
+          "realBundleVerifiedBeforeAndAfter": true
+        },
+        "subjects": [
+          {
+            "file": "0.1.0-alpha-BUILD-INFO.json",
+            "sha256": "744cddbf66cba846d2d90e74c9ca4f26909a4da84c155d30b6302ee13055b557"
+          },
+          {
+            "file": "0.1.0-alpha-INSTALL-MANIFEST.json",
+            "sha256": "d0afcc4b6912e6173382fa73bbc707df68729524d7cc66bea01b9675a098e424"
+          },
+          {
+            "file": "0.1.0-alpha-SCRIPT-MANIFEST.json",
+            "sha256": "6b3cb91dccaa0a330906c9036c9420965e584f3bde19601690880bfd3baece94"
+          },
+          {
+            "file": "0.1.0-alpha-compiler-artifact.json",
+            "sha256": "7ed717dd22b215885c8375b9ab728134da234e3ca2961c95c43cbbe682dcc9c9"
+          },
+          {
+            "file": "0.1.0-alpha-helper-SBOM.cdx.json",
+            "sha256": "16b53f409980cfec08021334f70fb260934a27166368846b25419f235c3358dd"
+          },
+          {
+            "file": "0.1.0-alpha-payload-SBOM.cdx.json",
+            "sha256": "60bd820a76118bdabb9a35b8352fab7f196332a1733285a1cc80ed486ae8bb48"
+          },
+          {
+            "file": "0.1.1-alpha-BUILD-INFO.json",
+            "sha256": "6d2806d1c320a011758f4fdbbc9f691f0d3ae48fc8ce69b1bd9df0205f28b740"
+          },
+          {
+            "file": "0.1.1-alpha-INSTALL-MANIFEST.json",
+            "sha256": "6422137309ff501ace3300cda42a4bb9f93977e8e9e66e71fcab00c9163f3fea"
+          },
+          {
+            "file": "0.1.1-alpha-SCRIPT-MANIFEST.json",
+            "sha256": "add36678fb29046c3fe644a62d9edd867a1487fea22b51576811b944bc44d797"
+          },
+          {
+            "file": "0.1.1-alpha-compiler-artifact.json",
+            "sha256": "d77e695cadf1ed447f4fcb16ee95c836c645ffaf3c9ae31485354127da4aed4c"
+          },
+          {
+            "file": "0.1.1-alpha-helper-SBOM.cdx.json",
+            "sha256": "ea41f7a738de1873ac7aea541bf9f1b5f347238b1efe9552e31171c152137371"
+          },
+          {
+            "file": "0.1.1-alpha-payload-SBOM.cdx.json",
+            "sha256": "be3563708773f5e617634c0aa7c4a78786403df5436ed2a9f348528353c2d928"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-arm64-deployment-experimental.pkg",
+            "sha256": "05b09d5259a4a444f18f51d8828bfd07c68495416a50577279cfe82ee214ed03"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-arm64-deployment-experimental.pkg.cdx.json",
+            "sha256": "e7784f448b42fd2576fa389ce16e9f3240041b0f39369507f0ac5276346c2c95"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-arm64-desktop-application-experimental.pkg",
+            "sha256": "36ca7318ee8622917e6f97ad357a045953ea4a5c180729f585307956682ce5c3"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-arm64-desktop-application-experimental.pkg.cdx.json",
+            "sha256": "8c822f7b12a00e850ad25fc96289cf84fe158f1a4777f1d62342f95133cf5479"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-arm64-desktop-metadata-experimental.pkg",
+            "sha256": "ba8556b852c2cdd301a771bee6fd4adadb8541ff2aa7e31c551a56c12b18f018"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-arm64-desktop-metadata-experimental.pkg.cdx.json",
+            "sha256": "dd928b7480d3b915b8a0329f4ca9646f627a113e374eaad34fe7bc718376e298"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-arm64-desktop-product-application-experimental.pkg",
+            "sha256": "b6a6ad5b9d6648b74311f2564805d4eae31b3a266e71ecabd4036c6f9e6cabc9"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-arm64-desktop-product-application-experimental.pkg.cdx.json",
+            "sha256": "7e7c26a35a0a57cc4baaae5e441cb62648bfd6ab32462bd0bf6d5592f04f10da"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-arm64-desktop-product-experimental.pkg",
+            "sha256": "aa5e6d61f9ee7b300014019fbb66a089ef249394af44e4e28a8e3c02894dba7f"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-arm64-desktop-product-experimental.pkg.cdx.json",
+            "sha256": "5d7de87768aa491e403ddb85ec9ed37fb662eb0b28abf258f38829bed7a980c3"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-arm64-deployment-experimental.pkg",
+            "sha256": "8301213fd08e756bf8d1dc80ec507bc82653d52adf37faababd7b5bbb616471a"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-arm64-deployment-experimental.pkg.cdx.json",
+            "sha256": "10678bd65556e3ce20f0d5cb91ee0e80913675761e01527ae2c8e734e12843b5"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-arm64-desktop-application-experimental.pkg",
+            "sha256": "d1161525c7f935ef3bda4d0b4bd52452877c8a1ee73547a2d35b80367b747a6a"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-arm64-desktop-application-experimental.pkg.cdx.json",
+            "sha256": "672c6669670f6896188aea16387bf710510653fee70463427cea7a5df21ba8e5"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-arm64-desktop-metadata-experimental.pkg",
+            "sha256": "0b0856ce75e3ddffdd8f27bdbe7eec943f0c023600d98026da7d2e0e509d1f13"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-arm64-desktop-metadata-experimental.pkg.cdx.json",
+            "sha256": "e7922e250a85a94163f52c107055e9a135fab45d498abe70fe712c0d39ec9658"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-arm64-desktop-product-application-experimental.pkg",
+            "sha256": "358c6490f917f7411b53a74b1cdde7c17ee0f8580f70894fddf8da0945564e91"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-arm64-desktop-product-application-experimental.pkg.cdx.json",
+            "sha256": "4b7ded5fc77014ea72e95a856434d7e22cc1e119c2ccc55dccf3ac0b8ba38857"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-arm64-desktop-product-experimental.pkg",
+            "sha256": "15d27a3e86ad64c1736686f9200002021c2849a1fa4720154a8d5e58b169a7e1"
+          },
+          {
+            "file": "accessweaver-0.1.1-alpha-darwin-arm64-desktop-product-experimental.pkg.cdx.json",
+            "sha256": "0ac989d57ba7e2cac8c673270986ba2f31c2a838bf4b561d98eb2be33b8d1af3"
+          },
+          {
+            "file": "accessweaver-launcher-0.1.0-alpha-darwin-arm64-experimental.zip",
+            "sha256": "70c59ce31857acf6be42a5632cc0d9419178b7c3959800ec1e7bff44d031640c"
+          },
+          {
+            "file": "accessweaver-launcher-darwin-arm64-experimental.zip",
+            "sha256": "48b62645195545360b32ee639df0dc8bd235a90bb2de6266327ebf5a68126dd0"
+          },
+          {
+            "file": "desktop-0.1.0-alpha-BUILD-INFO.json",
+            "sha256": "744cddbf66cba846d2d90e74c9ca4f26909a4da84c155d30b6302ee13055b557"
+          },
+          {
+            "file": "desktop-0.1.0-alpha-DESKTOP-RECORD.json",
+            "sha256": "66a7c79584f1213929e48b598e2633db851ec0a9137a71d41cc64cb834fb8600"
+          },
+          {
+            "file": "desktop-0.1.0-alpha-application-SCRIPT-MANIFEST.json",
+            "sha256": "8f1d04a8cc37bcc270e718a5eb0f7ffac610c9a6a92cf12586a53c466649e67d"
+          },
+          {
+            "file": "desktop-0.1.0-alpha-application-helper-SBOM.cdx.json",
+            "sha256": "6f547caea8ca0b46d3124c06ff00f337499fe2e73166ad4d3d6d6df834cdf19e"
+          },
+          {
+            "file": "desktop-0.1.0-alpha-compiler-artifact.json",
+            "sha256": "bcb62d2ca569b3c4863362c9b997cfb3264e3ced7c2fa8f6b434628147fb011b"
+          },
+          {
+            "file": "desktop-0.1.0-alpha-metadata-SCRIPT-MANIFEST.json",
+            "sha256": "4201f2f2014e8d6bcc5780b5e4ee5f9a4f82b0c3bf3adab0b147e4c799e4c9ce"
+          },
+          {
+            "file": "desktop-0.1.0-alpha-metadata-helper-SBOM.cdx.json",
+            "sha256": "2b62823a4ec8248b5001938192b7dfc666ae425105f69aabeb4543be3b151b48"
+          },
+          {
+            "file": "desktop-0.1.1-alpha-BUILD-INFO.json",
+            "sha256": "6d2806d1c320a011758f4fdbbc9f691f0d3ae48fc8ce69b1bd9df0205f28b740"
+          },
+          {
+            "file": "desktop-0.1.1-alpha-DESKTOP-RECORD.json",
+            "sha256": "1f106859e8adcd3afa346d4a52c85911cc77cf1f41d63416621aa6bf050f3174"
+          },
+          {
+            "file": "desktop-0.1.1-alpha-application-SCRIPT-MANIFEST.json",
+            "sha256": "b1760549f454365c0856081a6e6e6f210d8325cffb6bd48b070f7f7bc45b65cc"
+          },
+          {
+            "file": "desktop-0.1.1-alpha-application-helper-SBOM.cdx.json",
+            "sha256": "6114916e3b6c210edc210362e5509a220d05f5913d2585b35552f84518b5b80b"
+          },
+          {
+            "file": "desktop-0.1.1-alpha-compiler-artifact.json",
+            "sha256": "146b07c5e4aebeb723417c4c0b2a31b0ac32e7ecf32988a3df54565678cdddf6"
+          },
+          {
+            "file": "desktop-0.1.1-alpha-metadata-SCRIPT-MANIFEST.json",
+            "sha256": "66b766e65098f90371c624630100cd713683662d78c2e01b67b78ae440cd436a"
+          },
+          {
+            "file": "desktop-0.1.1-alpha-metadata-helper-SBOM.cdx.json",
+            "sha256": "ee678668d23253f5a94203359a208d9e671636a324daf96c231f3b239005e149"
+          },
+          {
+            "file": "desktop-lifecycle-artifact.json",
+            "sha256": "0310a27017d80e794c3af85d731020df8e47406613135c57728893f06d9cea3f"
+          },
+          {
+            "file": "product-0.1.0-alpha-DISTRIBUTION.xml",
+            "sha256": "7a546d51fb0f5d4fb5425763fb75827bcdb5236a10acaa68d2ac2553e4e9271a"
+          },
+          {
+            "file": "product-0.1.0-alpha-compiler-artifact.json",
+            "sha256": "6c1c5e07de24990bdae432d6092d4fa434af7eb1c6348f16a34e178f18a88afa"
+          },
+          {
+            "file": "product-0.1.1-alpha-DISTRIBUTION.xml",
+            "sha256": "d7af8cec1bb320d309c8eafaf568bc69f9b745e55f089989f67db8dcd8af00e8"
+          },
+          {
+            "file": "product-0.1.1-alpha-compiler-artifact.json",
+            "sha256": "13708c35f330af5be33014c21191d9543e0e8ab8b830d7d57a855885bee8d49a"
+          },
+          {
+            "file": "product-application-0.1.0-alpha-application-SCRIPT-MANIFEST.json",
+            "sha256": "4a6054240eefde4bc3deb390ed613c11af0bac4102b305272d644c18644947c1"
+          },
+          {
+            "file": "product-application-0.1.0-alpha-application-helper-SBOM.cdx.json",
+            "sha256": "09ed6a29fe6aec4f2754c4d0abf93221344d658f475b578022b386793fbd83e6"
+          },
+          {
+            "file": "product-application-0.1.0-alpha-compiler-artifact.json",
+            "sha256": "413e0cb423a9739df78564902c74af5e9b67039aafbcfb1175d202c5e911dcc1"
+          },
+          {
+            "file": "product-application-0.1.1-alpha-application-SCRIPT-MANIFEST.json",
+            "sha256": "6a2f04ff5943f87f4f9506e54e11ca2522308f9c37bc5713c86ff6c75020b262"
+          },
+          {
+            "file": "product-application-0.1.1-alpha-application-helper-SBOM.cdx.json",
+            "sha256": "86eccd5b651b37bc0c7f7395ed463ea309e474033c632a44c15789c427f28500"
+          },
+          {
+            "file": "product-application-0.1.1-alpha-compiler-artifact.json",
+            "sha256": "4865b371c7c42625263c2524d031934ce6f0b07df6b628d2592dd3a866c87de6"
+          },
+          {
+            "file": "product-lifecycle-artifact.json",
+            "sha256": "2f7d093f971655ef73bac6f0779e8532be61a6e375c69e66bac4226a07d83967"
+          },
+          {
+            "file": "product-recovery-artifact.json",
+            "sha256": "7d9bf59970c300ff4d5b25f670f21525aa819d7cfe376f211f45bd445fda77ea"
+          }
+        ]
+      },
+      "nativeDesktopSummary": {
+        "lifecycleRunID": "43835341109",
+        "actualInstallerOperations": 21,
+        "actualCoreDeactivationOperations": 1,
+        "publicAppSelectionCases": 5,
+        "launchServicesDefaultControllerVerified": true,
+        "productArchiveConstructionVerified": true,
+        "singleProductLifecycleQualified": false,
+        "finderInteractiveQualificationComplete": false,
+        "singleProductDistributionQualified": false,
+        "publisherSignatureVerified": false,
+        "productionQualificationComplete": false,
+        "productLifecycle": {
+          "actualSingleProductInstallerOperations": 12,
+          "actualStandaloneAppRefusals": 1,
+          "actualCoreDeactivations": 1,
+          "publicAppSelectionCases": 9,
+          "privateLaunchServicesControllerVerified": true,
+          "actualSingleProductLifecycleVerified": true,
+          "singleProductDistributionQualified": false,
+          "productionQualificationComplete": false
+        },
+        "productWriteFaultRecovery": {
+          "actualPackageHelperWriteFaultCases": 2,
+          "actualRootHelperCommands": 8,
+          "explicitAbandonments": 2,
+          "actualWholeProductRecoveryReinstalls": 2,
+          "retainedPartialCopiesVerified": 2,
+          "wholeProductInterruptionRecoveryQualified": false,
+          "productionQualificationComplete": false
+        },
+        "productRemovalInspection": {
+          "actualPackagedHelperInspectionCommands": 22,
+          "completeInventories": 3,
+          "preservingRefusals": 19,
+          "fixedScope": "core-history-public-app-registrations-incoming-receipts",
+          "deletionPerformed": false,
+          "productUninstallQualified": false,
+          "productionQualificationComplete": false
+        }
+      }
+    }
+  ],
+  "limitations": [
+    "These results apply to source 86090c94048212d56561a62e33681cb3c858d32e and are not transposed to a later checkout.",
+    "GitHub Actions provenance authentication does not establish Windows publisher signing, Apple Developer ID or notarization.",
+    "Removal-helper inspection records do not establish actual full product deletion or reclamation.",
+    "Two bounded helper write-fault cases per host do not establish whole-product interruption, reboot or power-loss recovery.",
+    "Interactive Finder/GUI behavior, all supported macOS versions, real managed endpoints and complete platform/lifecycle qualification remain unverified."
+  ],
+  "publisherSignatureVerified": false,
+  "notarized": false,
+  "productUninstallQualified": false,
+  "wholeProductInterruptionRecoveryQualified": false,
+  "managedEndpointQualified": false,
+  "productionQualificationComplete": false,
+  "readinessGatesPromoted": []
+}

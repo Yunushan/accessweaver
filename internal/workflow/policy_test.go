@@ -152,6 +152,7 @@ func TestActiveWorkflowRevocationCancelsWorkerAndPersistsFailure(t *testing.T) {
 	manager.platform = "windows"
 	entered := make(chan struct{})
 	manager.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		close(entered)
 		<-ctx.Done()
 		// A stale or misbehaving worker cannot turn cancellation into success.
@@ -195,5 +196,43 @@ func TestActiveWorkflowRevocationCancelsWorkerAndPersistsFailure(t *testing.T) {
 	}
 	if saved.State != "failed" || saved.Error != state.Error {
 		t.Fatal("policy failure was not durably recorded", saved)
+	}
+}
+
+func TestManagedAutoInstallCannotBypassNativeArgumentGuard(t *testing.T) {
+	request := Request{Action: "auto-install", Engine: "zapret2", Targets: []string{"example.com"}}
+	digest, err := request.PolicyDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority := workflowPolicy(t, managed.Policy{Workflows: []managed.WorkflowRule{{Action: request.Action, InputSHA256: digest}}})
+	guard := managed.NewGuard(func() (*managed.Authority, error) { return authority, nil })
+	if _, err := workflowPermission(guard, request); !errors.Is(err, managed.ErrDenied) {
+		t.Fatalf("managed auto-install bypassed argument validation: %v", err)
+	}
+	root := t.TempDir()
+	manager := NewWithGuard(root, guard)
+	manager.platform = "windows"
+	manager.requireAdmin = func() error { return nil }
+	plan, err := manager.Preview(request)
+	if err != nil || plan.Ready || len(plan.Issues) == 0 {
+		t.Fatalf("managed auto-install preview was accepted: ready=%t, err=%v", plan.Ready, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "workflows")); !os.IsNotExist(err) {
+		t.Fatal("denied preview created workflow storage", err)
+	}
+	unmanaged := managed.NewGuard(func() (*managed.Authority, error) { return nil, nil })
+	if _, err := workflowPermission(unmanaged, request); err != nil {
+		t.Fatalf("unmanaged auto-install was denied: %v", err)
+	}
+	scan := Request{Action: "scan", Engine: "zapret2", Targets: []string{"example.com"}}
+	scanDigest, err := scan.PolicyDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanAuthority := workflowPolicy(t, managed.Policy{Workflows: []managed.WorkflowRule{{Action: scan.Action, InputSHA256: scanDigest}}})
+	scanGuard := managed.NewGuard(func() (*managed.Authority, error) { return scanAuthority, nil })
+	if _, err := workflowPermission(scanGuard, scan); err != nil {
+		t.Fatalf("approved managed scan was denied: %v", err)
 	}
 }

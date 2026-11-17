@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "seconds": 30,
+  "workers": 2,
+  "targets": [
+    {
+      "id": "json-object",
+      "package": "internal/jsoninput",
+      "root": "FuzzDecodeCanonicalObject",
+      "source": "internal/jsoninput/decode_test.go"
+    },
+    {
+      "id": "profile",
+      "package": "internal/profile",
+      "root": "FuzzDecodeProfile",
+      "source": "internal/profile/strict_input_test.go"
+    },
+    {
+      "id": "policy",
+      "package": "internal/managed",
+      "root": "FuzzDecodePolicy",
+      "source": "internal/managed/policy_test.go"
+    },
+    {
+      "id": "policy-envelope",
+      "package": "internal/managed",
+      "root": "FuzzVerifyEnvelope",
+      "source": "internal/managed/policy_test.go"
+    },
+    {
+      "id": "signed-policy-payload",
+      "package": "internal/managed",
+      "root": "FuzzVerifySignedPolicyPayload",
+      "source": "internal/managed/fuzz_contract_test.go"
+    },
+    {
+      "id": "installation",
+      "package": "internal/managed",
+      "root": "FuzzDecodeInstallation",
+      "source": "internal/managed/machine_test.go"
+    },
+    {
+      "id": "acceptance",
+      "package": "internal/managed",
+      "root": "FuzzAcceptedPolicyRecord",
+      "source": "internal/managed/acceptance_test.go"
+    },
+    {
+      "id": "recovery",
+      "package": "internal/managed",
+      "root": "FuzzSignedRecoveryPayload",
+      "source": "internal/managed/recovery_test.go"
+    },
+    {
+      "id": "rotation",
+      "package": "internal/managed",
+      "root": "FuzzVerifyRotation",
+      "source": "internal/managed/rotation_test.go"
+    },
+    {
+      "id": "signed-rotation-payload",
+      "package": "internal/managed",
+      "root": "FuzzVerifySignedRotationPayload",
+      "source": "internal/managed/fuzz_contract_test.go"
+    },
+    {
+      "id": "audit",
+      "package": "internal/audit",
+      "root": "FuzzCanonicalAuditDecoders",
+      "source": "internal/audit/chain_test.go"
+    },
+    {
+      "id": "worker-report",
+      "package": "internal/workflow",
+      "root": "FuzzWorkerReportEnvelope",
+      "source": "internal/workflow/worker_report_test.go"
+    },
+    {
+      "id": "workflow-metadata",
+      "package": "internal/workflow",
+      "root": "FuzzWorkflowMetadataOutput",
+      "source": "internal/workflow/metadata_output_test.go"
+    },
+    {
+      "id": "stun",
+      "package": "internal/diagnostics",
+      "root": "FuzzBindingResponse",
+      "source": "internal/diagnostics/stun_test.go"
+    }
+  ]
+}

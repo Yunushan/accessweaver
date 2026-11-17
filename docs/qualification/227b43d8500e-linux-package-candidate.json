@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "227b43d8500e6b297c9b6e1a74acc301f274bbbe",
+  "endpointArchitecture": "amd64",
+  "fixtureVersions": [
+    "0.0.0~alpha.1",
+    "0.0.0~alpha.2"
+  ],
+  "reportsSHA256": {
+    "dpkg.json": "b9def251991379f6a23797266ca51b05df5433ff95fdcd6ea44571182168c78a",
+    "apt.json": "fff16c0968d11d3f815994a2aec079ec3eb975c5772fbab0a3a188ff0b054eda"
+  },
+  "productionQualificationComplete": false,
+  "dpkg": {
+    "schemaVersion": 1,
+    "scope": "Isolated unsigned Debian package construction and native Linux dpkg lifecycle",
+    "endpointArchitecture": "amd64",
+    "dpkgVersion": "Debian 'dpkg' package management program version 1.23.7 (amd64).",
+    "builderSHA256": "fa3ecd71a603e020872cf4845818392f0bc3ce2ab0cbd6cfe00e7cb03ab30a68",
+    "probeSHA256": "1a3b1aebdcaeb7a37c6575f2419b084fc5f1795f1374963f5e19fd1f9a9dc17d",
+    "packages": [
+      {
+        "arch": "amd64",
+        "version": "0.0.0~alpha.1",
+        "archiveSHA256": "861666fe82f509a56b69777cb6baf7ac5308e7b33f483dc00396641991ca8ce8",
+        "debSHA256": "1798c02cfb3db8f70684723fee5bbd9c8758a479e45b40d97635f711cbe6a8c1",
+        "binarySHA256": "0ca4215fb5507f013f9c8b6a5198200bfd2494e602e53236a00dcb418b33285d",
+        "payloadFiles": 497
+      },
+      {
+        "arch": "amd64",
+        "version": "0.0.0~alpha.2",
+        "archiveSHA256": "b026fbc9c2eedaea136e621c1742094379511663e3313baa0736536979fbbb93",
+        "debSHA256": "40cc40efdfb2eae1c3d6c644afe61d58867247bf29af1707830e9429c2e24cd6",
+        "binarySHA256": "6e58010c676cc745373c4a3c6fcf4108f31396ff14c775fe928283dcf67a6285",
+        "payloadFiles": 497
+      },
+      {
+        "arch": "arm64",
+        "version": "0.0.0~alpha.2",
+        "archiveSHA256": "cfb7af0fa29de662dab263168fb57256a51041591ab426536e158b78eb8d7ea5",
+        "debSHA256": "b2d122785247d5ba9e9a3a03cd5d230d457c6ea56232e91a7dcdc549d160baa6",
+        "binarySHA256": "57765058e731b65708d1418b8c7abb6a5205624966af622879cc5f0b721d8fc6",
+        "payloadFiles": 497
+      }
+    ],
+    "checks": [
+      "mismatched-source-digest-refused-without-output",
+      "amd64-and-arm64-control-and-payload-inspected",
+      "reproducible-package-and-exclusive-publication",
+      "clean-install-upgrade-and-same-version-reinstall",
+      "ordinary-user-installed-cli-identity-after-each-change",
+      "dpkg-verify-after-each-change",
+      "guarded-downgrade-refusal-and-explicit-rollback",
+      "purge-and-package-registration-removal",
+      "synthetic-policy-and-profile-bytes-owner-mode-and-inode-preserved"
+    ],
+    "amd64Execution": true,
+    "arm64Execution": false,
+    "productionQualificationComplete": false
+  },
+  "apt": {
+    "schemaVersion": 1,
+    "scope": "Loopback signed APT publication and isolated native Linux install lifecycle",
+    "endpointArchitecture": "amd64",
+    "builderSHA256": "f6af39d051ea0ef10fb358372d4e6b419df1ab1d01f6133c4d3149d0ce84b891",
+    "probeSHA256": "598d482b43f6b10d9f0362a0e9e6f8d9b6891ae50d5e96a3625e74ba4248c14f",
+    "aptVersion": "apt 3.2.1 (amd64)",
+    "packageSHA256": {
+      "accessweaver_0.0.0~alpha.1_amd64.deb": "1798c02cfb3db8f70684723fee5bbd9c8758a479e45b40d97635f711cbe6a8c1",
+      "accessweaver_0.0.0~alpha.1_arm64.deb": "67c51b827eae6fa87314e240372c1256c05349c7df0050db8164d38195fc8ee3",
+      "accessweaver_0.0.0~alpha.2_amd64.deb": "40cc40efdfb2eae1c3d6c644afe61d58867247bf29af1707830e9429c2e24cd6",
+      "accessweaver_0.0.0~alpha.2_arm64.deb": "b2d122785247d5ba9e9a3a03cd5d230d457c6ea56232e91a7dcdc549d160baa6"
+    },
+    "olderBinarySHA256": "0ca4215fb5507f013f9c8b6a5198200bfd2494e602e53236a00dcb418b33285d",
+    "newerBinarySHA256": "6e58010c676cc745373c4a3c6fcf4108f31396ff14c775fe928283dcf67a6285",
+    "suiteArchitectures": [
+      "amd64",
+      "arm64"
+    ],
+    "checks": [
+      "approved-signing-subkey-verified-against-primary-fingerprint",
+      "package-pin-and-untrusted-verification-key-rejected-without-publication",
+      "exclusive-publication-preserved-existing-snapshot",
+      "native-apt-fetched-index-by-signed-hash",
+      "signed-install-upgrade-and-purge-preserved-policy-and-profile",
+      "ordinary-user-installed-cli-matched-package-build-identity",
+      "wrong-scoped-key-tampered-signature-and-expired-metadata-rejected",
+      "tampered-index-and-payload-rejected-before-installation"
+    ],
+    "ephemeralSigningKeys": true,
+    "arm64EndpointExecution": false,
+    "productionQualificationComplete": false
+  },
+  "host": "Ubuntu 26.04 WSL AMD64",
+  "isolatedMountNetworkAndPIDNamespaces": true,
+  "wrongHostArchitectureRefused": true,
+  "verifiedCompletePortableSets": 2,
+  "buildAndProbeSource": "scripts/test-linux-package-candidate.sh",
+  "workflowRun": 43664801550
+}

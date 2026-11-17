@@ -1,0 +1,103 @@
+{
+  "sourceCommit": "830ee87a940ffaecc337ab37ae2ab38236e4e0e2",
+  "sourceTree": "3278dcd3b65fd70d8687a372b1040d512684741a",
+  "goVersion": "go version go1.27.4 linux/amd64",
+  "controllerSHA256": "47334f84ddbed7fef9cf662ea04361f6e55ee3cc2afc3b562304984c33dd1a17",
+  "engineRelease": "v0.17.3",
+  "engineArchiveURL": "https://github.com/hufrea/byedpi/releases/download/v0.17.3/byedpi-17.3-x86_64.tar.gz",
+  "engineArchiveSHA256": "98f73c32eacb571ebd88d790f6376ed9e70f02d44c1fe862472ecea75cd7117d",
+  "engineSHA256": "c70e87c6168af1832b21641a98bb53e3500b1daf6a5df8bfd22fac4a9294abda",
+  "schemaVersion": 1,
+  "scope": "Linux AMD64 real ByeDPI local traffic, DNS queries, and guided HTTP rules",
+  "ordinaryUser": true,
+  "zeroLinuxCapabilities": true,
+  "loopbackOnlyNetworkNamespace": true,
+  "tlsTargetLocal": true,
+  "probeClients": "Python sockets",
+  "probeSourceSHA256": "7b4aa28b86216cff20056d0b994c3d14587bb8119b034a5f033c0dadf3d4120d",
+  "syntheticDNSRulesRequested": true,
+  "tests": [
+    {
+      "name": "duplicate-foreground-run-refused",
+      "passed": true
+    },
+    {
+      "name": "direct-tls-ipv4-control",
+      "passed": true
+    },
+    {
+      "name": "socks-connect-tls-ipv4",
+      "passed": true
+    },
+    {
+      "name": "direct-tls-ipv6-control",
+      "passed": true
+    },
+    {
+      "name": "socks-connect-tls-ipv6",
+      "passed": true
+    },
+    {
+      "name": "socks-connect-tls-localhost-domain",
+      "passed": true
+    },
+    {
+      "name": "socks-udp-associate-ipv4",
+      "passed": true
+    },
+    {
+      "name": "socks-udp-associate-ipv6",
+      "passed": true
+    },
+    {
+      "name": "sigterm-reaps-engine-and-closes-listener",
+      "passed": true
+    },
+    {
+      "name": "controller-starts-owned-upstream-engine",
+      "passed": true
+    },
+    {
+      "name": "engine-crash-observed-and-controller-lock-released",
+      "passed": true
+    },
+    {
+      "name": "mismatched-engine-digest-refused-without-listener",
+      "passed": true
+    },
+    {
+      "name": "unguided-http-marker-control",
+      "passed": true
+    },
+    {
+      "name": "direct-http-host-unmodified-without-dns",
+      "passed": true
+    },
+    {
+      "name": "guided-included-http-host-modified",
+      "passed": true
+    },
+    {
+      "name": "guided-nested-excluded-http-host-unmodified",
+      "passed": true
+    },
+    {
+      "name": "guided-unlisted-http-host-unmodified",
+      "passed": true
+    },
+    {
+      "name": "guided-included-ipv6-http-host-modified",
+      "passed": true
+    },
+    {
+      "name": "guided-dns-and-http-rules",
+      "passed": true
+    }
+  ],
+  "allChecksPassed": true,
+  "productionQualificationComplete": false,
+  "host": "Ubuntu WSL",
+  "probeSource": "scripts/test-linux-byedpi-traffic.py",
+  "hostResolverAndPortSettingDigestsPreserved": true,
+  "probeSourceCommit": "60a6672187018a15244d98f57e26a3771f60a6f5"
+}

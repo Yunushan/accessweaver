@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "scope": "Hosted Ubuntu AMD64 isolated dpkg and loopback signed APT lifecycle using unsigned qualification packages",
+  "sourceCommit": "d57c7c8d8a973079876badca5411c80c00ec7ac8",
+  "sourceSHA256": {
+    ".github/workflows/linux-package-lifecycle.yml": "075bf9334d11ef1e6fe835865b890fc49d4b4e3897a702764e21028a03427492",
+    "scripts/test-linux-package-candidate.sh": "6ab4450f67e664779d67136aabdf5c19b4cc96ea2fe3461691150e667a672e0b",
+    "scripts/test-linux-deb-lifecycle.py": "cd58a767ac727801935497246bfba72a891e53a1d759eaa731ef0cfccf4c86f2",
+    "scripts/test-linux-apt-repository.py": "f5358ebd8d62b079e92c42ad23db3ade61d7775ef57395a4b61fbf3f80e72226",
+    "scripts/linux_package_managed_fixture.py": "9d702ed010ea92f4c8250141115e94343555de3419b0cb6565b49f51b0e6127e",
+    "scripts/linux_deb_payload.py": "26805f1e6465b40c72fef84ec55e11a2130f0b7cb6e6a79ce10ffe7eb315c2c6",
+    "scripts/test_linux_package_reboot.py": "4e1969b1d176c2329e7d6248158216404f1f25e37f94a59f21bf41c6b27de42a",
+    "scripts/build-linux-deb.py": "c32262e9314bf3ae844082dca4b2e65e02ba0ee94ef7cb2c57aa2e3dcb01a0fb",
+    "scripts/build-linux-apt-repository.py": "f6af39d051ea0ef10fb358372d4e6b419df1ab1d01f6133c4d3149d0ce84b891",
+    "scripts/package-release.sh": "467a7a8f0d3d225148e65cf2342c809cf52f50a3740400b3096e0ec890865b35",
+    "scripts/verify_release.py": "4338d95d41b2e7c3ab394a0403c1e81ac57f76e524e06f776c58b4a1b2976744",
+    "scripts/release_archive.py": "d4f2da52a8519042193e7bf1f330fff5372c2b6e736a5aed1442d218595dd517"
+  },
+  "hostedRunID": 43723958162,
+  "hostedJobID": 132841709323,
+  "hostedArtifactID": 14165603635,
+  "hostedArtifactBytes": 2924,
+  "hostedArtifactSHA256": "a862a09f1c39ca8ffdc7482e2208cf8e3b634b8e33a122167454451535f9cfac",
+  "qualificationSHA256": "4f98879f4095633a332bb13c8dcbdfc75177a9f2792f86a92a9a5c35cd0e1783",
+  "qualification": {
+    "schemaVersion": 1,
+    "sourceCommit": "d57c7c8d8a973079876badca5411c80c00ec7ac8",
+    "endpointArchitecture": "amd64",
+    "fixtureVersions": [
+      "0.0.0~alpha.1",
+      "0.0.0~alpha.2"
+    ],
+    "reportsSHA256": {
+      "dpkg.json": "6456b32468ec2d56ca56fde4e0f79b02d3ba2d7385b498071929a96fa1cd30d0",
+      "apt.json": "8b7e8c66c66a2deb96419d2087dd2cb008316e7e4e4e07573ea94b74a426e0f9"
+    },
+    "productionQualificationComplete": false
+  },
+  "dpkg": {
+    "packages": [
+      {
+        "arch": "amd64",
+        "version": "0.0.0~alpha.1",
+        "archiveSHA256": "76a0ae267bcbd0ff70dc16527f46e57aa0d2dc58bb3c09f8dcba1fd3be56b07d",
+        "debSHA256": "4466f98ae27b04cde3b074d45fabaee8fdd376b1b95b59e5f2b25a8f91696839",
+        "binarySHA256": "9d8329cdea05bcf33a5b151202010e5ad3a79023b738399fa9f00c75213c33dc",
+        "payloadFiles": 517
+      },
+      {
+        "arch": "amd64",
+        "version": "0.0.0~alpha.2",
+        "archiveSHA256": "3b582629d32c23e1e7fe58207b71aa2910acdbb69cdbb54c93b4393f5a609632",
+        "debSHA256": "edda9ac73fef6e7037f3be171ee7c02bde1f7944b13c09724b668aad1fa84c2f",
+        "binarySHA256": "8a292883c92aac958c71a9dccbc39350275bb0b72490bb1fb3cd8f19ced8fce2",
+        "payloadFiles": 517
+      },
+      {
+        "arch": "arm64",
+        "version": "0.0.0~alpha.2",
+        "archiveSHA256": "f571825ee210916386063e9ffcfc6c6e51778fc8a37115cef587e12b2bd40604",
+        "debSHA256": "87f41b48ff4568c17568edfd7c902b3ca929dda4b96611ef9dfeded1980673c6",
+        "binarySHA256": "ab3fd34446ade79ab8ed50cb1bf6f715ee433f6eb77741a331c6103e6805fe89",
+        "payloadFiles": 517
+      }
+    ],
+    "checks": [
+      "mismatched-source-digest-refused-without-output",
+      "amd64-and-arm64-control-and-payload-inspected",
+      "reproducible-package-and-exclusive-publication",
+      "clean-install-upgrade-and-same-version-reinstall",
+      "ordinary-user-installed-cli-identity-after-each-change",
+      "dpkg-verify-after-each-change",
+      "guarded-downgrade-refusal-and-explicit-rollback",
+      "purge-and-package-registration-removal",
+      "enrollment-and-profile-created-with-first-installed-controller",
+      "new-controller-advanced-policy-and-older-rollback-refused-replay",
+      "ordinary-mutation-and-engine-launch-denied-through-installed-controllers",
+      "enrolled-policy-and-profile-preserved-through-purge-and-reinstall"
+    ],
+    "managedRevisionsObserved": [
+      1,
+      2
+    ],
+    "amd64Execution": true,
+    "arm64Execution": false
+  },
+  "apt": {
+    "packageSHA256": {
+      "accessweaver_0.0.0~alpha.1_amd64.deb": "4466f98ae27b04cde3b074d45fabaee8fdd376b1b95b59e5f2b25a8f91696839",
+      "accessweaver_0.0.0~alpha.1_arm64.deb": "87da8ccb6f53022d5a357542b1a0166766dcbf9d79447af5ed14791051a9e902",
+      "accessweaver_0.0.0~alpha.2_amd64.deb": "edda9ac73fef6e7037f3be171ee7c02bde1f7944b13c09724b668aad1fa84c2f",
+      "accessweaver_0.0.0~alpha.2_arm64.deb": "87f41b48ff4568c17568edfd7c902b3ca929dda4b96611ef9dfeded1980673c6"
+    },
+    "checks": [
+      "approved-signing-subkey-verified-against-primary-fingerprint",
+      "package-pin-and-untrusted-verification-key-rejected-without-publication",
+      "exclusive-publication-preserved-existing-snapshot",
+      "native-apt-fetched-index-by-signed-hash",
+      "signed-install-upgrade-purge-and-reinstall-preserved-enrolled-policy-and-profile",
+      "installed-controller-advanced-policy-and-denied-ordinary-mutation-and-launch",
+      "ordinary-user-installed-cli-matched-package-build-identity",
+      "wrong-scoped-key-tampered-signature-and-expired-metadata-rejected",
+      "tampered-index-and-payload-rejected-before-installation"
+    ],
+    "managedRevisionsObserved": [
+      1,
+      2
+    ],
+    "ephemeralSigningKeys": true,
+    "arm64EndpointExecution": false
+  },
+  "rebootExercised": false,
+  "productionQualificationComplete": false
+}

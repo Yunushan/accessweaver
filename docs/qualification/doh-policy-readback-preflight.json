@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "scope": "native-doh-policy-readback-barrier-preflight",
+  "parentCommit": "684a3b99bb2519e2c6305404bef90823ed16f0bc",
+  "sourceSHA256": {
+    "internal/workflow/windows.ps1": "1d0dfbad51007e57580111dfcdbb38b0272d23a7d82b7e253b69687167054f6b",
+    "scripts/test-dns-recovery-contracts.ps1": "cb8016779d24372dee4f64e618d3f609362ab791535ca6283de1cf9da0ca9078"
+  },
+  "powerShellFilesParsed": 2,
+  "powerShellParseErrors": 0,
+  "hostedNegativeCasesPrepared": 35,
+  "hostedPositiveCasePrepared": 1,
+  "hostedFixturesExecuted": false,
+  "localProductOrNativeExecution": false,
+  "decoderChanged": false,
+  "runtimeReadbackBeforeAdapterDNSWrites": true,
+  "allFourProvidersRequired": true,
+  "firstOriginalSnapshotPreservedOnRefusal": true,
+  "arm64WireCauseProved": false,
+  "nativeQualificationComplete": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0
+}

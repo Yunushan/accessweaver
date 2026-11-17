@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"net"
@@ -22,6 +21,8 @@ import (
 	"github.com/Yunushan/accessweaver/internal/buildinfo"
 	"github.com/Yunushan/accessweaver/internal/diagnostics"
 	"github.com/Yunushan/accessweaver/internal/engine"
+	"github.com/Yunushan/accessweaver/internal/filelock"
+	"github.com/Yunushan/accessweaver/internal/jsoninput"
 	"github.com/Yunushan/accessweaver/internal/managed"
 	"github.com/Yunushan/accessweaver/internal/profile"
 	"github.com/Yunushan/accessweaver/internal/uiaccess"
@@ -29,17 +30,23 @@ import (
 )
 
 type Server struct {
-	Policy       *managed.Guard
-	Store        *profile.Store
-	Manager      *engine.Manager
-	Workflows    *workflow.Manager
-	UI           fs.FS
-	Token        string
-	profileAudit *audit.Recorder
-	mutations    mutationGate
-	historyRead  sync.Mutex
-	statusRead   sync.Mutex
-	done         chan struct{}
+	Policy                *managed.Guard
+	Store                 *profile.Store
+	Manager               *engine.Manager
+	Workflows             *workflow.Manager
+	UI                    fs.FS
+	Token                 string
+	profileAudit          *audit.Recorder
+	mutations             mutationGate
+	historyRead           sync.Mutex
+	controllerStorageRead sync.Mutex
+	lifecycleRead         sync.Mutex
+	reconciliationRead    sync.Mutex
+	reconciliationWrite   sync.Mutex
+	diagnosticRun         sync.Mutex
+	statusRead            sync.Mutex
+	lifecycleMu           sync.Mutex
+	shutdown              *serverShutdownState
 }
 
 func New(store *profile.Store, manager *engine.Manager, static fs.FS) (*Server, error) {
@@ -69,8 +76,28 @@ func fail(w http.ResponseWriter, status int, message string) {
 
 func failProfile(w http.ResponseWriter, err error, fallback int) {
 	status := fallback
-	if errors.Is(err, audit.ErrRecorderUnavailable) || errors.Is(err, audit.ErrRecordedUncertain) {
-		fail(w, http.StatusServiceUnavailable, err.Error())
+	if errors.Is(err, audit.ErrRecordedUncertain) {
+		fail(w, http.StatusServiceUnavailable, audit.ErrRecordedUncertain.Error())
+		return
+	}
+	if errors.Is(err, audit.ErrRecorderUnavailable) {
+		fail(w, http.StatusServiceUnavailable, audit.ErrRecorderUnavailable.Error())
+		return
+	}
+	if errors.Is(err, profile.ErrMutationUncertain) {
+		fail(w, http.StatusServiceUnavailable, profile.ErrMutationUncertain.Error())
+		return
+	}
+	if errors.Is(err, profile.ErrAtomicWriteUncertain) {
+		fail(w, http.StatusServiceUnavailable, profile.ErrAtomicWriteUncertain.Error())
+		return
+	}
+	if errors.Is(err, profile.ErrReadUnavailable) || errors.Is(err, filelock.ErrCloseUncertain) {
+		fail(w, http.StatusServiceUnavailable, profile.ErrReadUnavailable.Error())
+		return
+	}
+	if fallback == http.StatusNotFound && errors.Is(err, fs.ErrNotExist) {
+		fail(w, http.StatusNotFound, "saved profile was not found")
 		return
 	}
 	if errors.Is(err, profile.ErrConflict) {
@@ -87,6 +114,22 @@ func failProfile(w http.ResponseWriter, err error, fallback int) {
 		w.Header().Set("Retry-After", "1")
 	}
 	fail(w, status, err.Error())
+}
+
+// Preserve uncertainty/policy precedence while categorizing canceled launch work.
+func failEnginePreparation(w http.ResponseWriter, err error) {
+	if errors.Is(err, engine.ErrPreparationCleanupUncertain) {
+		JSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": engine.ErrPreparationCleanupUncertain.Error(),
+			"code":  "engine-preparation-restart-required",
+		})
+		return
+	}
+	status := http.StatusBadRequest
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		status = http.StatusRequestTimeout
+	}
+	failProfile(w, err, status)
 }
 
 func (s *Server) Handler() http.Handler {
@@ -163,16 +206,22 @@ func (s *Server) Handler() http.Handler {
 		}
 		JSON(w, 200, map[string]bool{"deleted": true})
 	})
-	mux.HandleFunc("GET /api/v1/runtime", func(w http.ResponseWriter, r *http.Request) { JSON(w, 200, s.Manager.Snapshot()) })
+	mux.HandleFunc("GET /api/v1/runtime", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("logs") == "0" {
+			JSON(w, http.StatusOK, s.Manager.RuntimeStatus())
+			return
+		}
+		JSON(w, http.StatusOK, s.Manager.Snapshot())
+	})
 	mux.HandleFunc("POST /api/v1/preview", func(w http.ResponseWriter, r *http.Request) {
 		var p profile.Profile
 		if err := readJSON(w, r, &p); err != nil {
 			fail(w, 400, err.Error())
 			return
 		}
-		plan, err := s.Manager.Preview(p)
+		plan, err := s.Manager.PreviewContext(r.Context(), p)
 		if err != nil {
-			fail(w, 400, err.Error())
+			failEnginePreparation(w, err)
 			return
 		}
 		JSON(w, 200, plan)
@@ -204,8 +253,8 @@ func (s *Server) Handler() http.Handler {
 			fail(w, 409, "profile changed since launch review; reopen the launch preview")
 			return
 		}
-		if err := s.Manager.Start(p); err != nil {
-			failProfile(w, err, http.StatusBadRequest)
+		if err := s.Manager.StartContext(r.Context(), p); err != nil {
+			failEnginePreparation(w, err)
 			return
 		}
 		JSON(w, 200, s.Manager.Snapshot())
@@ -222,6 +271,15 @@ func (s *Server) Handler() http.Handler {
 			fail(w, http.StatusForbidden, err.Error())
 			return
 		}
+		// Keep this independent from mutations, workflow status and cancellation.
+		// The slot remains owned through transport cleanup and response output;
+		// canceling one HTTP client cannot multiply still-running diagnostics.
+		if !s.diagnosticRun.TryLock() {
+			w.Header().Set("Retry-After", "1")
+			JSON(w, http.StatusServiceUnavailable, map[string]string{"error": "another diagnostic is still finishing; try again shortly", "code": "diagnostic-busy"})
+			return
+		}
+		defer s.diagnosticRun.Unlock()
 		var input diagnostics.Request
 		if err := readJSON(w, r, &input); err != nil {
 			fail(w, 400, err.Error())
@@ -291,7 +349,9 @@ func (s *Server) Handler() http.Handler {
 				}
 				// Keep active-profile checks and mutations in one transaction.
 				// Diagnostics and read-only previews need not serialize with these.
-				if r.URL.Path != "/api/v1/diagnose" && r.URL.Path != "/api/v1/preview" {
+				// Explicit history capture owns its heavy history gate and backend
+				// leases so system cancellation remains available during its scan.
+				if r.URL.Path != "/api/v1/diagnose" && r.URL.Path != "/api/v1/preview" && !reconciliationMutationPath(r) && !(r.Method == http.MethodPost && r.URL.Path == "/api/v1/system/history/inventory") {
 					releaseAdmission, err := s.mutations.reserve(r.Context())
 					if err != nil {
 						rejectMutation(w, err)
@@ -316,18 +376,78 @@ func (s *Server) Handler() http.Handler {
 }
 func readJSON(w http.ResponseWriter, r *http.Request, v any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, maxAPIRequestBodyBytes)
-	d := json.NewDecoder(r.Body)
-	d.DisallowUnknownFields()
-	if err := d.Decode(v); err != nil {
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
 		return err
 	}
-	var trailing any
-	if err := d.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return fmt.Errorf("expected one JSON object")
-	}
-
-	return nil
+	return jsoninput.Decode(data, v)
 }
+
+// serverShutdownState publishes its result before done closes. Pending is only
+// a diagnostic observation; it never substitutes for owned completion.
+type serverShutdownState struct {
+	done        chan struct{}
+	pending     chan struct{}
+	pendingOnce sync.Once
+	err         error
+}
+
+func (s *serverShutdownState) markPending() {
+	s.pendingOnce.Do(func() { close(s.pending) })
+}
+
+// Admission closes under the same mutex as Add, before any counter wait. Late
+// requests cannot enter profile, workflow or engine handlers during shutdown.
+type serverHandlerGate struct {
+	mu     sync.Mutex
+	closed bool
+	active sync.WaitGroup
+}
+
+func (g *serverHandlerGate) wrap(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		g.mu.Lock()
+		if g.closed {
+			g.mu.Unlock()
+			fail(w, http.StatusServiceUnavailable, "desktop shutdown in progress")
+			return
+		}
+		g.active.Add(1)
+		g.mu.Unlock()
+		defer g.active.Done()
+		next.ServeHTTP(w, r)
+	})
+}
+func (g *serverHandlerGate) closeAdmission() {
+	g.mu.Lock()
+	g.closed = true
+	g.mu.Unlock()
+}
+func (g *serverHandlerGate) wait() { g.active.Wait() }
+
+// The first context bounds only a diagnostic wait. Both calls observe the same
+// Manager shutdown worker; the background join cannot repeat Stop or cleanup.
+func waitServerEngineShutdown(initial context.Context, shutdown func(context.Context) error, pendingFault func() bool, pending func()) error {
+	if pendingFault() {
+		pending()
+	}
+	initialErr := shutdown(initial)
+	if initial.Err() != nil && errors.Is(initialErr, initial.Err()) {
+		pending()
+	}
+	return shutdown(context.Background())
+}
+
+// Workflow shutdown already owns its reserved generation. A caller budget only
+// diagnoses an unresolved wait; the background call joins that same completion.
+func waitServerWorkflowShutdown(initial context.Context, shutdown func(context.Context) error, pending func()) error {
+	initialErr := shutdown(initial)
+	if initial.Err() != nil && errors.Is(initialErr, initial.Err()) {
+		pending()
+	}
+	return shutdown(context.Background())
+}
+
 func (s *Server) Serve(ctx context.Context) (string, error) {
 	if err := uiaccess.RequireUnelevated(); err != nil {
 		return "", err
@@ -336,32 +456,103 @@ func (s *Server) Serve(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return s.serveListener(ctx, listener)
+}
+
+// serveListener takes ownership of this already-created loopback listener. The
+// public Serve path always performs the native unelevated admission first.
+func (s *Server) serveListener(ctx context.Context, listener net.Listener) (string, error) {
+	return s.serveListenerWithWorkflowShutdown(ctx, listener, s.Workflows.Shutdown)
+}
+
+// This private composition takes the workflow join as an operation, while the
+// production listener path above always binds the actual workflow manager.
+func (s *Server) serveListenerWithWorkflowShutdown(ctx context.Context, listener net.Listener, workflowShutdown func(context.Context) error) (string, error) {
+	s.lifecycleMu.Lock()
+	if s.shutdown != nil {
+		s.lifecycleMu.Unlock()
+		return "", errors.Join(errors.New("desktop server already started"), listener.Close())
+	}
+	state := &serverShutdownState{done: make(chan struct{}), pending: make(chan struct{})}
+	s.shutdown = state
+	s.lifecycleMu.Unlock()
 	addr := "http://" + listener.Addr().String()
-	s.done = make(chan struct{})
-	server := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 75 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 32 << 10}
+	gate := &serverHandlerGate{}
+	server := &http.Server{Handler: gate.wrap(s.Handler()), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 75 * time.Second, IdleTimeout: 5 * time.Second, MaxHeaderBytes: 32 << 10}
+	lifetime, cancelLifetime := context.WithCancel(ctx)
+	served := make(chan error, 1)
 	go func() {
-		defer close(s.done)
-		<-ctx.Done()
-		s.Workflows.Cancel()
-		c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := server.Shutdown(c); err != nil {
-			_ = server.Close()
-		}
-		cancel()
-		workflowContext, cancelWorkflow := context.WithTimeout(context.Background(), 8*time.Second)
-		_ = s.Workflows.Shutdown(workflowContext)
-		cancelWorkflow()
-		engineContext, cancelEngine := context.WithTimeout(context.Background(), 6*time.Second)
-		defer cancelEngine()
-		_ = s.Manager.Shutdown(engineContext)
+		served <- server.Serve(listener)
+		cancelLifetime()
 	}()
-	go func() { _ = server.Serve(listener) }()
+	go func() {
+		defer close(state.done)
+		defer cancelLifetime()
+		<-lifetime.Done()
+		gate.closeAdmission()
+		// Begin both manager shutdowns before waiting for HTTP handlers: an
+		// admitted start/stop request must not prevent manager closing or drain.
+		engineDone := make(chan error, 1)
+		go func() {
+			engineContext, cancelEngine := context.WithTimeout(context.Background(), 6*time.Second)
+			defer cancelEngine()
+			engineDone <- waitServerEngineShutdown(engineContext, s.Manager.Shutdown, func() bool { return s.Manager.Snapshot().LifecyclePending }, state.markPending)
+		}()
+		workflowDone := make(chan error, 1)
+		go func() {
+			workflowContext, cancelWorkflow := context.WithTimeout(context.Background(), 8*time.Second)
+			defer cancelWorkflow()
+			workflowDone <- waitServerWorkflowShutdown(workflowContext, workflowShutdown, state.markPending)
+		}()
+		httpContext, cancelHTTP := context.WithTimeout(context.Background(), 5*time.Second)
+		httpErr := server.Shutdown(httpContext)
+		if httpErr != nil {
+			state.markPending()
+			httpErr = errors.Join(httpErr, server.Close())
+		}
+		cancelHTTP()
+
+		gate.wait()
+		serveErr := <-served
+		if errors.Is(serveErr, http.ErrServerClosed) {
+			serveErr = nil
+		}
+		state.err = errors.Join(httpErr, serveErr, <-engineDone, <-workflowDone)
+	}()
 	return addr, nil
 }
 
-// Wait blocks until HTTP and engine shutdown have finished after cancellation.
-func (s *Server) Wait() {
-	if s.done != nil {
-		<-s.done
+func (s *Server) shutdownState() *serverShutdownState {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	return s.shutdown
+}
+
+// Done closes only after admitted handlers, HTTP serving and both manager
+// shutdown workers have finished. A caller timeout cannot close this channel.
+func (s *Server) Done() <-chan struct{} {
+	if state := s.shutdownState(); state != nil {
+		return state.done
 	}
+	return nil
+}
+
+// ShutdownPending reports one observed unresolved desktop shutdown after an HTTP
+// shutdown error, fixed engine fault or manager diagnostic budget. Done may
+// race it and remains the terminal proof.
+func (s *Server) ShutdownPending() <-chan struct{} {
+	if state := s.shutdownState(); state != nil {
+		return state.pending
+	}
+	return nil
+}
+
+// Wait retains the whole server scope until owned completion and returns its
+// stored final error. Before Serve starts there is no owned scope to drain.
+func (s *Server) Wait() error {
+	if state := s.shutdownState(); state != nil {
+		<-state.done
+		return state.err
+	}
+	return nil
 }

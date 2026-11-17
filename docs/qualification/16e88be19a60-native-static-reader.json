@@ -1,0 +1,290 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "16e88be19a6012401cd3ad4a150c19ea0a3e16fd",
+  "sourceRunID": 42479045774,
+  "nativeRunID": 42479045773,
+  "sourceSHA256": {
+    "scripts/test-native-doh.ps1": "1f813bb5ce3e30e85154a5a520cf2b21d7e7b8669b78ba6e177f55680701f2a7",
+    "scripts/native-doh-scenario.ps1": "cbf457dd4623ba82ae00b5d56336bce7a723c70831113aeded6f1a065af31a97",
+    "scripts/dns-acceptance-state.ps1": "a8332f9d043c4f3577a5229a4831e7e88df52a1c9733eba4e4e254012622a2de",
+    "scripts/test-dns-acceptance-state.ps1": "7e447274800e116d9562d9b2cb567ddc1f5d0525f0685ac04ec12245d7355315",
+    "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+    ".github/workflows/native-doh.yml": "7a373b86da9de96909db6ff01dcf7f4aa0115c5efc719b5540f1f84a4643df40",
+    "internal/workflow/windows.ps1": "e60b0c01f491cff9fa6da10c3d260e527b091c078317818e252a3d757b794141",
+    "internal/workflow/manager.go": "e1eae98c45c8ccd7b77675d9a05be300c2d02cb85b8a372c1b3f8f74c04f8f1d",
+    "cmd/accessweaver/system.go": "205880642ec0814629f754b7f44ae3d36b00a584ee937e2705849b2ddead1f94",
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00"
+  },
+  "sourceContracts": {
+    "jobsPassed": 6,
+    "shellReportsPassed": 16,
+    "workerAssertionsPerShell": 516,
+    "oracleAssertionsPerShell": 621,
+    "assertionInstances": 9096
+  },
+  "nativeResults": {
+    "passed": 5,
+    "failed": 5,
+    "cases": [
+      {
+        "architecture": "amd64",
+        "method": "dnscrypt",
+        "scenarioKind": "verification-failure",
+        "outcome": "failed",
+        "code": "component-stage",
+        "componentFailureCode": "timeout",
+        "captureStage": "not-started",
+        "cliCount": 0
+      },
+      {
+        "architecture": "arm64",
+        "method": "dnscrypt",
+        "scenarioKind": "roundtrip",
+        "outcome": "passed",
+        "code": "none",
+        "componentFailureCode": "none",
+        "captureStage": "complete",
+        "cliCount": 3
+      },
+      {
+        "architecture": "arm64",
+        "method": "dnscrypt",
+        "scenarioKind": "verification-failure",
+        "outcome": "failed",
+        "code": "component-stage",
+        "componentFailureCode": "timeout",
+        "captureStage": "not-started",
+        "cliCount": 0
+      },
+      {
+        "architecture": "amd64",
+        "method": "dnscrypt",
+        "scenarioKind": "service-loss",
+        "outcome": "passed",
+        "code": "none",
+        "componentFailureCode": "none",
+        "captureStage": "complete",
+        "cliCount": 3
+      },
+      {
+        "architecture": "amd64",
+        "method": "doh",
+        "scenarioKind": "roundtrip",
+        "outcome": "failed",
+        "code": "native-roundtrip-failed",
+        "componentFailureCode": "none",
+        "captureStage": "registry-ipv4",
+        "cliCount": 0
+      },
+      {
+        "architecture": "arm64",
+        "method": "doh",
+        "scenarioKind": "static-ipv6",
+        "outcome": "failed",
+        "code": "native-roundtrip-failed",
+        "componentFailureCode": "none",
+        "captureStage": "complete",
+        "cliCount": 0,
+        "staticFailurePhase": "stage-verification",
+        "staticFailureCode": "read-static-empty",
+        "staticFixture": {
+          "stagingVerified": false,
+          "exercisePassed": false,
+          "cleanupAttempted": true,
+          "originalResolverPassed": true,
+          "operationCode": "stage",
+          "code": "operation-failed",
+          "stagingAttempted": true,
+          "baselineResolverPassed": true,
+          "originalStateRestored": true,
+          "baselineCaptured": true,
+          "cleanupCode": "none",
+          "outcome": "failed",
+          "exerciseAttempted": false
+        },
+        "staticFirewallProtected": true,
+        "staticFirewallRemoved": true
+      },
+      {
+        "architecture": "amd64",
+        "method": "dnscrypt",
+        "scenarioKind": "roundtrip",
+        "outcome": "passed",
+        "code": "none",
+        "componentFailureCode": "none",
+        "captureStage": "complete",
+        "cliCount": 3
+      },
+      {
+        "architecture": "arm64",
+        "method": "dnscrypt",
+        "scenarioKind": "service-loss",
+        "outcome": "passed",
+        "code": "none",
+        "componentFailureCode": "none",
+        "captureStage": "complete",
+        "cliCount": 3
+      },
+      {
+        "architecture": "amd64",
+        "method": "doh",
+        "scenarioKind": "static-ipv6",
+        "outcome": "failed",
+        "code": "native-roundtrip-failed",
+        "componentFailureCode": "none",
+        "captureStage": "complete",
+        "cliCount": 0,
+        "staticFailurePhase": "stage-verification",
+        "staticFailureCode": "read-static-empty",
+        "staticFixture": {
+          "stagingVerified": false,
+          "exercisePassed": false,
+          "cleanupAttempted": true,
+          "originalResolverPassed": true,
+          "operationCode": "stage",
+          "code": "operation-failed",
+          "stagingAttempted": true,
+          "baselineResolverPassed": true,
+          "originalStateRestored": true,
+          "baselineCaptured": true,
+          "cleanupCode": "none",
+          "outcome": "failed",
+          "exerciseAttempted": false
+        },
+        "staticFirewallProtected": true,
+        "staticFirewallRemoved": true
+      },
+      {
+        "architecture": "arm64",
+        "method": "doh",
+        "scenarioKind": "roundtrip",
+        "outcome": "passed",
+        "code": "none",
+        "componentFailureCode": "none",
+        "captureStage": "complete",
+        "cliCount": 2
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "artifactID": 13617115158,
+      "artifactName": "dns-source-contracts-linux-amd64",
+      "providerZIPDigest": "sha256:537f605dccf8f8466da23f171087727dbf6cf35ec8d397961af4383da8c1bc4f"
+    },
+    {
+      "artifactID": 13617080010,
+      "artifactName": "dns-acceptance-source-contracts-linux-arm64",
+      "providerZIPDigest": "sha256:32a67fcdeb0846e19b3e4515cddf499e7bd7e5c0bed766369776e01f9208d045"
+    },
+    {
+      "artifactID": 13616842053,
+      "artifactName": "dns-acceptance-source-contracts-darwin-arm64",
+      "providerZIPDigest": "sha256:33473885c7bae8bbde8287cacd4371214223da142a68daeeca9ffa09cd8a7547"
+    },
+    {
+      "artifactID": 13616837109,
+      "artifactName": "dns-source-contracts-darwin-arm64",
+      "providerZIPDigest": "sha256:d7e2286eac0fa61ac33670104e238d1a26a92049567d4991650c389780550e27"
+    },
+    {
+      "artifactID": 13616782423,
+      "artifactName": "dns-acceptance-source-contracts-darwin-amd64",
+      "providerZIPDigest": "sha256:79521451e2dc484e5cbbc026d0818c59d12362c8472b08d892ad0c19e9fa2b9f"
+    },
+    {
+      "artifactID": 13616528405,
+      "artifactName": "dns-acceptance-source-contracts-windows-arm64",
+      "providerZIPDigest": "sha256:3bbe9f0859bd9f5e580b1ebb0ec67b88f724932372111362822f94ca91a1f608"
+    },
+    {
+      "artifactID": 13616498256,
+      "artifactName": "dns-source-contracts-windows-arm64",
+      "providerZIPDigest": "sha256:d8790f24a648fb5383d92d71de348500f2c09718ed24dd966f92a0b61b2038bb"
+    },
+    {
+      "artifactID": 13616348732,
+      "artifactName": "dns-acceptance-source-contracts-linux-amd64",
+      "providerZIPDigest": "sha256:137a386bb77251a00674ad93923860a69e682e5a5b324e5ce376969f85b3ad01"
+    },
+    {
+      "artifactID": 13616298958,
+      "artifactName": "dns-source-contracts-darwin-amd64",
+      "providerZIPDigest": "sha256:8b217e719d1e79b93b03c360d5f8df8ade937b5f690960c3e1f4f7d24480e951"
+    },
+    {
+      "artifactID": 13616234074,
+      "artifactName": "dns-source-contracts-windows-amd64",
+      "providerZIPDigest": "sha256:2c11bb939ce07a5febc51c8041558e07d4f6afa91124fe8fcb321fc0f15aff4c"
+    },
+    {
+      "artifactID": 13616159620,
+      "artifactName": "dns-acceptance-source-contracts-windows-amd64",
+      "providerZIPDigest": "sha256:7a81b0a8385b49616285ec493f0eb08681c1e9a068556c7e232456ba1d127a42"
+    },
+    {
+      "artifactID": 13616028492,
+      "artifactName": "dns-source-contracts-linux-arm64",
+      "providerZIPDigest": "sha256:888390835496e6411ab80a8739ca69a6976d2769262f4d43bd77299f6f7dccb4"
+    },
+    {
+      "artifactID": 13616945963,
+      "artifactName": "native-dns-dnscrypt-verification-failure-windows-amd64",
+      "providerZIPDigest": "sha256:bd1aae1fbe45ac6c802aaad20c3cf74c872121f51514daa11f6f45d4be4d74c2"
+    },
+    {
+      "artifactID": 13616817626,
+      "artifactName": "native-dns-dnscrypt-roundtrip-windows-arm64",
+      "providerZIPDigest": "sha256:d357b42cf7b65292a1d900b28cf0ef7f515e01c5171c0d94bfa93bdbcba26123"
+    },
+    {
+      "artifactID": 13616738037,
+      "artifactName": "native-dns-dnscrypt-verification-failure-windows-arm64",
+      "providerZIPDigest": "sha256:ba5da56841a86aeedacbdf6462257ca6fb1c9dd703a5ff8ab32a9317991c0197"
+    },
+    {
+      "artifactID": 13616671701,
+      "artifactName": "native-dns-dnscrypt-service-loss-windows-amd64",
+      "providerZIPDigest": "sha256:851a90b9ba8da7115c4936cddc05b2a97d1349d7bca8a8e91993475b11c78167"
+    },
+    {
+      "artifactID": 13616548243,
+      "artifactName": "native-dns-doh-roundtrip-windows-amd64",
+      "providerZIPDigest": "sha256:a893fcbf84ce06b59c6d1bed16b5ed5699f6d8e706627e1630c28e41e46207a2"
+    },
+    {
+      "artifactID": 13616538377,
+      "artifactName": "native-dns-doh-static-ipv6-windows-arm64",
+      "providerZIPDigest": "sha256:5c9b942984d21c51c3dbbf8583d59f9dd9f2844e4e6b052f53e79dd4dfafe160"
+    },
+    {
+      "artifactID": 13616443579,
+      "artifactName": "native-dns-dnscrypt-roundtrip-windows-amd64",
+      "providerZIPDigest": "sha256:9334b2d1fca84aa0f90e0e38d65f67967cb91e2ed159427d011b4a6a573213f6"
+    },
+    {
+      "artifactID": 13616368974,
+      "artifactName": "native-dns-dnscrypt-service-loss-windows-arm64",
+      "providerZIPDigest": "sha256:f495e1ea710723771c0f6f0a72c22eb258d1a78a7cc6debc3eae3ad9744aadd3"
+    },
+    {
+      "artifactID": 13616272645,
+      "artifactName": "native-dns-doh-static-ipv6-windows-amd64",
+      "providerZIPDigest": "sha256:e4bd2cfe8ce05fdb051b844c9bca7e4828d4f53afee9794a38d5368ae9b0787b"
+    },
+    {
+      "artifactID": 13615764856,
+      "artifactName": "native-dns-doh-roundtrip-windows-arm64",
+      "providerZIPDigest": "sha256:2339974537c6f4a7f22e50f12d8561a294397cdede6d0f4e3090101e00e80ce6"
+    }
+  ],
+  "providerZIPDigestsVerified": 22,
+  "staticPreparationCauseObserved": "Both independent readers refused an empty static server list after the setter returned. Persistence versus settling is not established.",
+  "productInvokedForStaticCases": false,
+  "allRunsTerminal": true,
+  "rawLogsRead": false,
+  "credentialQueries": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0
+}

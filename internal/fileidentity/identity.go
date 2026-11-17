@@ -1,5 +1,6 @@
 // Package fileidentity obtains native object identity for in-process alias
-// comparisons. An identity is neither a permission grant nor a durable name.
+// comparisons, plus local-only Windows read acquisition. An identity is neither
+// a permission grant nor a durable name.
 package fileidentity
 
 import (

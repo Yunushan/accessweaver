@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "native-windows-recorded-audit-commands-and-exact-cleanup",
+  "sourceCommit": "4905915e1a4c04b6ba2c2f7b5df288d9e927083f",
+  "sourceSHA256": {
+    "cmd/accessweaver/managed_audit_command_stages_test.go": "5f06a0182396cecfc80a880dc32e0d2899c483af8e91a98b7292b9d115df9e69",
+    "cmd/accessweaver/managed_audit_commands_windows_test.go": "9217cbe86c41efbe8b971167204022ea8be9c951c0cba4c05212e20e7b952a1c",
+    "cmd/accessweaver/managed_audit_ordinary_windows_test.go": "48c7b7a45e09095b718ab915470f8ca3d282b7fdbb37b5d8f1b37c0fd4feab09",
+    ".github/workflows/windows-audit-storage.yml": "223b6b54a3ae1975180932c238fe0b136fbd603dda256437237623f9881994c1"
+  },
+  "runID": 43987516798,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/43987516798",
+  "runConclusion": "success",
+  "providerZIPDigestsVerified": 2,
+  "results": [
+    {
+      "architecture": "amd64",
+      "platform": "windows",
+      "goVersion": "go1.27.4",
+      "artifactID": 14286371234,
+      "artifactSHA256": "07a8edb4d5cae7c2fc4f608352f9aad17382db4bf8cc560dd327df3046e37ae9",
+      "providerZIPDigestVerified": true,
+      "commandTestImageSHA256": "99eb8ec8207fff0eb1d929370113fe988457585b7bc2cd8cbe3f85997504bc0c",
+      "commandWorkerImageSHA256": "99eb8ec8207fff0eb1d929370113fe988457585b7bc2cd8cbe3f85997504bc0c",
+      "ordinaryTestImageSHA256": "99eb8ec8207fff0eb1d929370113fe988457585b7bc2cd8cbe3f85997504bc0c",
+      "commandReportSchemaVersion": 12,
+      "executedAndPassedCommandCases": 74,
+      "executedAndPassedOrdinaryCases": 15,
+      "commandCleanupComplete": true,
+      "ordinaryCleanupComplete": true,
+      "ownedJobActiveProcessesAtEnd": 0,
+      "accountRemoved": true,
+      "profileRemoved": true,
+      "stagingRemoved": true,
+      "allHandlesClosed": true,
+      "privateDesktopObjectsClosed": true,
+      "privateChildWorkspaceRemoved": true,
+      "requiredAuditPolicyRemoved": true
+    },
+    {
+      "architecture": "arm64",
+      "platform": "windows",
+      "goVersion": "go1.27.4",
+      "artifactID": 14286396191,
+      "artifactSHA256": "7970acf5b7d64b4ea26c400db94504be16bf8fdf0317d77e4f7874d37c430b87",
+      "providerZIPDigestVerified": true,
+      "commandTestImageSHA256": "5daaaa5d6897dca8d614d9f9742215ea81efe8509fcdbcd4fab63cdaef177533",
+      "commandWorkerImageSHA256": "5daaaa5d6897dca8d614d9f9742215ea81efe8509fcdbcd4fab63cdaef177533",
+      "ordinaryTestImageSHA256": "5daaaa5d6897dca8d614d9f9742215ea81efe8509fcdbcd4fab63cdaef177533",
+      "commandReportSchemaVersion": 12,
+      "executedAndPassedCommandCases": 74,
+      "executedAndPassedOrdinaryCases": 15,
+      "commandCleanupComplete": true,
+      "ordinaryCleanupComplete": true,
+      "ownedJobActiveProcessesAtEnd": 0,
+      "accountRemoved": true,
+      "profileRemoved": true,
+      "stagingRemoved": true,
+      "allHandlesClosed": true,
+      "privateDesktopObjectsClosed": true,
+      "privateChildWorkspaceRemoved": true,
+      "requiredAuditPolicyRemoved": true
+    }
+  ],
+  "scope": [
+    "Source-built inert approved engine on explicitly opted-in fresh native Windows AMD64 and ARM64 hosted VMs.",
+    "Required signed-policy admission, initialization/import, private HTTP desktop, historical and recorded export, key boundary, all 14 alias groups and capacity refusal.",
+    "Approved foreground run, observed metadata-only journal, preserved inputs, stale/unapproved refusals, output failure and cancellation/drain, exact resource release.",
+    "Exact recorded child/staging cleanup, empty owned job, fresh account/profile removal, private desktop/handle closure and owned policy removal."
+  ],
+  "limitations": [
+    "This is a source-built native test cohort, not a signed installed desktop release or functional routing/connection proof.",
+    "Earlier native identity handle-count failures remain unresolved; this successful cohort does not establish their cause or eliminate recurrence.",
+    "macOS audit qualification, complete platform/lifecycle evidence and other enterprise acceptance requirements remain outstanding."
+  ],
+  "productionCodeChangedByFixtureFixes": false,
+  "rawJobLogsFetched": false,
+  "productionQualificationComplete": false,
+  "readinessGatesPromoted": []
+}

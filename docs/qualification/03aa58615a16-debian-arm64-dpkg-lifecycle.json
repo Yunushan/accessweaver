@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "scope": "Exact-package direct dpkg lifecycle on Ubuntu Minimal 24.04 ARM64 under QEMU TCG",
+  "sourceCommit": "03aa58615a16a4e3975f09283d4357ea3e677878",
+  "previousPackageSourceCommit": "5ac640dede088bae7ff15cc5cc4d1c2c4d4073a2",
+  "fixtureCommit": "2cbb318c7830ceedc2572a0b0e3665aec1286dd6",
+  "sourceSHA256": {
+    "scripts/test-linux-apt-repository.py": "7a3a1a923b17bff1c37a0f5cc6ab721e9550cddbe511477a0a7b7563c92fb046",
+    "scripts/build-linux-apt-repository.py": "f6af39d051ea0ef10fb358372d4e6b419df1ab1d01f6133c4d3149d0ce84b891",
+    "scripts/test-linux-deb-lifecycle.py": "64cf9c4e3762ff95a84fbc255fe3e7c9ff23eac8a109678232851d550e9661a3",
+    "scripts/build-linux-deb.py": "faf4537980045815371f54828654ac36f3ce70d17fe2eddf90e24704b270bc0d",
+    "scripts/linux_deb_payload.py": "f9e781c4556c498d4ccb2f3b270d67c670d9a7088c345431b5c1aa1d1b8af9f5",
+    "scripts/linux_package_managed_fixture.py": "bef6d75d37e57c33eda2160246de5a39f0d033647516106d5329aff9cd704660",
+    "scripts/linux_package_traffic_fixture.py": "d8b2afa13c5d9a67c5a602d97a627d20dccd9951a1803d79dc01ecfd8475233e",
+    "scripts/verify_release.py": "4338d95d41b2e7c3ab394a0403c1e81ac57f76e524e06f776c58b4a1b2976744",
+    "scripts/release_archive.py": "d4f2da52a8519042193e7bf1f330fff5372c2b6e736a5aed1442d218595dd517",
+    "scripts/sbom.py": "a973b9268001e6328f963ea9715723c1706bd9095ad70e8d874b87dab97904b8"
+  },
+  "rebootEvidence": "docs/qualification/03aa58615a16-debian-managed-reboot.json",
+  "signedAptEvidence": "docs/qualification/03aa58615a16-debian-filtered-lifecycle.json",
+  "previousAMD64Evidence": "docs/qualification/03aa58615a16-debian-apt-dpkg-lifecycle.json",
+  "environment": {
+    "hostArchitecture": "amd64",
+    "guestArchitecture": "arm64",
+    "emulation": "tcg",
+    "qemuVersion": "QEMU emulator version 10.2.1 (Debian 1:10.2.1+ds-1ubuntu3.3)",
+    "imageSHA256": "4b8bb9cf5476faca5079ad23b3664ccb14faeed311ffc739a3655fd5b3e014f0",
+    "firmwareSHA256": {
+      "code": "de01af793c9ff318ac206d8c12e404a2e89baa39bd10e12ed0437a2f69fe012a",
+      "initialVariables": "b3b855c5a80310168051164986855692d1bdb06e67619856177965cd87c6774f"
+    },
+    "guestExternalNetworkDisabled": true,
+    "umask": "077",
+    "distributionDocumentationFilterPresent": true
+  },
+  "guestFixtureSHA256": "f92aa248e3e538b14b8aca53de4ece7aa8b39cfcace471ea9dce3d1238f2c901",
+  "guestReportSHA256": "f22362ed538e35456e9f3f25d4ad4b70c17ee61e70294aa62afea1f7db883267",
+  "exactPackageAndControllerDigestsMatchedRebootEvidence": true,
+  "dpkg": {
+    "schemaVersion": 1,
+    "scope": "Isolated unsigned Debian package construction and native Linux dpkg lifecycle",
+    "endpointArchitecture": "arm64",
+    "dpkgVersion": "Debian 'dpkg' package management program version 1.22.6 (arm64).",
+    "builderSHA256": "faf4537980045815371f54828654ac36f3ce70d17fe2eddf90e24704b270bc0d",
+    "probeSHA256": "64cf9c4e3762ff95a84fbc255fe3e7c9ff23eac8a109678232851d550e9661a3",
+    "payloadProbeSHA256": "f9e781c4556c498d4ccb2f3b270d67c670d9a7088c345431b5c1aa1d1b8af9f5",
+    "packages": [
+      {
+        "arch": "arm64",
+        "version": "0.1.0~alpha.4",
+        "archiveSHA256": "d59011067958814391cf662e4f697b936d513960474a4fc77c520cd1b4db39ba",
+        "debSHA256": "f3525cbc2285c770dbaf539546be08a7b80fe9000fa4d8e8c011aa736b5999d0",
+        "binarySHA256": "27b5246d159d9fc15386c8572616e4d87a0dd76723cdb53d21bd57f91bc0837c",
+        "payloadFiles": 512
+      },
+      {
+        "arch": "arm64",
+        "version": "0.1.0~alpha.5",
+        "archiveSHA256": "b0c2655503d8ce35a7483df8289d39705d1ae0034c3371cb94703740e403e35c",
+        "debSHA256": "6b0303777d0abbc8bc979ee54a57f9b9e61e300db05c22f62324edbfb1010925",
+        "binarySHA256": "edaef63731974ba5fc8a5867dda6534198a3c1f115317c4d28635967e0fa8648",
+        "payloadFiles": 527
+      },
+      {
+        "arch": "amd64",
+        "version": "0.1.0~alpha.5",
+        "archiveSHA256": "e314af95eab6dc0d18f39d46d57ac3373e187e09e40ad45fae8e735561c9d003",
+        "debSHA256": "8ed6c7dec921c55e3aca86e749e2c9ade418f0d2274af6281bae1fd716167a21",
+        "binarySHA256": "992b460f09028b4891606637547b1807ca26c60ee878da4ac431bd4bbc22ea7d",
+        "payloadFiles": 527
+      }
+    ],
+    "managedRevisionsObserved": [
+      1,
+      2
+    ],
+    "managedFixtureSHA256": "bef6d75d37e57c33eda2160246de5a39f0d033647516106d5329aff9cd704660",
+    "checks": [
+      "mismatched-source-digest-refused-without-output",
+      "amd64-and-arm64-control-and-payload-inspected",
+      "reproducible-package-and-exclusive-publication",
+      "clean-install-upgrade-and-same-version-reinstall",
+      "ordinary-user-installed-cli-identity-after-each-change",
+      "dpkg-verify-after-each-change",
+      "guarded-downgrade-refusal-and-explicit-rollback",
+      "purge-and-package-registration-removal",
+      "enrollment-and-profile-created-with-first-installed-controller",
+      "new-controller-advanced-policy-and-older-rollback-refused-replay",
+      "ordinary-mutation-and-engine-launch-denied-through-installed-controllers",
+      "enrolled-policy-and-profile-preserved-through-purge-and-reinstall"
+    ],
+    "amd64Execution": false,
+    "arm64Execution": true,
+    "productionQualificationComplete": false
+  },
+  "amd64Regression": {
+    "aptChecks": 9,
+    "directDpkgChecks": 12,
+    "priorPackageAndControllerDigestsPreserved": true,
+    "earlyDuplicateAndDanglingSymlinkRefused": true,
+    "competingPublisherOutputPreserved": true,
+    "documentationExclusionActive": true
+  },
+  "nativeEndpointQualificationComplete": false,
+  "productionQualificationComplete": false
+}

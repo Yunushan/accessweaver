@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 1,
+  "scope": "source-bound-native-windows-dns-matrix",
+  "sourceCommit": "4296e45911c1048ce1ce2d9bd114c0036fea13dd",
+  "runId": 44048988917,
+  "counts": {
+    "passed": 6,
+    "failed": 12
+  },
+  "results": [
+    {
+      "name": "native-dns-doh-roundtrip-windows-amd64",
+      "jobId": 133921732672,
+      "artifactId": 14315798272,
+      "artifactSHA256": "c5c6ddeed278a3fe26e8f2ad7cee55ef52799db2dd32ea9448a67cf83be95992",
+      "outcome": "failed",
+      "code": "native-roundtrip-failed",
+      "refusal": "doh-effective-firewall-mixed-full-inactive"
+    },
+    {
+      "name": "native-dns-doh-roundtrip-windows-arm64",
+      "jobId": 133921732675,
+      "artifactId": 14316296030,
+      "artifactSHA256": "2878485a481500e0ca78a0f5719ca3eb0deca6b1228364e52f42a7a2ce9e5020",
+      "outcome": "failed",
+      "code": "native-roundtrip-failed",
+      "refusal": "doh-effective-firewall-mixed-full-inactive"
+    },
+    {
+      "name": "native-dns-doh-static-ipv6-windows-amd64",
+      "jobId": 133921732307,
+      "artifactId": 14314066414,
+      "artifactSHA256": "34aa1709f8333c335b78efe22c700f5a8d145d9d2e34c15afe7da5a735532dac",
+      "outcome": "failed",
+      "code": "native-roundtrip-failed",
+      "refusal": "doh-effective-firewall-mixed-full-inactive"
+    },
+    {
+      "name": "native-dns-doh-static-ipv6-windows-arm64",
+      "jobId": 133921732753,
+      "artifactId": 14316702870,
+      "artifactSHA256": "a5e25c7568e65fb4ae52b9c7a0033b2a5343bb94776e9ba1baeb1df6970de2dd",
+      "outcome": "failed",
+      "code": "native-roundtrip-failed",
+      "refusal": "doh-effective-firewall-mixed-full-inactive"
+    },
+    {
+      "name": "native-dns-doh-journal-recovery-windows-amd64",
+      "jobId": 133921732680,
+      "artifactId": 14314712845,
+      "artifactSHA256": "e3ead05468676cc3640f600c61df932190f4e3e1d1c7eaf0bbffa1f3ce37e288",
+      "outcome": "failed",
+      "code": "native-roundtrip-failed",
+      "refusal": "doh-effective-firewall-mixed-full-inactive"
+    },
+    {
+      "name": "native-dns-doh-journal-recovery-windows-arm64",
+      "jobId": 133921732702,
+      "artifactId": 14317100030,
+      "artifactSHA256": "a7b13ca9f1659858bb38aa190783ae5fdaf2ad73059d8d8b179e54224e81b905",
+      "outcome": "failed",
+      "code": "native-roundtrip-failed",
+      "refusal": "doh-effective-firewall-mixed-full-inactive"
+    },
+    {
+      "name": "native-dns-dnscrypt-roundtrip-windows-amd64",
+      "jobId": 133921732808,
+      "artifactId": 14316941965,
+      "artifactSHA256": "4eeb375774aaf3d606304029306ffd3738f60035592020d20609992e5599c290",
+      "outcome": "passed",
+      "code": "none",
+      "refusal": null
+    },
+    {
+      "name": "native-dns-dnscrypt-roundtrip-windows-arm64",
+      "jobId": 133921732819,
+      "artifactId": 14315774643,
+      "artifactSHA256": "0b61f943f065b35039b906705fefc0afb11643ec72f6b7f2bf13c744696380ba",
+      "outcome": "failed",
+      "code": "native-scenario",
+      "refusal": "dnscrypt-port-53-in-use"
+    },
+    {
+      "name": "native-dns-dnscrypt-service-loss-windows-amd64",
+      "jobId": 133921732738,
+      "artifactId": 14316508644,
+      "artifactSHA256": "43377d129a1b56e36f81ab8bd301f38ac26820b4500c982887f55079ef00ea89",
+      "outcome": "passed",
+      "code": "none",
+      "refusal": null
+    },
+    {
+      "name": "native-dns-dnscrypt-service-loss-windows-arm64",
+      "jobId": 133921732815,
+      "artifactId": 14315783335,
+      "artifactSHA256": "7dccd5dca079e5cc59e8111e51201fd0932c25fe4de406ffc31fb028251d4ebd",
+      "outcome": "failed",
+      "code": "native-scenario",
+      "refusal": "dnscrypt-port-53-in-use"
+    },
+    {
+      "name": "native-dns-dnscrypt-remove-all-windows-amd64",
+      "jobId": 133921732716,
+      "artifactId": 14316615703,
+      "artifactSHA256": "fb667f03e734f3c2a16050a490f8927f50f2ff17963386a0b6d39bfac2f43226",
+      "outcome": "passed",
+      "code": "none",
+      "refusal": null
+    },
+    {
+      "name": "native-dns-dnscrypt-remove-all-windows-arm64",
+      "jobId": 133921732633,
+      "artifactId": 14314235895,
+      "artifactSHA256": "ae5359da938f1d1ab43a257a14e8b222d0288bf240e91695c2d747345025a591",
+      "outcome": "failed",
+      "code": "native-scenario",
+      "refusal": "dnscrypt-port-53-in-use"
+    },
+    {
+      "name": "native-dns-dnscrypt-missing-snapshot-windows-amd64",
+      "jobId": 133921732657,
+      "artifactId": 14316791302,
+      "artifactSHA256": "cbf51015e9fb99fbf8a9f08331ef086d692a403821f7188405557220efd6db05",
+      "outcome": "passed",
+      "code": "none",
+      "refusal": null
+    },
+    {
+      "name": "native-dns-dnscrypt-missing-snapshot-windows-arm64",
+      "jobId": 133921732715,
+      "artifactId": 14316895039,
+      "artifactSHA256": "fcc2f387bb5c5f52d6084a6ba3dfcf0c56042a251686b4e2e59131d3de6b5e2c",
+      "outcome": "failed",
+      "code": "native-roundtrip-failed",
+      "refusal": "dnscrypt-port-53-in-use"
+    },
+    {
+      "name": "native-dns-dnscrypt-service-reactivation-windows-amd64",
+      "jobId": 133921732662,
+      "artifactId": 14314079303,
+      "artifactSHA256": "0300041f533d2025fbd3e95da3d8588c761db31e4f529b31fa4db4e32dafdb00",
+      "outcome": "passed",
+      "code": "none",
+      "refusal": null
+    },
+    {
+      "name": "native-dns-dnscrypt-service-reactivation-windows-arm64",
+      "jobId": 133921732692,
+      "artifactId": 14316851240,
+      "artifactSHA256": "beb5f2c97f697774457d6f3e3d83984b870fa5510256315c447c4e282aba0631",
+      "outcome": "failed",
+      "code": "native-scenario",
+      "refusal": "dnscrypt-port-53-in-use"
+    },
+    {
+      "name": "native-dns-dnscrypt-verification-failure-windows-amd64",
+      "jobId": 133921732676,
+      "artifactId": 14316257299,
+      "artifactSHA256": "1d04acca4cceffa042ae584ec535a4a65e27099a7c5d527e6a7c89353c85dd8e",
+      "outcome": "passed",
+      "code": "none",
+      "refusal": null
+    },
+    {
+      "name": "native-dns-dnscrypt-verification-failure-windows-arm64",
+      "jobId": 133921732547,
+      "artifactId": 14312888116,
+      "artifactSHA256": "c1601707b80639c1fdaee92683c2edec2e0b3b65e24cb1283b034726af55147c",
+      "outcome": "failed",
+      "code": "native-roundtrip-failed",
+      "refusal": "dnscrypt-port-53-in-use"
+    }
+  ],
+  "productionQualificationComplete": false
+}

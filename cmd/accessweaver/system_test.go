@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,6 +24,26 @@ func TestMetadataCommandsDoNotCreateUserState(t *testing.T) {
 	}
 }
 
+func TestMetadataCommandHonorsExplicitStateDirectory(t *testing.T) {
+	const worker = "ACCESSWEAVER_TEST_EXPLICIT_METADATA_STATE"
+	if os.Getenv(worker) == "1" {
+		if err := execute([]string{"system", "check-version", "--build-identity", "v0.1.0-alpha"}); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+
+	root := filepath.Join(t.TempDir(), "not-created")
+	child := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestMetadataCommandHonorsExplicitStateDirectory$")
+	child.Env = []string{worker + "=1", "ACCESSWEAVER_HOME=" + root}
+	if output, err := child.CombinedOutput(); err != nil {
+		t.Fatalf("metadata command with an explicit directory and no default user config: %v\\n%s", err, output)
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Fatalf("metadata command wrote user state: %v", err)
+	}
+}
+
 func TestSystemRequestWindowsEncodingAndSize(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "request.json")
@@ -38,5 +59,37 @@ func TestSystemRequestWindowsEncodingAndSize(t *testing.T) {
 	}
 	if err := systemCommand([]string{"preview", path}, root); err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("oversized request accepted: %v", err)
+	}
+}
+
+func TestInstallerRestoreRejectsRequestOverrides(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "not-created")
+	for _, args := range [][]string{
+		{"installer-restore"},
+		{"installer-restore", "request.json", "--confirm"},
+		{"installer-restore", "--confirm", "request.json"},
+		{"installer-restore", "remove-all"},
+	} {
+		err := systemCommand(args, root)
+		if err == nil || err.Error() != "usage: system installer-restore --confirm" {
+			t.Fatalf("%v: expected fixed installer restoration usage error, got %v", args, err)
+		}
+		if _, err := os.Stat(root); !os.IsNotExist(err) {
+			t.Fatalf("%v created workflow state: %v", args, err)
+		}
+	}
+}
+
+func TestParseScanCLIRequiresCommonWhenRequested(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "report.txt")
+	if err := os.WriteFile(file, []byte("* SUMMARY\ntest_https ipv4 example.com : winws2 --lua-desync=one"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := systemCommand([]string{"parse-scan", file, "zapret2", "--require-common"}, root); err == nil {
+		t.Fatal("multi-target selection accepted a report without a common section")
+	}
+	if err := systemCommand([]string{"parse-scan", file, "zapret2", "--unknown"}, root); err == nil {
+		t.Fatal("unknown parse-scan option was accepted")
 	}
 }

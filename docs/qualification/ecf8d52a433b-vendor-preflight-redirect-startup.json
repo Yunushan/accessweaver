@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "scope": "pinned-vendor-preflight-redirect-startup",
+  "sourceCommit": "ecf8d52a433b749059d4f2a78a61bc3dd3d5a67e",
+  "runID": 42643905762,
+  "sealedDoNotRepoll": true,
+  "sourceSHA256": {
+    "internal/workflow/windows.ps1": "4106dee0dc6728221a3f915da7ada03acf41744a1a4f74f2d19739c984bcc1d0",
+    "scripts/vendor-windows-pins.json": "b37a318955ad658063700b970dfd251ee159984d5edfeb0b543d3457cb1b8cc9",
+    "scripts/test-windows-vendor-preflight.ps1": "56dc8af608d2d5dd9d27d93b4dab43c94733fac56b8bf60d69af5ff2a70b7afe",
+    ".github/workflows/vendor-preflight.yml": "2ee7f3d9964212d50e611e3b7308ddb9e3b53ea61ac351b2cabfed57f59b8895"
+  },
+  "reports": [
+    {
+      "architecture": "amd64",
+      "artifactID": 13686427838,
+      "providerZIPDigest": "sha256:7a6d867aa8dd622efe86a209a89f941417b994f2aaf1256a979213ee9a889c46",
+      "providerZIPDigestVerified": true,
+      "componentsPassed": [
+        "dnscrypt",
+        "proxifyre",
+        "wgcf"
+      ],
+      "serviceStateUnchanged": true,
+      "capsuleRemoved": true
+    },
+    {
+      "architecture": "arm64",
+      "artifactID": 13686352676,
+      "providerZIPDigest": "sha256:23fdaab6afbde02640a744b8d26256db29d7d24d279a8910eec2eb6c7b3a040a",
+      "providerZIPDigestVerified": true,
+      "componentsPassed": [
+        "dnscrypt",
+        "proxifyre",
+        "wgcf"
+      ],
+      "serviceStateUnchanged": true,
+      "capsuleRemoved": true
+    }
+  ],
+  "networkIsolationVerified": false,
+  "vendorRoutingQualified": false,
+  "productionQualificationComplete": false
+}

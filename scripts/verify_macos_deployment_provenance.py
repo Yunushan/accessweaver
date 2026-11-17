@@ -17,11 +17,14 @@ from macos_installer import MAX_BYTES,require,digest
 from macos_launcher import archive_name,inspect_launcher
 from macos_package_archive import flat_members,cpio,inflate
 from sbom import validate,prop_map
-from verify_release_provenance import BUNDLE_NAME as PROVENANCE_BUNDLE,REPOSITORY,validate_identity,verification_command as portable_command
+from verify_release_provenance import (BUNDLE_NAME as PROVENANCE_BUNDLE, REPOSITORY, authenticate_run,
+                                       validate_identity, validate_run_attempt, validate_run_id,
+                                       verification_command as portable_command)
 from verify_release_rebuild import snapshot
 
 VERSIONS=("0.1.0-alpha","0.1.1-alpha")
 WORKFLOW=REPOSITORY+"/.github/workflows/macos-deployment.yml"
+ATTEMPT_BOUND_REPORT_SCHEMA=5
 
 
 def subjects(arch):
@@ -40,9 +43,8 @@ def verification_command(path,bundle,commit,ref,gh="gh"):
     return command
 
 
-def authenticate(path,bundle,commit,ref,gh):
-    try:subprocess.run(verification_command(path,bundle,commit,ref,gh),check=True,capture_output=True,timeout=120)
-    except subprocess.CalledProcessError as error:raise ValueError("Deployment cryptographic provenance verification failed") from error
+def authenticate(path,bundle,commit,ref,gh,run_id,*,run_attempt=None):
+    authenticate_run(verification_command(path,bundle,commit,ref,gh),run_id,run_attempt=run_attempt)
 
 
 def validate_packages(root,commit,arch):
@@ -51,7 +53,7 @@ def validate_packages(root,commit,arch):
     for version in VERSIONS:
         package="accessweaver-"+version+"-darwin-"+arch+"-deployment-experimental.pkg"
         identity=read(version+"-BUILD-INFO.json");report=read(version+"-compiler-artifact.json")
-        require(set(identity)=={"version","commit","sourceState","builtAt","goVersion","platform","arch"} and all(identity.get(k)==v for k,v in {"version":version,"commit":commit,"sourceState":"clean","goVersion":"go1.27.3","platform":"darwin","arch":arch}.items()),"Deployment build identity differs")
+        require(set(identity)=={"version","commit","sourceState","builtAt","goVersion","platform","arch"} and all(identity.get(k)==v for k,v in {"version":version,"commit":commit,"sourceState":"clean","goVersion":"go1.27.4","platform":"darwin","arch":arch}.items()),"Deployment build identity differs")
         stamp=datetime.datetime.strptime(identity["builtAt"],"%Y-%m-%dT%H:%M:%SZ");require(stamp.strftime("%Y-%m-%dT%H:%M:%SZ")==identity["builtAt"],"Deployment build timestamp differs")
         encoded=(root/(version+"-INSTALL-MANIFEST.json")).read_bytes();manifest=json.loads(encoded);scripts=read(version+"-SCRIPT-MANIFEST.json");binary=(root/package).read_bytes()
         inspected=inspect_deployment(binary,encoded,identity,scripts)
@@ -80,15 +82,61 @@ def validate_packages(root,commit,arch):
     return outputs,package_bindings,identity
 
 
-def validate_contents(root,commit,arch):
+def validate_managed_detection(cases, bindings, *, writer_lease_required=False, detached_metadata_required=False):
+    expected = (
+        ("absent", VERSIONS[0], False, False),
+        ("initial-active", VERSIONS[0], True, False),
+        ("descriptor-hint", VERSIONS[0], False, False),
+        ("superseded", VERSIONS[0], False, False),
+        ("upgraded-active", VERSIONS[1], True, True),
+        ("reinstalled-active", VERSIONS[1], True, False),
+        ("changed-active", VERSIONS[1], False, False),
+        ("restored-active", VERSIONS[1], True, False),
+        ("inactive", VERSIONS[1], False, False),
+    )
+    if writer_lease_required:
+        expected = expected[:2] + (
+            ("writer-lease-held", VERSIONS[0], False, False),
+            ("writer-lease-released", VERSIONS[0], True, False),
+        ) + expected[2:]
+    if detached_metadata_required:
+        expected = expected[:-1] + (
+            ("changed-active-manifest", VERSIONS[1], False, False),
+            ("restored-active-manifest", VERSIONS[1], True, False),
+            ("changed-active-sbom", VERSIONS[1], False, False),
+            ("restored-active-sbom", VERSIONS[1], True, False),
+            expected[-1],
+        )
+    require(isinstance(cases, list) and len(cases) == len(expected), "Incomplete deployment detection coverage")
+    for case, (name, version, detected, elevated) in zip(cases, expected):
+        require(isinstance(case, dict) and case.keys() == {"name", "version", "detected", "elevated", "helperSHA256", "statePreserved"}
+                and case["name"] == name and case["version"] == version
+                and case["detected"] is detected and case["elevated"] is elevated
+                and case["helperSHA256"] == bindings[version]["helperSHA256"]
+                and case["statePreserved"] is True, "Deployment detection case differs")
+    return {"managedDetectionChecksVerified": len(expected)}
+
+
+def validate_contents(root,commit,arch,*,run_attempt=None):
     read=lambda name:json.loads((root/name).read_text(encoding="utf-8"))
     outputs,package_bindings,identity=validate_packages(root,commit,arch)
     launcher=inspect_launcher((root/archive_name(arch)).read_bytes(),identity)
     life=read("lifecycle-artifact.json")
-    require(life.get("schemaVersion")==1 and life.get("sourceCommit")==commit and life.get("target")=="darwin/"+arch and life.get("stage")=="deactivation-and-owned-cleanup" and life.get("failureType") is None and life.get("failureSourceLine") is None,"Deployment lifecycle identity/completion differs")
+    require(type(life.get("schemaVersion")) is int and life["schemaVersion"] in range(1,ATTEMPT_BOUND_REPORT_SCHEMA+1) and life.get("sourceCommit")==commit and life.get("target")=="darwin/"+arch and life.get("stage")=="deactivation-and-owned-cleanup" and life.get("failureType") is None and life.get("failureSourceLine") is None,"Deployment lifecycle identity/completion differs")
     require(life.get("packages")==package_bindings and re.fullmatch("[1-9][0-9]{0,19}",str(life.get("runID",""))) is not None,"Native lifecycle is not bound to the actual package subjects/run")
+    attempt_bound=life["schemaVersion"] == ATTEMPT_BOUND_REPORT_SCHEMA
+    require(attempt_bound == (run_attempt is not None),
+            "Deployment lifecycle schema and approved GitHub Actions attempt differ")
+    if attempt_bound:
+        require(life.get("runAttempt") == run_attempt,
+                "Deployment lifecycle does not match the approved GitHub Actions attempt")
     for key in ("passed","packageScriptsIntegrated","actualApplePackageUpgradeExecuted","actualUserProfilePreservationVerified","retainedPriorCopiesVerified","ownedFixturesRemoved","detachedManifestSealingVerified","detachedPayloadSBOMSealingVerified"):require(life.get(key) is True,"Actual deployment lifecycle did not pass")
     for key in ("installedCodeExecutedAsRoot","publicLauncherIntegrated","runtimeLeaseQualified","publisherSignatureVerified","notarized","productUninstallQualified","managedEndpointQualified","abruptTerminationQualified","rebootOrPowerLossQualified","productionQualificationComplete"):require(life.get(key) is False,"Unqualified deployment lifecycle scope changed")
+    detection = {}
+    if life["schemaVersion"] >= 2:
+        detection = validate_managed_detection(life.get("managedDetectionCases"), package_bindings,
+                                               writer_lease_required=life["schemaVersion"] >= 3,
+                                               detached_metadata_required=life["schemaVersion"] >= 4)
     lease_cases=life.get("runtimeLeaseCases",[])
     require(life.get("installedControllerLeaseRefusalVerified") is True and len(lease_cases)==4 and [c.get("kind") for c in lease_cases]==["direct","inherited","alias","launcher"],"Installed controller lease coverage differs")
     for case in lease_cases:
@@ -112,7 +160,8 @@ def validate_contents(root,commit,arch):
             if generation<5:
                 require(op.get("activeIdentity")=={"version":version,"manifestSHA256":package_bindings[version]["manifestSHA256"],"payloadSHA256":package_bindings[version]["payloadSHA256"]},"Activated compiled seal differs from actual package")
                 require(op.get("actualUnelevatedRuntimeVerified") is True and op.get("retainedPriorCopiesVerified") is True and re.fullmatch("[a-f0-9]{32}",op.get("slotID","")) is not None and op["slotID"] not in slots,"Activated package copy identity differs");slots.add(op["slotID"])
-    return {"packages":outputs,"lifecycleRunID":str(life["runID"]),"actualApplePackageOperations":13,"launcher":launcher,"retainedIndependentCopies":4,"publisherSignatureVerified":False,"productionQualificationComplete":False}
+    attempt={"lifecycleRunAttempt":run_attempt} if attempt_bound else {}
+    return {"packages":outputs,**detection,"lifecycleRunID":str(life["runID"]),**attempt,"actualApplePackageOperations":13,"launcher":launcher,"retainedIndependentCopies":4,"publisherSignatureVerified":False,"productionQualificationComplete":False}
 
 
 def copy_subject(source,destination,limit):
@@ -131,10 +180,15 @@ def copy_subject(source,destination,limit):
     finally:os.close(fd)
 
 
-def stage(build_root,destination,commit,ref,arch,run_id=None):
-    validate_identity(commit,ref);mapping=subjects(arch);destination.mkdir(mode=0o700)
+def stage(build_root,destination,commit,ref,arch,run_id=None,*,run_attempt=None):
+    validate_identity(commit,ref)
+    if run_id is not None or run_attempt is not None:
+        validate_run_id(run_id)
+    if run_attempt is not None:
+        validate_run_attempt(run_attempt)
+    mapping=subjects(arch);destination.mkdir(mode=0o700)
     for name,(version,original) in mapping.items():copy_subject(build_root/version/original if version else build_root/original,destination/name,64<<20 if name.endswith(".pkg") else 16<<20 if name.endswith(".zip") else 8<<20)
-    result=validate_contents(destination,commit,arch)
+    result=validate_contents(destination,commit,arch,run_attempt=run_attempt)
     if run_id is not None:require(result.get("lifecycleRunID")==run_id,"Native producer run differs from caller expectation")
     return {"producerValidation":result,"cryptographicAuthenticationPerformed":False,"sourceCommit":commit,"target":"darwin/"+arch}
 
@@ -151,23 +205,35 @@ def check_rejections(path,bundle,commit,ref,gh,command_builder=None):
     return {"rejected":rejected,"realBundleVerifiedBeforeAndAfter":True}
 
 
-def verify(directory,commit,ref,arch,gh="gh",rejections=False,run_id=None):
-    validate_identity(commit,ref);names=set(subjects(arch))
+def verify(directory,commit,ref,arch,gh="gh",rejections=False,*,run_id,run_attempt=None):
+    validate_identity(commit,ref);validate_run_id(run_id)
+    if run_attempt is not None:
+        validate_run_attempt(run_attempt)
+    names=set(subjects(arch))
     with tempfile.TemporaryDirectory(prefix="accessweaver-deployment-verify-") as temporary:
         root=Path(temporary);present=snapshot(directory,root,len(names)+1)
         require(present==names|{PROVENANCE_BUNDLE},"Deployment input inventory differs")
         for name in present:require((root/name).stat().st_size<=(64<<20 if name.endswith(".pkg") else 16<<20 if name==PROVENANCE_BUNDLE or name.endswith(".zip") else 8<<20),"Deployment verification input exceeds budget")
-        for name in sorted(names):authenticate(root/name,root/PROVENANCE_BUNDLE,commit,ref,gh)
-        result=validate_contents(root,commit,arch)
-        if run_id is not None:require(result.get("lifecycleRunID")==run_id,"Authenticated native run differs from caller expectation")
+        for name in sorted(names):
+            authenticate(root/name,root/PROVENANCE_BUNDLE,commit,ref,gh,run_id,run_attempt=run_attempt)
+        result=validate_contents(root,commit,arch,run_attempt=run_attempt)
+        require(result["lifecycleRunID"]==run_id,"Authenticated native run differs from caller expectation")
         negative=check_rejections(root/next(n for n in sorted(names) if n.endswith(".pkg")),root/PROVENANCE_BUNDLE,commit,ref,gh) if rejections else None
-        return {"schemaVersion":1,"repository":REPOSITORY,"workflow":WORKFLOW,"sourceCommit":commit,"sourceRef":ref,"target":"darwin/"+arch,"subjectsVerified":len(names),"subjects":[{"file":name,"sha256":digest((root/name).read_bytes())} for name in sorted(names)],"authenticatedBeforeParsing":True,"hostedRunnerRequired":True,"deployment":result,"rejectionChecks":negative,"publisherSignatureVerified":False,"notarized":False,"localTargetExecution":False,"productionQualificationComplete":False}
+        attempt={"attestationRunAttempt":run_attempt} if run_attempt is not None else {}
+        return {"schemaVersion":1,"repository":REPOSITORY,"workflow":WORKFLOW,"sourceCommit":commit,"sourceRef":ref,"target":"darwin/"+arch,"subjectsVerified":len(names),"subjects":[{"file":name,"sha256":digest((root/name).read_bytes())} for name in sorted(names)],"authenticatedBeforeParsing":True,"hostedRunnerRequired":True,"attestationRunID":run_id,**attempt,"deployment":result,"rejectionChecks":negative,"publisherSignatureVerified":False,"notarized":False,"localTargetExecution":False,"productionQualificationComplete":False}
 
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("directory",type=Path);parser.add_argument("--source-commit",required=True);parser.add_argument("--source-ref",required=True);parser.add_argument("--architecture",choices=("amd64","arm64"),required=True);parser.add_argument("--gh",default="gh");parser.add_argument("--check-rejections",action="store_true");parser.add_argument("--stage-build-root",type=Path);parser.add_argument("--run-id")
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("directory",type=Path);parser.add_argument("--source-commit",required=True);parser.add_argument("--source-ref",required=True);parser.add_argument("--architecture",choices=("amd64","arm64"),required=True);parser.add_argument("--gh",default="gh");parser.add_argument("--check-rejections",action="store_true");parser.add_argument("--stage-build-root",type=Path);parser.add_argument("--run-id",required=True)
+    parser.add_argument("--run-attempt", help="require the approved GitHub Actions attempt on every subject and the lifecycle report")
     args=parser.parse_args()
-    try:result=stage(args.stage_build_root,args.directory,args.source_commit,args.source_ref,args.architecture,args.run_id) if args.stage_build_root else verify(args.directory,args.source_commit,args.source_ref,args.architecture,args.gh,args.check_rejections,args.run_id)
+    try:
+        if args.stage_build_root:
+            result=stage(args.stage_build_root,args.directory,args.source_commit,args.source_ref,
+                         args.architecture,args.run_id,run_attempt=args.run_attempt)
+        else:
+            result=verify(args.directory,args.source_commit,args.source_ref,args.architecture,args.gh,
+                          args.check_rejections,run_id=args.run_id,run_attempt=args.run_attempt)
     except Exception as error:raise SystemExit("Deployment provenance refused: "+type(error).__name__)
     print(json.dumps(result,indent=2))
 

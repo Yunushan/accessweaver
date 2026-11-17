@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "scope": "windows-amd64-sandbox-discord-ptb-application-policy-preflight",
+  "observedOnUTC": "2026-11-15",
+  "sourceCommit": "f7d7e9b85325df5da1d4641aefed736665c284fb",
+  "controller": {
+    "buildMode": "source-built Git archive, GOOS=windows GOARCH=amd64 CGO_ENABLED=0",
+    "goVersion": "go1.27.4",
+    "sha256": "481ccf1978fcc6c173d49b38ad38c8d634152c8ef4a2f6ed2fae25d1947bb488",
+    "authenticodeStatus": "NotSigned"
+  },
+  "environment": {
+    "guest": "Windows Sandbox",
+    "architecture": "amd64",
+    "ordinaryUser": true,
+    "interactiveDesktop": true,
+    "policyChanged": false
+  },
+  "observations": [
+    {
+      "fixtureSchemaVersion": 11,
+      "fixtureSHA256": "5f0fb76fb8dfabf645b59df44a858629ae53fa587381ddca34f47be556094143",
+      "baselineClear": false,
+      "controllerLaunchErrorWin32": 4551,
+      "stage": "controller-launch-policy",
+      "casesExecuted": 0
+    },
+    {
+      "fixtureSchemaVersion": 12,
+      "fixtureSHA256": "c5b67c564d2cc4349fe62da1ccb004c99c8f6eebac907261c84ad89a950f206b",
+      "baselineClear": false,
+      "stage": "controller-launch-policy",
+      "casesExecuted": 0
+    }
+  ],
+  "vendorSetupExecuted": false,
+  "productionQualificationComplete": false
+}

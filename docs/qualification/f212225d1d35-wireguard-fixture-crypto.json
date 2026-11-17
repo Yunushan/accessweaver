@@ -1,0 +1,344 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "f212225d1d352e8d49f75314e8072c3254051807",
+  "sourceTree": "86355f6ec09c643697fac224b5d766bc38e6f6a5",
+  "branch": "codex/fixture-crypto-7596b89",
+  "run": {
+    "id": 42341150199,
+    "status": "completed",
+    "conclusion": "success",
+    "attempt": 1
+  },
+  "url": "https://github.com/Yunushan/accessweaver/actions/runs/42341150199",
+  "scope": "Optional userspace WireGuard fixture dependency maintenance and guest-only Linux AMD64 normal/race self-test; Windows AMD64 fixture/probe compile-only and two configured source advisory checks",
+  "upstreamModuleComparison": {
+    "selectedVersion": "v0.58.1-0.20261009181718-2f1f834330b2",
+    "selectionReason": "Latest stable v0.58.0 still includes the obsolete OpenPGP packages; pin the exact upstream commit identified by the reviewed Go advisory",
+    "metadata": [
+      {
+        "module": "golang.org/x/crypto",
+        "version": "v0.58.0",
+        "sum": "h1:COkYLr4k7nDI4r6QtMML2AfzeIswWHAJthLS6K/M/54=",
+        "goModSum": "h1:Xh+kl5A+M0gMiWDytH2Hhr5Z7WbNCpv/eB/EFgfSk+w=",
+        "time": "2026-10-09T16:24:17Z",
+        "originCommit": "8fdf07b3114278fb3b78c1cf1814e08bd851eb4c",
+        "openpgpDirectoryPresent": true
+      },
+      {
+        "module": "golang.org/x/crypto",
+        "version": "v0.58.1-0.20261009181718-2f1f834330b2",
+        "sum": "h1:zGDaB+/Mus2mScKvZ23k+W9NAUbP56sNM9SptgvWI5A=",
+        "goModSum": "h1:Xh+kl5A+M0gMiWDytH2Hhr5Z7WbNCpv/eB/EFgfSk+w=",
+        "time": "2026-10-09T18:17:18Z",
+        "originCommit": "2f1f834330b2d36ab3db8bfb33aaa1ac16794588",
+        "openpgpDirectoryPresent": false
+      }
+    ],
+    "removedCount": 51,
+    "removedTopLevel": [
+      "openpgp"
+    ],
+    "addedFiles": [],
+    "changedFiles": [],
+    "allRemovedFilesUnderOpenpgp": true,
+    "commonFilesCompared": 337
+  },
+  "guestQualification": {
+    "schemaVersion": 1,
+    "sourceCommit": "f212225d1d352e8d49f75314e8072c3254051807",
+    "sourceTree": "86355f6ec09c643697fac224b5d766bc38e6f6a5",
+    "sourceSHA256": {
+      ".github/workflows/ci.yml": "18b3c51f0498c79b5a4fb25a894f2a0cc72517083cc9c127b2c71b3bb8f7b412",
+      "scripts/fixture_qualification.py": "ff0d824399a5e69d606047975ed3e7ef4e7126a52afcf09fd9c33c97c65622b8",
+      "scripts/test_fixture_qualification.py": "c1558f1347ef9622b12685af743b9b601aca6a2184226cca039ae2a300120b8d",
+      "scripts/check-vulnerability-report.py": "f54d989c7e8c9f9883bcb0ee8308a657a17ca2c572c5fd853937eb12187814e0",
+      "scripts/fixtures/wgpeer/main.go": "96f28ff5581c04acfceef7dfc4def8bc479e1f8407d2b601140e70a2a9cf1687",
+      "scripts/fixtures/wgpeer/cmd/probe/main.go": "542e919e79f77381f0a02b596fcd8d596658edbb365dc51c3569102356825c53",
+      "scripts/fixtures/wgpeer/go.mod": "fe90be45df5c186983b038382b4fdd0b91cd42172768f82f299361b2de17b646",
+      "scripts/fixtures/wgpeer/go.sum": "403b242c0a86f4174e9bf6af8dac1627e51e93f4e99cc5f2e1a4a05f1d86237f",
+      "scripts/security-tools/go.mod": "0d9f4803e116937c29f92d7834b853c0ae427bd1dad093c13dacc71924d4e927",
+      "scripts/security-tools/go.sum": "5222c321bebe789ab5cb6bc30c70760885509e0d5becdd38a16b68b164429ed6"
+    },
+    "hostedGuestVerified": true,
+    "go": "go1.27.3",
+    "cryptoVersion": "v0.58.1-0.20261009181718-2f1f834330b2",
+    "cryptoSum": "h1:zGDaB+/Mus2mScKvZ23k+W9NAUbP56sNM9SptgvWI5A=",
+    "openpgpExcluded": true,
+    "modes": [
+      {
+        "mode": "normal",
+        "binary": {
+          "target": "linux/amd64",
+          "race": false,
+          "go": "go1.27.3",
+          "role": "peer",
+          "format": "elf",
+          "binarySHA256": "41ce44eb26f77681101298d63626314664b0b6f716ba17719a7ca479867a882a"
+        },
+        "checks": {
+          "tcpIPv4": true,
+          "udpIPv4": true,
+          "tcpIPv6": true,
+          "udpIPv6": true,
+          "freshHandshake": true,
+          "rxBytes": 1492,
+          "txBytes": 1628
+        }
+      },
+      {
+        "mode": "race",
+        "binary": {
+          "target": "linux/amd64",
+          "race": true,
+          "go": "go1.27.3",
+          "role": "peer",
+          "format": "elf",
+          "binarySHA256": "0388c8c4b5f73bc236acc628b4a7efc343ab6b98c3149a0f2ce2df8cd1906bf1"
+        },
+        "checks": {
+          "tcpIPv4": true,
+          "udpIPv4": true,
+          "tcpIPv6": true,
+          "udpIPv6": true,
+          "freshHandshake": true,
+          "rxBytes": 1700,
+          "txBytes": 1628
+        }
+      }
+    ],
+    "windows": [
+      {
+        "target": "windows/amd64",
+        "race": false,
+        "go": "go1.27.3",
+        "role": "peer",
+        "format": "pe",
+        "binarySHA256": "debee73585f3cc89001d5a00cce15bca0bc47c244eca497156a4a9d3638b611e"
+      },
+      {
+        "target": "windows/amd64",
+        "race": false,
+        "go": "go1.27.3",
+        "role": "probe",
+        "format": "pe",
+        "binarySHA256": "7e15614a89b448c287e27ac0bfdc53549927c7daea1b941ebaff58e116bd2bd2"
+      }
+    ],
+    "advisories": [
+      {
+        "target": "linux/amd64",
+        "scanner": "v1.9.0",
+        "go": "go1.27.3",
+        "databaseModifiedAt": "2026-11-05T23:49:57Z",
+        "affected": 0,
+        "moduleOnly": 0,
+        "reportSHA256": "c5f764e404001c6f787e14f5799eead4f2bcb54887cc4c07fd6091eff130bd37"
+      },
+      {
+        "target": "windows/amd64",
+        "scanner": "v1.9.0",
+        "go": "go1.27.3",
+        "databaseModifiedAt": "2026-11-05T23:49:57Z",
+        "affected": 0,
+        "moduleOnly": 0,
+        "reportSHA256": "e3970a3b1a306e500ed6efa5a45f87328e999a7b22d91cbec80d9f3605e129ec"
+      }
+    ],
+    "sourceStable": true,
+    "stage": "complete",
+    "exitCode": 0,
+    "failureKind": "none",
+    "outcome": "passed",
+    "productionQualificationComplete": false
+  },
+  "providerArchiveDigest": "sha256:0e65afa29cb9d9e0313b870e74ba2b2534d268d8fbddbb7b2cce8c680dbe3510",
+  "artifactId": 13561836798,
+  "jobs": [
+    {
+      "id": 128308891017,
+      "name": "Go vulnerability checks",
+      "conclusion": "success"
+    }
+  ],
+  "requiredStepsVerified": [
+    "Verify pinned scanner and workflow validator",
+    "Verify optional fixture dependencies and compile (no guest execution)",
+    "Build fixture SBOMs and validate pinned CycloneDX schemas",
+    "Qualify disposable WireGuard fixture traffic and advisory contracts",
+    "Retain fixed WireGuard fixture qualification"
+  ],
+  "localValidation": {
+    "cryptoVersion": "v0.58.1-0.20261009181718-2f1f834330b2",
+    "rows": [
+      {
+        "scope": "compile-only",
+        "executed": false,
+        "target": "linux/amd64",
+        "race": false,
+        "go": "go1.27.3",
+        "role": "peer",
+        "format": "elf",
+        "binarySHA256": "0550a1b86dee8de6ecb3d443bdf11ff17cb90a6a82a4f47fffc05ed5b903bfe4"
+      },
+      {
+        "scope": "compile-only",
+        "executed": false,
+        "target": "linux/amd64",
+        "race": true,
+        "go": "go1.27.3",
+        "role": "peer",
+        "format": "elf",
+        "binarySHA256": "64d02a633293ed6bd089faa4006c2bc28855686a88db83da6453cc06fc8e00e9"
+      },
+      {
+        "scope": "compile-only",
+        "executed": false,
+        "target": "windows/amd64",
+        "race": false,
+        "go": "go1.27.3",
+        "role": "peer",
+        "format": "pe",
+        "binarySHA256": "debee73585f3cc89001d5a00cce15bca0bc47c244eca497156a4a9d3638b611e"
+      },
+      {
+        "scope": "compile-only",
+        "executed": false,
+        "target": "windows/amd64",
+        "race": false,
+        "go": "go1.27.3",
+        "role": "probe",
+        "format": "pe",
+        "binarySHA256": "7e15614a89b448c287e27ac0bfdc53549927c7daea1b941ebaff58e116bd2bd2"
+      },
+      {
+        "scope": "static-advisory",
+        "target": "linux/amd64",
+        "passed": true,
+        "module": "accessweaver.test/wgpeer",
+        "goVersion": "go1.27.3",
+        "scannerVersion": "v1.9.0",
+        "databaseModifiedAt": "2026-11-05T23:49:57Z",
+        "affectedCount": 0,
+        "moduleOnlyCount": 0,
+        "findings": [],
+        "reportSHA256": "4bc5f6e377a28bbb9a95a4525c0bc6eeaa47afb5ff48e001dad545d687cd8b9c"
+      },
+      {
+        "scope": "static-advisory",
+        "target": "windows/amd64",
+        "passed": true,
+        "module": "accessweaver.test/wgpeer",
+        "goVersion": "go1.27.3",
+        "scannerVersion": "v1.9.0",
+        "databaseModifiedAt": "2026-11-05T23:49:57Z",
+        "affectedCount": 0,
+        "moduleOnlyCount": 0,
+        "findings": [],
+        "reportSHA256": "7ec00e3d22f23de5d658255078a85cbed73094c908180f96c1b0478a9146fedb"
+      }
+    ],
+    "fixtureProgramsExecuted": false,
+    "rawOutputRetained": false
+  },
+  "privacyContractUnitTestsPassed": 5,
+  "manualScopeValidation": {
+    "scope": "fixture-dependencies",
+    "selectedJobs": [
+      "vulnerabilities"
+    ],
+    "jobs": [
+      {
+        "job": "native-core",
+        "selected": false
+      },
+      {
+        "job": "browser",
+        "selected": false
+      },
+      {
+        "job": "windows-audit-storage",
+        "selected": false
+      },
+      {
+        "job": "darwin-audit-commands",
+        "selected": false
+      },
+      {
+        "job": "vulnerabilities",
+        "selected": true
+      },
+      {
+        "job": "test",
+        "selected": false
+      },
+      {
+        "job": "race",
+        "selected": false
+      },
+      {
+        "job": "race-arm64",
+        "selected": false
+      },
+      {
+        "job": "cross-compile",
+        "selected": false
+      },
+      {
+        "job": "workflow-store",
+        "selected": false
+      },
+      {
+        "job": "recovery-journal",
+        "selected": false
+      },
+      {
+        "job": "desktop-support",
+        "selected": false
+      },
+      {
+        "job": "backup-io",
+        "selected": false
+      }
+    ],
+    "heldPlatformJobsSelected": false
+  },
+  "normalRaceProtocolChecksPassed": 8,
+  "freshHandshakesObserved": 2,
+  "freshAdvisoryChecksPassed": 2,
+  "affectedImportedOrReachableFindings": 0,
+  "moduleOnlyAdvisories": 0,
+  "fixtureProgramsExecutedLocally": false,
+  "windowsProgramsExecuted": false,
+  "hostedGuestExecution": true,
+  "coreRuntimeAndRootModuleUnchanged": true,
+  "previousBrowserRuntimeSource": "56eaa5f5b39b5f3e166d2018b52de45fa4acc5b5",
+  "previousBrowserQualificationRetainedForIdenticalCoreCode": true,
+  "sourceScope": "Core Go/JS and root go.mod/go.sum byte-equivalent to7596b89; this update is isolated to the separate fixture module, CI qualifier and documentation",
+  "privacy": {
+    "rawLogsAnnotationsSbomArtifactsOrPrivateConfigurationsRead": false,
+    "rawChildAndScannerOutputRetained": false,
+    "privateKeysPathsExactHandshakeTimestampsOrCredentialsInPublishedReport": false,
+    "providerZipDigestVerifiedBeforeParsing": true,
+    "closedSchemaAndExactSourceHashesValidated": true
+  },
+  "limits": [
+    "The selected version is an exact checksum-authenticated upstream pseudo-version because latest stable v0.58.0 still includes OpenPGP; no arbitrary latest branch or vulnerability-ID waiver is used.",
+    "Removing the obsolete parent-module tree does not make the independent unsafe OpenPGP API safe; that module is not added or used.",
+    "Native execution covers the test fixture in one disposable hosted Linux AMD64 VM; this is not installed WireGuard/WireSock driver, application-routing, host IPv6/DNS or wider desktop acceptance.",
+    "Windows binaries are compile/metadata checks only and are not executed. The full native Windows qualification hold remains unchanged.",
+    "The source fixture uses userspace peers and reserved internal addresses over a loopback transport; guest UDP binds are ephemeral and no host TUN, route, DNS or driver change is made.",
+    "Eight protocol round trips and two fresh handshakes are not long-duration stability, throughput qualification or an eight-hour production-engine soak.",
+    "SBOM generation and pinned-schema validation passed in the source-bound job; raw SBOM artifacts were not independently downloaded or reinterpreted.",
+    "Core/browser results remain bound to their original tested commits with identical core code; no new signed distribution, complete-candidate release or formal readiness gate is claimed."
+  ],
+  "formalGateCounts": {
+    "partial": 42,
+    "failed": 3,
+    "missing": 4,
+    "unverified": 1,
+    "passed": 0
+  },
+  "readinessSHA256": "6aba24860c171a7a3931029589b0e04dac90ed4a6f22da3fc02bd058bf903b0e",
+  "gatesPromoted": false,
+  "productionQualificationComplete": false
+}

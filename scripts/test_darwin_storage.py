@@ -558,4 +558,28 @@ class ControlledCreationMappingTests(unittest.TestCase):
         self.assertEqual(record,{})
 
 
+class PressureSummaryTests(unittest.TestCase):
+    def test_only_the_last_recognized_stdout_phase_and_exit_code_are_retained(self):
+        result = storage.subprocess.CompletedProcess(
+            args=[], returncode=1,
+            stdout=(b"=== RUN   TestDisposableDarwinAPFSExhaustion/operation=rotate/record=acceptance.json\n"
+                    b"=== RUN   TestDisposableDarwinAPFSExhaustion/operation=private/record=account.json\n"
+                    b"ACCESSWEAVER_APFS_PHASE=prepare-mutation\n"
+                    b"/Users/example/private: unexpected output\n"
+                    b"ACCESSWEAVER_APFS_PHASE=fill-image\n"
+                    b"ACCESSWEAVER_APFS_PHASE=not-a-phase\n"),
+            stderr=b"ACCESSWEAVER_APFS_PHASE=write-report\n",
+        )
+        self.assertEqual(storage.pressure_summary(result), {
+            "exitCode": 1, "lastPhase": "fill-image",
+            "lastCase": {"operation": "rotate", "record": "acceptance.json"},
+        })
+
+    def test_a_message_with_a_phase_substring_does_not_create_evidence(self):
+        result = storage.subprocess.CompletedProcess(
+            args=[], returncode=1, stdout=b"error: ACCESSWEAVER_APFS_PHASE=signed-retry\n", stderr=b"",
+        )
+        self.assertEqual(storage.pressure_summary(result), {"exitCode": 1, "lastPhase": None, "lastCase": None})
+
+
 if __name__=="__main__":unittest.main()

@@ -17,14 +17,15 @@ import (
 )
 
 type Snapshot struct {
-	State            string    `json:"state"`
-	ProfileID        string    `json:"profileId,omitempty"`
-	Engine           string    `json:"engine,omitempty"`
-	PID              int       `json:"pid,omitempty"`
-	StartedAt        time.Time `json:"startedAt,omitempty"`
-	LastError        string    `json:"lastError,omitempty"`
-	LifecyclePending bool      `json:"lifecyclePending,omitempty"`
-	Log              []string  `json:"log"`
+	State                      string    `json:"state"`
+	ProfileID                  string    `json:"profileId,omitempty"`
+	Engine                     string    `json:"engine,omitempty"`
+	PID                        int       `json:"pid,omitempty"`
+	StartedAt                  time.Time `json:"startedAt,omitempty"`
+	LastError                  string    `json:"lastError,omitempty"`
+	LifecyclePending           bool      `json:"lifecyclePending,omitempty"`
+	PreparationRestartRequired bool      `json:"preparationRestartRequired,omitempty"`
+	Log                        []string  `json:"log"`
 }
 
 // Summary excludes user identifiers, paths and child output from support metadata.
@@ -129,18 +130,31 @@ func (r *Run) Fault() <-chan struct{} {
 	return r.state.owner.faultSignal()
 }
 
+// managerShutdown is created once under Manager.mu. The captured generation is
+// completed by one worker; err is published before done closes.
+type managerShutdown struct {
+	done     chan struct{}
+	entryRun *runState
+	run      *runState
+	err      error
+}
+
 type Manager struct {
-	guard           *managed.Guard
-	opMu            sync.Mutex // Serializes prepare/start/stop, including generated files.
-	mu              sync.Mutex
-	cmd             *exec.Cmd
-	run             *runState
-	state           Snapshot
-	log             []string
-	root            string
-	closing         bool
-	prepareLifetime lifetimeFactory
-	output          io.Writer
+	guard                 *managed.Guard
+	opMu                  operationMutex // Serializes prepare/start/stop, including generated files.
+	mu                    sync.Mutex
+	cmd                   *exec.Cmd
+	run                   *runState
+	state                 Snapshot
+	log                   []string
+	root                  string
+	closing               bool
+	shutdown              *managerShutdown
+	preparationFault      error // Sticky unconfirmed pre-start cleanup; no child Run.
+	prepareLifetime       lifetimeFactory
+	output                io.Writer
+	afterStart            func() // Private source-test observer, fixed before Start.
+	beforeShutdownCapture func() // Private source-test observer, fixed before Shutdown.
 }
 
 func NewManager(root string) *Manager { return NewManagerWithGuard(root, managed.NewGuard(nil)) }
@@ -148,6 +162,15 @@ func NewManagerWithGuard(root string, guard *managed.Guard) *Manager {
 	return &Manager{guard: guard, root: root, state: Snapshot{State: "stopped", Log: []string{}}, log: make([]string, 0, 150)}
 }
 func (m *Manager) Snapshot() Snapshot {
+	return m.snapshot(true)
+}
+
+// RuntimeStatus returns the current process state without copying engine output.
+func (m *Manager) RuntimeStatus() Snapshot {
+	return m.snapshot(false)
+}
+
+func (m *Manager) snapshot(includeLogs bool) Snapshot {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s := m.state
@@ -159,7 +182,10 @@ func (m *Manager) Snapshot() Snapshot {
 			s.LifecyclePending = true
 		}
 	}
-	s.Log = append([]string{}, m.log...)
+	s.Log = nil
+	if includeLogs {
+		s.Log = append([]string{}, m.log...)
+	}
 	return s
 }
 func (m *Manager) addLog(line string) { m.mu.Lock(); defer m.mu.Unlock(); m.addLogLocked(line) }
@@ -202,22 +228,39 @@ func (w logWriter) Write(b []byte) (int, error) {
 
 // Start preserves the launch-acceptance contract for existing controller callers.
 func (m *Manager) Start(p profile.Profile) error {
-	_, err := m.StartTracked(p)
+	return m.StartContext(context.Background(), p)
+}
+
+func (m *Manager) StartContext(ctx context.Context, p profile.Profile) error {
+	_, err := m.StartTrackedContext(ctx, p)
 	return err
 }
 
 // StartTracked returns a handle only after the owned process starts successfully.
 // Successful launch is not a connectivity or service-readiness observation.
 func (m *Manager) StartTracked(p profile.Profile) (*Run, error) {
-	return m.startTracked(p, nil)
+	return m.StartTrackedContext(context.Background(), p)
+}
+
+// The caller context controls admission/preparation only. Once Start succeeds,
+// the exact owned Run is returned, even if that caller has canceled meanwhile.
+// Child lifetime remains governed by managed authorization and explicit Stop.
+func (m *Manager) StartTrackedContext(ctx context.Context, p profile.Profile) (*Run, error) {
+	return m.startTrackedContext(ctx, p, nil)
 }
 
 // observedWait is an in-process test observer; it cannot alter process waiting.
 func (m *Manager) startTracked(p profile.Profile, observedWait func()) (*Run, error) {
+	return m.startTrackedContext(context.Background(), p, observedWait)
+}
+
+func (m *Manager) startTrackedContext(caller context.Context, p profile.Profile, observedWait func()) (*Run, error) {
 	if err := m.pendingLifetimeError(); err != nil {
 		return nil, err
 	}
-	m.opMu.Lock()
+	if err := m.opMu.LockContext(caller); err != nil {
+		return nil, err
+	}
 	defer m.opMu.Unlock()
 	if err := m.pendingLifetimeError(); err != nil {
 		return nil, err
@@ -232,8 +275,11 @@ func (m *Manager) startTracked(p profile.Profile, observedWait func()) (*Run, er
 		return nil, errors.New("another engine is running; stop it before starting a new one")
 	}
 	m.mu.Unlock()
-	bin, args, err := prepareWithGuard(p, m.root, m.guard)
+	bin, args, err := prepareWithGuardContext(caller, p, m.root, m.guard)
 	if err != nil {
+		return nil, err
+	}
+	if err := preparationContextError(caller); err != nil {
 		return nil, err
 	}
 	environment, authorization, err := launchPolicyAuthorization(m.guard, p, bin)
@@ -267,9 +313,18 @@ func (m *Manager) startTracked(p profile.Profile, observedWait func()) (*Run, er
 	if factory == nil {
 		factory = prepareProcessLifetime
 	}
+	if err := preparationContextError(caller); err != nil {
+		return nil, err
+	}
 	owner, err := factory(cmd)
 	if err != nil {
-		return nil, err
+		if owner != nil {
+			return nil, m.abortPreparedOwner(owner, err)
+		}
+		return nil, m.rememberPreparationFailure(err)
+	}
+	if owner == nil {
+		return nil, ErrProcessLifecycle
 	}
 	run := &runState{done: make(chan struct{}), owner: owner}
 	owner.setFaultHandler(func(fault error) {
@@ -284,25 +339,35 @@ func (m *Manager) startTracked(p profile.Profile, observedWait func()) (*Run, er
 	m.mu.Lock()
 	closing, occupied := m.closing, m.cmd != nil
 	m.mu.Unlock()
-	if closing || occupied || ctx.Err() != nil {
-		closeErr := owner.abortStart()
-		if closing {
-			return nil, errors.Join(errors.New("engine manager is shutting down"), closeErr)
+	callerErr := preparationContextError(caller)
+	if closing || occupied || ctx.Err() != nil || callerErr != nil {
+		var primary error
+		switch {
+		case closing:
+			primary = errors.New("engine manager is shutting down")
+		case occupied:
+			primary = errors.New("another engine is running; stop it before starting a new one")
+		case callerErr != nil:
+			primary = &preparationCancellation{cause: errors.Join(ctx.Err(), callerErr)}
+		default:
+			primary = ctx.Err()
 		}
-		if occupied {
-			return nil, errors.Join(errors.New("another engine is running; stop it before starting a new one"), closeErr)
-		}
-		return nil, errors.Join(ctx.Err(), closeErr)
+		return nil, m.abortPreparedOwner(owner, primary)
 	}
+
 	// Never hold Manager.mu across Start: child output uses that mutex.
 	if err := cmd.Start(); err != nil {
-		closeErr := owner.abortStart()
 		if cause := context.Cause(ctx); managed.IsPolicyError(cause) {
 			err = errors.Join(cause, err)
 		}
-		return nil, errors.Join(fmt.Errorf("engine start failed: %w", err), closeErr)
+		return nil, m.abortPreparedOwner(owner, fmt.Errorf("engine start failed: %w", err))
 	}
 	started = true
+	if m.afterStart != nil {
+		// The real child already executed. The observer cannot replace it, and
+		// publication must still proceed if Shutdown sets closing meanwhile.
+		m.afterStart()
+	}
 	// Successful Start is always an accepted, nonnil owned Run. Even a concurrent
 	// Shutdown or observer failure cannot erase a child that already executed.
 	m.mu.Lock()
@@ -371,6 +436,12 @@ func (m *Manager) stop(interrupt, kill func(*os.Process) error, grace, forceWait
 	}
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
+	return m.stopLocked(interrupt, kill, grace, forceWait)
+}
+
+// stopLocked shares the normal stop path with the sole shutdown worker. Its
+// caller holds opMu; native calls and terminal waits never hold Manager.mu.
+func (m *Manager) stopLocked(interrupt, kill func(*os.Process) error, grace, forceWait time.Duration) error {
 	if err := m.pendingLifetimeError(); err != nil {
 		return err
 	}
@@ -446,11 +517,14 @@ func (m *Manager) pendingLifetimeError() error {
 	m.mu.Lock()
 	run := m.run
 	active := m.cmd != nil
+	fault := m.preparationFault
 	m.mu.Unlock()
 	if active && run != nil && run.owner != nil {
-		return run.owner.pendingError()
+		if pending := run.owner.pendingError(); pending != nil {
+			return pending
+		}
 	}
-	return nil
+	return fault
 }
 
 // RetryCleanup is an explicit, generation-bound recovery for known retained
@@ -473,20 +547,81 @@ func (m *Manager) RetryCleanup(handle *Run) error {
 	return handle.state.owner.retryCleanup()
 }
 
+// Shutdown rejects new starts and joins one retained shutdown worker. A caller
+// timeout cancels only that caller's wait. Even after a failed stop, the worker
+// keeps the exact active generation until its real terminal result is observed.
 func (m *Manager) Shutdown(ctx context.Context) error {
 	m.mu.Lock()
 	m.closing = true
+	shutdown := m.shutdown
+	startWorker := shutdown == nil
+	if startWorker {
+		shutdown = &managerShutdown{done: make(chan struct{}), entryRun: m.run}
+		// Capture before a concurrent Stop can finish and clear this active run.
+		// Inactive historical runs must not contaminate a no-engine shutdown.
+		if m.cmd != nil {
+			shutdown.run = m.run
+		}
+		m.shutdown = shutdown
+	}
 	m.mu.Unlock()
-	done := make(chan error, 1)
-	go func() { done <- m.Stop() }()
+	if startWorker {
+		go m.finishShutdown(shutdown)
+	}
+	// A previously published terminal result takes precedence over an already
+	// canceled caller context, just as Run.Wait does.
 	select {
-	case err := <-done:
-		return err
+	case <-shutdown.done:
+		return shutdown.err
+	default:
+	}
+	select {
+	case <-shutdown.done:
+		return shutdown.err
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 }
 
+func (m *Manager) finishShutdown(shutdown *managerShutdown) {
+	if m.beforeShutdownCapture != nil {
+		m.beforeShutdownCapture()
+	}
+	m.opMu.Lock()
+	m.mu.Lock()
+	// An in-flight successful Start may publish and even terminate after
+	// Shutdown set closing, before this worker acquires opMu. Capture a changed
+	// generation even if cmd is already nil; unchanged inactive history stays
+	// excluded. Closing prevents any later launch replacing that generation.
+	if shutdown.run == nil && (m.cmd != nil || m.run != shutdown.entryRun) {
+		shutdown.run = m.run
+	}
+	m.mu.Unlock()
+	stopErr := m.stopLocked(interruptProcess, killProcess, 3*time.Second, time.Second)
+	m.opMu.Unlock()
+
+	// Recovery of a known retained owner remains explicit and generation-bound.
+	// Never hold opMu while draining: RetryCleanup needs it, and ownership loss
+	// deliberately leaves this worker and the exact Run pending indefinitely.
+	var result RunResult
+	var waitErr error
+	if shutdown.run != nil {
+		result, waitErr = (&Run{state: shutdown.run}).Wait(context.Background())
+	}
+	terminalErr := errors.Join(result.PolicyErr, result.LifecycleErr)
+	if result.Reason == RunFailed || result.Reason == RunPolicyRevoked {
+		terminalErr = errors.Join(terminalErr, result.WaitErr)
+	}
+	// Expected accepted-stop signal exits remain local success. The actual
+	// WaitErr in RunResult is never changed or discarded from the Run itself.
+	shutdown.err = errors.Join(stopErr, waitErr, terminalErr)
+	close(shutdown.done)
+}
+
 func (m *Manager) Preview(p profile.Profile) (LaunchPlan, error) {
-	return previewWithGuard(p, m.root, m.guard)
+	return m.PreviewContext(context.Background(), p)
+}
+
+func (m *Manager) PreviewContext(ctx context.Context, p profile.Profile) (LaunchPlan, error) {
+	return previewWithGuardContext(ctx, p, m.root, m.guard)
 }

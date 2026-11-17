@@ -1,0 +1,689 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "53b9cfed2f9c84b3a477b2df6a069fa3bb05ef13",
+  "runID": 42408549382,
+  "scope": "native-font candidate baseline rejection; partial target evidence",
+  "candidateAccepted": false,
+  "reason": "Both WebKit startup/editor limits and ARM64 Firefox short-run browser RSS still fail. No verified benefit justifies changing typography.",
+  "verifiedProviderZIPDigests": 6,
+  "baselineReports": [
+    {
+      "artifactName": "desktop-performance-arm64-webkit",
+      "artifactID": 13588765776,
+      "providerZIPSize": 2010,
+      "providerZIPDigest": "sha256:97322bf58695fbb3a6fd529baf9a403aeda92d842f99e5f665643b94fcb17fa3",
+      "providerZIPDigestVerified": true,
+      "canonicalReportSHA256": "3778ab3a2cdd28dd2b2408cb123a286627e069b0b412e02657dec33ad9921f98",
+      "sourceHashesVerified": 20,
+      "sourceCommit": "53b9cfed2f9c84b3a477b2df6a069fa3bb05ef13",
+      "binarySHA256": "358a93823f3d30186b0012fa25b146a9a9a22af5c9eb7920557b42bd2d3c9bf3",
+      "outcome": "failed",
+      "stage": "complete",
+      "failureKind": "none",
+      "counts": {
+        "reload": 5,
+        "navigation": 24,
+        "editor": 10,
+        "burstRequests": 96,
+        "loadRequests": 240,
+        "resourceSamples": 307,
+        "loadMilliseconds": 60001,
+        "browserResourceSamples": 83,
+        "browserObservedExits": 0,
+        "browserCpuMilliseconds": 60759,
+        "browserFailureStage": 0,
+        "jobCpuMilliseconds": 60757,
+        "jobCpuFailureStage": 0
+      },
+      "metrics": {
+        "controllerStartupMs": 27.89520200000004,
+        "dashboardReadyMs": 5475.842584,
+        "reloadP95Ms": 272.5342129999999,
+        "navigationP95Ms": 355.16912800000136,
+        "editorP95Ms": 750.3272469999993,
+        "apiP95Ms": 24,
+        "burstRequestsPerSecond": 217.65254013335448,
+        "loadRequestsPerSecond": 3.999898571971977,
+        "loadCpuPercentOneCore": 1.5332944525892578,
+        "sampledPeakRssBytes": 16982016,
+        "sampledPeakDescriptors": 14,
+        "sampledPeakThreads": 11,
+        "cooldownRssGrowthBytes": 2703360,
+        "cooldownDescriptorGrowth": -2,
+        "cooldownThreadGrowth": 2,
+        "browserSampledPeakRssBytes": 898613248,
+        "browserSampledPeakDescriptors": 101,
+        "browserSampledPeakThreads": 66,
+        "browserSampledPeakProcesses": 5,
+        "browserObservedLoadCpuPercentOneCore": 8.426717625417472,
+        "browserCooldownRssGrowthBytes": 169218048,
+        "browserCooldownDescriptorGrowth": -1,
+        "browserCooldownThreadGrowth": -10,
+        "browserCooldownProcessGrowth": 0,
+        "jobLoadCpuPercentOneCore": 14.810706934899082
+      },
+      "violations": [
+        "dashboardReadyMs",
+        "editorP95Ms"
+      ]
+    },
+    {
+      "artifactName": "desktop-performance-arm64-firefox",
+      "artifactID": 13588517561,
+      "providerZIPSize": 2012,
+      "providerZIPDigest": "sha256:a2bbec44ab88c4de9bea74a9288b0a58dcf6b9fa6527e1db2f1d0246c5dd5ad4",
+      "providerZIPDigestVerified": true,
+      "canonicalReportSHA256": "46fd1eaa83af4d92572b9d61fe743d916918314ae86b6b0d6a4156427c02af07",
+      "sourceHashesVerified": 20,
+      "sourceCommit": "53b9cfed2f9c84b3a477b2df6a069fa3bb05ef13",
+      "binarySHA256": "358a93823f3d30186b0012fa25b146a9a9a22af5c9eb7920557b42bd2d3c9bf3",
+      "outcome": "failed",
+      "stage": "complete",
+      "failureKind": "none",
+      "counts": {
+        "reload": 5,
+        "navigation": 24,
+        "editor": 10,
+        "burstRequests": 96,
+        "loadRequests": 240,
+        "resourceSamples": 302,
+        "loadMilliseconds": 60002,
+        "browserResourceSamples": 80,
+        "browserObservedExits": 0,
+        "browserCpuMilliseconds": 60949,
+        "browserFailureStage": 0,
+        "jobCpuMilliseconds": 60947,
+        "jobCpuFailureStage": 0
+      },
+      "metrics": {
+        "controllerStartupMs": 29.685411000000045,
+        "dashboardReadyMs": 541.0705750000002,
+        "reloadP95Ms": 364.5816609999997,
+        "navigationP95Ms": 291.1871600000013,
+        "editorP95Ms": 199.45386299999973,
+        "apiP95Ms": 26,
+        "burstRequestsPerSecond": 181.82445131810695,
+        "loadRequestsPerSecond": 3.999819677529415,
+        "loadCpuPercentOneCore": 1.5999278710117657,
+        "sampledPeakRssBytes": 16916480,
+        "sampledPeakDescriptors": 13,
+        "sampledPeakThreads": 12,
+        "cooldownRssGrowthBytes": 1576960,
+        "cooldownDescriptorGrowth": -3,
+        "cooldownThreadGrowth": 3,
+        "browserSampledPeakRssBytes": 1086988288,
+        "browserSampledPeakDescriptors": 282,
+        "browserSampledPeakThreads": 154,
+        "browserSampledPeakProcesses": 7,
+        "browserObservedLoadCpuPercentOneCore": 6.119855850376791,
+        "browserCooldownRssGrowthBytes": 204877824,
+        "browserCooldownDescriptorGrowth": -12,
+        "browserCooldownThreadGrowth": -12,
+        "browserCooldownProcessGrowth": 0,
+        "jobLoadCpuPercentOneCore": 17.513702665443322
+      },
+      "violations": [
+        "browserSampledPeakRssBytes"
+      ]
+    },
+    {
+      "artifactName": "desktop-performance-amd64-webkit",
+      "artifactID": 13588238344,
+      "providerZIPSize": 2008,
+      "providerZIPDigest": "sha256:b0aeb952ec4cf6133c9bb5752b1b112d763c9eca7f7ef4550ab634809448c0d1",
+      "providerZIPDigestVerified": true,
+      "canonicalReportSHA256": "b12b8f3ab8a7bff560ee520262b7b5b5f3c294f6f2881ce309b743e17ad93e18",
+      "sourceHashesVerified": 20,
+      "sourceCommit": "53b9cfed2f9c84b3a477b2df6a069fa3bb05ef13",
+      "binarySHA256": "43bad2fdc2f2ec31723462fd48a8e8a56bd9bb8a8bf451113b50e84b8fb1046b",
+      "outcome": "failed",
+      "stage": "complete",
+      "failureKind": "none",
+      "counts": {
+        "reload": 5,
+        "navigation": 24,
+        "editor": 10,
+        "burstRequests": 96,
+        "loadRequests": 240,
+        "resourceSamples": 308,
+        "loadMilliseconds": 60001,
+        "browserResourceSamples": 83,
+        "browserObservedExits": 0,
+        "browserCpuMilliseconds": 60864,
+        "browserFailureStage": 0,
+        "jobCpuMilliseconds": 60846,
+        "jobCpuFailureStage": 0
+      },
+      "metrics": {
+        "controllerStartupMs": 28.937975999999935,
+        "dashboardReadyMs": 4435.54292,
+        "reloadP95Ms": 228.40942500000074,
+        "navigationP95Ms": 368.5230180000017,
+        "editorP95Ms": 590.1600149999995,
+        "apiP95Ms": 38,
+        "burstRequestsPerSecond": 139.74797256698355,
+        "loadRequestsPerSecond": 3.999914031980998,
+        "loadCpuPercentOneCore": 2.599944120787649,
+        "sampledPeakRssBytes": 17551360,
+        "sampledPeakDescriptors": 15,
+        "sampledPeakThreads": 11,
+        "cooldownRssGrowthBytes": 2158592,
+        "cooldownDescriptorGrowth": -2,
+        "cooldownThreadGrowth": 2,
+        "browserSampledPeakRssBytes": 890175488,
+        "browserSampledPeakDescriptors": 101,
+        "browserSampledPeakThreads": 66,
+        "browserSampledPeakProcesses": 5,
+        "browserObservedLoadCpuPercentOneCore": 7.968479543992214,
+        "browserCooldownRssGrowthBytes": 147521536,
+        "browserCooldownDescriptorGrowth": 5,
+        "browserCooldownThreadGrowth": -11,
+        "browserCooldownProcessGrowth": 0,
+        "jobLoadCpuPercentOneCore": 17.136627264665247
+      },
+      "violations": [
+        "dashboardReadyMs",
+        "editorP95Ms"
+      ]
+    }
+  ],
+  "timingReports": [
+    {
+      "artifactName": "browser-timing-arm64-webkit",
+      "artifactID": 13588815631,
+      "providerZIPDigest": "sha256:1be38ed7e3d672dec57068ba120c65498295c553b0ef482a06d11abb14630acf",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "53b9cfed2f9c84b3a477b2df6a069fa3bb05ef13",
+      "binarySHA256": "358a93823f3d30186b0012fa25b146a9a9a22af5c9eb7920557b42bd2d3c9bf3",
+      "sourceHashesVerified": 17,
+      "mode": "diagnostic-only",
+      "stage": "complete",
+      "failureKind": "none",
+      "complete": true,
+      "dashboard": {
+        "navigationMs": 9.853008000000045,
+        "applicationMs": 5279.213261,
+        "paintMs": 186.77631500000007
+      },
+      "editor": [
+        {
+          "actionMs": 152.31421299999965,
+          "visibilityMs": 73.23455099999956,
+          "paintMs": 524.778483,
+          "totalMs": 750.3272469999993
+        },
+        {
+          "actionMs": 131.91447499999958,
+          "visibilityMs": 9.05274499999905,
+          "paintMs": 94.89667000000009,
+          "totalMs": 235.86388999999872
+        },
+        {
+          "actionMs": 126.17088700000022,
+          "visibilityMs": 8.711599000000206,
+          "paintMs": 117.5548490000001,
+          "totalMs": 252.43733500000053
+        },
+        {
+          "actionMs": 151.91651099999945,
+          "visibilityMs": 8.79000200000155,
+          "paintMs": 105.93405099999836,
+          "totalMs": 266.64056399999936
+        },
+        {
+          "actionMs": 168.83581499999855,
+          "visibilityMs": 8.65465100000074,
+          "paintMs": 116.54754800000046,
+          "totalMs": 294.03801399999975
+        },
+        {
+          "actionMs": 153.58198599999923,
+          "visibilityMs": 8.847066000000268,
+          "paintMs": 89.51726699999926,
+          "totalMs": 251.94631899999877
+        },
+        {
+          "actionMs": 141.22579400000177,
+          "visibilityMs": 8.447595999999976,
+          "paintMs": 115.86328599999979,
+          "totalMs": 265.53667600000153
+        },
+        {
+          "actionMs": 163.09951100000035,
+          "visibilityMs": 8.618593000001056,
+          "paintMs": 115.25082999999904,
+          "totalMs": 286.96893400000044
+        },
+        {
+          "actionMs": 159.15071999999964,
+          "visibilityMs": 8.826411000000007,
+          "paintMs": 209.3808540000009,
+          "totalMs": 377.35798500000055
+        },
+        {
+          "actionMs": 171.58677700000044,
+          "visibilityMs": 8.876255999999557,
+          "paintMs": 121.7298580000006,
+          "totalMs": 302.1928910000006
+        }
+      ],
+      "startup": {
+        "observedMs": 5335,
+        "domContentLoadedMs": 38,
+        "resourceOverflow": false,
+        "invalidRecords": 0,
+        "resources": {
+          "bootstrap": {
+            "startMs": 32,
+            "firstByteMs": 33,
+            "endMs": 33
+          },
+          "engines": {
+            "startMs": 1017,
+            "firstByteMs": 1018,
+            "endMs": 1021
+          },
+          "profiles": {
+            "startMs": 1018,
+            "firstByteMs": 1031,
+            "endMs": 1031
+          },
+          "runtime": {
+            "startMs": 1018,
+            "firstByteMs": 1021,
+            "endMs": 1021
+          },
+          "appScript": {
+            "startMs": 11,
+            "firstByteMs": 13,
+            "endMs": 13
+          },
+          "systemScript": {
+            "startMs": 16,
+            "firstByteMs": 16,
+            "endMs": 16
+          },
+          "localesScript": {
+            "startMs": 11,
+            "firstByteMs": 12,
+            "endMs": 13
+          },
+          "stylesheet": {
+            "startMs": 10,
+            "firstByteMs": 11,
+            "endMs": 11
+          }
+        },
+        "readyObservation": {
+          "clock": "performance-now-callback-delivery",
+          "status": "ready",
+          "firstReadyMs": 1038,
+          "readyPaintMs": 5315,
+          "framesAfterReady": 2,
+          "firstFrameMs": 113,
+          "lastFrameMs": 5315,
+          "frameCount": 3,
+          "maxFrameGapMs": 5029,
+          "callbacks": 10,
+          "stoppedMs": 5316,
+          "context": {
+            "start": {
+              "visibility": "visible",
+              "focused": true
+            },
+            "ready": {
+              "visibility": "visible",
+              "focused": true
+            },
+            "stop": {
+              "visibility": "visible",
+              "focused": true
+            }
+          }
+        }
+      },
+      "startupJobCpu": {
+        "scope": "isolated-job-cgroup-v2",
+        "intervalMilliseconds": 5477.449006000001,
+        "cpuMicroseconds": 6178816,
+        "userMicroseconds": 5875685,
+        "systemMicroseconds": 303130,
+        "percentOneCore": 112.80462845444515
+      }
+    },
+    {
+      "artifactName": "browser-timing-amd64-webkit",
+      "artifactID": 13588418069,
+      "providerZIPDigest": "sha256:b18df4c00dbd39f878614a1345b4755eb8fab640214e2a7ae99f6a5b6f412faf",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "53b9cfed2f9c84b3a477b2df6a069fa3bb05ef13",
+      "binarySHA256": "43bad2fdc2f2ec31723462fd48a8e8a56bd9bb8a8bf451113b50e84b8fb1046b",
+      "sourceHashesVerified": 17,
+      "mode": "diagnostic-only",
+      "stage": "complete",
+      "failureKind": "none",
+      "complete": true,
+      "dashboard": {
+        "navigationMs": 15.499650999999858,
+        "applicationMs": 4256.563376,
+        "paintMs": 163.47989300000063
+      },
+      "editor": [
+        {
+          "actionMs": 164.51325200000065,
+          "visibilityMs": 15.646502999999939,
+          "paintMs": 410.0002599999989,
+          "totalMs": 590.1600149999995
+        },
+        {
+          "actionMs": 148.40815800000018,
+          "visibilityMs": 12.022509000000355,
+          "paintMs": 67.18784400000004,
+          "totalMs": 227.61851100000058
+        },
+        {
+          "actionMs": 144.087673,
+          "visibilityMs": 12.67782200000147,
+          "paintMs": 97.26619799999935,
+          "totalMs": 254.0316930000008
+        },
+        {
+          "actionMs": 186.3203940000003,
+          "visibilityMs": 9.289995999999519,
+          "paintMs": 51.292781000000105,
+          "totalMs": 246.90317099999993
+        },
+        {
+          "actionMs": 144.61829800000123,
+          "visibilityMs": 11.572501999999076,
+          "paintMs": 106.29413999999997,
+          "totalMs": 262.4849400000003
+        },
+        {
+          "actionMs": 147.6163689999994,
+          "visibilityMs": 14.521980999999869,
+          "paintMs": 94.81214499999987,
+          "totalMs": 256.95049499999914
+        },
+        {
+          "actionMs": 153.51411000000007,
+          "visibilityMs": 11.873502000000371,
+          "paintMs": 99.34136199999921,
+          "totalMs": 264.72897399999965
+        },
+        {
+          "actionMs": 145.1369760000016,
+          "visibilityMs": 13.643619999998919,
+          "paintMs": 66.62200900000062,
+          "totalMs": 225.40260500000113
+        },
+        {
+          "actionMs": 143.83203700000013,
+          "visibilityMs": 12.61789200000021,
+          "paintMs": 95.7138249999989,
+          "totalMs": 252.16375399999924
+        },
+        {
+          "actionMs": 147.26208000000042,
+          "visibilityMs": 11.630253000001176,
+          "paintMs": 67.15077699999893,
+          "totalMs": 226.04311000000052
+        }
+      ],
+      "startup": {
+        "observedMs": 4245,
+        "domContentLoadedMs": 69,
+        "resourceOverflow": false,
+        "invalidRecords": 0,
+        "resources": {
+          "bootstrap": {
+            "startMs": 63,
+            "firstByteMs": 64,
+            "endMs": 64
+          },
+          "engines": {
+            "startMs": 525,
+            "firstByteMs": 528,
+            "endMs": 528
+          },
+          "profiles": {
+            "startMs": 525,
+            "firstByteMs": 549,
+            "endMs": 549
+          },
+          "runtime": {
+            "startMs": 527,
+            "firstByteMs": 528,
+            "endMs": 529
+          },
+          "appScript": {
+            "startMs": 24,
+            "firstByteMs": 28,
+            "endMs": 30
+          },
+          "systemScript": {
+            "startMs": 34,
+            "firstByteMs": 36,
+            "endMs": 36
+          },
+          "localesScript": {
+            "startMs": 24,
+            "firstByteMs": 27,
+            "endMs": 30
+          },
+          "stylesheet": {
+            "startMs": 23,
+            "firstByteMs": 26,
+            "endMs": 29
+          }
+        },
+        "readyObservation": {
+          "clock": "performance-now-callback-delivery",
+          "status": "ready",
+          "firstReadyMs": 559,
+          "readyPaintMs": 4233,
+          "framesAfterReady": 2,
+          "firstFrameMs": 150,
+          "lastFrameMs": 4233,
+          "frameCount": 3,
+          "maxFrameGapMs": 3923,
+          "callbacks": 10,
+          "stoppedMs": 4233,
+          "context": {
+            "start": {
+              "visibility": "visible",
+              "focused": true
+            },
+            "ready": {
+              "visibility": "visible",
+              "focused": true
+            },
+            "stop": {
+              "visibility": "visible",
+              "focused": true
+            }
+          }
+        }
+      },
+      "startupJobCpu": {
+        "scope": "isolated-job-cgroup-v2",
+        "intervalMilliseconds": 4437.542239,
+        "cpuMicroseconds": 5141328,
+        "userMicroseconds": 4779856,
+        "systemMicroseconds": 361471,
+        "percentOneCore": 115.85980984732211
+      }
+    },
+    {
+      "artifactName": "browser-timing-arm64-firefox",
+      "artifactID": 13588173919,
+      "providerZIPDigest": "sha256:d913353bb9fa8f97f73ebfb802981ebf2730593c9d911f1b7214d73067af8137",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "53b9cfed2f9c84b3a477b2df6a069fa3bb05ef13",
+      "binarySHA256": "358a93823f3d30186b0012fa25b146a9a9a22af5c9eb7920557b42bd2d3c9bf3",
+      "sourceHashesVerified": 17,
+      "mode": "diagnostic-only",
+      "stage": "complete",
+      "failureKind": "none",
+      "complete": true,
+      "dashboard": {
+        "navigationMs": 137.3119529999999,
+        "applicationMs": 334.49193700000023,
+        "paintMs": 69.26668500000005
+      },
+      "editor": [
+        {
+          "actionMs": 111.93973499999993,
+          "visibilityMs": 22.2071990000004,
+          "paintMs": 65.3069289999994,
+          "totalMs": 199.45386299999973
+        },
+        {
+          "actionMs": 100.21095100000002,
+          "visibilityMs": 18.69828299999972,
+          "paintMs": 29.8147170000002,
+          "totalMs": 148.72395099999994
+        },
+        {
+          "actionMs": 97.74855800000023,
+          "visibilityMs": 20.166309999999612,
+          "paintMs": 28.937528000000384,
+          "totalMs": 146.85239600000023
+        },
+        {
+          "actionMs": 95.6303369999996,
+          "visibilityMs": 18.76959100000022,
+          "paintMs": 31.911924,
+          "totalMs": 146.31185199999982
+        },
+        {
+          "actionMs": 102.3381559999998,
+          "visibilityMs": 18.56722600000103,
+          "paintMs": 30.409802999998647,
+          "totalMs": 151.31518499999947
+        },
+        {
+          "actionMs": 100.55849099999978,
+          "visibilityMs": 19.472398000001704,
+          "paintMs": 30.919660999999905,
+          "totalMs": 150.95055000000139
+        },
+        {
+          "actionMs": 102.30823000000055,
+          "visibilityMs": 19.035838999998305,
+          "paintMs": 28.760595000001558,
+          "totalMs": 150.1046640000004
+        },
+        {
+          "actionMs": 92.21707900000001,
+          "visibilityMs": 18.23017400000026,
+          "paintMs": 31.247090000000753,
+          "totalMs": 141.69434300000103
+        },
+        {
+          "actionMs": 101.29587999999967,
+          "visibilityMs": 18.650126000000455,
+          "paintMs": 31.49029200000041,
+          "totalMs": 151.43629800000053
+        },
+        {
+          "actionMs": 100.96921099999963,
+          "visibilityMs": 19.32157499999994,
+          "paintMs": 30.45263999999952,
+          "totalMs": 150.7434259999991
+        }
+      ],
+      "startup": {
+        "observedMs": 445,
+        "domContentLoadedMs": 291,
+        "resourceOverflow": false,
+        "invalidRecords": 0,
+        "resources": {
+          "bootstrap": {
+            "startMs": 281,
+            "firstByteMs": 310,
+            "endMs": 310
+          },
+          "engines": {
+            "startMs": 313,
+            "firstByteMs": 317,
+            "endMs": 317
+          },
+          "profiles": {
+            "startMs": 313,
+            "firstByteMs": 337,
+            "endMs": 337
+          },
+          "runtime": {
+            "startMs": 314,
+            "firstByteMs": 327,
+            "endMs": 327
+          },
+          "appScript": {
+            "startMs": 177,
+            "firstByteMs": 229,
+            "endMs": 229
+          },
+          "systemScript": {
+            "startMs": 178,
+            "firstByteMs": 228,
+            "endMs": 228
+          },
+          "localesScript": {
+            "startMs": 177,
+            "firstByteMs": 228,
+            "endMs": 228
+          },
+          "stylesheet": {
+            "startMs": 177,
+            "firstByteMs": 228,
+            "endMs": 228
+          }
+        },
+        "readyObservation": {
+          "clock": "performance-now-callback-delivery",
+          "status": "ready",
+          "firstReadyMs": 347,
+          "readyPaintMs": 369,
+          "framesAfterReady": 2,
+          "firstFrameMs": 241,
+          "lastFrameMs": 369,
+          "frameCount": 7,
+          "maxFrameGapMs": 241,
+          "callbacks": 10,
+          "stoppedMs": 369,
+          "context": {
+            "start": {
+              "visibility": "visible",
+              "focused": true
+            },
+            "ready": {
+              "visibility": "visible",
+              "focused": true
+            },
+            "stop": {
+              "visibility": "visible",
+              "focused": true
+            }
+          }
+        }
+      },
+      "startupJobCpu": {
+        "scope": "isolated-job-cgroup-v2",
+        "intervalMilliseconds": 542.790802,
+        "cpuMicroseconds": 1090789,
+        "userMicroseconds": 858370,
+        "systemMicroseconds": 232420,
+        "percentOneCore": 200.95937440001057
+      }
+    }
+  ],
+  "remainingTargetsAndSustainedWorkStillJoining": true,
+  "budgetOrWorkloadChanged": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0,
+  "limitations": [
+    "This rejects this font-stack candidate; it does not prove or disprove every font-rendering hypothesis.",
+    "Source-known numeric/context/hash projection only; raw logs, screenshots and traces not accessed."
+  ]
+}

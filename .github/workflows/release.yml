@@ -4,20 +4,93 @@ on:
   workflow_dispatch:
   push:
     tags: ['v*']
-  release:
-    types: [published]
+    branches: [codex/dns-adapter-coverage]
+    paths:
+      - .gitattributes
+      - go.mod
+      - go.sum
+      - .github/workflows/release.yml
+      - .github/workflows/darwin-audit-commands.yml
+      - .github/workflows/windows-audit-storage.yml
+      - cmd/accessweaver/managed_audit_commands_windows_test.go
+      - cmd/accessweaver/managed_audit_ordinary_windows_test.go
+      - cmd/accessweaver/managed_audit_command_stages_test.go
+      - internal/uiaccess/access_windows.go
+      - scripts/test-darwin-audit-commands.sh
+      - scripts/test_darwin_audit_command_capture.py
+      - scripts/core-test-evidence.cjs
+      - scripts/core-test-evidence.test.cjs
+      - scripts/core-test-catalog/**
+      - scripts/build-all.sh
+      - scripts/package-release.sh
+      - scripts/package-hosted-release.sh
+      - scripts/release_archive.py
+      - scripts/verify_release.py
+      - scripts/check-native-environment.cjs
+      - scripts/check-native-environment.test.cjs
+      - scripts/check-packaged-evidence.cjs
+      - scripts/check-packaged-evidence.test.cjs
+      - scripts/stage_packaged_native.py
+      - scripts/test_stage_packaged_native.py
+      - scripts/packaged_windows_discovery.py
+      - scripts/test_packaged_windows_discovery.py
+      - scripts/test-backup-interop.cjs
+      - scripts/test-recovery-interop.cjs
+      - scripts/test-packaged-diagnostics.cjs
+      - scripts/test-unix-controller.py
+      - scripts/test-linux-session.sh
+      - scripts/bsd_packaged_candidate.py
+      - scripts/bsd_test_observations.py
+      - scripts/test-bsd-guest.py
+      - scripts/test-openbsd-guest.py
+      - scripts/check_provenance_rejections.py
+      - scripts/verify-release.py
+      - scripts/verify_release_provenance.py
+      - scripts/verify_release_rebuild.py
+      - scripts/publish_prerelease.py
+      - scripts/signed_release_manifest.py
+      - scripts/macos_installer.py
+      - scripts/sbom.py
+      - scripts/test_signed_release_manifest.py
+      - scripts/windows_staging_evidence.py
+      - scripts/test_windows_staging_evidence.py
+      - scripts/check_readiness_evidence.py
+      - scripts/test_readiness_evidence.py
+      - docs/readiness-gates.json
+      - scripts/verify-windows-installer-publisher.ps1
+      - scripts/detect-windows-installer.ps1
+      - scripts/build-windows-installer.ps1
+      - scripts/sign-windows-installer-artifact.ps1
+      - scripts/windows-installer.iss
+      - scripts/verify_macos_installer_publisher.py
+      - scripts/build-macos-deployment.py
+      - scripts/test_macos_installer_publisher.py
+      - scripts/windows-installer-common.ps1
+      - scripts/test-windows-installer-contracts.ps1
+      - scripts/test-windows-workflow.ps1
+      - scripts/check-vulnerabilities.sh
+      - scripts/check-vulnerability-report.py
+      - scripts/browser-tests/core-fixture.test.cjs
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  # A preview can only validate its own commit. Releases that can publish
+  # share a tag-scoped lock through package verification and promotion.
+  group: release-${{ github.ref_type == 'tag' && github.ref || format('{0}-{1}', github.ref, github.sha) }}
   cancel-in-progress: false
+  queue: max
 
 env:
-  GO_VERSION: '1.27.3'
+  GO_VERSION: '1.27.4'
 
 jobs:
+  parser-mutations:
+    uses: ./.github/workflows/parser-fuzz.yml
+    with:
+      skip_browser: true
+
   browser:
     uses: ./.github/workflows/browser.yml
   windows-audit-storage:
@@ -45,9 +118,12 @@ jobs:
           go -C scripts/security-tools mod verify
           go -C scripts/security-tools install golang.org/x/vuln/cmd/govulncheck
           go -C scripts/security-tools install github.com/rhysd/actionlint/cmd/actionlint
-          "$GOBIN/actionlint" -shellcheck= -pyflakes=
+          # actionlint 1.7.12 predates the documented concurrency.queue key.
+          "$GOBIN/actionlint" -shellcheck= -pyflakes= -ignore '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$'
           python3 -m unittest discover -s scripts -p test_vulnerability_report.py -v
           python3 -m unittest discover -s scripts -p test_darwin_audit_command_capture.py -v
+          python3 -m unittest discover -s scripts -p test_signed_release_manifest.py -v
+          python3 -m unittest discover -s scripts -p test_windows_staging_evidence.py -v
       - name: Verify optional fixture dependencies and compile (no guest execution)
         run: |
           go -C scripts/fixtures/wgpeer mod download
@@ -75,6 +151,14 @@ jobs:
           retention-days: 14
       - name: Check known vulnerabilities for all core targets and fixture environments
         run: GOVULNCHECK="$GOBIN/govulncheck" bash scripts/check-vulnerabilities.sh
+      - name: Retain fixed vulnerability matrix outcomes
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: go-vulnerability-matrix-status
+          path: build/security-checks/matrix-status.tsv
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Retain scanner evidence, including failed reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -134,11 +218,35 @@ jobs:
         run: |
           node --test scripts/check-native-environment.test.cjs scripts/check-packaged-evidence.test.cjs scripts/check-profile-benchmark.test.cjs
           node --check scripts/test-packaged-diagnostics.cjs
+      - name: Verify Windows managed update staging
+        if: runner.os == 'Windows'
+        run: python scripts/windows_staging_evidence.py
+      - name: Retain fixed Windows staging outcomes
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-update-staging-${{ matrix.goarch }}
+          path: build/windows-update-staging/status.json
+          if-no-files-found: ignore
+          retention-days: 14
       - run: go vet ./...
       - name: Unit tests
-        env:
-          ACCESSWEAVER_DISPOSABLE_DARWIN_AUDIT_TEST: ${{ runner.os == 'macOS' && '1' || '' }}
+        if: runner.os != 'macOS'
         run: go test ./... -count=1
+      - name: macOS unit tests with source-bound outcomes
+        if: runner.os == 'macOS'
+        env:
+          ACCESSWEAVER_DISPOSABLE_DARWIN_AUDIT_TEST: '1'
+          CORE_FAILURE_ANNOTATIONS: '1'
+        run: node scripts/core-test-evidence.cjs unit
+      - name: Retain fixed macOS unit-test outcomes
+        if: always() && runner.os == 'macOS'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-darwin-unit-status-${{ matrix.goarch }}
+          path: build/native-core-evidence/status.json
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Race native macOS engine lifecycle
         if: runner.os == 'macOS'
         run: go test -race ./internal/engine ./cmd/accessweaver -count=1
@@ -246,8 +354,12 @@ jobs:
           retention-days: 14
       - name: Portable archive metadata regression checks
         run: |
+          python3 scripts/check_readiness_evidence.py
+          python3 -m unittest discover -s scripts -p test_readiness_evidence.py -v
           python3 -m unittest discover -s scripts -p test_release_archive.py -v
           python3 -m unittest discover -s scripts -p test_release_provenance.py -v
+          python3 -m unittest discover -s scripts -p test_macos_installer_publisher.py -v
+          python3 -m unittest discover -s scripts -p test_publish_prerelease.py -v
           python3 -m unittest discover -s scripts -p test_release_rebuild.py -v
           python3 -m unittest discover -s scripts -p test_stage_packaged_native.py -v
           python3 -m unittest discover -s scripts -p test_windows_handle_census.py -v
@@ -333,21 +445,25 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
       - name: Browser logic and fixture cleanup tests
-        run: node --test web/app.test.cjs scripts/browser-tests/core-fixture.test.cjs scripts/browser-tests/accessibility-report.test.cjs
+        run: node --test scripts/core-test-evidence.test.cjs web/app.test.cjs scripts/browser-tests/core-fixture.test.cjs scripts/browser-tests/desktop-performance.test.cjs scripts/browser-tests/browser-native-binary.test.cjs scripts/browser-tests/browser-resources.test.cjs scripts/browser-tests/browser-memory.test.cjs scripts/browser-tests/job-cpu.test.cjs scripts/browser-tests/accessibility-report.test.cjs
   package:
     name: Package core and attest build provenance
     outputs:
       directory: ${{ steps.build_portable.outputs.directory }}
+      label: ${{ steps.build_portable.outputs.label }}
+      artifact_id: ${{ steps.upload_portable.outputs.artifact-id }}
     permissions:
       contents: read
       id-token: write
       attestations: write
-    needs: [verify, vulnerabilities, browser, windows-audit-storage, darwin-audit-commands]
+    needs: [verify, vulnerabilities, browser, windows-audit-storage, darwin-audit-commands, parser-mutations]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -357,19 +473,16 @@ jobs:
         id: build_portable
         shell: bash
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
-          EVENT_NAME: ${{ github.event_name }}
+          GOTOOLCHAIN: local
         run: |
-          label="$RELEASE_TAG"
-          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then label="preview-${GITHUB_SHA:0:12}"; fi
-          if [[ "$EVENT_NAME" != workflow_dispatch ]]; then export BUILD_VERSION="${RELEASE_TAG#v}"; fi
-          bash scripts/package-release.sh "$label"
-          python3 scripts/verify-release.py "dist/$label" --execute-native
-          cp "dist/$label/SHA256SUMS.txt" "$RUNNER_TEMP/first-package-checksums.txt"
-          bash scripts/package-release.sh "$label"
-          python3 scripts/verify-release.py "dist/$label" --execute-native
-          cmp "$RUNNER_TEMP/first-package-checksums.txt" "dist/$label/SHA256SUMS.txt"
+          label="preview-${GITHUB_SHA:0:12}"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            label="$GITHUB_REF_NAME"
+            export BUILD_VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          bash scripts/package-hosted-release.sh package "$label" "$GITHUB_SHA" "$GO_VERSION"
           echo "directory=dist/$label" >> "$GITHUB_OUTPUT"
+          echo "label=$label" >> "$GITHUB_OUTPUT"
       - name: Attest every archive, manifest and checksum file
         id: provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
@@ -387,23 +500,105 @@ jobs:
           gh version > build/provenance-checks/gh-version.txt
           python3 scripts/verify_release_provenance.py "$PACKAGE_DIRECTORY" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" > build/provenance-checks/verified-subjects.txt
           python3 scripts/check_provenance_rejections.py "$PACKAGE_DIRECTORY" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" > build/provenance-checks/rejections.json
+      - name: Verify each Windows archive with only its download files
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_DIRECTORY: ${{ steps.build_portable.outputs.directory }}
+          PACKAGE_LABEL: ${{ steps.build_portable.outputs.label }}
+        run: |
+          staging="$(mktemp -d "$RUNNER_TEMP/accessweaver-targets.XXXXXXXX")"
+          for arch in amd64 arm64; do
+            archive="accessweaver-$PACKAGE_LABEL-windows-$arch.zip"
+            target_directory="$staging/$arch"
+            mkdir "$target_directory"
+            pins=()
+            for file in "$archive" BUILD-MANIFEST.json SHA256SUMS.txt BUILD-PROVENANCE.sigstore.json; do
+              checksum="$(sha256sum -- "$PACKAGE_DIRECTORY/$file")"
+              cp -- "$PACKAGE_DIRECTORY/$file" "$target_directory/$file"
+              pins+=(--expected-asset-sha256 "$file" "${checksum%% *}")
+            done
+            python3 scripts/verify_release_provenance.py "$target_directory" \
+              --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" --workflow-run-id "$GITHUB_RUN_ID" \
+              --target "windows/$arch" "${pins[@]}" > "build/provenance-checks/windows-$arch.json"
+          done
       - name: Retain provenance verification evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: release-provenance-check
+          name: release-provenance-check-${{ github.run_attempt }}
           path: build/provenance-checks/
           if-no-files-found: ignore
           retention-days: 14
       - name: Upload archives and checksums
+        id: upload_portable
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: accessweaver-unsigned
-          path: dist/*/*
+          name: accessweaver-unsigned-${{ github.run_attempt }}
+          path: ${{ steps.build_portable.outputs.directory }}/
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+  hosted-rebuild:
+    name: Compare a fresh hosted rebuild
+    needs: package
+    outputs:
+      reference_checksums_sha256: ${{ steps.compare.outputs.reference_checksums_sha256 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Build from the same clean source with fresh caches
+        shell: bash
+        env:
+          GOTOOLCHAIN: local
+          PACKAGE_DIRECTORY: ${{ needs.package.outputs.directory }}
+        run: |
+          label="${PACKAGE_DIRECTORY#dist/}"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then export BUILD_VERSION="${GITHUB_REF_NAME#v}"; fi
+          bash scripts/package-hosted-release.sh rebuild "$label" "$GITHUB_SHA" "$GO_VERSION"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.package.outputs.artifact_id || '0' }}
+          path: build/rebuild-reference/${{ needs.package.outputs.label }}
+      - name: Authenticate reference and compare all unsigned subjects
+        id: compare
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_DIRECTORY: ${{ needs.package.outputs.directory }}
+        run: |
+          mkdir -p build/rebuild-evidence
+          reference="build/rebuild-reference/${PACKAGE_DIRECTORY#dist/}"
+          python3 scripts/verify_release_rebuild.py "$reference" "$PACKAGE_DIRECTORY" \
+            --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" --workflow-run-id "$GITHUB_RUN_ID" \
+            --report build/rebuild-evidence/comparison.json
+          digest="$(python3 -c 'import json; print(json.load(open("build/rebuild-evidence/comparison.json"))["referenceChecksumsSha256"])')"
+          [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
+          echo "reference_checksums_sha256=$digest" >> "$GITHUB_OUTPUT"
+      - name: Retain the comparison report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-hosted-rebuild-comparison
+          path: build/rebuild-evidence/comparison.json
+          if-no-files-found: ignore
+          retention-days: 14
   packaged-native:
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     name: Packaged native (${{ matrix.goos }}/${{ matrix.goarch }})
     needs: package
     runs-on: ${{ matrix.os }}
@@ -454,15 +649,15 @@ jobs:
         run: node scripts/check-native-environment.cjs
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: accessweaver-unsigned
-          path: build/release-candidate
+          artifact-ids: ${{ needs.package.outputs.artifact_id || '0' }}
+          path: build/release-candidate/${{ needs.package.outputs.label }}
       - name: Authenticate snapshot and stage native candidate (no execution)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/stage_packaged_native.py --download-root build/release-candidate --into build/packaged-native
+        run: python3 scripts/stage_packaged_native.py --workflow-run-id ${{ github.run_id }} --download-root build/release-candidate --into build/packaged-native
       - name: Execute candidate and compare authenticated build identity
         run: |
-          node scripts/check-native-environment.cjs --binary ./build/packaged-native/accessweaver${{ runner.os == 'Windows' && '.exe' || '' }}
+          node scripts/check-native-environment.cjs --binary ./build/packaged-native/accessweaver${{ runner.os == 'Windows' && '.exe' || '' }} --check-update-build
           node scripts/check-packaged-evidence.cjs identity build/packaged-native
       - name: Packaged backup and recovery interoperability
         run: |
@@ -483,6 +678,31 @@ jobs:
         run: bash scripts/test-linux-session.sh ./build/packaged-native/accessweaver
       - name: Bind all results to the authenticated candidate
         run: node scripts/check-packaged-evidence.cjs complete build/packaged-native
+      - name: Collect successful candidate and execution evidence
+        shell: bash
+        run: |
+          mkdir build/release-qualified
+          cp build/packaged-native/candidate.json build/release-qualified/candidate.json
+          cp build/packaged-native-checks/acceptance.json build/release-qualified/execution.json
+      - name: Attest the staging and successful execution files
+        id: qualification_provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: build/release-qualified/*.json
+          create-storage-record: false
+      - name: Retain the qualification attestation bundle
+        shell: bash
+        env:
+          QUALIFICATION_BUNDLE: ${{ steps.qualification_provenance.outputs.bundle-path }}
+        run: cp "$QUALIFICATION_BUNDLE" build/release-qualified/qualification.sigstore.json
+      - name: Retain successful packaged target evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-qualified-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: build/release-qualified/
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
       - name: Retain public candidate acceptance evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -497,6 +717,10 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
   packaged-freebsd:
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     name: Packaged guest (freebsd/${{ matrix.arch }})
     needs: package
     strategy:
@@ -541,19 +765,46 @@ jobs:
           --target build/bsd-inspection-tools -r scripts/requirements-bsd-inspection.txt
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: accessweaver-unsigned
-          path: build/release-candidate
+          artifact-ids: ${{ needs.package.outputs.artifact_id || '0' }}
+          path: build/release-candidate/${{ needs.package.outputs.label }}
       - name: Authenticate snapshot and stage archived FreeBSD candidate (no execution)
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
           python3 scripts/stage_packaged_native.py --freebsd-guest --target freebsd/${{ matrix.arch }}
-          --download-root build/release-candidate --into build/packaged-bsd
+          --workflow-run-id ${{ github.run_id }} --download-root build/release-candidate --into build/packaged-bsd
       - name: Execute archived candidate and core regressions inside the pinned guest
         env:
           ACCESSWEAVER_DISPOSABLE_BSD_GUEST_TEST: '1'
           ACCESSWEAVER_BSD_ARCH: ${{ matrix.arch }}
         run: python3 scripts/test-bsd-guest.py --packaged-candidate build/packaged-bsd
+      - name: Collect successful candidate and execution evidence
+        shell: bash
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir build/release-qualified
+          cp build/packaged-bsd/candidate.json build/release-qualified/candidate.json
+          cp "build/bsd-native-checks/freebsd-$TARGET_ARCH.json" build/release-qualified/execution.json
+      - name: Attest the staging and successful execution files
+        id: qualification_provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: build/release-qualified/*.json
+          create-storage-record: false
+      - name: Retain the qualification attestation bundle
+        shell: bash
+        env:
+          QUALIFICATION_BUNDLE: ${{ steps.qualification_provenance.outputs.bundle-path }}
+        run: cp "$QUALIFICATION_BUNDLE" build/release-qualified/qualification.sigstore.json
+      - name: Retain successful packaged target evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-qualified-freebsd-${{ matrix.arch }}
+          path: build/release-qualified/
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
       - name: Retain public archived-candidate execution evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -565,6 +816,10 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
   packaged-openbsd:
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     name: Packaged guest (openbsd/${{ matrix.arch }})
     needs: package
     strategy:
@@ -604,20 +859,47 @@ jobs:
           sudo apt-get install --no-install-recommends -y ${{ matrix.packages }} qemu-utils xorriso openssh-client openssl
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: accessweaver-unsigned
-          path: build/release-candidate
+          artifact-ids: ${{ needs.package.outputs.artifact_id || '0' }}
+          path: build/release-candidate/${{ needs.package.outputs.label }}
       - name: Authenticate snapshot and stage archived OpenBSD candidate (no execution)
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
           python3 scripts/stage_packaged_native.py --openbsd-guest --target openbsd/${{ matrix.arch }}
-          --download-root build/release-candidate --into build/packaged-openbsd
+          --workflow-run-id ${{ github.run_id }} --download-root build/release-candidate --into build/packaged-openbsd
       - name: Execute archived candidate and core regressions inside the pinned guest
         env:
           ACCESSWEAVER_DISPOSABLE_BSD_GUEST_TEST: '1'
           ACCESSWEAVER_DISPOSABLE_OPENBSD_GUEST_TEST: '1'
           ACCESSWEAVER_BSD_ARCH: ${{ matrix.arch }}
         run: python3 scripts/test-openbsd-guest.py --packaged-candidate build/packaged-openbsd
+      - name: Collect successful candidate and execution evidence
+        shell: bash
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir build/release-qualified
+          cp build/packaged-openbsd/candidate.json build/release-qualified/candidate.json
+          cp "build/openbsd-native-checks/openbsd-$TARGET_ARCH.json" build/release-qualified/execution.json
+      - name: Attest the staging and successful execution files
+        id: qualification_provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: build/release-qualified/*.json
+          create-storage-record: false
+      - name: Retain the qualification attestation bundle
+        shell: bash
+        env:
+          QUALIFICATION_BUNDLE: ${{ steps.qualification_provenance.outputs.bundle-path }}
+        run: cp "$QUALIFICATION_BUNDLE" build/release-qualified/qualification.sigstore.json
+      - name: Retain successful packaged target evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-qualified-openbsd-${{ matrix.arch }}
+          path: build/release-qualified/
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
       - name: Retain public archived-candidate execution evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -628,10 +910,55 @@ jobs:
             build/openbsd-native-checks/
           if-no-files-found: ignore
           retention-days: 14
+  verify-publication:
+    name: Verify publication inputs
+    outputs:
+      qualification_sha256: ${{ steps.verify.outputs.qualification_sha256 }}
+    needs: [package, hosted-rebuild, packaged-native, packaged-freebsd, packaged-openbsd]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.package.outputs.artifact_id || '0' }}
+          path: release-assets/${{ needs.package.outputs.label }}
+      - name: Download successful packaged target receipts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-qualified-*
+          path: release-qualification
+      - name: Verify prerelease candidate
+        id: verify
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_DIRECTORY: ${{ needs.package.outputs.directory }}
+          REBUILD_CHECKSUMS_SHA256: ${{ needs.hosted-rebuild.outputs.reference_checksums_sha256 }}
+        run: |
+          verified_directory="release-assets/${PACKAGE_DIRECTORY#dist/}"
+          mkdir -p build/release-publication
+          python3 scripts/publish_prerelease.py "$verified_directory" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" \
+            --rebuild-checksums-sha256 "$REBUILD_CHECKSUMS_SHA256" --native-qualification release-qualification --workflow-run-id "$GITHUB_RUN_ID" --verify-only \
+            > build/release-publication/verified.json
+          digest="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["qualificationSHA256"])' < build/release-publication/verified.json)"
+          [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
+          echo "qualification_sha256=$digest" >> "$GITHUB_OUTPUT"
+      - name: Retain the publication verification report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-publication-verification-${{ github.run_attempt }}
+          path: build/release-publication/verified.json
+          if-no-files-found: error
+          retention-days: 14
   publish:
     name: Publish prerelease assets
-    needs: [package, packaged-native, packaged-freebsd, packaged-openbsd]
-    if: github.event_name != 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/')
+    needs: [package, hosted-rebuild, verify-publication]
+    if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -642,27 +969,22 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: accessweaver-unsigned
-          path: release-assets
-      - name: Create prerelease or attach to the published release
+          artifact-ids: ${{ needs.package.outputs.artifact_id || '0' }}
+          path: release-assets/${{ needs.package.outputs.label }}
+      - name: Download successful packaged target receipts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-qualified-*
+          path: release-qualification
+      - name: Verify and publish prerelease assets
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
           PACKAGE_DIRECTORY: ${{ needs.package.outputs.directory }}
+          REBUILD_CHECKSUMS_SHA256: ${{ needs.hosted-rebuild.outputs.reference_checksums_sha256 }}
+          EXPECTED_QUALIFICATION_SHA256: ${{ needs.verify-publication.outputs.qualification_sha256 }}
         run: |
           verified_directory="release-assets/${PACKAGE_DIRECTORY#dist/}"
-          python3 scripts/verify_release_provenance.py "$verified_directory" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF"
-          mapfile -d '' assets < <(find release-assets -type f -print0)
-          if ((${#assets[@]} != 13)); then
-            echo "Expected ten archives, a manifest, checksums and a provenance bundle." >&2
-            exit 1
-          fi
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
-          else
-            gh release create "$RELEASE_TAG" "${assets[@]}" --verify-tag --prerelease \
-              --title "AccessWeaver $RELEASE_TAG (unsigned alpha)" \
-              --notes "Unsigned alpha core builds. External engines, drivers and native mobile VPN apps are not included. See README, THIRD_PARTY.md and docs/TESTING.md for setup and validation limits."
-          fi
+          python3 scripts/publish_prerelease.py "$verified_directory" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" \
+            --rebuild-checksums-sha256 "$REBUILD_CHECKSUMS_SHA256" --native-qualification release-qualification \
+            --expected-qualification-sha256 "$EXPECTED_QUALIFICATION_SHA256" --workflow-run-id "$GITHUB_RUN_ID"

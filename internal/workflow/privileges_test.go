@@ -51,10 +51,63 @@ func TestMachineAuthorityIsRecheckedBeforeJobStarts(t *testing.T) {
 	}
 }
 
+func TestDesktopAccessIsCheckedBeforeJobStorage(t *testing.T) {
+	requests := []Request{
+		{Action: "app-install", Engine: "discord"},
+		{Action: "app-remove", Engine: "discord-ptb"},
+		{Action: "app-reinstall", Engine: "discord"},
+		{Action: "app-start", Engine: "splitcord"},
+	}
+	for _, request := range requests {
+		t.Run(request.Action+"/"+request.Engine, func(t *testing.T) {
+			m := New(t.TempDir())
+			m.platform = "windows"
+			refused := errors.New("fixture: unusable desktop token")
+			m.requireDesktop = func() error { return refused }
+			m.requireAdmin = func() error {
+				t.Error("desktop workflow checked administrator access")
+				return refused
+			}
+			m.openStoreLease = func(string) (workflowStoreLease, error) {
+				t.Error("desktop refusal reserved workflow storage")
+				return nil, refused
+			}
+			m.execute = func(context.Context, string, Request) (json.RawMessage, error) {
+				t.Error("desktop refusal started the worker")
+				return nil, refused
+			}
+			blocked, err := m.Preview(request)
+			if err != nil || blocked.Ready || blocked.RequiresAdministrator || len(blocked.Issues) != 1 || blocked.Issues[0] != refused.Error() {
+				t.Fatalf("desktop preview: %+v, %v", blocked, err)
+			}
+			if _, err = m.Start(blocked.ID); err == nil || err.Error() != refused.Error() {
+				t.Fatalf("blocked workflow start: %v", err)
+			}
+
+			m.requireDesktop = func() error { return nil }
+			ready, err := m.Preview(request)
+			if err != nil || !ready.Ready || ready.RequiresAdministrator {
+				t.Fatalf("interactive desktop preview: %+v, %v", ready, err)
+			}
+			m.requireDesktop = func() error { return refused }
+			if _, err = m.Start(ready.ID); !errors.Is(err, refused) {
+				t.Fatalf("desktop access was not rechecked: %v", err)
+			}
+			if m.Snapshot().ID != "" {
+				t.Fatal("desktop refusal admitted a workflow job")
+			}
+			if _, err = os.Stat(m.root); !os.IsNotExist(err) {
+				t.Fatalf("desktop refusal created workflow state: %v", err)
+			}
+		})
+	}
+}
+
 func TestReadAndUserOperationsDoNotRequireAdministrator(t *testing.T) {
 	m := New(t.TempDir())
 	m.platform = "windows"
 	m.requireAdmin = func() error { t.Error("read/user operation required admin"); return errors.New("unexpected check") }
+	m.requireDesktop = func() error { return nil }
 	for _, r := range []Request{{Action: "discover"}, {Action: "updates"}, {Action: "choose-folder"}, {Action: "app-install", Engine: "discord"}, {Action: "app-start", Engine: "discord"}, {Action: "app-remove", Engine: "discord"}} {
 		p, err := m.Preview(r)
 		if err != nil || !p.Ready || p.RequiresAdministrator {

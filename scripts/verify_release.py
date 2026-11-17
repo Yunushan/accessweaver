@@ -5,10 +5,12 @@ This does not verify publisher signatures or certify target networking behavior.
 Only --execute-native runs a binary, and only for the current OS/architecture.
 """
 import argparse
+import ctypes
+import errno
 import hashlib
 import json
 import os
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import platform
 import re
 import stat
@@ -18,8 +20,17 @@ import tarfile
 import tempfile
 import zipfile
 
-from sbom import validate as validate_sbom
+from release_archive import MAX_EPOCH, timestamp, zip_member_timestamp
+from sbom import command as go_metadata_command, validate as validate_sbom
 
+HOST_PLATFORM = sys.platform
+MAX_FILE = 128 << 20
+MAX_SET = 256 << 20
+MAX_ARCHIVE_MEMBERS = 4096
+MAX_MEMBER_BYTES = 64 << 20
+MAX_UNCOMPRESSED_BYTES = 256 << 20
+WINDOWS_DEVICE = re.compile(r"(?:CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(?:\..*)?", re.IGNORECASE)
+PROVENANCE_BUNDLE = "BUILD-PROVENANCE.sigstore.json"
 TARGETS = {(os_name, arch) for os_name in ("windows", "linux", "darwin", "freebsd", "openbsd") for arch in ("amd64", "arm64")}
 
 
@@ -28,107 +39,348 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def inspect_archive(path, root, binary_name):
+def artifact_names(manifest):
+    label = manifest.get("releaseLabel")
+    require(isinstance(label, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", label),
+            "Invalid manifest release label")
+    artifacts = manifest.get("artifacts")
+    require(isinstance(artifacts, list) and len(artifacts) == len(TARGETS),
+            "Release must contain exactly the ten documented targets")
+    targets = set()
+    names = set()
+    for item in artifacts:
+        target = item["goos"], item["goarch"]
+        require(target in TARGETS and target not in targets, "Invalid or duplicate release target")
+        system, arch = target
+        extension = ".zip" if system == "windows" else ".tar.gz"
+        expected = f"accessweaver-{label}-{system}-{arch}{extension}"
+        require(item["file"] == expected, "Archive name does not match the manifest release label and target")
+        targets.add(target)
+        names.add(expected)
+    return names
+
+
+def zip_members(archive):
+    for item in archive.infolist():
+        mode = item.external_attr >> 16
+        regular = (not item.is_dir() and not item.external_attr & 0x10
+                   and (item.create_system != 3 or stat.S_IFMT(mode) in (0, stat.S_IFREG)))
+        yield item.orig_filename, item.file_size, regular and not item.flag_bits & 1, item.date_time
+
+
+def inspect_archive(path, root, binary_name, *, epoch=None):
     if path.suffix == ".zip":
+        expected_timestamp = zip_member_timestamp(epoch) if epoch is not None else None
         archive = zipfile.ZipFile(path)
-        members = [(item.filename, item.file_size, not item.is_dir() and not stat.S_ISLNK(item.external_attr >> 16)) for item in archive.infolist()]
+        members = zip_members(archive)
         read = archive.read
     else:
+        expected_timestamp = epoch
+        if epoch is not None:
+            with path.open("rb") as raw:
+                header = raw.read(10)
+            require(len(header) == 10 and header[:3] == b"\x1f\x8b\x08"
+                    and int.from_bytes(header[4:8], "little") == epoch,
+                    "Gzip timestamp does not match the manifest archive epoch")
         archive = tarfile.open(path, "r:gz")
-        members = [(item.name, item.size, item.isfile()) for item in archive.getmembers()]
+        members = ((item.name, item.size, item.type in (tarfile.REGTYPE, tarfile.AREGTYPE)
+                    and item.sparse is None, item.mtime) for item in archive)
         def read(name):
             with archive.extractfile(name) as source:
                 return source.read()
     with archive:
         names = set()
+        file_keys = set()
+        directories = {}
         total = 0
-        for name, size, regular in members:
-            parts = PurePosixPath(name).parts
-            require(regular and "\\" not in name and parts and parts[0] == root and len(parts) > 1 and ".." not in parts, f"Unsafe archive entry: {name}")
-            require(name not in names, f"Duplicate archive entry: {name}")
-            require(0 <= size <= 64 << 20, f"Oversized archive entry: {name}")
-            names.add(name)
+        for name, size, regular, member_timestamp in members:
+            require(len(names) < MAX_ARCHIVE_MEMBERS, "Archive member count exceeds limit")
+            require(expected_timestamp is None or member_timestamp == expected_timestamp,
+                    "Archive member timestamp does not match the manifest archive epoch")
+            parts = name.split("/")
+            require(regular and len(parts) > 1 and parts[0] == root and all(
+                re.fullmatch(r"[A-Za-z0-9._-]+", part) and not part.endswith(".")
+                and not WINDOWS_DEVICE.fullmatch(part) for part in parts
+            ), "Unsafe archive entry")
+            key = name.lower()
+            require(key not in file_keys and key not in directories, "Conflicting archive entry")
+            prefix = parts[0]
+            for part in parts[1:-1]:
+                prefix += "/" + part
+                parent = prefix.lower()
+                require(parent not in file_keys and directories.setdefault(parent, prefix) == prefix,
+                        "Conflicting archive directory")
+            require(0 <= size <= MAX_MEMBER_BYTES, "Oversized archive entry")
             total += size
-        require(total <= 256 << 20, "Archive uncompressed size exceeds limit")
+            require(total <= MAX_UNCOMPRESSED_BYTES, "Archive uncompressed size exceeds limit")
+            names.add(name)
+            file_keys.add(key)
         for name in (binary_name, "BUILD-INFO.json", "SBOM.cdx.json", "LICENSE", "THIRD_PARTY.md", "SECURITY.md", "licenses/Go-runtime-LICENSE", "licenses/SplitWire-Turkey-MIT.txt"):
             require(f"{root}/{name}" in names, f"Missing release file: {name}")
-        info = json.loads(read(f"{root}/BUILD-INFO.json"))
+        info = json.loads(read(f"{root}/BUILD-INFO.json"), object_pairs_hook=unique_metadata_keys)
         binary = read(f"{root}/{binary_name}")
-        bom = json.loads(read(f"{root}/SBOM.cdx.json"))
+        bom = json.loads(read(f"{root}/SBOM.cdx.json"), object_pairs_hook=unique_metadata_keys)
         validate_sbom(bom, binary, info)
         components = [bom["metadata"]["component"]] + bom.get("components", [])
         for component in components:
             for prop in component.get("properties", []):
                 if prop["name"] != "accessweaver:license-evidence":
                     continue
-                for evidence in json.loads(prop["value"]):
+                for evidence in json.loads(prop["value"], object_pairs_hook=unique_metadata_keys):
                     name = evidence["path"]
                     require(re.fullmatch(r"licenses/[A-Za-z0-9._-]+", name), "Unexpected SBOM notice path")
                     require(f"{root}/{name}" in names and hashlib.sha256(read(f"{root}/{name}")).hexdigest() == evidence["sha256"], "Missing or changed SBOM license evidence")
         return info, binary
 
 
-def verify(directory, execute_native=False):
+def release_file(path, maximum):
+    info = path.lstat()
+    require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+            and not getattr(info, "st_file_attributes", 0) & 0x400
+            and 0 < info.st_size <= maximum, "Expected a bounded regular release file")
+    return info
+
+
+def snapshot(source, destination, count, *, maximum_file=None):
+    if maximum_file is None:
+        maximum_file = MAX_FILE
+    directory = source.lstat()
+    require(stat.S_ISDIR(directory.st_mode) and not source.is_symlink()
+            and not getattr(directory, 'st_file_attributes', 0) & 0x400, 'Expected a real input directory')
+    names = set()
+    total = 0
+    with os.scandir(source) as entries:
+        for entry in entries:
+            require(len(names) < count and entry.name not in names, 'Unexpected extra input')
+            path = source / entry.name
+            before = path.lstat()
+            require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+                    and not getattr(before, 'st_file_attributes', 0) & 0x400
+                    and 0 < before.st_size <= maximum_file, 'Expected a bounded regular single-link input')
+            total += before.st_size
+            require(total <= MAX_SET, 'Input set exceeds snapshot bound')
+            flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
+            descriptor = os.open(path, flags)
+            try:
+                opened = os.fstat(descriptor)
+                identity = lambda item: (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns, item.st_nlink)
+                require(stat.S_ISREG(opened.st_mode) and identity(opened) == identity(before), 'Input changed before snapshot')
+                with (destination / entry.name).open('xb') as output:
+                    copied = 0
+                    while True:
+                        block = os.read(descriptor, min(1 << 20, maximum_file + 1 - copied))
+                        if not block:
+                            break
+                        copied += len(block)
+                        require(copied <= before.st_size, 'Input changed or exceeded its snapshot bound')
+                        output.write(block)
+                require(copied == before.st_size and identity(os.fstat(descriptor)) == identity(before), 'Input changed during snapshot')
+            finally:
+                os.close(descriptor)
+            names.add(entry.name)
+    require(len(names) == count, 'Missing release inputs')
+    return names
+
+
+def publish_staged_file(staged, destination):
+    """Publish without replacement or an extra link on supported rename hosts."""
+    if HOST_PLATFORM == "win32":
+        # Python's Windows rename refuses an existing destination.
+        os.rename(staged, destination)
+        return
+    if HOST_PLATFORM == "darwin":
+        rename_exclusive = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True).renamex_np
+        rename_exclusive.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)
+        rename_exclusive.restype = ctypes.c_int
+        result = rename_exclusive(os.fsencode(staged), os.fsencode(destination), 4)  # RENAME_EXCL
+    elif HOST_PLATFORM.startswith("linux"):
+        try:
+            rename_exclusive = ctypes.CDLL(None, use_errno=True).renameat2
+        except AttributeError as error:
+            raise OSError(errno.ENOTSUP, "Exclusive file rename is unavailable") from error
+        rename_exclusive.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint)
+        rename_exclusive.restype = ctypes.c_int
+        at_fdcwd = -100
+        result = rename_exclusive(at_fdcwd, os.fsencode(staged),
+                                  at_fdcwd, os.fsencode(destination), 1)  # RENAME_NOREPLACE
+    else:
+        # Keep the existing staging behavior on other verification hosts.
+        os.link(staged, destination)
+        return
+    if result != 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code), str(destination))
+
+
+def native_metadata_json(executable, arguments, environment):
+    with tempfile.TemporaryFile() as output:
+        subprocess.run([str(executable), *arguments], env=environment, check=True,
+                       stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.DEVNULL, timeout=30)
+        output.seek(0)
+        data = output.read(4097)
+    require(0 < len(data) <= 4096, "Native metadata response exceeds inspection bounds")
+    return json.loads(data.decode("utf-8"), object_pairs_hook=unique_metadata_keys)
+
+
+def unique_metadata_keys(pairs):
+    result = dict(pairs)
+    require(len(result) == len(pairs), "Duplicate release metadata field")
+    return result
+
+
+def execute_metadata(binary, binary_name, info, *, require_update_build=False):
+    with tempfile.TemporaryDirectory(prefix="accessweaver-release-check-") as temporary:
+        exe = Path(temporary) / binary_name
+        exe.write_bytes(binary)
+        exe.chmod(0o700)
+        state = Path(temporary) / "must-not-create-user-state"
+        environment = dict(os.environ, ACCESSWEAVER_HOME=str(state), ACCESSWEAVER_NO_BROWSER="1")
+        require(native_metadata_json(exe, ["version", "--json"], environment) == info,
+                "Runtime identity differs from packaged metadata")
+        tag = "v" + info["version"]
+        comparison_args = ["system", "check-version"]
+        fields = {"version", "currentVersion", "updateAvailable"}
+        if require_update_build:
+            comparison_args.append("--build-identity")
+            fields.add("build")
+        comparison = native_metadata_json(exe, [*comparison_args, tag], environment)
+        require(isinstance(comparison, dict)
+                and comparison.keys() == fields
+                and (not require_update_build or comparison["build"] == info)
+                and comparison["version"] == tag and comparison["currentVersion"] == info["version"]
+                and comparison["updateAvailable"] is False,
+                "Update comparison differs from the packaged build identity")
+        require(not state.exists(), "Metadata commands unexpectedly wrote user state")
+
+
+def verify_go_metadata(binary, binary_name, info):
+    """Read compiler metadata from the exact checked bytes without executing them."""
+    with tempfile.TemporaryDirectory(prefix="accessweaver-go-metadata-") as temporary:
+        path = Path(temporary) / binary_name
+        path.write_bytes(binary)
+        metadata = json.loads(go_metadata_command(["go", "version", "-m", "-json", str(path)]),
+                              object_pairs_hook=unique_metadata_keys)
+    project = "github.com/Yunushan/accessweaver"
+    require(metadata["Path"] == project + "/cmd/accessweaver" and metadata["Main"]["Path"] == project
+            and not metadata["Main"].get("Replace"), "Packaged binary main package differs")
+    require(metadata["GoVersion"] == info["goVersion"], "Packaged binary compiler differs")
+    settings = {item["Key"]: item["Value"] for item in metadata["Settings"]}
+    require(len(settings) == len(metadata["Settings"]), "Duplicate packaged binary build setting")
+    expected = {"GOOS": info["platform"], "GOARCH": info["arch"], "CGO_ENABLED": "0",
+                "-compiler": "gc", "-trimpath": "true"}
+    require(all(settings.get(key) == value for key, value in expected.items()),
+            "Packaged binary target or build settings differ")
+
+    vcs = {key: value for key, value in settings.items() if key == "vcs" or key.startswith("vcs.")}
+    if info["commit"] == "unknown" and info["sourceState"] == "unknown":
+        require(not vcs, "Unexpected version control metadata in a build without Git identity")
+    else:
+        require(info["sourceState"] in ("clean", "modified")
+                and vcs.get("vcs") == "git" and vcs.get("vcs.revision") == info["commit"]
+                and vcs.get("vcs.modified") == ("true" if info["sourceState"] == "modified" else "false"),
+                "Packaged binary Git revision or modification state differs")
+
+
+def verify(directory, execute_native=False, *, check_go_metadata=False, require_update_build=False,
+           selected_target=None):
+    require(selected_target is None or (selected_target in TARGETS and not execute_native),
+            "Target-specific verification requires a known target and forbids execution")
     manifest_path = directory / "BUILD-MANIFEST.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    release_file(manifest_path, 1 << 20)
+    manifest_bytes = manifest_path.read_bytes()
+    manifest = json.loads(manifest_bytes.decode("utf-8"), object_pairs_hook=unique_metadata_keys)
     require(manifest.get("unsigned") is True, "Unsigned packaging must be labeled accurately")
     require(manifest.get("sourceState") in ("clean", "modified", "unknown"), "Missing source modification state")
-    require(manifest.get("sourceCommit") == "unknown" or re.fullmatch(r"[a-f0-9]{40,64}", manifest.get("sourceCommit", "")), "Invalid source commit")
+    commit = manifest.get("sourceCommit")
+    require(isinstance(commit, str) and (commit == "unknown" or re.fullmatch(r"[a-f0-9]{40}|[a-f0-9]{64}", commit)),
+            "Invalid source commit")
+    sdk = manifest.get("goVersion")
+    match = re.fullmatch(r"go version (\S+) [a-z0-9]+/[a-z0-9]+", sdk) if isinstance(sdk, str) else None
+    require(match is not None, "Invalid release Go toolchain identity")
+    go_version = match.group(1)
     require(manifest.get("targetExecutionTested") is False, "Packaging must not imply target execution")
+
+    archive_names = artifact_names(manifest)
+    packaging = manifest.get("packaging")
+    epoch = packaging.get("archiveEpoch") if isinstance(packaging, dict) else None
+    require(type(epoch) is int and 0 <= epoch <= MAX_EPOCH and manifest.get("builtAt") == timestamp(str(epoch)),
+            "Manifest build timestamp does not match the archive epoch")
+
+    checksum_path = directory / "SHA256SUMS.txt"
+    release_file(checksum_path, 64 << 10)
     checksums = {}
-    for line in (directory / "SHA256SUMS.txt").read_text(encoding="utf-8").splitlines():
+    for line in checksum_path.read_text(encoding="utf-8").splitlines():
         match = re.fullmatch(r"([a-f0-9]{64})  ([A-Za-z0-9._-]+)", line)
         require(match is not None, "Invalid checksum entry")
         digest, name = match.groups()
         require(name not in checksums, "Duplicate checksum entry")
         checksums[name] = digest
-        require(hashlib.sha256((directory / name).read_bytes()).hexdigest() == digest, f"Checksum mismatch: {name}")
-    require(checksums.get(manifest_path.name) == hashlib.sha256(manifest_path.read_bytes()).hexdigest(), "Manifest checksum missing")
-    targets = set()
-    artifact_names = set()
+    require(set(checksums) == archive_names | {manifest_path.name}, "Unexpected or omitted checksum files")
+    require(checksums[manifest_path.name] == hashlib.sha256(manifest_bytes).hexdigest(), "Manifest checksum differs")
+
+    artifacts = [item for item in manifest["artifacts"]
+                 if selected_target is None or (item["goos"], item["goarch"]) == selected_target]
+    expected_files = {item["file"] for item in artifacts} | {manifest_path.name, checksum_path.name}
+    with os.scandir(directory) as entries:
+        names = set()
+        for entry in entries:
+            require(entry.name in expected_files or entry.name == PROVENANCE_BUNDLE, "Unexpected release input")
+            names.add(entry.name)
+    require(expected_files <= names, "Missing release input")
+    if PROVENANCE_BUNDLE in names:
+        release_file(directory / PROVENANCE_BUNDLE, 16 << 20)
+
     host_os = {"win32": "windows", "darwin": "darwin", "linux": "linux"}.get(sys.platform, sys.platform.split("-")[0])
     host_arch = {"amd64": "amd64", "x86_64": "amd64", "arm64": "arm64", "aarch64": "arm64"}.get(platform.machine().lower())
-    executed = False
-    for item in manifest["artifacts"]:
+    native = None
+    for item in artifacts:
         target = item["goos"], item["goarch"]
-        require(target in TARGETS and target not in targets, f"Invalid/duplicate target: {target}")
-        targets.add(target)
         name = item["file"]
-        extension = ".zip" if target[0] == "windows" else ".tar.gz"
-        require(re.fullmatch(r"accessweaver-[A-Za-z0-9._-]+-" + target[0] + "-" + target[1] + re.escape(extension), name), "Unexpected archive name")
-        artifact_names.add(name)
         path = directory / name
-        require(path.stat().st_size == item["bytes"] and checksums.get(name) == item["sha256"], f"Artifact identity mismatch: {name}")
-        root = name[:-len(extension)]
+        size = release_file(path, 128 << 20).st_size
+        require(size == item["bytes"] and checksums[name] == item["sha256"], f"Artifact identity mismatch: {name}")
+        extension = ".zip" if target[0] == "windows" else ".tar.gz"
         binary_name = "accessweaver.exe" if target[0] == "windows" else "accessweaver"
-        info, binary = inspect_archive(path, root, binary_name)
-        for key, expected in {"version": manifest["version"], "commit": manifest["sourceCommit"], "sourceState": manifest["sourceState"], "builtAt": manifest["builtAt"], "platform": target[0], "arch": target[1]}.items():
+        # Inspect the exact private copy whose bytes passed the digest check.
+        with tempfile.TemporaryDirectory(prefix="accessweaver-archive-check-") as temporary:
+            frozen = Path(temporary) / name
+            digest = hashlib.sha256()
+            copied = 0
+            with path.open("rb") as source, frozen.open("xb") as output:
+                for block in iter(lambda: source.read(1 << 20), b""):
+                    copied += len(block)
+                    require(copied <= size, "Release archive grew during verification")
+                    digest.update(block)
+                    output.write(block)
+            require(copied == size and digest.hexdigest() == checksums[name], f"Checksum mismatch: {name}")
+            info, binary = inspect_archive(frozen, name[:-len(extension)], binary_name, epoch=epoch)
+        for key, expected in {"version": manifest["version"], "commit": manifest["sourceCommit"], "sourceState": manifest["sourceState"], "builtAt": manifest["builtAt"], "platform": target[0], "arch": target[1], "goVersion": go_version}.items():
             require(info.get(key) == expected, f"Inconsistent {key}: {name}")
+        if check_go_metadata:
+            verify_go_metadata(binary, binary_name, info)
         if execute_native and target == (host_os, host_arch):
-            with tempfile.TemporaryDirectory(prefix="accessweaver-release-check-") as temporary:
-                exe = Path(temporary) / binary_name
-                exe.write_bytes(binary)
-                exe.chmod(0o700)
-                state = Path(temporary) / "must-not-create-user-state"
-                environment = dict(os.environ, ACCESSWEAVER_HOME=str(state), ACCESSWEAVER_NO_BROWSER="1")
-                result = subprocess.run([str(exe), "version", "--json"], env=environment, check=True, capture_output=True, text=True, timeout=30)
-                require(json.loads(result.stdout) == info, "Runtime identity differs from packaged metadata")
-                subprocess.run([str(exe), "system", "check-version", "v" + info["version"]], env=environment, check=True, capture_output=True, timeout=30)
-                require(not state.exists(), "Metadata commands unexpectedly wrote user state")
-                executed = True
-    require(targets == TARGETS, "Release must contain exactly the ten documented targets")
-    require(set(checksums) == artifact_names | {manifest_path.name}, "Unexpected or omitted checksum files")
-    require(not execute_native or executed, "No artifact matches the current host")
-    print(f"Verified {len(targets)} archives, checksums, required notices and source identity; native metadata execution={executed}")
+            native = binary, binary_name, info
+    if execute_native:
+        require(native is not None, "No artifact matches the current host")
+        execute_metadata(*native, require_update_build=require_update_build)
+    print(f"Verified {len(artifacts)} archive(s), checksums, required notices and source identity. "
+          f"Static Go metadata={check_go_metadata}, native metadata execution={execute_native}.")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
     parser.add_argument("--execute-native", action="store_true")
+    parser.add_argument("--require-update-build", action="store_true",
+                        help="require native version comparison to return the full packaged build identity")
+    parser.add_argument("--check-go-metadata", action="store_true",
+                        help="inspect each executable using the installed Go toolchain without running it")
     arguments = parser.parse_args()
+    if arguments.require_update_build and not arguments.execute_native:
+        parser.error("--require-update-build requires --execute-native")
     try:
-        verify(arguments.directory, arguments.execute_native)
+        verify(arguments.directory, arguments.execute_native, check_go_metadata=arguments.check_go_metadata,
+               require_update_build=arguments.require_update_build)
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError, zipfile.BadZipFile, tarfile.TarError) as error:
         print(f"Release verification failed: {error}", file=sys.stderr)
         return 1

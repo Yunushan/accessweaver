@@ -14,6 +14,14 @@ func TestDarwinRemovalReceiptQueriesRejectUncontrolledArgumentsBeforeExecution(t
 		}
 	}
 }
+func TestDarwinReceiptForgetRefusesUnknownIDs(t *testing.T) {
+	for _, id := range []string{"", "--all", "com.apple.pkg.CLTools_Executables", desktopBundleID + ".registration.unknown"} {
+		if e := forgetRemovalReceipt(context.Background(), id); e == nil || e.Error() != "invalid fixed receipt identity" {
+			t.Fatal("unowned receipt reached system tool", e)
+		}
+	}
+}
+
 func TestDarwinRemovalMetadataOutputCancelsAtBudgetWithoutRetainingOverflow(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

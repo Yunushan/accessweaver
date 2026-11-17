@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "scope": "Two local unsigned portable builds of the exact source commit",
+  "repository": "Yunushan/accessweaver",
+  "sourceCommit": "53abc0178c85837ef21acf0d1202eca82aec24e4",
+  "sourceTree": "850f34b4ec0f01c6bbd7abce67ffb6abe49d9103",
+  "sourceRef": "refs/heads/codex/dns-adapter-coverage",
+  "sourceState": "clean",
+  "releaseLabel": "preview-53abc0178c85",
+  "releaseTagRefsSHA256": "941e431ee1989aaa18bca379e084f74d25c502752a96a535b0cbb0b44bf4413e",
+  "environment": {
+    "host": "Ubuntu on WSL, linux/amd64",
+    "goVersion": "go version go1.27.4 linux/amd64",
+    "goToolchainArchiveSHA256": "7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840",
+    "packaging": {
+      "pythonVersion": "3.14.4",
+      "zlibVersion": "1.3.1",
+      "zlibRuntimeVersion": "1.3.1",
+      "archiveEpoch": 1794717020
+    },
+    "sameHost": true,
+    "separateCleanCheckouts": true,
+    "separateSDKExtractions": true,
+    "freshSeparateGoBuildAndModuleCaches": true,
+    "buildTimezones": [
+      "UTC",
+      "America/Los_Angeles"
+    ],
+    "buildUmasks": [
+      "022",
+      "077"
+    ]
+  },
+  "sourceSHA256": {
+    ".gitattributes": "b7a4f11cbe3632d5d679c8a2c135860b4d31f1f434006be479808463d799f8bc",
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+    "scripts/sbom-tools/go.mod": "d31958b2a0537cc549be979c567d829812523558d713cc50c59f20caa747a211",
+    "scripts/sbom-tools/go.sum": "da615e479f84e5f7278666ec31f14478644b08f1b3c6f62b5b4a4fb6e417ba50",
+    "scripts/build-all.sh": "6d8712ac794b04cbd9406d819557db3d74d6f31db43c138a45f5f74be146ccdc",
+    "scripts/package-release.sh": "467a7a8f0d3d225148e65cf2342c809cf52f50a3740400b3096e0ec890865b35",
+    "scripts/release_archive.py": "d4f2da52a8519042193e7bf1f330fff5372c2b6e736a5aed1442d218595dd517",
+    "scripts/sbom.py": "9248d425e4bfb3a13ce6a6d9834533cdecade2eeb9589cdaf5eb053b3c066df6",
+    "scripts/verify_release.py": "3b23c49a166bc60c1dd5cf11ea2a97b53f564bd4a54abbc61c20c5936d5f8528",
+    "scripts/verify-release.py": "877e2987c403a8cf5c289d04bed8a8fce915cac7c43d500cf963081d8ac83256"
+  },
+  "archivesVerifiedPerBuild": 10,
+  "schemaValidatedSBOMsPerBuild": 10,
+  "staticGoMetadataVerifiedPerBuild": 10,
+  "nativeMetadataTarget": "linux/amd64",
+  "nativeUpdateBuildIdentityVerifiedPerBuild": true,
+  "allUnsignedSubjectsByteIdentical": true,
+  "subjects": [
+    {
+      "file": "BUILD-MANIFEST.json",
+      "bytes": 2937,
+      "sha256": "a0777a3c307f805f3a1531d79ffffcd3b6a377cae05a939551bc5ccb2b3b903b"
+    },
+    {
+      "file": "SHA256SUMS.txt",
+      "bytes": 1284,
+      "sha256": "049bcdfb1c280b72699c23d0ece37e7235243bb198fe5c9b7c110d6f14469400"
+    },
+    {
+      "file": "accessweaver-preview-53abc0178c85-darwin-amd64.tar.gz",
+      "bytes": 8862078,
+      "sha256": "f6f2c084e9f6dcbc3db3941f0b2afb51505e3dfbd43743502c2d98d29b02da9c"
+    },
+    {
+      "file": "accessweaver-preview-53abc0178c85-darwin-arm64.tar.gz",
+      "bytes": 8535928,
+      "sha256": "57a9ce3048eab7eb477dca14cb689c999ca452e96d9aa869dac9f191e21ee325"
+    },
+    {
+      "file": "accessweaver-preview-53abc0178c85-freebsd-amd64.tar.gz",
+      "bytes": 8511615,
+      "sha256": "fbf63e8df2b807a2504a2754f055bca9f67e9035d70eaad1caf8bf00ebed950f"
+    },
+    {
+      "file": "accessweaver-preview-53abc0178c85-freebsd-arm64.tar.gz",
+      "bytes": 8121426,
+      "sha256": "9ed98ae63d52c1a5dd3afd23c0c9dac259e766c8467a44d9e065ff00bde97e1f"
+    },
+    {
+      "file": "accessweaver-preview-53abc0178c85-linux-amd64.tar.gz",
+      "bytes": 8636093,
+      "sha256": "e74276930aeda18cb95babc259ea3b2e57365d59cfda39e6aa1c67b5a8e01611"
+    },
+    {
+      "file": "accessweaver-preview-53abc0178c85-linux-arm64.tar.gz",
+      "bytes": 8233976,
+      "sha256": "9271d5d169e170d9656495045c50e6ce47638313774dea4f2b96a3ad5c020e64"
+    },
+    {
+      "file": "accessweaver-preview-53abc0178c85-openbsd-amd64.tar.gz",
+      "bytes": 8507603,
+      "sha256": "e33c4d84f55a1d5daa1176c7f257205cd6afa59b899c6239a38715f0def3ed09"
+    },
+    {
+      "file": "accessweaver-preview-53abc0178c85-openbsd-arm64.tar.gz",
+      "bytes": 8121506,
+      "sha256": "67f604bbe9790bc5953d8dabd13dd1268344c43a9078b29a29bd05f8c12927d1"
+    },
+    {
+      "file": "accessweaver-preview-53abc0178c85-windows-amd64.zip",
+      "bytes": 9081074,
+      "sha256": "7103db0ff22110bc0f1827078ca5b3ea533a08bdd6239f3b95c06c9bf2a4045e"
+    },
+    {
+      "file": "accessweaver-preview-53abc0178c85-windows-arm64.zip",
+      "bytes": 8623318,
+      "sha256": "5dd3bf334989e3cb40445b044ce091736518785d76d1f6c35ad52789af2fc759"
+    }
+  ],
+  "providerAttestationsVerified": false,
+  "rebuildHostIndependenceVerified": false,
+  "nativeMetadataSparseEnvironmentInitialFailure": "DefaultConfigDirectoryRequiredDespiteExplicitOverride",
+  "nativeMetadataVerifiedWithInheritedWSLUserEnvironment": true,
+  "productionQualificationComplete": false
+}

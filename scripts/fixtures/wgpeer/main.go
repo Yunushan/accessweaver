@@ -6,6 +6,7 @@ import (
 	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"golang.zx2c4.com/wireguard/conn"
@@ -31,10 +33,42 @@ const server6 = "fd42:6177::1"
 const client4 = "192.0.2.2"
 const client6 = "fd42:6177::2"
 
+// Keep only whether a WireGuard initiation reached the UDP socket, before
+// the device authenticates it. Never retain datagrams or endpoint addresses.
+type observedBind struct {
+	conn.Bind
+	initiation atomic.Bool
+}
+
+func (b *observedBind) Open(port uint16) ([]conn.ReceiveFunc, uint16, error) {
+	receivers, boundPort, err := b.Bind.Open(port)
+	if err != nil {
+		return nil, 0, err
+	}
+	observed := make([]conn.ReceiveFunc, len(receivers))
+	for i, receive := range receivers {
+		observed[i] = func(packets [][]byte, sizes []int, endpoints []conn.Endpoint) (int, error) {
+			count, err := receive(packets, sizes, endpoints)
+			if err == nil && !b.initiation.Load() {
+				for j, packet := range packets[:count] {
+					if sizes[j] == device.MessageInitiationSize &&
+						binary.LittleEndian.Uint32(packet[:4]) == device.MessageInitiationType {
+						b.initiation.Store(true)
+						break
+					}
+				}
+			}
+			return count, err
+		}
+	}
+	return observed, boundPort, nil
+}
+
 type endpoint struct {
 	dev   *device.Device
 	stack *netstack.Net
 	port  int
+	bind  *observedBind
 }
 
 func key() (*ecdh.PrivateKey, error) { return ecdh.X25519().GenerateKey(rand.Reader) }
@@ -47,7 +81,8 @@ func start(private *ecdh.PrivateKey, peer []byte, addresses []string, allowed []
 	if err != nil {
 		return nil, err
 	}
-	dev := device.NewDevice(tun, conn.NewDefaultBind(), device.NewLogger(device.LogLevelError, "fixture: "))
+	bind := &observedBind{Bind: conn.NewDefaultBind()}
+	dev := device.NewDevice(tun, bind, device.NewLogger(device.LogLevelError, "fixture: "))
 	config := "private_key=" + hex.EncodeToString(private.Bytes()) + "\nlisten_port=0\npublic_key=" + hex.EncodeToString(peer) + "\n"
 	for _, prefix := range allowed {
 		config += "allowed_ip=" + prefix + "\n"
@@ -78,7 +113,7 @@ func start(private *ecdh.PrivateKey, peer []byte, addresses []string, allowed []
 		dev.Close()
 		return nil, errors.New("endpoint did not bind a UDP port")
 	}
-	return &endpoint{dev, stack, port}, nil
+	return &endpoint{dev: dev, stack: stack, port: port, bind: bind}, nil
 }
 func (e *endpoint) serve() error {
 	for _, address := range []string{server4, server6} {
@@ -105,8 +140,8 @@ func (e *endpoint) serve() error {
 	}
 	return nil
 }
-func (e *endpoint) stats() map[string]string {
-	result := map[string]string{}
+func (e *endpoint) stats() map[string]any {
+	result := map[string]any{"initiation_received": e.bind.initiation.Load()}
 	state, err := e.dev.IpcGet()
 	if err != nil {
 		return result
@@ -126,12 +161,30 @@ func save(path string, v any) error {
 	}
 	return os.WriteFile(path, b, 0600)
 }
+func peerHost(args []string) (string, error) {
+	if len(args) == 0 {
+		return "127.0.0.1", nil
+	}
+	if len(args) != 1 {
+		return "", errors.New("expected at most one peer transport address")
+	}
+	address, err := netip.ParseAddr(args[0])
+	if err != nil || !address.Is4() || !address.IsPrivate() {
+		return "", errors.New("peer transport address must be a private IPv4 literal")
+	}
+	return address.String(), nil
+}
+
 func run() error {
 	if os.Getenv("ACCESSWEAVER_TEST_VM") != "1" {
 		return errors.New("run this test fixture only in a disposable guest with ACCESSWEAVER_TEST_VM=1")
 	}
-	if len(os.Args) != 3 || (os.Args[1] != "serve" && os.Args[1] != "self-test") {
-		return errors.New("usage: wgpeer serve|self-test PRIVATE_GUEST_DIRECTORY")
+	if len(os.Args) < 3 || (os.Args[1] != "serve" && os.Args[1] != "self-test") {
+		return errors.New("usage: wgpeer serve|self-test PRIVATE_GUEST_DIRECTORY [LOCAL_PRIVATE_IPV4]")
+	}
+	host, err := peerHost(os.Args[3:])
+	if err != nil {
+		return err
 	}
 	dir, err := filepath.Abs(os.Args[2])
 	if err != nil {
@@ -156,8 +209,9 @@ func run() error {
 	if err = server.serve(); err != nil {
 		return err
 	}
+	transport := net.JoinHostPort(host, strconv.Itoa(server.port))
 	if os.Args[1] == "self-test" {
-		client, err := start(clientKey, serverKey.PublicKey().Bytes(), []string{client4, client6}, []string{server4 + "/32", server6 + "/128"}, net.JoinHostPort("127.0.0.1", strconv.Itoa(server.port)))
+		client, err := start(clientKey, serverKey.PublicKey().Bytes(), []string{client4, client6}, []string{server4 + "/32", server6 + "/128"}, transport)
 		if err != nil {
 			return err
 		}
@@ -197,11 +251,11 @@ func run() error {
 		}
 		return save(filepath.Join(dir, "self-test.json"), map[string]any{"passed": true, "tcpIPv4": true, "udpIPv4": true, "tcpIPv6": true, "udpIPv6": true, "peer": server.stats()})
 	}
-	config := fmt.Sprintf("[Interface]\nPrivateKey = %s\nAddress = %s/32, %s/128\n[Peer]\nPublicKey = %s\nEndpoint = 127.0.0.1:%d\nAllowedIPs = %s/32, %s/128\nPersistentKeepalive = 5\n", base64.StdEncoding.EncodeToString(clientKey.Bytes()), client4, client6, base64.StdEncoding.EncodeToString(serverKey.PublicKey().Bytes()), server.port, server4, server6)
+	config := fmt.Sprintf("[Interface]\nPrivateKey = %s\nAddress = %s/32, %s/128\n[Peer]\nPublicKey = %s\nEndpoint = %s\nAllowedIPs = %s/32, %s/128\nPersistentKeepalive = 5\n", base64.StdEncoding.EncodeToString(clientKey.Bytes()), client4, client6, base64.StdEncoding.EncodeToString(serverKey.PublicKey().Bytes()), transport, server4, server6)
 	if err = os.WriteFile(filepath.Join(dir, "client.conf"), []byte(config), 0600); err != nil {
 		return err
 	}
-	if err = save(filepath.Join(dir, "ready.json"), map[string]any{"endpoint": "127.0.0.1", "port": server.port}); err != nil {
+	if err = save(filepath.Join(dir, "ready.json"), map[string]any{"endpoint": host, "port": server.port}); err != nil {
 		return err
 	}
 	for range time.NewTicker(time.Second).C {

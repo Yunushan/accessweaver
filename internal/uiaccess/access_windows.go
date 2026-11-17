@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"unsafe"
+
+	"github.com/Yunushan/accessweaver/internal/privatefile"
 )
 
 var advapi = syscall.NewLazyDLL("advapi32.dll")
@@ -154,4 +156,8 @@ func createPrivateDirectory(path string) error {
 	attributes := syscall.SecurityAttributes{SecurityDescriptor: descriptor}
 	attributes.Length = uint32(unsafe.Sizeof(attributes))
 	return syscall.CreateDirectory(name, &attributes)
+}
+
+func createPrivateFile(path string) (*os.File, error) {
+	return privatefile.Create(path)
 }

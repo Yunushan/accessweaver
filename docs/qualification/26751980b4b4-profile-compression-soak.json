@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "scope": "hosted-profile-inventory-compression-browser-soak",
+  "sourceCommit": "26751980b4b4db8a628a18be06391c7177b65b65",
+  "run": 44038934121,
+  "aggregateRssLimitBytes": 1073741824,
+  "firefox": [
+    {
+      "architecture": "amd64",
+      "baselineArtifact": 14312009011,
+      "baselineArchiveSHA256": "e312aafc204d62582b42054f76de9b7cc59ed1ba0d2887d17e37d3614008b856",
+      "baselinePassed": true,
+      "soakArtifact": 14312916280,
+      "soakArchiveSHA256": "7c34437b14de494b3575bcab8d0348cc207aa3300736fdc66c5ef0c4762cc4e2",
+      "soakPassed": false,
+      "workloadSeconds": 900,
+      "memoryPeak": {
+        "phase": "workload",
+        "second": 638,
+        "rssBytes": 1080991744,
+        "rootBytes": 564592640,
+        "descendantBytes": 516399104,
+        "largestDescendantBytes": 240029696,
+        "descendantProcesses": 6
+      }
+    },
+    {
+      "architecture": "arm64",
+      "baselineArtifact": 14314100111,
+      "baselineArchiveSHA256": "b6c1e994e2b287945efe4c95a75fc0c2857735868027da6f611f90be82100f3a",
+      "baselinePassed": true,
+      "soakArtifact": 14313830864,
+      "soakArchiveSHA256": "d20cb3767b8fdc869a5286a185fb07e8696b9b6a51564a4b162f9bdb237e073d",
+      "soakPassed": false,
+      "workloadSeconds": 900,
+      "memoryPeak": {
+        "phase": "workload",
+        "second": 900,
+        "rssBytes": 1133367296,
+        "rootBytes": 618180608,
+        "descendantBytes": 515186688,
+        "largestDescendantBytes": 250847232,
+        "descendantProcesses": 6
+      }
+    }
+  ],
+  "otherBrowserJobsPassed": 4,
+  "productionQualificationComplete": false,
+  "sourceSHA256": {
+    ".github/workflows/browser-soak.yml": "0ade4e66fe207a31ebcc4a991144638b88324171ece9b4bd00e743dc14a40a62",
+    "internal/api/server.go": "f9debbca530660b230ac53745baba64bae520360b76ae2ffcfa100cc92306656",
+    "scripts/browser-tests/browser-soak.cjs": "a0a19365a6f08e5182f241868a47810f930951a5c58413689bd39cfedeb33bb8",
+    "scripts/browser-tests/desktop-performance.cjs": "997ef389d5acffacb9c1d42d053186fb4152ab6cf71a1841d47c7edb2bcfe29f",
+    "scripts/browser-tests/performance-budgets.json": "97e105bb42966d2b4a0cf4b8505385dbaab1aa1a4afab9670be4f8ee9785160e"
+  }
+}

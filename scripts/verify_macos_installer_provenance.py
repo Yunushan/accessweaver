@@ -11,7 +11,8 @@ import tempfile
 from macos_installer import BUNDLE_ID,MAX_BYTES,digest,require,version_parts
 from macos_package_archive import inspect,flat_members,cpio,inflate
 from sbom import validate,prop_map
-from verify_release_provenance import BUNDLE_NAME,REPOSITORY,validate_identity,verification_command as portable_command
+from verify_release_provenance import (BUNDLE_NAME, REPOSITORY, authenticate_run, validate_identity,
+                                       validate_run_id, verification_command as portable_command)
 from verify_release_rebuild import snapshot
 
 WORKFLOW=REPOSITORY+"/.github/workflows/macos-installer.yml"
@@ -43,11 +44,9 @@ def provenance_failure(result, phase, expected_success):
     return ProvenanceCommandFailure("Native package cryptographic provenance verification failed: "+json.dumps(summary,sort_keys=True,separators=(",",":")))
 
 
-def authenticate(path,bundle,commit,ref,gh):
-    try:
-        subprocess.run(verification_command(path,bundle,commit,ref,gh),check=True,capture_output=True,timeout=120)
-    except subprocess.CalledProcessError as error:
-        raise provenance_failure(error,"subject-authentication",True) from error
+def authenticate(path,bundle,commit,ref,gh,run_id):
+    authenticate_run(verification_command(path,bundle,commit,ref,gh),run_id,
+                     command_failure=lambda result:provenance_failure(result,"subject-authentication",True))
 
 
 def validate_contents(root,package,commit,version,arch):
@@ -102,7 +101,9 @@ def validate_contents(root,package,commit,version,arch):
     require(life.get("productUninstallQualified") is False and life.get("rebootOrPowerLossQualified") is False,"Unqualified lifecycle scope changed")
     validate_deployment_transactions(life.get("protectedDeploymentTransactions"),actual["bundleManifestSHA256"],digest(core),version)
     validate_fixed_deployment_helper(life.get("fixedDeploymentHelper"),identity,actual["bundleManifestSHA256"],digest(core))
-    return {"packageSHA256":digest(binary),"payloadSHA256":digest(core),"macho":actual["macho"],"isolatedRefusalCases":8,"nativeInstallationOperations":3}
+    native_run_id=life.get("runID")
+    validate_run_id(native_run_id)
+    return {"packageSHA256":digest(binary),"payloadSHA256":digest(core),"macho":actual["macho"],"isolatedRefusalCases":8,"nativeInstallationOperations":3,"lifecycleRunID":native_run_id}
 
 
 def validate_preparation_sigkill(value,test_executable):
@@ -251,8 +252,8 @@ def check_rejections(path,bundle,commit,ref,gh):
     return {"rejected":rejected,"realBundleVerifiedBeforeAndAfter":True}
 
 
-def verify(directory,commit,ref,version,arch,gh="gh",rejections=False):
-    validate_identity(commit,ref);package,names=subject_names(version,arch)
+def verify(directory,commit,ref,version,arch,gh="gh",rejections=False,*,run_id):
+    validate_identity(commit,ref);validate_run_id(run_id);package,names=subject_names(version,arch)
     with tempfile.TemporaryDirectory(prefix="accessweaver-native-package-auth-") as temporary:
         root=Path(temporary);actual=snapshot(Path(directory),root,8)
         require(actual==names|{BUNDLE_NAME},"Expected seven native package subjects and one provenance bundle")
@@ -260,20 +261,21 @@ def verify(directory,commit,ref,version,arch,gh="gh",rejections=False):
             maximum=(64<<20) if name==package else (16<<20) if name==BUNDLE_NAME else (4<<20)
             require((root/name).stat().st_size<=maximum,"Native package input exceeds its type limit")
         # Every known subject must authenticate before any JSON/archive parsing.
-        for name in sorted(names):authenticate(root/name,root/BUNDLE_NAME,commit,ref,gh)
+        for name in sorted(names):authenticate(root/name,root/BUNDLE_NAME,commit,ref,gh,run_id)
         checked=validate_contents(root,package,commit,version,arch)
-        result={"schemaVersion":1,"repository":REPOSITORY,"workflow":WORKFLOW,"sourceCommit":commit,"sourceRef":ref,"target":"darwin/"+arch,"subjectsVerified":7,"hostedRunnerRequired":True,"authenticatedBeforeParsing":True,"subjects":[{"file":name,"sha256":digest((root/name).read_bytes())} for name in sorted(names)],"package":checked,"publisherSignatureVerified":False,"notarized":False,"productionQualificationComplete":False,"localTargetExecution":False}
+        require(checked["lifecycleRunID"]==run_id,"Authenticated native run differs from caller expectation")
+        result={"schemaVersion":1,"repository":REPOSITORY,"workflow":WORKFLOW,"sourceCommit":commit,"sourceRef":ref,"target":"darwin/"+arch,"subjectsVerified":7,"hostedRunnerRequired":True,"attestationRunID":run_id,"authenticatedBeforeParsing":True,"subjects":[{"file":name,"sha256":digest((root/name).read_bytes())} for name in sorted(names)],"package":checked,"publisherSignatureVerified":False,"notarized":False,"productionQualificationComplete":False,"localTargetExecution":False}
         if rejections:result["rejectionChecks"]=check_rejections(root/package,root/BUNDLE_NAME,commit,ref,gh)
         return result
 
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("directory",type=Path)
-    for name in ("source-commit","source-ref","version","architecture"):parser.add_argument("--"+name,required=True)
+    for name in ("source-commit","source-ref","version","architecture","run-id"):parser.add_argument("--"+name,required=True)
     parser.add_argument("--gh",default="gh");parser.add_argument("--check-rejections",action="store_true")
     args=parser.parse_args()
     try:
-        result=verify(args.directory,args.source_commit,args.source_ref,args.version,args.architecture,args.gh,args.check_rejections)
+        result=verify(args.directory,args.source_commit,args.source_ref,args.version,args.architecture,args.gh,args.check_rejections,run_id=args.run_id)
         print(json.dumps(result));return 0
     except (ValueError,OSError,KeyError,TypeError,subprocess.SubprocessError) as error:
         message=str(error) if isinstance(error,ProvenanceCommandFailure) else "Native package provenance verification failed ("+type(error).__name__+")"

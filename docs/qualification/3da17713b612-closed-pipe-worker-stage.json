@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "3da17713b612c5ebcde91da787215a0c40039c7a",
+  "runID": 42396188217,
+  "scope": "fixed public Linux AMD64 closed-stream worker-stage observation",
+  "phaseEvidence": {
+    "schemaVersion": 1,
+    "sourceCommit": "3da17713b612c5ebcde91da787215a0c40039c7a",
+    "runID": 42396188217,
+    "jobID": 128473950212,
+    "checkedFailedStep": "Run complete root regression",
+    "labelsNotAssignedToIndividualMode": true,
+    "checkRunID": 128473950212,
+    "sourceProducerSHA256": "dd7304cab4f0ba1170cb408f642fddce66752ac85779a60e605f8b3002305d60",
+    "sourceFixtureSHA256": "269dd1530d982a5a5c3b5363069caa492e8d63e4871b00e287667c962721e9de",
+    "protocolTitle": "Source-known closed-pipe failure",
+    "labels": [
+      "github.com/Yunushan/accessweaver/cmd/accessweaver#TestRecordedEngineClosedStandardPipeRepeated/attempt-1/notice",
+      "github.com/Yunushan/accessweaver/cmd/accessweaver#TestRecordedEngineClosedStandardPipeRepeated/attempt-1/notice/scope-cleanup",
+      "github.com/Yunushan/accessweaver/cmd/accessweaver#TestRecordedEngineClosedStandardPipeRepeated/attempt-1/notice/scope-cleanup/worker-pid-parse"
+    ],
+    "nonProtocolAnnotationsIgnored": 4,
+    "onlyImmutablePublicSourceLabelsRetained": true,
+    "rawLogsRead": false,
+    "otherAnnotationMessagesRetained": false,
+    "hostPathsAccountsCredentialsOrPrivateStateRetained": false
+  },
+  "observedFixedWorkerStage": "worker-pid-parse",
+  "recordBytesReadOrRetained": false,
+  "sourceBackedInference": "The only PID writer creates the final file before writing; the output gate accepts file existence and can trigger child cleanup before publication completes.",
+  "correction": "Write and close a pending PID file, then rename it to the final name in the same owned fixture directory.",
+  "productionLifecycleChanged": false,
+  "allEarlierFailuresSameCauseProved": false,
+  "wholeRunTerminalAtCapture": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0
+}

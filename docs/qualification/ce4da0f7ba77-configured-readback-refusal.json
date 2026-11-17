@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "scope": "configured-dns-readback-control-and-wire",
+  "sourceCommit": "ce4da0f7ba773875c80bc3cb2b1342f81cc70dd0",
+  "runID": 42589077588,
+  "sealedDoNotRepoll": true,
+  "allNativeJobsTerminal": true,
+  "sourceArtifacts": [
+    {
+      "artifactName": "native-doh-netevent-source-windows-amd64",
+      "providerZIPDigest": "sha256:8a99798eae7523bee8b2a7bbf3bc73339cbe61e7dca65c58fdbb3ba66874fa71",
+      "providerZIPDigestVerified": true,
+      "passed": true,
+      "cases": 56
+    },
+    {
+      "artifactName": "native-doh-netevent-source-windows-arm64",
+      "providerZIPDigest": "sha256:20366090a77895332a687b7d59b38d06fe303545d819b676961b5e9f25d944d9",
+      "providerZIPDigestVerified": true,
+      "passed": true,
+      "cases": 56
+    }
+  ],
+  "nativeArtifacts": [
+    {
+      "artifactName": "native-doh-wire-windows-amd64",
+      "providerZIPDigest": "sha256:4e4d7fc3f8911f32c3250d68a4f8302a8874c970f3d4f0285787d050a50374fe",
+      "providerZIPDigestVerified": true,
+      "architecture": "amd64",
+      "outcome": "failed",
+      "configuredReadbackControl": {
+        "dnsConfigurationChanged": false,
+        "networkQueryInvoked": false,
+        "sourceBound": true,
+        "outcome": "failed",
+        "productionQualificationComplete": false,
+        "positiveVerified": false,
+        "ipv4MismatchRejected": false,
+        "code": "inventory",
+        "schemaVersion": 1,
+        "ipv6MismatchRejected": false
+      },
+      "restoredStateVerified": true,
+      "snapshotRemoved": true,
+      "toolProcesses": 15,
+      "toolProcessesJoined": 15,
+      "cleanupCode": "none",
+      "wireOutcome": "failed"
+    },
+    {
+      "artifactName": "native-doh-wire-windows-arm64",
+      "providerZIPDigest": "sha256:f982037e2b07bd8bde6a891c3106f1e7dc206b3d2ad3a9dc647d453080294cd2",
+      "providerZIPDigestVerified": true,
+      "architecture": "arm64",
+      "outcome": "failed",
+      "configuredReadbackControl": {
+        "dnsConfigurationChanged": false,
+        "networkQueryInvoked": false,
+        "sourceBound": true,
+        "outcome": "failed",
+        "productionQualificationComplete": false,
+        "positiveVerified": false,
+        "ipv4MismatchRejected": false,
+        "code": "inventory",
+        "schemaVersion": 1,
+        "ipv6MismatchRejected": false
+      },
+      "restoredStateVerified": true,
+      "snapshotRemoved": true,
+      "toolProcesses": 15,
+      "toolProcessesJoined": 15,
+      "cleanupCode": "none",
+      "wireOutcome": "failed"
+    }
+  ],
+  "formalGatesPromoted": 0,
+  "rawLogsRead": false
+}

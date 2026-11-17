@@ -128,7 +128,7 @@ func auditRunCommand(args []string, observations, notice io.Writer) (failure err
 	manager := engine.NewManager(root)
 	// Preview is read-only. Prepare/StartTracked may write generated inputs,
 	// so only the borrowed producer can invoke it after observed durable intent.
-	plan, err := manager.Preview(p)
+	plan, err := manager.PreviewContext(inputCtx, p)
 	if err != nil || !plan.Ready || plan.Binary == "" {
 		return errAuditRunPreview
 	}
@@ -148,7 +148,7 @@ func auditRunCommand(args []string, observations, notice io.Writer) (failure err
 	}
 	cancelInput() // The separate admission/input budget is not the engine lifetime.
 	return executeRecordedEngine(ctx, journal, from, to, observations, notice, func() (foregroundEngineRun, error) {
-		run, err := manager.StartTracked(p)
+		run, err := manager.StartTrackedContext(ctx, p)
 		if err != nil {
 			return nil, err
 		}

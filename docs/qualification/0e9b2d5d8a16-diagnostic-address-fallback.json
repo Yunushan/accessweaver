@@ -1,0 +1,1107 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "0e9b2d5d8a16dc29a43e0db16862519b2769377a",
+  "sourceTree": "57383ea535c1a4b81cb11a2311f4d169f540214f",
+  "branch": "codex/diagnostic-fallback-33f62e8",
+  "run": {
+    "id": 42337171666,
+    "status": "completed",
+    "conclusion": "success",
+    "attempt": 1
+  },
+  "url": "https://github.com/Yunushan/accessweaver/actions/runs/42337171666",
+  "scope": "Resolved TCP address-family fallback, per-family remaining-time sharing, joined unused socket completion and checked winner I/O deadlines; complete root-module native Linux unit/race/vet",
+  "sourceSHA256": {
+    "internal/diagnostics/doctor.go": "49b100d41cc5628cbbfdd93f49d08c5ffd180bbfb59e716882fffd528f4fdb1f",
+    "internal/diagnostics/dial.go": "d145e24e62385adf425d8a10ee2387d0f5339b871190cbc433aff1c3b6cfc92f",
+    "internal/diagnostics/dial_test.go": "6e6850f3071646cba96578edec7eca1b62e83d7754e611cf6a8476bf798cdb2b",
+    "docs/DIAGNOSTICS.md": "d1211a666f6fa280cc3e305763125623c427276f42b3d7091e6584e9a60c91d9"
+  },
+  "coreProducerSHA256": {
+    ".github/workflows/native-core.yml": "fb2ecde1e0ac1e5cf871c876b789c7cc392aa33f039691c18b63dfc681786e94",
+    "scripts/core-test-evidence.cjs": "ebdf09caa492f876612d311203f41ccd886ec5788eb1bf4a80bd21ac1beb45b1",
+    "scripts/core-test-catalog/main.go": "56f3a8731537d111ac7b752a7b0329e0b2275e3b691e0fdf87132d4b3a1d5177",
+    "scripts/core-test-catalog/main_test.go": "778cd56016854cd64f4107a0fd778b5e1209048d8c55d23d4f485d638e21a1a4",
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00"
+  },
+  "behavior": {
+    "singleHostResolutionPreserved": true,
+    "resolvedAddressLimit": 64,
+    "maximumConcurrentAddressAttempts": 2,
+    "fallbackDelayMilliseconds": 300,
+    "primaryExhaustionStartsFallbackImmediately": true,
+    "loserWorkersAndCleanupJoinedBeforeHandoff": true,
+    "lateConnectionsClosedOnCancellation": true,
+    "winnerIoDeadlineRequired": true,
+    "completionCausesRetainedWithFixedReportText": true,
+    "udpSelectionSerial": true,
+    "proxyDirectFallbackAllowed": false
+  },
+  "preFixControlledRegressionProof": {
+    "scope": "Existing serial resolved-address behavior plus private connector seam; no real blackhole traffic or host network changes",
+    "exitCode": 1,
+    "tests": [
+      {
+        "test": "TestResolvedAddressFallbackWhilePrimaryStalls",
+        "status": "fail"
+      },
+      {
+        "test": "TestResolvedDialDeadlineFailureCompletesSocket",
+        "status": "fail"
+      },
+      {
+        "test": "TestResolvedDialRejectsEmptyOrInvalidAddressSet",
+        "status": "fail"
+      }
+    ],
+    "sourceSHA256": {
+      "internal/diagnostics/doctor.go": "49b100d41cc5628cbbfdd93f49d08c5ffd180bbfb59e716882fffd528f4fdb1f",
+      "internal/diagnostics/dial.go": "c9bd210f2e64c3bbd9cbade73da04a331df2165aaac51c8c2241a4b3a6bf9277",
+      "internal/diagnostics/dial_test.go": "ebf62d9606f713d1beb0e0da25e1d773a9beef0fb715ed834c3ac8ceefcd41bd"
+    },
+    "rawOutputRetained": false
+  },
+  "regressionRootExecutions": 40,
+  "regressionSubtestCompletions": 24,
+  "nativeReports": [
+    {
+      "architecture": "amd64",
+      "mode": "race",
+      "outcome": "passed",
+      "packages": 29,
+      "rootTestsCataloged": 797,
+      "rootPassed": 779,
+      "rootSkipped": 18,
+      "rootNotRun": 0,
+      "childPassed": 955,
+      "childFailed": 0,
+      "childSkipped": 0,
+      "fallbackRegressions": [
+        {
+          "name": "TestDirectDiagnosticUsesOnlyResolvedNativeFallback",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedAddressFallbackWhilePrimaryStalls",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 10,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialCancellationJoinsLateConnectors",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialCompletesLateLoserBeforeHandoff",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 2,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialDeadlineFailureCompletesSocket",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialPrimaryFailureStartsFallbackImmediately",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialRejectsEmptyOrInvalidAddressSet",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialRetainsFailuresAndCompletesPartialSocket",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 2,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialSerialBudgetReservesLaterSameFamily",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 1000,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialUnneededFallbackAndUDPStaySerial",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 2,
+          "childFailed": 0,
+          "childSkipped": 0
+        }
+      ],
+      "unknownEvents": 0,
+      "buildFailures": 0
+    },
+    {
+      "architecture": "amd64",
+      "mode": "unit",
+      "outcome": "passed",
+      "packages": 29,
+      "rootTestsCataloged": 797,
+      "rootPassed": 779,
+      "rootSkipped": 18,
+      "rootNotRun": 0,
+      "childPassed": 955,
+      "childFailed": 0,
+      "childSkipped": 0,
+      "fallbackRegressions": [
+        {
+          "name": "TestDirectDiagnosticUsesOnlyResolvedNativeFallback",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedAddressFallbackWhilePrimaryStalls",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 10,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialCancellationJoinsLateConnectors",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialCompletesLateLoserBeforeHandoff",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 2,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialDeadlineFailureCompletesSocket",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialPrimaryFailureStartsFallbackImmediately",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialRejectsEmptyOrInvalidAddressSet",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialRetainsFailuresAndCompletesPartialSocket",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 2,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialSerialBudgetReservesLaterSameFamily",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 1000,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialUnneededFallbackAndUDPStaySerial",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 2,
+          "childFailed": 0,
+          "childSkipped": 0
+        }
+      ],
+      "unknownEvents": 0,
+      "buildFailures": 0
+    },
+    {
+      "architecture": "amd64",
+      "mode": "vet",
+      "outcome": "passed",
+      "packages": 29,
+      "rootTestsCataloged": 797,
+      "rootPassed": 0,
+      "rootSkipped": 0,
+      "rootNotRun": 797,
+      "childPassed": 0,
+      "childFailed": 0,
+      "childSkipped": 0,
+      "fallbackRegressions": [
+        {
+          "name": "TestDirectDiagnosticUsesOnlyResolvedNativeFallback",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedAddressFallbackWhilePrimaryStalls",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialCancellationJoinsLateConnectors",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialCompletesLateLoserBeforeHandoff",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialDeadlineFailureCompletesSocket",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialPrimaryFailureStartsFallbackImmediately",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialRejectsEmptyOrInvalidAddressSet",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialRetainsFailuresAndCompletesPartialSocket",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialSerialBudgetReservesLaterSameFamily",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialUnneededFallbackAndUDPStaySerial",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        }
+      ],
+      "unknownEvents": 0,
+      "buildFailures": 0
+    },
+    {
+      "architecture": "arm64",
+      "mode": "race",
+      "outcome": "passed",
+      "packages": 29,
+      "rootTestsCataloged": 797,
+      "rootPassed": 779,
+      "rootSkipped": 18,
+      "rootNotRun": 0,
+      "childPassed": 955,
+      "childFailed": 0,
+      "childSkipped": 0,
+      "fallbackRegressions": [
+        {
+          "name": "TestDirectDiagnosticUsesOnlyResolvedNativeFallback",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedAddressFallbackWhilePrimaryStalls",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 10,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialCancellationJoinsLateConnectors",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialCompletesLateLoserBeforeHandoff",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 2,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialDeadlineFailureCompletesSocket",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialPrimaryFailureStartsFallbackImmediately",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialRejectsEmptyOrInvalidAddressSet",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialRetainsFailuresAndCompletesPartialSocket",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 2,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialSerialBudgetReservesLaterSameFamily",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 1000,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialUnneededFallbackAndUDPStaySerial",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 2,
+          "childFailed": 0,
+          "childSkipped": 0
+        }
+      ],
+      "unknownEvents": 0,
+      "buildFailures": 0
+    },
+    {
+      "architecture": "arm64",
+      "mode": "unit",
+      "outcome": "passed",
+      "packages": 29,
+      "rootTestsCataloged": 797,
+      "rootPassed": 779,
+      "rootSkipped": 18,
+      "rootNotRun": 0,
+      "childPassed": 955,
+      "childFailed": 0,
+      "childSkipped": 0,
+      "fallbackRegressions": [
+        {
+          "name": "TestDirectDiagnosticUsesOnlyResolvedNativeFallback",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedAddressFallbackWhilePrimaryStalls",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 10,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialCancellationJoinsLateConnectors",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialCompletesLateLoserBeforeHandoff",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 2,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialDeadlineFailureCompletesSocket",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialPrimaryFailureStartsFallbackImmediately",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialRejectsEmptyOrInvalidAddressSet",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialRetainsFailuresAndCompletesPartialSocket",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 2,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialSerialBudgetReservesLaterSameFamily",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 1000,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialUnneededFallbackAndUDPStaySerial",
+          "status": "passed",
+          "attempts": 1,
+          "elapsedMilliseconds": 0,
+          "childPassed": 2,
+          "childFailed": 0,
+          "childSkipped": 0
+        }
+      ],
+      "unknownEvents": 0,
+      "buildFailures": 0
+    },
+    {
+      "architecture": "arm64",
+      "mode": "vet",
+      "outcome": "passed",
+      "packages": 29,
+      "rootTestsCataloged": 797,
+      "rootPassed": 0,
+      "rootSkipped": 0,
+      "rootNotRun": 797,
+      "childPassed": 0,
+      "childFailed": 0,
+      "childSkipped": 0,
+      "fallbackRegressions": [
+        {
+          "name": "TestDirectDiagnosticUsesOnlyResolvedNativeFallback",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedAddressFallbackWhilePrimaryStalls",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialCancellationJoinsLateConnectors",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialCompletesLateLoserBeforeHandoff",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialDeadlineFailureCompletesSocket",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialPrimaryFailureStartsFallbackImmediately",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialRejectsEmptyOrInvalidAddressSet",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialRetainsFailuresAndCompletesPartialSocket",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialSerialBudgetReservesLaterSameFamily",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        },
+        {
+          "name": "TestResolvedDialUnneededFallbackAndUDPStaySerial",
+          "status": "not-run",
+          "attempts": 0,
+          "elapsedMilliseconds": 0,
+          "childPassed": 0,
+          "childFailed": 0,
+          "childSkipped": 0
+        }
+      ],
+      "unknownEvents": 0,
+      "buildFailures": 0
+    }
+  ],
+  "explicitRootSkipsInEachUnitAndRaceRun": [
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestBackupOutputCaseAliasCannotCreateInsideSource"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestDisposableLinuxManagedPolicyNative"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestDisposableLinuxRecordedPolicyTransactions"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestForegroundRunClosedPipeWorker"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestRecordedEngineClosedStandardPipeWorker"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestRecordedExportClosedStandardPipeWorker"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestWindowsAuditAliasMetadata"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/api",
+      "test": "TestHistoryBrowserSourceWireInterop"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/api",
+      "test": "TestSupportDesktopWireInterop"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/engine",
+      "test": "TestConfigInputPrepareUsesOneInspectedRead"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/engine",
+      "test": "TestWindowsInstalledComponentDiscovery"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/engine",
+      "test": "TestWireSockApplicationConfigurationIsPrivateCopy"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/managed",
+      "test": "TestDisposableLinuxPolicyTransactions"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/workflow",
+      "test": "TestControllerStorageDesktopWireInterop"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/workflow",
+      "test": "TestLifecycleReconciliationDesktopWireInterop"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/workflow",
+      "test": "TestWorkerReportFinalizationPowerShellInterop"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/workflow",
+      "test": "TestWorkerReportPowerShellInterop"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/workflow",
+      "test": "TestWorkflowCommandPipelineSourceChild"
+    }
+  ],
+  "localValidation": [
+    {
+      "mode": "unit",
+      "scope": "./internal/diagnostics",
+      "exitCode": 0,
+      "packageStatus": "pass",
+      "regressions": [
+        {
+          "test": "TestResolvedAddressFallbackWhilePrimaryStalls",
+          "status": "pass"
+        },
+        {
+          "test": "TestResolvedDialDeadlineFailureCompletesSocket",
+          "status": "pass"
+        },
+        {
+          "test": "TestResolvedDialRejectsEmptyOrInvalidAddressSet",
+          "status": "pass"
+        },
+        {
+          "test": "TestResolvedDialCompletesLateLoserBeforeHandoff",
+          "status": "pass"
+        },
+        {
+          "test": "TestResolvedDialCancellationJoinsLateConnectors",
+          "status": "pass"
+        },
+        {
+          "test": "TestResolvedDialSerialBudgetReservesLaterSameFamily",
+          "status": "pass"
+        },
+        {
+          "test": "TestResolvedDialPrimaryFailureStartsFallbackImmediately",
+          "status": "pass"
+        },
+        {
+          "test": "TestResolvedDialUnneededFallbackAndUDPStaySerial",
+          "status": "pass"
+        },
+        {
+          "test": "TestResolvedDialRetainsFailuresAndCompletesPartialSocket",
+          "status": "pass"
+        },
+        {
+          "test": "TestDirectDiagnosticUsesOnlyResolvedNativeFallback",
+          "status": "pass"
+        }
+      ],
+      "fixedAssertions": [],
+      "buildDiagnosticCodes": []
+    },
+    {
+      "mode": "race",
+      "scope": "./internal/diagnostics",
+      "exitCode": 0,
+      "packageStatus": "pass",
+      "regressions": [
+        {
+          "test": "TestResolvedAddressFallbackWhilePrimaryStalls",
+          "status": "pass"
+        },
+        {
+          "test": "TestResolvedDialDeadlineFailureCompletesSocket",
+          "status": "pass"
+        },
+        {
+          "test": "TestResolvedDialRejectsEmptyOrInvalidAddressSet",
+          "status": "pass"
+        },
+        {
+          "test": "TestResolvedDialCompletesLateLoserBeforeHandoff",
+          "status": "pass"
+        },
+        {
+          "test": "TestResolvedDialCancellationJoinsLateConnectors",
+          "status": "pass"
+        },
+        {
+          "test": "TestResolvedDialSerialBudgetReservesLaterSameFamily",
+          "status": "pass"
+        },
+        {
+          "test": "TestResolvedDialPrimaryFailureStartsFallbackImmediately",
+          "status": "pass"
+        },
+        {
+          "test": "TestResolvedDialUnneededFallbackAndUDPStaySerial",
+          "status": "pass"
+        },
+        {
+          "test": "TestResolvedDialRetainsFailuresAndCompletesPartialSocket",
+          "status": "pass"
+        },
+        {
+          "test": "TestDirectDiagnosticUsesOnlyResolvedNativeFallback",
+          "status": "pass"
+        }
+      ],
+      "fixedAssertions": [],
+      "buildDiagnosticCodes": []
+    },
+    {
+      "mode": "vet",
+      "scope": "./internal/diagnostics",
+      "exitCode": 0
+    }
+  ],
+  "compileOnly": [
+    {
+      "target": "linux/amd64",
+      "package": "./internal/diagnostics",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "linux/amd64",
+      "package": "./cmd/accessweaver",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "linux/arm64",
+      "package": "./internal/diagnostics",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "linux/arm64",
+      "package": "./cmd/accessweaver",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "windows/amd64",
+      "package": "./internal/diagnostics",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "windows/amd64",
+      "package": "./cmd/accessweaver",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "windows/arm64",
+      "package": "./internal/diagnostics",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "windows/arm64",
+      "package": "./cmd/accessweaver",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "darwin/amd64",
+      "package": "./internal/diagnostics",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "darwin/amd64",
+      "package": "./cmd/accessweaver",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "darwin/arm64",
+      "package": "./internal/diagnostics",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "darwin/arm64",
+      "package": "./cmd/accessweaver",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "freebsd/amd64",
+      "package": "./internal/diagnostics",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "freebsd/amd64",
+      "package": "./cmd/accessweaver",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "freebsd/arm64",
+      "package": "./internal/diagnostics",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "freebsd/arm64",
+      "package": "./cmd/accessweaver",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "openbsd/amd64",
+      "package": "./internal/diagnostics",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "openbsd/amd64",
+      "package": "./cmd/accessweaver",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "openbsd/arm64",
+      "package": "./internal/diagnostics",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "openbsd/arm64",
+      "package": "./cmd/accessweaver",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    }
+  ],
+  "jobs": [
+    {
+      "id": 128296613265,
+      "name": "native-core / Core (amd64/unit)",
+      "conclusion": "success"
+    },
+    {
+      "id": 128296613350,
+      "name": "native-core / Core (arm64/unit)",
+      "conclusion": "success"
+    },
+    {
+      "id": 128296613434,
+      "name": "native-core / Core (amd64/vet)",
+      "conclusion": "success"
+    },
+    {
+      "id": 128296613522,
+      "name": "native-core / Core (arm64/race)",
+      "conclusion": "success"
+    },
+    {
+      "id": 128296613547,
+      "name": "native-core / Core (amd64/race)",
+      "conclusion": "success"
+    },
+    {
+      "id": 128296613608,
+      "name": "native-core / Core (arm64/vet)",
+      "conclusion": "success"
+    }
+  ],
+  "archiveDigests": {
+    "native-core-arm64-unit": "sha256:a565a9acdd6ed28f7dd3518759b07aab342976504ac56c60b905bcef3323e60c",
+    "native-core-arm64-race": "sha256:92ba07b60ef81bfff1884a66bb7b14a776202734b1dcbb8c5a824b2d46cbb8fc",
+    "native-core-amd64-unit": "sha256:031a759b59725ce0f87afeff9f9d0f54cf142a6cf297f798a8646cef95824991",
+    "native-core-amd64-race": "sha256:d07710c24e62152332e2d899e06e80040b96e1709c301e8bbcab06ecd200453a",
+    "native-core-amd64-vet": "sha256:9b41667633577ba682dff7b02001bbf3576eda8cc08e40cbb59386ebe608a59b",
+    "native-core-arm64-vet": "sha256:1dd7dc703809b02ade27fac45028952859975ff2cc633cb9514ff44ecc11167f"
+  },
+  "reportBundleSHA256": "5ef7bfb0f0adaf3e10f23d4b88e55ea74817b2499f12748b751d1013e53da4a6",
+  "catalogSHA256": {
+    "amd64-unit": "5313d9b37daf4fdf22ebc829e9b63d81ca68f69af8cc8e3d6a561b768992b88d",
+    "amd64-race": "5313d9b37daf4fdf22ebc829e9b63d81ca68f69af8cc8e3d6a561b768992b88d",
+    "arm64-unit": "5313d9b37daf4fdf22ebc829e9b63d81ca68f69af8cc8e3d6a561b768992b88d",
+    "arm64-race": "5313d9b37daf4fdf22ebc829e9b63d81ca68f69af8cc8e3d6a561b768992b88d"
+  },
+  "privacy": {
+    "rawLogsAnnotationsOrUnrelatedArtifactsRead": false,
+    "rawGoOutputOrDynamicSubtestLabelsRetained": false,
+    "sourceAllowlistValidated": true,
+    "providerZipDigestsVerifiedBeforeParsing": true
+  },
+  "limits": [
+    "Stalled/late connectors and Close/deadline faults are controlled per-call fixtures, not real WAN outages or kernel-fault observations.",
+    "The real one-resolution fallback witness is an owned IPv4 loopback connection. No host DNS/routes/firewall changes or external blackhole traffic are used.",
+    "No every-network latency guarantee, full RFC8305 discovery/sorting implementation, public IPv6 qualification or end-to-end UDP retry/fallback is claimed.",
+    "Network context deadlines do not establish a hard bound on native cleanup syscalls.",
+    "Compile-only checks execute none of their artifacts. Native execution here covers Linux AMD64/ARM64; Windows/macOS/BSD installed runtime and traffic qualification remain open.",
+    "The same 18 skipped roots remain explicit and unqualified; two packages have no tests, and vet does not execute roots.",
+    "Earlier browser/resource evidence remains bound to its earlier source. This runtime change requires fresh actual-candidate browser/performance acceptance before claiming it for this candidate.",
+    "Signed deployment, ordinary OS DNS restoration, application/lifecycle acceptance, real eight-hour engine traffic and full readiness gates remain incomplete."
+  ],
+  "formalGateCounts": {
+    "partial": 42,
+    "failed": 3,
+    "missing": 4,
+    "unverified": 1,
+    "passed": 0
+  },
+  "readinessSHA256": "6aba24860c171a7a3931029589b0e04dac90ed4a6f22da3fc02bd058bf903b0e",
+  "gatesPromoted": false,
+  "productionQualificationComplete": false
+}

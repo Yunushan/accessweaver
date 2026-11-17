@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "pure-doh-enforcement-refusal-diagnostics",
+  "baselineCommit": "520a3053b24551bbc3cea10e7932fe7c0bab6ea0",
+  "testedSourceSHA256": {
+    "internal/workflow/windows.ps1": "6a433423550cd35b2df624c7d686685e286c92b89e137ffccc0950160511dc08",
+    "scripts/test-dns-recovery-contracts.ps1": "ea6ff178373ad33287a52a641266bfb75d01933d6cbbf9e77781a097b13a618e",
+    "scripts/test-dns-acceptance-state.ps1": "e87c4bc40231ec25c0e3ef0ac017fa59e7e66794852acec40a6335dc74f6b47b"
+  },
+  "documentedStatusContract": "https://learn.microsoft.com/en-us/windows/win32/fwp/wmi/wfascimprov/msft-netfirewallrule",
+  "behavior": {
+    "FullAdmissionPredicateChanged": false,
+    "productCodeOutsideGuardChanged": false,
+    "additionalOSQueries": 0,
+    "diagnosticCanAuthorizeNonFullRule": false,
+    "fixedRefusalReasons": 28,
+    "rawProviderTextEmitted": false
+  },
+  "validation": {
+    "pureDNSRecovery": {
+      "powerShell": "7.6.9",
+      "assertions": 3070,
+      "passed": true
+    },
+    "pureNativeDNSAcceptanceState": {
+      "assertions": 1049,
+      "passed": true,
+      "actualSourceLiteralReasonsVerified": 28
+    },
+    "windowsGuardProbes": [
+      {
+        "powerShellMajor": 5,
+        "acceptedRepresentations": 11,
+        "documentedCIMInstanceAccepted": true,
+        "refusalCases": 37,
+        "exactFixedReasonCases": 55,
+        "ruleLookupCountsVerified": true,
+        "passed": true
+      },
+      {
+        "powerShellMajor": 7,
+        "acceptedRepresentations": 11,
+        "documentedCIMInstanceAccepted": true,
+        "refusalCases": 37,
+        "exactFixedReasonCases": 55,
+        "ruleLookupCountsVerified": true,
+        "passed": true
+      }
+    ],
+    "goWorkflow": {
+      "passingTestEvents": 313,
+      "failedTestEvents": 0,
+      "explicitSkips": 5,
+      "vetPassed": true
+    }
+  },
+  "interpretation": [
+    "Messages distinguish missing persistent/effective rules, unavailable or ambiguous enforcement status, documented non-Full states and unsupported representations.",
+    "Native source-literal observations can retain one numeric source line for each fixed reason through existing bounds; raw text remains private.",
+    "No native failure cause or resolution is established by these pure tests. Existing Full enforcement, identity, filter, store, recovery and mutation checks remain mandatory."
+  ],
+  "hostDNSOrFirewallQueriedOrChanged": false,
+  "nativeDNSFailureResolved": false,
+  "encryptedWireQualified": false,
+  "productionQualificationComplete": false,
+  "readinessGatesPromoted": []
+}

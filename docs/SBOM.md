@@ -26,7 +26,7 @@ The development-only module `scripts/sbom-tools` pins the JSON Schema validator 
 
 Portable packaging validates every generated document against those schemas before archiving. The archive verifier requires the SBOM, compares its executable/build identity, checks graph structure and verifies each referenced notice's actual archived bytes. Removing the SBOM, changing a binary or altering a notice fails verification. The existing release build-provenance bundle authenticates the complete archives containing the SBOMs; a separate CycloneDX-predicate attestation is not currently emitted.
 
-Windows installer compilation validates both the payload and installer sidecar against the schema, retains the sidecar with the unsigned installer and copies notices into public compilation evidence. CI's fixture check builds the Windows fixtures without executing them, generates their SBOMs and validates them on Linux. The fixture build script also emits SBOMs/notices in the private disposable bundle. Updating dependencies does not requalify VM traffic, native installation or recovery.
+Windows installer compilation validates both the payload and installer sidecar against the schema, retains the sidecar with the unsigned installer and copies notices into public compilation evidence. Managed Windows detection with `PayloadSBOMSHA256` also verifies the installed files referenced by the payload SBOM. It holds each checked notice open through detection and refuses unsafe paths, missing notices, conflicting references and changed bytes. Setup binds the staged Inno Setup runtime notice to its own completion check and holds the verified file through pending-record retirement. Native lifecycle verification compares the installed notice digest to the installer sidecar for each tested version. Complete native dependency and license closure remains open. CI's fixture check builds the Windows fixtures without executing them, generates their SBOMs and validates them on Linux. The fixture build script also emits SBOMs/notices in the private disposable bundle. Updating dependencies does not requalify VM traffic, native installation or recovery.
 
 To inspect a document with trusted source tooling:
 
@@ -37,6 +37,8 @@ go -C scripts/sbom-tools run . --schemas ../sbom/schema ABSOLUTE_SBOM_PATH
 ```
 
 This validates structure/profile, not publisher identity. For downloaded portable artifacts, [verify build provenance first](RELEASE_PROVENANCE.md), using an independently approved source commit/ref. Only then inspect/extract the authenticated archive. Public fixture/installer reports belong to their exact source/binary hashes, not automatically to a later rebuild.
+
+Signed macOS managed-package verification checks the detached payload SBOM against the packaged controller, its build identity, and the notice bytes covered by the install manifest. The `--deployment-release` verifier requires these checks before staging the management detector.
 
 ## Remaining acceptance
 

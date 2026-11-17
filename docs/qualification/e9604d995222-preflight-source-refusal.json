@@ -1,0 +1,488 @@
+{
+  "schemaVersion": 1,
+  "scope": "native-query-preflight-stage-source-refusal",
+  "qualification": {
+    "sourceCommit": "e9604d995222a05cc4e24cab68b75984546771e1",
+    "runID": 42570808727,
+    "allJobsTerminal": true,
+    "terminalBasis": "two-source-bound-matrix-jobs-completed",
+    "sealedDoNotRepoll": true,
+    "jobs": [
+      {
+        "id": 129007485794,
+        "name": "Native DNS cache bypass (windows/arm64)",
+        "status": "completed",
+        "conclusion": "failure",
+        "steps": [
+          {
+            "name": "Verify hosted native SDK and machine identity",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Verify synthetic record ownership and closed query projection",
+            "status": "completed",
+            "conclusion": "failure"
+          },
+          {
+            "name": "Build source-bound native resolver helper",
+            "status": "completed",
+            "conclusion": "skipped"
+          },
+          {
+            "name": "Native positive block rejection unblock and resume",
+            "status": "completed",
+            "conclusion": "skipped"
+          },
+          {
+            "name": "Retain fixed query source metadata only",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Retain fixed native query metadata only",
+            "status": "completed",
+            "conclusion": "skipped"
+          }
+        ]
+      },
+      {
+        "id": 129007486518,
+        "name": "Native DNS cache bypass (windows/amd64)",
+        "status": "completed",
+        "conclusion": "failure",
+        "steps": [
+          {
+            "name": "Verify hosted native SDK and machine identity",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Verify synthetic record ownership and closed query projection",
+            "status": "completed",
+            "conclusion": "failure"
+          },
+          {
+            "name": "Build source-bound native resolver helper",
+            "status": "completed",
+            "conclusion": "skipped"
+          },
+          {
+            "name": "Native positive block rejection unblock and resume",
+            "status": "completed",
+            "conclusion": "skipped"
+          },
+          {
+            "name": "Retain fixed query source metadata only",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Retain fixed native query metadata only",
+            "status": "completed",
+            "conclusion": "skipped"
+          }
+        ]
+      }
+    ],
+    "sourceSHA256": {
+      "scripts/native-dns-query/main_windows.go": "3e4cb3d4eaa08f02376fbfe957624cbd3d7e897735e4c93099c97ba92b1be462",
+      "scripts/native-dns-query/main_windows_test.go": "6c3b124ea3f2ae6ea87acd1954fc96bb86b08f06934938b3c2a4c3a104a8cd44",
+      "scripts/native-dns-query.ps1": "978777e7333dc8ae2bceeeb1a1bf92aaec0589bd2b6454f853d63b268c6ea869",
+      "scripts/native-dns-recovery-observation.ps1": "0fe86eeba8fa32ed04135c32815eb1f0c07d85e2fa4badc11d7061b956e9944e",
+      "scripts/test-native-dns-query-contracts.ps1": "49c280fba02304136b545b2eecc310d845a6d05bd770bace75ce25f934fcccff",
+      "scripts/test-native-dns-query.ps1": "10421b5a7ebc05ba0f2152c484e1636728fc38ea1061072e74d57d04ec8376ca",
+      "scripts/native-dns-wire.ps1": "628ca31341babc247390d14dfcadea2d772d33a666570edbbd6c6b05ebee2850",
+      "scripts/dns-acceptance-state.ps1": "8bb62601742700d74f1fa455c3008c37fe5a95588c79d80a808e9efbd6e8db7e",
+      "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+      ".github/workflows/native-dns-query.yml": "e1ab1c07ab44617ee0d0e184f91375648999c7266d2986c5686ab3029b103097",
+      "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+      "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00"
+    },
+    "missing": [
+      "native-dns-query-windows-amd64",
+      "native-dns-query-windows-arm64"
+    ],
+    "bothNativePrerequisitesPassed": false,
+    "artifacts": [
+      {
+        "artifactID": 13653530643,
+        "artifactName": "native-dns-query-source-windows-arm64",
+        "providerZIPDigest": "sha256:76a8a500fb51219db3d5009347109d8762467fc0bca877128585477948143368",
+        "providerZIPDigestVerified": true,
+        "reports": {
+          "projection.json": {
+            "passed": false,
+            "cases": [
+              {
+                "name": "query-projection-accepts-exact-success",
+                "passed": true
+              },
+              {
+                "name": "query-projection-pins-source-architecture-and-options",
+                "passed": true
+              },
+              {
+                "name": "query-projection-refuses-private-and-missing-fields",
+                "passed": true
+              },
+              {
+                "name": "query-projection-refuses-coerced-flags-and-counts",
+                "passed": true
+              },
+              {
+                "name": "query-projection-refuses-unreleased-or-unbounded-results",
+                "passed": true
+              },
+              {
+                "name": "query-projection-refuses-false-positive-readiness-and-answers",
+                "passed": true
+              },
+              {
+                "name": "query-wrapper-proves-owned-child-and-before-after-hashes",
+                "passed": true
+              },
+              {
+                "name": "query-wrapper-only-counts-native-query-error-as-rejection",
+                "passed": true
+              },
+              {
+                "name": "query-wrapper-never-turns-timeout-or-mutation-into-rejection",
+                "passed": true
+              },
+              {
+                "name": "query-wrapper-refuses-success-as-negative-control",
+                "passed": true
+              },
+              {
+                "name": "query-wrapper-rejects-unknown-names-before-any-boundary",
+                "passed": true
+              },
+              {
+                "name": "query-wrapper-probe-makes-no-dns-request",
+                "passed": true
+              },
+              {
+                "name": "query-projection-size-and-qualification-boundaries",
+                "passed": true
+              },
+              {
+                "name": "query-wrapper-retains-only-normalized-failures-and-clears-stale-proof",
+                "passed": true
+              },
+              {
+                "name": "query-error-category-is-closed-and-cannot-upgrade-refusal",
+                "passed": true
+              },
+              {
+                "name": "recovery-five-fixed-offsets-close-and-retain-first-failure",
+                "passed": true
+              },
+              {
+                "name": "recovery-no-answer-remains-observation-not-qualification",
+                "passed": true
+              },
+              {
+                "name": "recovery-refuses-non-timeout-and-private-initial-proof",
+                "passed": true
+              },
+              {
+                "name": "recovery-clock-regression-and-bound-cannot-publish-partial-row",
+                "passed": true
+              },
+              {
+                "name": "recovery-process-source-and-private-query-refusal-do-not-upgrade",
+                "passed": true
+              },
+              {
+                "name": "recovery-public-report-is-bounded-and-contains-no-private-time-or-data",
+                "passed": true
+              },
+              {
+                "name": "recovery-caller-keeps-original-verdict-and-query-policy",
+                "passed": true
+              },
+              {
+                "name": "preflight-stages-are-distinct-and-precede-native-effects",
+                "passed": false
+              }
+            ],
+            "productInvoked": false,
+            "sourceCommit": "e9604d995222a05cc4e24cab68b75984546771e1",
+            "sourceSHA256": {
+              "scripts/native-dns-recovery-observation.ps1": "0fe86eeba8fa32ed04135c32815eb1f0c07d85e2fa4badc11d7061b956e9944e",
+              "scripts/native-dns-query/main_windows_test.go": "6c3b124ea3f2ae6ea87acd1954fc96bb86b08f06934938b3c2a4c3a104a8cd44",
+              ".github/workflows/native-dns-query.yml": "e1ab1c07ab44617ee0d0e184f91375648999c7266d2986c5686ab3029b103097",
+              "scripts/native-dns-query/main_windows.go": "3e4cb3d4eaa08f02376fbfe957624cbd3d7e897735e4c93099c97ba92b1be462",
+              "scripts/native-dns-query.ps1": "978777e7333dc8ae2bceeeb1a1bf92aaec0589bd2b6454f853d63b268c6ea869",
+              "scripts/test-native-dns-query-contracts.ps1": "49c280fba02304136b545b2eecc310d845a6d05bd770bace75ce25f934fcccff"
+            },
+            "schemaVersion": 1,
+            "nativeQueryInvoked": false
+          },
+          "unit.json": {
+            "schemaVersion": 1,
+            "sourceCommit": "e9604d995222a05cc4e24cab68b75984546771e1",
+            "sourceSHA256": {
+              "scripts/native-dns-query/main_windows.go": "3e4cb3d4eaa08f02376fbfe957624cbd3d7e897735e4c93099c97ba92b1be462",
+              "scripts/native-dns-query/main_windows_test.go": "6c3b124ea3f2ae6ea87acd1954fc96bb86b08f06934938b3c2a4c3a104a8cd44"
+            },
+            "groups": [
+              {
+                "name": "TestQueryUsesExactNativeOptionsAndReleases",
+                "passed": true
+              },
+              {
+                "name": "TestQueryErrorReleasesPartialResult",
+                "passed": true
+              },
+              {
+                "name": "TestQueryErrorWithoutResultsOwnsNothing",
+                "passed": true
+              },
+              {
+                "name": "TestEmptySuccessIsNotAnAnswer",
+                "passed": true
+              },
+              {
+                "name": "TestInvalidNamesNeverInvokeNativeQuery",
+                "passed": true
+              },
+              {
+                "name": "TestOnlyAnswerSectionARecordsCount",
+                "passed": true
+              },
+              {
+                "name": "TestMalformedARecordRefusedAndReleased",
+                "passed": true
+              },
+              {
+                "name": "TestNonUnicastAnswerRefused",
+                "passed": true
+              },
+              {
+                "name": "TestRecordCycleRefusedAndHeadReleasedOnce",
+                "passed": true
+              },
+              {
+                "name": "TestRecordCountBound",
+                "passed": true
+              },
+              {
+                "name": "TestAnswerCountBound",
+                "passed": true
+              },
+              {
+                "name": "TestMaximumAnswersAccepted",
+                "passed": true
+              },
+              {
+                "name": "TestReportIsClosedAndPrivateDataFree",
+                "passed": true
+              },
+              {
+                "name": "TestNativeErrorCategoriesNeverPublishRawErrors",
+                "passed": true
+              }
+            ],
+            "passed": true,
+            "nativeQueryInvoked": false
+          }
+        }
+      },
+      {
+        "artifactID": 13653207267,
+        "artifactName": "native-dns-query-source-windows-amd64",
+        "providerZIPDigest": "sha256:fa2589d6699ed305eb7d7c83413d537aa32302dbf154df50ae7aa22099ef1448",
+        "providerZIPDigestVerified": true,
+        "reports": {
+          "projection.json": {
+            "passed": false,
+            "cases": [
+              {
+                "name": "query-projection-accepts-exact-success",
+                "passed": true
+              },
+              {
+                "name": "query-projection-pins-source-architecture-and-options",
+                "passed": true
+              },
+              {
+                "name": "query-projection-refuses-private-and-missing-fields",
+                "passed": true
+              },
+              {
+                "name": "query-projection-refuses-coerced-flags-and-counts",
+                "passed": true
+              },
+              {
+                "name": "query-projection-refuses-unreleased-or-unbounded-results",
+                "passed": true
+              },
+              {
+                "name": "query-projection-refuses-false-positive-readiness-and-answers",
+                "passed": true
+              },
+              {
+                "name": "query-wrapper-proves-owned-child-and-before-after-hashes",
+                "passed": true
+              },
+              {
+                "name": "query-wrapper-only-counts-native-query-error-as-rejection",
+                "passed": true
+              },
+              {
+                "name": "query-wrapper-never-turns-timeout-or-mutation-into-rejection",
+                "passed": true
+              },
+              {
+                "name": "query-wrapper-refuses-success-as-negative-control",
+                "passed": true
+              },
+              {
+                "name": "query-wrapper-rejects-unknown-names-before-any-boundary",
+                "passed": true
+              },
+              {
+                "name": "query-wrapper-probe-makes-no-dns-request",
+                "passed": true
+              },
+              {
+                "name": "query-projection-size-and-qualification-boundaries",
+                "passed": true
+              },
+              {
+                "name": "query-wrapper-retains-only-normalized-failures-and-clears-stale-proof",
+                "passed": true
+              },
+              {
+                "name": "query-error-category-is-closed-and-cannot-upgrade-refusal",
+                "passed": true
+              },
+              {
+                "name": "recovery-five-fixed-offsets-close-and-retain-first-failure",
+                "passed": true
+              },
+              {
+                "name": "recovery-no-answer-remains-observation-not-qualification",
+                "passed": true
+              },
+              {
+                "name": "recovery-refuses-non-timeout-and-private-initial-proof",
+                "passed": true
+              },
+              {
+                "name": "recovery-clock-regression-and-bound-cannot-publish-partial-row",
+                "passed": true
+              },
+              {
+                "name": "recovery-process-source-and-private-query-refusal-do-not-upgrade",
+                "passed": true
+              },
+              {
+                "name": "recovery-public-report-is-bounded-and-contains-no-private-time-or-data",
+                "passed": true
+              },
+              {
+                "name": "recovery-caller-keeps-original-verdict-and-query-policy",
+                "passed": true
+              },
+              {
+                "name": "preflight-stages-are-distinct-and-precede-native-effects",
+                "passed": false
+              }
+            ],
+            "productInvoked": false,
+            "sourceCommit": "e9604d995222a05cc4e24cab68b75984546771e1",
+            "sourceSHA256": {
+              "scripts/native-dns-recovery-observation.ps1": "0fe86eeba8fa32ed04135c32815eb1f0c07d85e2fa4badc11d7061b956e9944e",
+              "scripts/native-dns-query/main_windows_test.go": "6c3b124ea3f2ae6ea87acd1954fc96bb86b08f06934938b3c2a4c3a104a8cd44",
+              ".github/workflows/native-dns-query.yml": "e1ab1c07ab44617ee0d0e184f91375648999c7266d2986c5686ab3029b103097",
+              "scripts/native-dns-query/main_windows.go": "3e4cb3d4eaa08f02376fbfe957624cbd3d7e897735e4c93099c97ba92b1be462",
+              "scripts/native-dns-query.ps1": "978777e7333dc8ae2bceeeb1a1bf92aaec0589bd2b6454f853d63b268c6ea869",
+              "scripts/test-native-dns-query-contracts.ps1": "49c280fba02304136b545b2eecc310d845a6d05bd770bace75ce25f934fcccff"
+            },
+            "schemaVersion": 1,
+            "nativeQueryInvoked": false
+          },
+          "unit.json": {
+            "schemaVersion": 1,
+            "sourceCommit": "e9604d995222a05cc4e24cab68b75984546771e1",
+            "sourceSHA256": {
+              "scripts/native-dns-query/main_windows.go": "3e4cb3d4eaa08f02376fbfe957624cbd3d7e897735e4c93099c97ba92b1be462",
+              "scripts/native-dns-query/main_windows_test.go": "6c3b124ea3f2ae6ea87acd1954fc96bb86b08f06934938b3c2a4c3a104a8cd44"
+            },
+            "groups": [
+              {
+                "name": "TestQueryUsesExactNativeOptionsAndReleases",
+                "passed": true
+              },
+              {
+                "name": "TestQueryErrorReleasesPartialResult",
+                "passed": true
+              },
+              {
+                "name": "TestQueryErrorWithoutResultsOwnsNothing",
+                "passed": true
+              },
+              {
+                "name": "TestEmptySuccessIsNotAnAnswer",
+                "passed": true
+              },
+              {
+                "name": "TestInvalidNamesNeverInvokeNativeQuery",
+                "passed": true
+              },
+              {
+                "name": "TestOnlyAnswerSectionARecordsCount",
+                "passed": true
+              },
+              {
+                "name": "TestMalformedARecordRefusedAndReleased",
+                "passed": true
+              },
+              {
+                "name": "TestNonUnicastAnswerRefused",
+                "passed": true
+              },
+              {
+                "name": "TestRecordCycleRefusedAndHeadReleasedOnce",
+                "passed": true
+              },
+              {
+                "name": "TestRecordCountBound",
+                "passed": true
+              },
+              {
+                "name": "TestAnswerCountBound",
+                "passed": true
+              },
+              {
+                "name": "TestMaximumAnswersAccepted",
+                "passed": true
+              },
+              {
+                "name": "TestReportIsClosedAndPrivateDataFree",
+                "passed": true
+              },
+              {
+                "name": "TestNativeErrorCategoriesNeverPublishRawErrors",
+                "passed": true
+              }
+            ],
+            "passed": true,
+            "nativeQueryInvoked": false
+          }
+        }
+      }
+    ]
+  },
+  "failedSourceGroup": "preflight-stages-are-distinct-and-precede-native-effects",
+  "nativePrerequisiteStarted": false,
+  "specificAssertionProved": false,
+  "sourceCorrection": "use literal PowerShell markers",
+  "correctedHostedValidationPending": true,
+  "rawLogsRead": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0
+}

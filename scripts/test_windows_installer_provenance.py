@@ -1,15 +1,588 @@
 import copy
-from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_firewall_event_diagnostics, validate_native_attempt
+import json
+from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_firewall_event_diagnostics, validate_managed_detection, validate_native_attempt, validate_architecture_refusal, validate_fixed_restoration, validate_locked_upgrade, validate_redirected_upgrade, validate_failed_copy_recovery, validate_pending_marker_access
 import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+from verify_windows_installer_provenance import (
+    validate_installation_path_refusals, validate_setup_completion_refusal, validate_uninstall_registration_refusal,
+    validate_post_restoration_refusal, validate_restoration_controller_refusals, validate_setup_marker_replacement,
+    validate_setup_uninstall_registration_refusal, validate_setup_upgrade_baseline, validate_uninstall_license_refusal,
+    validate_native_documentation_refusals, validate_inno_runtime_notice, validate_previous_version_rollback,
+    validate_setup_retirement_flush, validate_late_compatibility_refusal, validate_protected_registry_read_boundaries,
+    validate_protected_registry_access,
+)
 from verify_windows_installer_provenance import BUNDLE_NAME,DEFAULT_VERSIONS,WORKFLOW,check_rejections,stage,subject_names,validate_build,verification_command,verify
 
 COMMIT='a'*40
 REF='refs/heads/main'
+RUN_URI = "https://github.com/Yunushan/accessweaver/actions/runs/7/attempts/2\n"
+class ArchitectureRefusalTests(unittest.TestCase):
+    def test_only_opposite_native_target_with_complete_refusal_evidence_passes(self):
+        for host, other in (("amd64", "arm64"), ("arm64", "amd64")):
+            observation = {
+                "target": "windows/" + other, "fixtureSHA256": "b" * 64, "exitCode": 1,
+                "elapsedMilliseconds": 1200, "deadlineMilliseconds": 180000,
+                "platformRefusalLogged": True, "installationAbsent": True,
+                "registrationsAbsent": True, "machineStateUnchanged": True,
+            }
+            self.assertEqual(validate_architecture_refusal({"architectureRefusal": observation}, host),
+                             {"wrongArchitectureRefusalVerified": True})
+            invalid = [
+                {"target": "windows/" + host}, {"fixtureSHA256": "B" * 64}, {"exitCode": True},
+                {"exitCode": 0}, {"elapsedMilliseconds": 180000}, {"deadlineMilliseconds": 180001},
+                {"platformRefusalLogged": False}, {"installationAbsent": False},
+                {"registrationsAbsent": False}, {"machineStateUnchanged": False}, {"privateLog": "inert"},
+            ]
+            for override in invalid:
+                with self.subTest(host=host, override=override), self.assertRaises(ValueError):
+                    validate_architecture_refusal({"architectureRefusal": {**observation, **override}}, host)
+            with self.assertRaises(ValueError):
+                validate_architecture_refusal({}, host)
+
+
+class SetupCompletionRefusalTests(unittest.TestCase):
+    def test_requires_failed_readback_retained_marker_and_genuine_recovery(self):
+        record = {
+            "fixtureSHA256": "a" * 64, "exitCode": 1603, "elapsedMilliseconds": 83,
+            "deadlineMilliseconds": 180000, "refusalLogged": True, "installedFixtureVerified": True,
+            "pendingMarkerRetained": True, "managedDetectionRefused": True, "machineStateUnchanged": True,
+            "profilePreserved": True, "unrelatedFilePreserved": True, "genuineRetryVerified": True,
+        }
+        self.assertEqual(validate_setup_completion_refusal(record), {"setupCompletionRefusalVerified": True})
+        documentation = dict(record, sameSizeDocumentationChangeVerified=True, documentationRestored=True)
+        self.assertEqual(validate_setup_completion_refusal(documentation, documentation=True),
+                         {"setupDocumentationCompletionRefusalVerified": True})
+        for value in (record, {**documentation, "sameSizeDocumentationChangeVerified": False},
+                      {**documentation, "documentationRestored": False}):
+            with self.assertRaisesRegex(ValueError, "refusal and recovery"):
+                validate_setup_completion_refusal(value, documentation=True)
+        for field in record:
+            incomplete = {key: value for key, value in record.items() if key != field}
+            with self.subTest(missing=field), self.assertRaisesRegex(ValueError, "refusal and recovery"):
+                validate_setup_completion_refusal(incomplete)
+        for invalid in (
+            {"exitCode": 0}, {"elapsedMilliseconds": 180000}, {"fixtureSHA256": "wrong"},
+            {"pendingMarkerRetained": 1}, {"managedDetectionRefused": False}, {"genuineRetryVerified": False},
+            {"unexpected": True},
+        ):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, "refusal and recovery"):
+                validate_setup_completion_refusal({**record, **invalid})
+
+
+    def test_retirement_flush_requires_original_marker_and_successful_retry(self):
+        record = {"fixtureSHA256": "a" * 64, "exitCode": 1603, "elapsedMilliseconds": 100,
+                  "deadlineMilliseconds": 180000, "deletionObserved": True, "originalMarkerRestored": True,
+                  "managedDetectionRefused": True, "profilePreserved": True, "unrelatedStatePreserved": True,
+                  "matchingRetryRetiredMarker": True}
+        self.assertEqual(validate_setup_retirement_flush(record), {"setupRetirementFlushRecoveryVerified": True})
+        for invalid in ({"exitCode": 0}, {"elapsedMilliseconds": 180000}, {"fixtureSHA256": False},
+                        {"deletionObserved": False}, {"originalMarkerRestored": 1}, {"managedDetectionRefused": False},
+                        {"matchingRetryRetiredMarker": False}, {"actualPendingMarker": "fixture"}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                validate_setup_retirement_flush({**record, **invalid})
+
+    def test_managed_upgrade_requires_stale_refusal_and_matching_upgrade(self):
+        record = {
+            "refusalExitCode": 7, "refusalElapsedMilliseconds": 200, "deadlineMilliseconds": 180000,
+            "installedStatePreserved": True, "profilePreserved": True, "pendingMarkerAbsent": True,
+            "matchingUpgradeAccepted": True,
+        }
+        self.assertEqual(validate_setup_upgrade_baseline(record), {"setupUpgradeBaselineVerified": True})
+        for invalid in ({"refusalExitCode": 0}, {"refusalElapsedMilliseconds": 180000},
+                        {"matchingUpgradeAccepted": False}, {"pendingMarkerAbsent": 1},
+                        {"installedStatePreserved": False}, {"private": "fixture"}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                validate_setup_upgrade_baseline({**record, **invalid})
+
+    def test_managed_upgrade_recovery_requires_bound_retry_evidence(self):
+        recovery = {
+            "refusalExitCode": 7, "refusalElapsedMilliseconds": 200, "deadlineMilliseconds": 180000,
+            "installedStatePreserved": True, "profilePreserved": True, "pendingMarkerAbsent": True,
+            "matchingUpgradeAccepted": True, "copyCompletedBeforeRecovery": True,
+            "changedRetryRefused": True, "matchingRetryRetiredMarker": True,
+        }
+        self.assertEqual(validate_setup_upgrade_baseline(recovery, check_recovery=True),
+                         {"setupUpgradeBaselineVerified": True, "setupUpgradeRecoveryVerified": True})
+        for name in ("copyCompletedBeforeRecovery", "changedRetryRefused", "matchingRetryRetiredMarker"):
+            missing = {key: value for key, value in recovery.items() if key != name}
+            with self.subTest(field=name):
+                with self.assertRaises(ValueError):
+                    validate_setup_upgrade_baseline(missing, check_recovery=True)
+                with self.assertRaises(ValueError):
+                    validate_setup_upgrade_baseline({**recovery, name: False}, check_recovery=True)
+
+    def test_managed_upgrade_requires_the_abrupt_termination_exit(self):
+        recovery = {
+            "refusalExitCode": 7, "refusalElapsedMilliseconds": 200, "deadlineMilliseconds": 180000,
+            "installedStatePreserved": True, "profilePreserved": True, "pendingMarkerAbsent": True,
+            "matchingUpgradeAccepted": True, "copyCompletedBeforeRecovery": True,
+            "changedRetryRefused": True, "matchingRetryRetiredMarker": True,
+        }
+        with self.assertRaisesRegex(ValueError, "Incomplete managed Setup"):
+            validate_setup_upgrade_baseline(recovery, check_recovery=True, check_abrupt_termination=True)
+        for code in (0, 1603, "197", True):
+            with self.subTest(code=code), self.assertRaisesRegex(ValueError, "abrupt termination"):
+                validate_setup_upgrade_baseline({**recovery, "abruptTerminationExitCode": code},
+                                                check_recovery=True, check_abrupt_termination=True)
+        verified = validate_setup_upgrade_baseline({**recovery, "abruptTerminationExitCode": 197},
+                                                   check_recovery=True, check_abrupt_termination=True)
+        self.assertIs(verified["setupUpgradeAbruptTerminationVerified"], True)
+        options = dict(check_recovery=True, check_abrupt_termination=True, check_payload_binding=True)
+        complete_recovery = {**recovery, "abruptTerminationExitCode": 197}
+        with self.assertRaisesRegex(ValueError, "Incomplete managed Setup"):
+            validate_setup_upgrade_baseline(complete_recovery, **options)
+        for invalid in (False, 1, "true"):
+            with self.subTest(documentation_refusal=invalid), self.assertRaises(ValueError):
+                validate_setup_upgrade_baseline(
+                    {**complete_recovery, "changedDocumentationRetryRefused": invalid}, **options)
+        verified = validate_setup_upgrade_baseline(
+            {**complete_recovery, "changedDocumentationRetryRefused": True}, **options)
+        self.assertIs(verified["setupUpgradeFullPayloadBindingVerified"], True)
+        options["check_partial_copy"] = True
+        partial = {**complete_recovery, "changedDocumentationRetryRefused": True,
+                   "partialCopyMixedSubjectsVerified": True, "partialCopyRetryVerified": True,
+                   "partialCopyExitCode": 198, "partialCopyTemporaryFilesRetained": 0}
+        for changes in ({"partialCopyExitCode": 197}, {"partialCopyExitCode": "198"},
+                        {"partialCopyMixedSubjectsVerified": False}, {"partialCopyRetryVerified": 1},
+                        {"partialCopyTemporaryFilesRetained": 1}, {"partialCopyTemporaryFilesRetained": False}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                validate_setup_upgrade_baseline({**partial, **changes}, **options)
+        for dropped in ("partialCopyExitCode", "partialCopyMixedSubjectsVerified", "partialCopyRetryVerified",
+                        "partialCopyTemporaryFilesRetained"):
+            with self.subTest(dropped=dropped), self.assertRaises(ValueError):
+                validate_setup_upgrade_baseline({key: value for key, value in partial.items() if key != dropped}, **options)
+        verified = validate_setup_upgrade_baseline(partial, **options)
+        self.assertIs(verified["setupUpgradePartialCopyRecoveryVerified"], True)
+        options["check_temp_preservation"] = True
+        with self.assertRaisesRegex(ValueError, "Incomplete managed Setup"):
+            validate_setup_upgrade_baseline(partial, **options)
+        for value in (False, 1):
+            with self.subTest(preservation=value), self.assertRaises(ValueError):
+                validate_setup_upgrade_baseline({**partial, "partialCopyUnrelatedFilesPreserved": value}, **options)
+        preserved = {**partial, "partialCopyUnrelatedFilesPreserved": True}
+        verified = validate_setup_upgrade_baseline(preserved, **options)
+        self.assertIs(verified["setupUpgradeTemporaryUninstallerCleanupVerified"], True)
+        options["check_locked_temp"] = True
+        with self.assertRaisesRegex(ValueError, "Incomplete managed Setup"):
+            validate_setup_upgrade_baseline(preserved, **options)
+        locked = {**preserved, "lockedTemporaryUninstallerExitCode": 1603, "lockedTemporaryUninstallerPendingVerified": True}
+        for changes in ({"lockedTemporaryUninstallerExitCode": 0}, {"lockedTemporaryUninstallerExitCode": "1603"},
+                        {"lockedTemporaryUninstallerPendingVerified": False}):
+            with self.subTest(locked_cleanup=changes), self.assertRaises(ValueError):
+                validate_setup_upgrade_baseline({**locked, **changes}, **options)
+        verified = validate_setup_upgrade_baseline(locked, **options)
+        self.assertIs(verified["setupUpgradeLockedTemporaryUninstallerVerified"], True)
+
+    def test_rejects_unproven_uninstall_registration_repair(self):
+        record = {
+            "fixtureSHA256": "a" * 64, "exitCode": 1603, "elapsedMilliseconds": 83,
+            "deadlineMilliseconds": 180000, "refusalLogged": True, "changedCommandPreserved": True,
+            "installedPayloadVerified": True, "pendingMarkerRetained": True, "managedDetectionRefused": True,
+            "unrelatedStatePreserved": True, "genuineRetryVerified": True,
+        }
+        self.assertEqual(validate_setup_uninstall_registration_refusal(record),
+                         {"setupUninstallRegistrationRefusalVerified": True})
+        for invalid in (
+            {"changedCommandPreserved": False}, {"installedPayloadVerified": 1},
+            {"genuineRetryVerified": False}, {"managedDetectionRefused": False}, {"pendingMarkerRetained": False},
+            {"fixtureSHA256": "b" * 63}, {"elapsedMilliseconds": 180000}, {"exitCode": 0}, {"private": True},
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                validate_setup_uninstall_registration_refusal({**record, **invalid})
+        with self.assertRaises(ValueError):
+            validate_setup_uninstall_registration_refusal(None)
+
+
+class InstallationPathRefusalTests(unittest.TestCase):
+    def test_requires_both_ordered_junction_cases_and_all_preservation_checks(self):
+        leaf = {
+            "kind": "leaf-junction", "exitCode": 7, "elapsedMilliseconds": 41, "deadlineMilliseconds": 180000,
+            "preflightRefusalLogged": True, "targetPreserved": True, "pendingMarkerAbsent": True,
+            "registrationsAbsent": True, "machineStateUnchanged": True,
+        }
+        ancestor = {**leaf, "kind": "ancestor-junction"}
+        self.assertEqual(validate_installation_path_refusals([leaf, ancestor]),
+                         {"installationPathRefusalsVerified": 2})
+        licenses = {**leaf, "kind": "licenses-junction"}
+        self.assertEqual(validate_installation_path_refusals([leaf, ancestor, licenses], check_license_directory=True),
+                         {"installationPathRefusalsVerified": 3})
+        with_docs = [leaf, ancestor, licenses, *({**leaf, "kind": kind} for kind in
+                     ("docs-junction", "docs-assets-junction", "docs-qualification-junction"))]
+        self.assertEqual(validate_installation_path_refusals(with_docs, check_license_directory=True,
+                                                            check_documentation_directories=True),
+                         {"installationPathRefusalsVerified": 6})
+        with self.assertRaisesRegex(ValueError, "refusal"):
+            validate_installation_path_refusals(with_docs[:-1], check_license_directory=True,
+                                                check_documentation_directories=True)
+        for invalid in ([leaf, ancestor], [leaf, ancestor, {**licenses, "targetPreserved": False}]):
+            with self.subTest(observation=invalid), self.assertRaisesRegex(ValueError, "refusal"):
+                validate_installation_path_refusals(invalid, check_license_directory=True)
+        for invalid in (
+            None, [leaf], [ancestor, leaf], [leaf, leaf],
+            [leaf, {**ancestor, "exitCode": 1}], [leaf, {**ancestor, "targetPreserved": False}],
+            [leaf, {**ancestor, "pendingMarkerAbsent": 1}], [leaf, {**ancestor, "unexpected": True}],
+        ):
+            with self.subTest(observation=invalid), self.assertRaisesRegex(ValueError, "refusal"):
+                validate_installation_path_refusals(invalid)
+
+
+class RedirectedUpgradeTests(unittest.TestCase):
+    def test_refusal_checks_original_and_alternate_installations(self):
+        observation = {
+            "operation": "refused-redirected-upgrade", "exitCode": 7, "elapsedMilliseconds": 41,
+            "deadlineMilliseconds": 180000, "preflightRefusalLogged": True,
+            "alternateDestinationAbsent": True, "pendingMarkerAbsent": True,
+            "installedFileTreePreserved": True, "completeRegistrationPreserved": True,
+            "profilePreserved": True, "machineStateUnchanged": True,
+        }
+        self.assertEqual(validate_redirected_upgrade(observation), {"redirectedUpgradePreservationVerified": True})
+        for field in observation:
+            with self.subTest(missing=field), self.assertRaises(ValueError):
+                validate_redirected_upgrade({key: value for key, value in observation.items() if key != field})
+        for field, bad in (("exitCode", 1), ("elapsedMilliseconds", 180000),
+                           ("alternateDestinationAbsent", False), ("pendingMarkerAbsent", 1)):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_redirected_upgrade({**observation, field: bad})
+
+
+class LockedUpgradeTests(unittest.TestCase):
+    def test_refusal_requires_exact_phase_and_preserved_state(self):
+        observation = {
+            "operation": "refused-locked-upgrade", "exitCode": 7, "elapsedMilliseconds": 41,
+            "deadlineMilliseconds": 180000, "preflightRefusalLogged": True, "installedFileTreePreserved": True,
+            "completeRegistrationPreserved": True, "profilePreserved": True, "machineStateUnchanged": True,
+        }
+        self.assertEqual(validate_locked_upgrade(observation), {"lockedUpgradePreservationVerified": True})
+        for field, bad in (
+            ("operation", "upgrade"), ("exitCode", 1), ("elapsedMilliseconds", True),
+            ("elapsedMilliseconds", 180000), ("deadlineMilliseconds", 180001),
+            ("preflightRefusalLogged", False), ("installedFileTreePreserved", False),
+            ("completeRegistrationPreserved", 1), ("profilePreserved", False), ("machineStateUnchanged", False),
+        ):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_locked_upgrade({**observation, field: bad})
+        with self.assertRaises(ValueError):
+            validate_locked_upgrade({**observation, "path": "private"})
+        for subject, key in (("build-info", "lockedBuildInfoUpgradePreservationVerified"),
+                             ("sbom", "lockedSBOMUpgradePreservationVerified")):
+            operation = f"refused-locked-{subject}-upgrade"
+            metadata = {**observation, "operation": operation, "pendingMarkerAbsent": True}
+            with self.subTest(operation=operation):
+                self.assertEqual(validate_locked_upgrade(metadata, operation=operation, marker_required=True), {key: True})
+                with self.assertRaises(ValueError):
+                    validate_locked_upgrade({**metadata, "pendingMarkerAbsent": False}, operation=operation,
+                                            marker_required=True)
+                with self.assertRaises(ValueError):
+                    validate_locked_upgrade(metadata, marker_required=True)
+
+
+class LateCompatibilityRefusalTests(unittest.TestCase):
+    def test_requires_a_distinct_late_lock_fixture_and_bindings_to_failed_copy(self):
+        observation = {
+            "fixtureSHA256": "b" * 64, "setupExitCode": 4,
+            "installationStarted": True, "lateLockAcquired": True, "destinationGuardRefused": True,
+            "pendingMarkerRetained": True, "lockedFilePreserved": True,
+        }
+        self.assertEqual(validate_late_compatibility_refusal(observation, 4, "a" * 64),
+                         {"lateCompatibilityFileRefusalVerified": True})
+        for invalid in ({**observation, "pendingMarkerRetained": False},
+                        {**observation, "fixtureSHA256": "a" * 64},
+                        {**observation, "setupExitCode": 5},
+                        {**observation, "setupExitCode": 7}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                validate_late_compatibility_refusal(invalid, 4, "a" * 64)
+
+
+class ProtectedRegistryReadBoundaryTests(unittest.TestCase):
+    def test_requires_protected_registration_outcomes_and_preserved_state(self):
+        observed = [
+            ("maximum-string-accepted", 0, 514),
+            ("inconsistent-display-name-refused", 3, 514),
+            ("maximum-expand-literal-owned-refused", 3, 514),
+            ("over-budget-string-refused", 1, 516),
+            ("oversized-string-refused", 1, 131086),
+            ("environment-reference-not-expanded", 1, 108),
+        ]
+        cases = [{"name": name, "expectedExitCode": code, "exitCode": code, "elapsedMilliseconds": 16,
+                  "fixtureUTF16Bytes": size, "refusedStatePreserved": code != 0,
+                  "refusalReasonVerified": code != 0, "profilePreserved": True}
+                 for name, code, size in observed]
+        report = {"registryReadCases": cases, "registryReadBufferBytes": 514}
+        self.assertEqual(validate_protected_registry_read_boundaries(report),
+                         {"protectedRegistryReadBoundariesVerified": 6})
+        for field, invalid in (("exitCode", 0), ("refusalReasonVerified", False),
+                               ("refusedStatePreserved", False), ("fixtureUTF16Bytes", 512)):
+            changed = copy.deepcopy(report)
+            changed["registryReadCases"][2][field] = invalid
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_protected_registry_read_boundaries(changed)
+        with self.assertRaises(ValueError):
+            validate_protected_registry_read_boundaries({**report, "registryReadCases": cases[1:]})
+
+
+class ProtectedRegistryAccessTests(unittest.TestCase):
+    def test_requires_independent_denial_and_exact_original_key_restoration(self):
+        record = {
+            "name": "denied-product-key-refused", "exitCode": 1, "nativeQueryStatus": 5,
+            "elapsedMilliseconds": 21, "queryDenialIndependentlyObserved": True, "refusalReasonVerified": True,
+            "installedFileTreePreserved": True, "registrationValuesPreserved": True,
+            "fixtureDACLUnchangedDuringRefusal": True, "profilePreserved": True,
+            "originalRegistrationRestored": True, "originalSecurityDescriptorPreserved": True,
+            "separateFixtureKeyRemoved": True,
+        }
+        self.assertEqual(validate_protected_registry_access({"registryAccessCases": [record]}),
+                         {"protectedRegistryAccessRefusalVerified": True})
+        for field, invalid in (("nativeQueryStatus", 2), ("refusalReasonVerified", False),
+                               ("originalSecurityDescriptorPreserved", False), ("separateFixtureKeyRemoved", False)):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_protected_registry_access({"registryAccessCases": [{**record, field: invalid}]})
+
+
+class FailedCopyRecoveryTests(unittest.TestCase):
+    def test_requires_actual_copy_failure_and_successful_recovery(self):
+        observation = {
+            "operation": "recover-failed-install-copy", "exitCode": 5, "elapsedMilliseconds": 4110,
+            "deadlineMilliseconds": 180000, "copyFailureLogged": True, "pendingRecordCreatedBySetup": True,
+            "lockedSBOMPreserved": True, "refusedOperationsPreservedInstallation": True,
+            "profilePreserved": True, "approvedPackageDetectedAfterRetry": True,
+            "pendingRecordClearedAfterRetry": True,
+        }
+        self.assertEqual(validate_failed_copy_recovery(observation), {"failedInstallCopyRecoveryVerified": True})
+        self.assertEqual(validate_failed_copy_recovery({**observation, "exitCode": 4}),
+                         {"failedInstallCopyRecoveryVerified": True})
+        with self.assertRaises(ValueError):
+            validate_failed_copy_recovery(observation, controller_required=True)
+        self.assertEqual(validate_failed_copy_recovery({**observation, "controllerUninstallBindingRefused": True},
+                                                       controller_required=True),
+                         {"failedInstallCopyRecoveryVerified": True})
+        compatibility = {**observation, "lockedCompatibilityFilePreserved": True}
+        del compatibility["lockedSBOMPreserved"]
+        self.assertEqual(validate_failed_copy_recovery(compatibility, compatibility_file=True),
+                         {"failedInstallCopyRecoveryVerified": True})
+        with self.assertRaises(ValueError):
+            validate_failed_copy_recovery(observation, compatibility_file=True)
+        for field in observation:
+            changed = dict(observation)
+            del changed[field]
+            with self.subTest(missing=field), self.assertRaises(ValueError):
+                validate_failed_copy_recovery(changed)
+        for field, value in (("exitCode", 7), ("elapsedMilliseconds", True),
+                             ("pendingRecordCreatedBySetup", 1), ("approvedPackageDetectedAfterRetry", False)):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_failed_copy_recovery({**observation, field: value})
+
+
+class PendingMarkerAccessTests(unittest.TestCase):
+    def test_native_denial_requires_all_refusals_and_verified_restoration(self):
+        observation = {
+            "nativeQueryStatus": 5, "nativeUninstallExitCode": 1,
+            "discoveryReportedUnavailable": True, "managedDetectionRefused": True,
+            "controllerUninstallBindingRefused": True, "nativeUninstallerRefusalLogged": True,
+            "installationRegistrationAndMarkerPreserved": True, "profilePreserved": True,
+            "fixtureDACLRestored": True, "pendingStateObservedAfterRestore": True,
+        }
+        self.assertEqual(validate_pending_marker_access(observation), {"pendingMarkerAccessDenialVerified": True})
+        for field in observation:
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_pending_marker_access({key: value for key, value in observation.items() if key != field})
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_pending_marker_access({**observation, field: False})
+        with self.assertRaises(ValueError):
+            validate_pending_marker_access({**observation, "nativeQueryStatus": 2})
+        with self.assertRaises(ValueError):
+            validate_pending_marker_access({**observation, "nativeUninstallExitCode": True})
+
+
+class UninstallRegistrationRefusalTests(unittest.TestCase):
+    def test_requires_verified_refusal_before_restoration(self):
+        observation = {
+            "operation": "refused-uninstall-registration", "exitCode": 1, "elapsedMilliseconds": 28,
+            "deadlineMilliseconds": 180000, "preflightRefusalLogged": True,
+            "restorationStateAbsent": True, "installedFileTreePreserved": True,
+            "completeRegistrationPreserved": True, "profilePreserved": True, "machineStateUnchanged": True,
+        }
+        self.assertEqual(validate_uninstall_registration_refusal(observation),
+                         {"uninstallRegistrationRefusalVerified": True})
+        version_case = "refused-uninstall-registration-version"
+        self.assertEqual(validate_uninstall_registration_refusal({**observation, "operation": version_case}, operation=version_case),
+                         {"uninstallRegistrationVersionRefusalVerified": True})
+        with self.assertRaises(ValueError):
+            validate_uninstall_registration_refusal(observation, operation=version_case)
+        command_case = "refused-uninstall-registration-command"
+        command_observation = {**observation, "operation": command_case}
+        self.assertEqual(validate_uninstall_registration_refusal(command_observation, operation=command_case),
+                         {"uninstallRegistrationCommandRefusalVerified": True})
+        with self.assertRaises(ValueError):
+            validate_uninstall_registration_refusal({**command_observation, "restorationStateAbsent": False},
+                                                    operation=command_case)
+        for field in observation:
+            with self.subTest(missing=field), self.assertRaises(ValueError):
+                validate_uninstall_registration_refusal({key: value for key, value in observation.items() if key != field})
+        for field, value in (("exitCode", True), ("restorationStateAbsent", False), ("elapsedMilliseconds", 180000)):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_uninstall_registration_refusal({**observation, field: value})
+
+
+class RestorationControllerRefusalTests(unittest.TestCase):
+    def test_requires_all_refusals_and_preserved_installation(self):
+        preserved = dict.fromkeys((
+            "installedFileTreePreserved", "registrationValuesPreserved", "profilePreserved",
+            "originalControllerAndDACLRestored", "restoredControllerRuntimeVerified",
+        ), True)
+        cases = [
+            dict(preserved, name=name, failurePhase="verify-controller", controllerVerificationRefusalLogged=True,
+                 exitCode=1, elapsedMilliseconds=4, observationDeadlineMilliseconds=180000)
+            for name in ("missing-controller-refused", "truncated-controller-refused", "malformed-controller-refused",
+                         "same-size-controller-mismatch-refused")
+        ]
+        cases.append(dict(preserved, name="execution-denied-controller-refused", failurePhase="launch-controller",
+                          nativeErrorLogVerified=True, independentProbeStarted=False, nativeError=5))
+        self.assertEqual(validate_restoration_controller_refusals(cases),
+                         {"restorationControllerVerificationRefusalsVerified": True})
+        hardlink = {**cases[3], "name": "hard-linked-controller-refused"}
+        self.assertEqual(validate_restoration_controller_refusals(cases[:-1] + [hardlink, cases[-1]], require_hardlink=True),
+                         {"restorationControllerVerificationRefusalsVerified": True})
+        with self.assertRaises(ValueError):
+            validate_restoration_controller_refusals(cases, require_hardlink=True)
+        for bad in (None, cases[:3] + cases[4:],
+                    cases[:3] + [{**cases[3], "failurePhase": "launch-controller"}] + cases[4:],
+                    cases[:4] + [{**cases[4], "nativeError": 193}]):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                validate_restoration_controller_refusals(bad)
+
+
+class SetupMarkerReplacementTests(unittest.TestCase):
+    def test_requires_refusal_and_preservation_of_the_replacement_marker(self):
+        record = {
+            "exitCode": 1603, "elapsedMilliseconds": 123, "deadlineMilliseconds": 180000,
+            "replacementPreserved": True, "completionRefusalLogged": True,
+            "approvedPayloadVerified": True, "unrelatedStatePreserved": True,
+        }
+        self.assertEqual(validate_setup_marker_replacement(record), {"setupMarkerReplacementRefusalVerified": True})
+        for key, value in (("exitCode", 0), ("replacementPreserved", False), ("completionRefusalLogged", False)):
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                validate_setup_marker_replacement({**record, key: value})
+
+    def test_requires_native_subject_guard_observation_in_schema_33(self):
+        record = {
+            "exitCode": 1603, "elapsedMilliseconds": 123, "deadlineMilliseconds": 180000,
+            "replacementPreserved": True, "completionRefusalLogged": True,
+            "approvedPayloadVerified": True, "unrelatedStatePreserved": True,
+        }
+        with self.assertRaises(ValueError):
+            validate_setup_marker_replacement(record, check_subject_guards=True)
+        with self.assertRaises(ValueError):
+            validate_setup_marker_replacement({**record, "subjectAndDirectoryGuardsVerified": False},
+                                              check_subject_guards=True)
+        self.assertEqual(
+            validate_setup_marker_replacement({**record, "subjectAndDirectoryGuardsVerified": True},
+                                              check_subject_guards=True),
+            {"setupMarkerReplacementRefusalVerified": True, "setupCompletionSubjectAndDirectoryGuardsVerified": True},
+        )
+
+        guarded = {**record, "subjectAndDirectoryGuardsVerified": True}
+        for bad in (guarded, {**guarded, "packageDirectoryGuardsVerified": False}):
+            with self.assertRaises(ValueError):
+                validate_setup_marker_replacement(bad, check_subject_guards=True, check_package_guards=True)
+        self.assertTrue(validate_setup_marker_replacement({**guarded, "packageDirectoryGuardsVerified": True},
+                                                         check_subject_guards=True, check_package_guards=True)
+                        ["setupCompletionPackageDirectoryGuardsVerified"])
+        guard_options = dict(check_subject_guards=True, check_package_guards=True, check_runtime_notice_guard=True)
+        guarded["packageDirectoryGuardsVerified"] = True
+        self.assertTrue(validate_setup_marker_replacement({**guarded, "innoRuntimeNoticeGuardVerified": True},
+                                                         **guard_options)
+                        ["setupCompletionInnoRuntimeNoticeGuardVerified"])
+        for bad in (guarded, {**guarded, "innoRuntimeNoticeGuardVerified": 1}):
+            with self.assertRaisesRegex(ValueError, "Setup replacement marker"):
+                validate_setup_marker_replacement(bad, **guard_options)
+
+
+class InnoRuntimeNoticeTests(unittest.TestCase):
+    def test_runtime_notice_binds_fixed_sidecar_path_to_installed_digest(self):
+        pin = "a" * 64
+        notice = {"path": "licenses/Inno-Setup-License.txt", "sha256": pin}
+
+        def compiler(records):
+            return {"properties": [{"name": "accessweaver:license-evidence", "value": json.dumps(records)}]}
+
+        validate_inno_runtime_notice(compiler([notice]), pin)
+        for records in ([], [{**notice, "sha256": "b" * 64}],
+                        [{**notice, "path": "licenses/different-notice.txt"}], [notice, notice]):
+            with self.subTest(records=records), self.assertRaisesRegex(ValueError, "differs from installed readback"):
+                validate_inno_runtime_notice(compiler(records), pin)
+        for invalid_pin in (None, True, pin.upper()):
+            with self.subTest(pin=invalid_pin), self.assertRaisesRegex(ValueError, "missing or malformed"):
+                validate_inno_runtime_notice(compiler([notice]), invalid_pin)
+
+
+class PostRestorationRefusalTests(unittest.TestCase):
+    def test_requires_completed_restoration_and_refused_deletion(self):
+        record = {
+            "exitCode": 1, "elapsedMilliseconds": 120, "deadlineMilliseconds": 180000,
+            "restorationSucceededBeforeRefusal": True, "registrationChangeObserved": True,
+            "deletionRefused": True, "installedFileTreePreserved": True,
+            "otherRegistrationValuesPreserved": True, "profilePreserved": True, "machineStateUnchanged": True,
+        }
+        self.assertEqual(validate_post_restoration_refusal(record), {"postRestorationRefusalVerified": True})
+        for field in ("restorationSucceededBeforeRefusal", "registrationChangeObserved", "deletionRefused",
+                      "installedFileTreePreserved", "otherRegistrationValuesPreserved"):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_post_restoration_refusal({**record, field: False})
+
+
+class UninstallLicenseRefusalTests(unittest.TestCase):
+    def test_requires_an_early_refusal_and_preserved_state(self):
+        observation = {
+            "exitCode": 1, "elapsedMilliseconds": 240, "deadlineMilliseconds": 180000,
+            "refusedBeforeRestoration": True, "targetPreserved": True,
+            "installedFileTreePreserved": True, "registrationPreserved": True,
+            "profilePreserved": True, "machineStateUnchanged": True,
+        }
+        self.assertEqual(validate_uninstall_license_refusal(observation), {"uninstallLicenseDirectoryRefusalVerified": True})
+        documentation = [{**observation, "phase": phase} for phase in (
+            "redirected-docs-refused", "redirected-docs-assets-refused", "redirected-docs-qualification-refused",
+        )]
+        self.assertEqual(validate_native_documentation_refusals(documentation),
+                         {"nativeUninstallDocumentationDirectoryRefusalsVerified": 3})
+        for invalid in (documentation[:-1], documentation[::-1],
+                        [*documentation[:2], {**documentation[-1], "targetPreserved": False}]):
+            with self.assertRaises(ValueError):
+                validate_native_documentation_refusals(invalid)
+        self.assertEqual(validate_uninstall_license_refusal({**observation, "controllerBindingRefused": True},
+                                                          check_controller_binding=True),
+                         {"uninstallLicenseDirectoryRefusalVerified": True})
+        for invalid in (observation, {**observation, "controllerBindingRefused": False}):
+            with self.assertRaises(ValueError):
+                validate_uninstall_license_refusal(invalid, check_controller_binding=True)
+        for change in ({"exitCode": True}, {"elapsedMilliseconds": 180000}, {"refusedBeforeRestoration": False},
+                       {"targetPreserved": False}, {"installedFileTreePreserved": 1}, {"privatePath": "fixture"}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_uninstall_license_refusal({**observation, **change})
+        with self.assertRaises(ValueError):
+            validate_uninstall_license_refusal(None)
+
+
+class FixedRestorationTests(unittest.TestCase):
+    def test_verified_lock_refusal_and_removal_without_request_are_required(self):
+        refused = {"workflowLockRefusalVerified": True, "controllerAndRegistrationRetained": True,
+                   "unrelatedStatePreserved": True}
+        removed = {"legacyRequestAbsent": True, "recoveryJournalRetained": True,
+                   "ownedPayloadAndRegistrationRemoved": True}
+        self.assertEqual(validate_fixed_restoration(refused, removed), {"fixedRestorationCommandVerified": True})
+        for evidence in (refused, removed):
+            for key in evidence:
+                with self.subTest(key=key), self.assertRaises(ValueError):
+                    incomplete = {**evidence, key: 1}
+                    if evidence is refused:
+                        validate_fixed_restoration(incomplete, removed)
+                    else:
+                        validate_fixed_restoration(refused, incomplete)
+
+
 class WindowsInstallerProvenanceTests(unittest.TestCase):
     def fixture(self,root):
         names=subject_names('amd64',DEFAULT_VERSIONS)
@@ -23,7 +596,7 @@ class WindowsInstallerProvenanceTests(unittest.TestCase):
             with self.assertRaises(ValueError):subject_names('amd64',versions)
         self.assertEqual(len(subject_names('arm64',('999999999999999999999.0.0','1.2.3+build.001'))),5)
     def test_complete_build_identity_and_real_calendar_timestamp_are_required(self):
-        identity={"version":"0.1.0-alpha","commit":COMMIT,"sourceState":"clean","builtAt":"2026-11-03T00:00:00Z","goVersion":"go1.27.3","platform":"windows","arch":"amd64"}
+        identity={"version":"0.1.0-alpha","commit":COMMIT,"sourceState":"clean","builtAt":"2026-11-03T00:00:00Z","goVersion":"go1.27.4","platform":"windows","arch":"amd64"}
         validate_build(identity,COMMIT,"amd64","0.1.0-alpha")
         for key,value in (("builtAt","unknown"),("builtAt","2026-02-30T00:00:00Z"),("sourceState","modified"),("arch","arm64")):
             with self.subTest(key=key,value=value),self.assertRaises(ValueError):validate_build(dict(identity,**{key:value}),COMMIT,"amd64","0.1.0-alpha")
@@ -32,13 +605,16 @@ class WindowsInstallerProvenanceTests(unittest.TestCase):
     def test_all_five_private_snapshot_subjects_authenticate_before_any_parse(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);names=self.fixture(root);seen=[]
-            def authenticate(path,bundle,commit,ref,gh):
+            def authenticate(path,bundle,commit,ref,gh,run_id,*,run_attempt):
+                self.assertIsNone(run_attempt)
                 self.assertNotEqual(path.parent,root);self.assertEqual(bundle.parent,path.parent)
                 self.assertEqual((commit,ref,gh),(COMMIT,REF,'trusted-gh'));seen.append(path.name)
-            def contents(private,*args):
+            def contents(private,*args,report_schema,run_attempt):
+                self.assertIsNone(run_attempt)
+                self.assertEqual(report_schema,41)
                 self.assertEqual(set(seen),names);(root/'amd64.json').write_bytes(b'changed original input')
-                self.assertNotEqual((private/'amd64.json').read_bytes(),(root/'amd64.json').read_bytes());return {'mocked':True}
-            with patch('verify_windows_installer_provenance.authenticate',side_effect=authenticate),patch('verify_windows_installer_provenance.validate_contents',side_effect=contents):result=verify(root,COMMIT,REF,'amd64',gh='trusted-gh')
+                self.assertNotEqual((private/'amd64.json').read_bytes(),(root/'amd64.json').read_bytes());return {'mocked':True,'nativeRunID':'7'}
+            with patch('verify_windows_installer_provenance.authenticate',side_effect=authenticate),patch('verify_windows_installer_provenance.validate_contents',side_effect=contents):result=verify(root,COMMIT,REF,'amd64',gh='trusted-gh',run_id='7',report_schema=41)
             self.assertEqual(result['subjectsVerified'],5);self.assertFalse(result['publisherSignatureVerified']);self.assertFalse(result['targetExecutionPerformedByVerifier'])
     def test_any_signature_failure_blocks_parsing_without_fallback(self):
         for at in (1,5):
@@ -46,11 +622,37 @@ class WindowsInstallerProvenanceTests(unittest.TestCase):
                 root=Path(folder);self.fixture(root);calls=[]
                 def run(command,**kwargs):
                     calls.append(command)
-                    if len(calls)==at:raise subprocess.CalledProcessError(1,command,stderr=b'private response')
-                    return subprocess.CompletedProcess(command,0)
+                    status = 1 if len(calls) == at else 0
+                    return subprocess.CompletedProcess(command, status, stdout=RUN_URI, stderr="private response")
                 with patch('verify_windows_installer_provenance.subprocess.run',side_effect=run),patch('verify_windows_installer_provenance.validate_contents') as contents:
-                    with self.assertRaisesRegex(ValueError,'cryptographic'):verify(root,COMMIT,REF,'amd64')
+                    with self.assertRaisesRegex(ValueError,'cryptographic'):verify(root,COMMIT,REF,'amd64',run_id='7')
                     self.assertEqual(len(calls),at);contents.assert_not_called()
+    def test_a_subject_from_another_successful_run_refuses_before_parsing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            good = subprocess.CompletedProcess(["gh"], 0, stdout=RUN_URI)
+            other = subprocess.CompletedProcess(["gh"], 0, stdout=RUN_URI.replace("/runs/7/", "/runs/8/"))
+            with patch("verify_windows_installer_provenance.subprocess.run", side_effect=[good] * 4 + [other]) as run, patch(
+                "verify_windows_installer_provenance.validate_contents"
+            ) as parse, self.assertRaisesRegex(ValueError, "expected GitHub Actions run"):
+                verify(root, COMMIT, REF, 'amd64', run_id="7")
+            self.assertEqual(run.call_count, 5)
+            parse.assert_not_called()
+
+    def test_rejects_mixed_attempts_from_the_same_run_before_parsing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            good = subprocess.CompletedProcess(["gh"], 0, stdout=RUN_URI)
+            older = subprocess.CompletedProcess(["gh"], 0, stdout=RUN_URI.replace("/attempts/2", "/attempts/1"))
+            with patch("verify_windows_installer_provenance.subprocess.run", side_effect=[good] * 4 + [older]) as run, patch(
+                "verify_windows_installer_provenance.validate_contents"
+            ) as parse, self.assertRaisesRegex(ValueError, "run or attempt"):
+                verify(root, COMMIT, REF, "amd64", run_id="7", run_attempt="2")
+            self.assertEqual(run.call_count, 5)
+            parse.assert_not_called()
+
     def test_bad_input_set_and_wrong_target_fail_before_authentication(self):
         for kind in ('extra','missing','hardlink','target'):
             with self.subTest(kind=kind),tempfile.TemporaryDirectory() as folder:
@@ -60,8 +662,49 @@ class WindowsInstallerProvenanceTests(unittest.TestCase):
                 if kind=='hardlink':
                     (root/'amd64.json').unlink();os.link(root/BUNDLE_NAME,root/'amd64.json')
                 with patch('verify_windows_installer_provenance.authenticate') as auth:
-                    with self.assertRaises(ValueError):verify(root,COMMIT,REF,'arm64' if kind=='target' else 'amd64')
+                    with self.assertRaises(ValueError):verify(root,COMMIT,REF,'arm64' if kind=='target' else 'amd64',run_id='7')
                     auth.assert_not_called()
+    def test_lifecycle_report_must_match_the_attested_run(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            with patch('verify_windows_installer_provenance.authenticate') as auth, patch(
+                'verify_windows_installer_provenance.validate_contents', return_value={'nativeRunID': '8'}
+            ), self.assertRaisesRegex(ValueError, 'native run'):
+                verify(root, COMMIT, REF, 'amd64', run_id='7')
+            self.assertEqual(auth.call_count, 5)
+
+    def test_approved_report_schema_is_required_before_lifecycle_checks(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            (root / 'amd64.json').write_text(json.dumps({
+                'schemaVersion': 40, 'sourceCommit': COMMIT, 'sourceRef': REF, 'target': 'windows/amd64', 'runAttempt': '2',
+            }), encoding='utf-8')
+            build_root = root / 'build'
+            reports = build_root / 'installer-lifecycle-checks'
+            reports.mkdir(parents=True)
+            for name in subject_names('amd64', DEFAULT_VERSIONS):
+                destination = reports if name == 'amd64.json' else build_root
+                (destination / name).write_bytes((root / name).read_bytes())
+            staged = build_root / 'staged'
+            with self.assertRaisesRegex(ValueError, 'approved schema'):
+                stage(build_root, staged, COMMIT, REF, 'amd64', DEFAULT_VERSIONS, '7', report_schema=41)
+
+            # Verify a separate directory with exactly the authenticated subject set.
+            candidate = root / 'candidate'
+            candidate.mkdir()
+            for name in subject_names('amd64', DEFAULT_VERSIONS) | {BUNDLE_NAME}:
+                (candidate / name).write_bytes((root / name).read_bytes())
+            with patch('verify_windows_installer_provenance.authenticate') as authenticate:
+                with self.assertRaisesRegex(ValueError, 'approved schema'):
+                    verify(candidate, COMMIT, REF, 'amd64', run_id='7', report_schema=41)
+                self.assertEqual(authenticate.call_count, 5)
+                with self.assertRaisesRegex(ValueError, 'approved run attempt'):
+                    verify(candidate, COMMIT, REF, 'amd64', run_id='7', run_attempt='3')
+                with self.assertRaisesRegex(ValueError, 'did not finish cleanly'):
+                    verify(candidate, COMMIT, REF, 'amd64', run_id='7')
+
     def test_producer_does_not_replace_existing_staging_directory(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)
@@ -78,6 +721,36 @@ class WindowsInstallerProvenanceTests(unittest.TestCase):
 
 
 
+class PreviousVersionRollbackContracts(unittest.TestCase):
+    def test_restored_setup_and_payload_must_match_the_earlier_build(self):
+        previous = {"version": "0.1.0-alpha", "installerSHA256": "a" * 64, "payloadSha256": "b" * 64}
+        timing = {"exitCode": 0, "elapsedMilliseconds": 123, "deadlineMilliseconds": 180000}
+        restored = {
+            **timing, "operation": "restore-previous-version", "version": previous["version"],
+            "installerSHA256": previous["installerSHA256"], "payloadSHA256": previous["payloadSha256"],
+            "setupCompletionVerified": True, "originalAndNewerProfilesReadBack": True,
+            "originalRecoveryJournalPreserved": True,
+        }
+        removed = {
+            **timing, "operation": "uninstall-previous-version",
+            "ownedPayloadAndRegistrationRemoved": True, "profilesPreserved": True, "bothRecoveryJournalsVerified": True,
+        }
+        self.assertEqual(validate_previous_version_rollback(restored, removed, previous),
+                         {"previousVersionRollbackVerified": True})
+        for changed in (
+            {"version": "0.1.1-alpha"}, {"installerSHA256": "c" * 64}, {"payloadSHA256": "d" * 64},
+            {"originalAndNewerProfilesReadBack": False}, {"originalRecoveryJournalPreserved": 1},
+            {"setupCompletionVerified": False}, {"operation": "uninstall"}, {"elapsedMilliseconds": 180000},
+            {"exitCode": False}, {"privateProfilePath": "fixture"},
+        ):
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                validate_previous_version_rollback({**restored, **changed}, removed, previous)
+        for changed in ({"profilesPreserved": False}, {"bothRecoveryJournalsVerified": False},
+                        {"ownedPayloadAndRegistrationRemoved": False}, {"exitCode": 3010}):
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                validate_previous_version_rollback(restored, {**removed, **changed}, previous)
+
+
 class WindowsStateObservationContracts(unittest.TestCase):
     def fixture(self):
         comparison={"exactMatch":True,"beforeSHA256":"a"*64,"afterSHA256":"a"*64,"domains":{}}
@@ -90,6 +763,22 @@ class WindowsStateObservationContracts(unittest.TestCase):
         self.assertIn("after-restoration-launch-failures",PHASES)
         result=validate_state_observations(self.fixture())
         self.assertEqual(result,{"nativeStateCheckpointsVerified":15,"nativeStateComparisonsVerified":30})
+
+    def test_rollback_requires_two_additional_unchanged_checkpoints(self):
+        observations = self.fixture()
+        for phase in ("after-rollback", "after-rollback-uninstall"):
+            observation = copy.deepcopy(observations[-1])
+            observation["phase"] = phase
+            observations.append(observation)
+        self.assertEqual(validate_state_observations(observations, include_rollback=True),
+                         {"nativeStateCheckpointsVerified": 17, "nativeStateComparisonsVerified": 34})
+        with self.assertRaises(ValueError):
+            validate_state_observations(observations)
+        with self.assertRaises(ValueError):
+            validate_state_observations(observations[:-1], include_rollback=True)
+        observations[-1]["transition"]["exactMatch"] = False
+        with self.assertRaises(ValueError):
+            validate_state_observations(observations, include_rollback=True)
 
     def test_missing_reordered_rebased_transient_private_or_incomplete_observations_refuse(self):
         for kind in ("missing","reordered","missing-transition","null","prior-drift","transient-restored","rebased","row-count-bool","counter-bool","changed-rule","raw-private-field","changed-hash","missing-domain","unknown-envelope"):
@@ -156,6 +845,174 @@ class FirewallEventDiagnosticContracts(unittest.TestCase):
             invalid.append(dict(self.fixture(),**{key:value}))
         for value in invalid:
             with self.subTest(value=value),self.assertRaises(ValueError):validate_firewall_event_diagnostics(value)
+
+
+class ManagedDetectionEvidenceTests(unittest.TestCase):
+    def test_exact_source_order_and_results_required(self):
+        from hashlib import sha256
+        source = Path(__file__).with_name("detect-windows-installer.ps1")
+        cases = [
+            {"phase": phase, "detected": detected}
+            for phase, detected in (
+                ("before-install", False), ("after-install", True), ("wrong-digest", False),
+                ("after-upgrade", True), ("superseded-version", False), ("after-reinstall", True),
+                ("after-refused-downgrade", True), ("after-refused-uninstall", True), ("after-uninstall", False),
+            )
+        ]
+        report = {"managedDetectionSourceSHA256": sha256(source.read_bytes()).hexdigest(),
+                  "managedDetectionCases": cases}
+        self.assertEqual(validate_managed_detection(report), {"managedDetectionChecksVerified": 9})
+        with_lock = [
+            *cases[:6],
+            {"phase": "active-lifecycle-refused", "detected": False, "inspectionRefused": True},
+            {"phase": "abandoned-lifecycle-refused", "detected": False, "inspectionRefused": True},
+            {"phase": "after-lifecycle-locks", "detected": True},
+            *cases[6:],
+        ]
+        upgraded = {**report, "schemaVersion": 17, "managedDetectionCases": with_lock}
+        self.assertEqual(validate_managed_detection(upgraded), {"managedDetectionChecksVerified": 12})
+        pending = [
+            *with_lock[:9],
+            {"phase": "pending-install-refused", "detected": False, "inspectionRefused": True},
+            {"phase": "after-pending-install-retry", "detected": True},
+            *with_lock[9:],
+        ]
+        self.assertEqual(validate_managed_detection({**upgraded, "schemaVersion": 18, "managedDetectionCases": pending}),
+                         {"managedDetectionChecksVerified": 14})
+        with_denial = [
+            *pending[:10],
+            {"phase": "pending-marker-access-denied", "detected": False, "inspectionRefused": True},
+            *pending[10:],
+        ]
+        managed_pending = [
+            *with_denial[:3],
+            {"phase": "managed-upgrade-pending", "detected": False, "inspectionRefused": True},
+            *with_denial[3:],
+        ]
+        latest = {**report, "schemaVersion": 36, "managedDetectionCases": managed_pending}
+        self.assertEqual(validate_managed_detection(latest), {"managedDetectionChecksVerified": 16})
+        with self.assertRaises(ValueError):
+            validate_managed_detection({**latest, "managedDetectionCases": with_denial})
+        latest = {**latest, "schemaVersion": 41}
+        with_hard_link = [
+            *managed_pending[:3],
+            {"phase": "hard-linked-controller-refused", "detected": False, "inspectionRefused": True},
+            {"phase": "after-hard-link-removal", "detected": True},
+            *managed_pending[3:],
+        ]
+        self.assertEqual(validate_managed_detection({**latest, "managedDetectionCases": with_hard_link}),
+                         {"managedDetectionChecksVerified": 18})
+        for invalid in (
+            managed_pending,
+            [*with_hard_link[:3], *reversed(with_hard_link[3:5]), *with_hard_link[5:]],
+            [*with_hard_link[:3], dict(with_hard_link[3], inspectionRefused=1), *with_hard_link[4:]],
+            [*with_hard_link[:4], dict(with_hard_link[4], detected=False), *with_hard_link[5:]],
+        ):
+            with self.subTest(cases=invalid[3:5]), self.assertRaises(ValueError):
+                validate_managed_detection({**latest, "managedDetectionCases": invalid})
+        with_license_refusal = [
+            *with_hard_link[:5],
+            {"phase": "redirected-licenses-refused", "detected": False, "inspectionRefused": True},
+            {"phase": "after-license-directory-restoration", "detected": True},
+            *with_hard_link[5:],
+        ]
+        latest = {**latest, "schemaVersion": 43}
+        self.assertEqual(validate_managed_detection({**latest, "managedDetectionCases": with_license_refusal}),
+                         {"managedDetectionChecksVerified": 20})
+        with self.assertRaises(ValueError):
+            validate_managed_detection({**latest, "managedDetectionCases": with_hard_link})
+        documentation = [
+            {"phase": phase, "detected": False, "inspectionRefused": True}
+            for phase in ("redirected-docs-refused", "redirected-docs-assets-refused", "redirected-docs-qualification-refused")
+        ]
+        with_documentation = [
+            *with_license_refusal[:7], *documentation,
+            {"phase": "after-documentation-directory-restoration", "detected": True},
+            *with_license_refusal[7:],
+        ]
+        current = {**latest, "schemaVersion": 47, "managedDetectionCases": with_documentation}
+        self.assertEqual(validate_managed_detection(current), {"managedDetectionChecksVerified": 24})
+        with self.assertRaisesRegex(ValueError, "Incomplete managed detection coverage"):
+            validate_managed_detection({**current, "managedDetectionCases": with_license_refusal})
+        with_notice_readback = [
+            *with_documentation[:3],
+            {"phase": "changed-notice", "detected": False},
+            {"phase": "missing-notice-refused", "detected": False, "inspectionRefused": True},
+            {"phase": "after-notice-restoration", "detected": True},
+            *with_documentation[3:],
+        ]
+        current = {**current, "schemaVersion": 51, "managedDetectionCases": with_notice_readback}
+        self.assertEqual(validate_managed_detection(current), {"managedDetectionChecksVerified": 27})
+        rollback = [
+            *with_notice_readback,
+            {"phase": "after-rollback", "detected": True},
+            {"phase": "newer-version-after-rollback", "detected": False},
+            {"phase": "after-rollback-uninstall", "detected": False},
+        ]
+        latest_rollback = {**current, "schemaVersion": 53, "managedDetectionCases": rollback}
+        self.assertEqual(validate_managed_detection(latest_rollback), {"managedDetectionChecksVerified": 30})
+        with self.assertRaisesRegex(ValueError, "Incomplete managed detection coverage"):
+            validate_managed_detection({**latest_rollback, "managedDetectionCases": with_notice_readback})
+        managed_index = next(i for i, case in enumerate(rollback) if case["phase"] == "managed-upgrade-pending")
+        partial = {"phase": "managed-upgrade-partial-copy-pending", "detected": False, "inspectionRefused": True}
+        partial_cases = [*rollback[:managed_index], partial, *rollback[managed_index:]]
+        latest_partial = {**latest_rollback, "schemaVersion": 57, "managedDetectionCases": partial_cases}
+        self.assertEqual(validate_managed_detection(latest_partial), {"managedDetectionChecksVerified": 31})
+        reported_status = [*partial_cases[:managed_index], dict(partial, pendingStatusReported=True),
+                           *partial_cases[managed_index + 1:]]
+        latest_status = {**latest_partial, "schemaVersion": 60, "managedDetectionCases": reported_status}
+        self.assertEqual(validate_managed_detection(latest_status), {"managedDetectionChecksVerified": 31})
+        with self.assertRaisesRegex(ValueError, "Unexpected managed detection result"):
+            validate_managed_detection({**latest_status, "managedDetectionCases": partial_cases})
+        matching_status = [*partial_cases[:managed_index], dict(partial, matchingPendingStatusReported=True),
+                           *partial_cases[managed_index + 1:]]
+        latest_matching_status = {**latest_partial, "schemaVersion": 61, "managedDetectionCases": matching_status}
+        self.assertEqual(validate_managed_detection(latest_matching_status), {"managedDetectionChecksVerified": 31})
+        with self.assertRaisesRegex(ValueError, "Unexpected managed detection result"):
+            validate_managed_detection({**latest_matching_status, "managedDetectionCases": reported_status})
+        matching_status[managed_index]["matchingPendingStatusReported"] = 1
+        with self.assertRaisesRegex(ValueError, "Unexpected managed detection result"):
+            validate_managed_detection(latest_matching_status)
+        reported_status[managed_index]["pendingStatusReported"] = 1
+        with self.assertRaisesRegex(ValueError, "Unexpected managed detection result"):
+            validate_managed_detection(latest_status)
+        for invalid in (rollback,
+                        [*rollback[:managed_index + 1], partial, *rollback[managed_index + 1:]],
+                        [*partial_cases[:managed_index], dict(partial, inspectionRefused=False),
+                         *partial_cases[managed_index + 1:]]):
+            with self.subTest(partial_coverage=invalid), self.assertRaises(ValueError):
+                validate_managed_detection({**latest_partial, "managedDetectionCases": invalid})
+        incorrectly_detected = [*rollback[:-2], dict(rollback[-2], detected=True), rollback[-1]]
+        with self.assertRaisesRegex(ValueError, "Unexpected managed detection result"):
+            validate_managed_detection({**latest_rollback, "managedDetectionCases": incorrectly_detected})
+        with self.assertRaisesRegex(ValueError, "Incomplete managed detection coverage"):
+            validate_managed_detection({**current, "managedDetectionCases": with_documentation})
+        incorrect = with_notice_readback.copy()
+        incorrect[4] = {**incorrect[4], "inspectionRefused": 1}
+        with self.assertRaisesRegex(ValueError, "Unexpected managed detection result"):
+            validate_managed_detection({**current, "managedDetectionCases": incorrect})
+        self.assertEqual(validate_managed_detection({**upgraded, "schemaVersion": 21, "managedDetectionCases": with_denial}),
+                         {"managedDetectionChecksVerified": 15})
+        with self.assertRaises(ValueError):
+            validate_managed_detection({**upgraded, "schemaVersion": 21, "managedDetectionCases": pending})
+        with self.assertRaises(ValueError):
+            validate_managed_detection({**upgraded, "schemaVersion": 18})
+        with self.assertRaises(ValueError):
+            validate_managed_detection({**report, "schemaVersion": 17})
+        for index in (6, 7):
+            wrong = list(with_lock)
+            wrong[index] = {**wrong[index], "inspectionRefused": 1}
+            with self.assertRaises(ValueError):
+                validate_managed_detection({**upgraded, "managedDetectionCases": wrong})
+        for change in (
+            {"managedDetectionSourceSHA256": "0" * 64},
+            {"managedDetectionCases": cases[1:]},
+            {"managedDetectionCases": cases[::-1]},
+            {"managedDetectionCases": [dict(cases[0], detected=0), *cases[1:]]},
+            {"managedDetectionCases": [dict(cases[0], privatePath="unexpected"), *cases[1:]]},
+        ):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_managed_detection({**report, **change})
 
 
 if __name__=='__main__':unittest.main()

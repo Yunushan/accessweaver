@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "scope": "Active managed ByeDPI session across a hardware-assisted Ubuntu Minimal AMD64 guest reboot",
+  "guestArchitecture": "amd64",
+  "emulation": "kvm",
+  "imageSHA256": "406630c08b5e545fcc7209854b129d47e3af822db128c9f19336593b5a2d3fe0",
+  "firmwareSHA256": {
+    "code": "874f15a7c9110e78a89db159f0f68fc97e9076b74777520de1c235426f758aa7",
+    "initialVariables": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e"
+  },
+  "packagesSHA256": {
+    "older.deb": "f0885660eb7a415cbb83e0187156bce266c5119de3d96c3c868760caf6d7dd40",
+    "newer.deb": "67af3300bd19a5c4a2749c2282b77a2e5a327e2fea471d1a4b9ab1c4e3a62c81"
+  },
+  "driverSHA256": "f21e7c150a5b39f02873a314ca579ec56924f8d6678891d287816fc472f5c0b2",
+  "guestProbeSHA256": "4171d3b461f8f7486bb9c397da6e1b44f6ff923a4b6ba379aa35a1ef954c683a",
+  "qemuVersion": "QEMU emulator version 10.2.1 (Debian 1:10.2.1+ds-1ubuntu3.3)",
+  "guestExternalNetworkDisabled": true,
+  "firstBoot": {
+    "phase": "before-reboot",
+    "bootSHA256": "d70cb0d89ff19b230dd80c91d85681223e21a56997eb797b663ac96a41dee870",
+    "installedVersion": "0.1.0~alpha.1",
+    "acceptedRevision": 2,
+    "controllerSHA256": "b1768f66147a9bdeadcd1daa178bd32cd62db99ffba86f5ee635e61b0d6f1142",
+    "liveEngine": {
+      "connectedWhenRebootRequested": true,
+      "ordinaryControllerAndVendor": true,
+      "routedBytesVerified": true
+    }
+  },
+  "secondBoot": {
+    "phase": "after-reboot",
+    "bootSHA256": "4829c4479fa65be96e24799093eb3473db38c4f25423e35bf99d0f4a7813cd2d",
+    "installedVersion": "0.1.0~alpha.1",
+    "acceptedRevision": 2,
+    "controllerSHA256": "b1768f66147a9bdeadcd1daa178bd32cd62db99ffba86f5ee635e61b0d6f1142",
+    "rollbackVersion": "0.1.0~alpha",
+    "rollbackKeptCurrentPolicy": true,
+    "replayRefused": true,
+    "purgePreservedState": true,
+    "liveEngine": {
+      "oldEngineAndListenerAbsent": true,
+      "ownedEngineAndClientStopped": true,
+      "restoredApprovalRoutedBytes": true
+    }
+  },
+  "productionQualificationComplete": false,
+  "liveByedpi": {
+    "engineSHA256": "c70e87c6168af1832b21641a98bb53e3500b1daf6a5df8bfd22fac4a9294abda",
+    "trafficProbeSHA256": "73eb75ed481753f29c6eef6cfa34c3d133c97f7dbaaaf2f1836d5587ec832c34",
+    "sharedNetworkProbeSHA256": "e6a738ff9a57782c1c3673469367ba815909f42992ad4fdba56fc7f1bb5a3f01"
+  },
+  "sourceCommit": "16632c4b2a7f14c300b2eae4e9cdf33325c7edf1",
+  "host": "Ubuntu 26.04 WSL AMD64",
+  "guest": "Ubuntu Minimal 24.04.5 LTS AMD64",
+  "engineRelease": "v0.17.3",
+  "engineWrongDigestRefused": true,
+  "imageWrongDigestRefused": true,
+  "disposableOverlayCleanupVerified": true,
+  "guestTransport": "isolated loopback",
+  "basePackageAndImageEvidence": "docs/qualification/16632c4b2a7f-linux-package-reboot.json",
+  "managedEnginePinEvidence": "docs/qualification/adb10502a18a-linux-managed-byedpi.json"
+}

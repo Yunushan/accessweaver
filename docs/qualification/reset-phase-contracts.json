@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "scope": "full-capture-reset-phase-diagnostic-contracts",
+  "parentCommit": "2eeb1c421c13495ee1b491a2219ecd34b243c49b",
+  "sourceSHA256": {
+    "scripts/ndis-private-phases.cjs": "c08370bf682f73e2d9fba0de74201c78320f67cdf70c96a96e425bb8899f5b35",
+    "scripts/test-ndis-private-phases.cjs": "b7f00813f159f7aa721f9f9e21546231acd3478ca59ba6b75a4006e501e10f49",
+    "scripts/native-doh-phase-evidence.ps1": "1c4a8624cee5fec0d8ab3163b738f9e03ffaafe30174b9ee9469b12f35ef52ec",
+    "scripts/native-doh-netevent-wire.ps1": "3a691dd1f19c3f97ae72a9601f2ab406f5a70c47e39e4d8e05bb375820fe2827",
+    "scripts/test-native-doh-netevent-contracts.ps1": "43bf7b234ad7ca7e351bb5acc6fcbbc6b9d9f69b20c6f923b96cdaa4de87232d"
+  },
+  "pureSyntheticCasesPassed": 36,
+  "newResetSyntheticGroups": 6,
+  "hostedSourceGroupsPrepared": 53,
+  "publicPhaseSchema": 3,
+  "publicPhaseNumberKeys": 56,
+  "privateMapSchemaUnchanged": 2,
+  "publicPhaseTextBoundUnchanged": 4096,
+  "readerMalformedProjectionsRefused": 8,
+  "powerShellFilesParsed": 3,
+  "powerShellParseErrors": 0,
+  "resetPacketsReconciledToFullConverterTotal": true,
+  "everyCapturedFrameRetained": true,
+  "runtimeUnchangedFrom": "11aa1e356aae3fa4d46c4eaca85fea4d4374f59e",
+  "decoderChanged": false,
+  "acceptanceWeakened": false,
+  "timestampsOrPrivateVectorsPublished": false,
+  "localProductOrNativeExecution": false,
+  "hostedNativeValidationCompleted": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0
+}

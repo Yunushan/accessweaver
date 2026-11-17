@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "scope": "Loopback signed APT publication and isolated Linux AMD64 install lifecycle",
+  "builderSHA256": "f6af39d051ea0ef10fb358372d4e6b419df1ab1d01f6133c4d3149d0ce84b891",
+  "probeSHA256": "7bf37c925f9e98763010a520c1f06df2df6767ef3337c328b832707ab51cf340",
+  "aptVersion": "apt 3.2.1 (amd64)",
+  "packageSHA256": {
+    "accessweaver_0.1.0~alpha.1_amd64.deb": "19ad5eedce0cc1baba25d1ae1db675a38e8f7c5b3c8861574e34bf1a5d8bf889",
+    "accessweaver_0.1.0~alpha.1_arm64.deb": "e92f78843fbb5ed81183680e6db12771cb065e05a24fe5a2fca2bc97e59f2933",
+    "accessweaver_0.1.0~alpha_amd64.deb": "fec8360f344e2aa85aaa97621993fdf3e5853b44205f8d0f50e250523acb39ca",
+    "accessweaver_0.1.0~alpha_arm64.deb": "6f93360a44148573a42178b011dc9567cb90a237ff894d216662070ef35ed509"
+  },
+  "olderBinarySHA256": "5233d889d4062c4a427565d0f935683b047ed083820bfa5e47d49fbc89e580c6",
+  "newerBinarySHA256": "b1768f66147a9bdeadcd1daa178bd32cd62db99ffba86f5ee635e61b0d6f1142",
+  "suiteArchitectures": [
+    "amd64",
+    "arm64"
+  ],
+  "checks": [
+    "approved-signing-subkey-verified-against-primary-fingerprint",
+    "package-pin-and-untrusted-verification-key-rejected-without-publication",
+    "exclusive-publication-preserved-existing-snapshot",
+    "native-apt-fetched-index-by-signed-hash",
+    "signed-install-upgrade-and-purge-preserved-policy-and-profile",
+    "wrong-scoped-key-tampered-signature-and-expired-metadata-rejected",
+    "tampered-index-and-payload-rejected-before-installation"
+  ],
+  "ephemeralSigningKeys": true,
+  "arm64EndpointExecution": false,
+  "productionQualificationComplete": false,
+  "host": "Ubuntu 26.04 WSL AMD64",
+  "isolatedLoopbackNetwork": true,
+  "sourceCommit": "4caa86d5b6d047eb77fe83cd5e62205d39a1d0da",
+  "builderSource": "scripts/build-linux-apt-repository.py",
+  "probeSource": "scripts/test-linux-apt-repository.py",
+  "payloadSourceCommits": {
+    "0.1.0~alpha": "77a884e7c213d7b5bde3cc2347acdffc2fa0e6d0",
+    "0.1.0~alpha.1": "16632c4b2a7f14c300b2eae4e9cdf33325c7edf1"
+  }
+}

@@ -2,8 +2,14 @@ name: Windows installer lifecycle acceptance
 
 on:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Native installer validation scope
+        type: choice
+        default: lifecycle
+        options: [lifecycle, registry-ownership, protected-publication]
   push:
-    branches: [main]
+    branches: [main, 'codex/dns-adapter-coverage']
     paths:
       - scripts/*windows-installer*
       - scripts/verify_windows_installer_provenance.py
@@ -35,11 +41,84 @@ permissions:
   contents: read
 
 concurrency:
-  group: installer-lifecycle-${{ github.ref }}
+  # Keep qualification evidence for each source revision.
+  group: installer-lifecycle-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
+  registry-ownership:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.scope == 'registry-ownership' }}
+    name: Native protected registry ownership (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 6
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            arch: amd64
+          - os: windows-11-arm
+            arch: arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify recovery marker and detector contracts
+        shell: pwsh
+        run: |
+          ./scripts/test-windows-installer-contracts.ps1
+          ./scripts/test-windows-installer-detection.ps1
+      - name: Exercise owned registry creation, retry and link refusal
+        shell: pwsh
+        env:
+          ACCESSWEAVER_DISPOSABLE_WINDOWS_INSTALLER_REGISTRY_TEST: '1'
+        run: ./scripts/test-windows-installer-registry-owned.ps1 -Architecture '${{ matrix.arch }}'
+      - name: Retain fixed source-bound registry evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installer-registry-ownership-windows-${{ matrix.arch }}-attempt-${{ github.run_attempt }}
+          path: build/registry-ownership-evidence/${{ matrix.arch }}.json
+          if-no-files-found: error
+          retention-days: 14
+  protected-publication:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.scope == 'protected-publication' }}
+    name: Native protected Setup publication and removal (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            arch: amd64
+          - os: windows-11-arm
+            arch: arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.4'
+          architecture: ${{ matrix.arch == 'amd64' && 'x64' || 'arm64' }}
+          cache: false
+      - name: Exercise protected publication, legacy migration and verified removal
+        shell: powershell
+        env:
+          ACCESSWEAVER_DISPOSABLE_INSTALLER_ACCEPTANCE: '1'
+        run: ./scripts/test-windows-installer-lifecycle.ps1 -Architecture '${{ matrix.arch }}' -ProtectedRegistrationPublication
+      - name: Retain fixed source-bound Setup result
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installer-protected-publication-windows-${{ matrix.arch }}-attempt-${{ github.run_attempt }}
+          path: build/installer-protected-publication-checks/
+          if-no-files-found: error
+          retention-days: 14
   lifecycle:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.scope == 'lifecycle' }}
     name: Native installer lifecycle (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
@@ -61,15 +140,21 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.27.3'
+          go-version: '1.27.4'
           architecture: ${{ matrix.arch == 'amd64' && 'x64' || 'arm64' }}
           cache: false
       - name: Pure provenance contracts
         shell: powershell
         run: python -m unittest discover -s scripts -p test_windows_installer_provenance.py -v
-      - name: Pure state comparison diagnostics
+      - name: Pure installer reboot evidence contracts
+        shell: pwsh
+        run: ./scripts/test-windows-installer-reboot-contracts.ps1
+      - name: Pure managed detection contracts
+        shell: pwsh
+        run: ./scripts/test-windows-installer-detection.ps1
+      - name: Pure installer and publisher verification contracts
         shell: powershell
-        run: ./scripts/test-windows-installer-state.ps1
+        run: ./scripts/test-windows-installer-contracts.ps1
       - name: Pure event correlation diagnostics
         shell: powershell
         run: ./scripts/test-windows-installer-event-state.ps1
@@ -104,7 +189,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: installer-event-probe-windows-${{ matrix.arch }}
+          name: installer-event-probe-windows-${{ matrix.arch }}-attempt-${{ github.run_attempt }}
           path: build/installer-event-checks/
           if-no-files-found: ignore
           retention-days: 14
@@ -119,7 +204,7 @@ jobs:
           CANDIDATE_DIRECTORY: build/installer-lifecycle-provenance/${{ matrix.arch }}/candidate
           TARGET_ARCH: '${{ matrix.arch }}'
         run: |
-          python scripts/verify_windows_installer_provenance.py "$env:CANDIDATE_DIRECTORY" --stage-build-root build --source-commit "$env:GITHUB_SHA" --source-ref "$env:GITHUB_REF" --architecture "$env:TARGET_ARCH"
+          python scripts/verify_windows_installer_provenance.py "$env:CANDIDATE_DIRECTORY" --stage-build-root build --source-commit "$env:GITHUB_SHA" --source-ref "$env:GITHUB_REF" --architecture "$env:TARGET_ARCH" --run-id "$env:GITHUB_RUN_ID" --report-schema 64 --run-attempt "$env:GITHUB_RUN_ATTEMPT"
           if ($LASTEXITCODE -ne 0) { throw 'Native installer staging/acceptance failed' }
       - name: Attest installer, SBOM and actual native acceptance subjects
         id: provenance
@@ -139,33 +224,23 @@ jobs:
           [void](New-Item -ItemType Directory -Path "$env:PROVENANCE_DIRECTORY")
           $bundle=Join-Path $env:CANDIDATE_DIRECTORY 'BUILD-PROVENANCE.sigstore.json'
           Copy-Item -LiteralPath "$env:ATTESTATION_BUNDLE" -Destination $bundle
-          $verification=& python scripts/verify_windows_installer_provenance.py "$env:CANDIDATE_DIRECTORY" --source-commit "$env:GITHUB_SHA" --source-ref "$env:GITHUB_REF" --architecture "$env:TARGET_ARCH" --check-rejections
+          $verification=& python scripts/verify_windows_installer_provenance.py "$env:CANDIDATE_DIRECTORY" --source-commit "$env:GITHUB_SHA" --source-ref "$env:GITHUB_REF" --architecture "$env:TARGET_ARCH" --run-id "$env:GITHUB_RUN_ID" --report-schema 64 --run-attempt "$env:GITHUB_RUN_ATTEMPT" --check-rejections
           if ($LASTEXITCODE -ne 0) { throw 'Native installer cryptographic verification failed' }
           [IO.File]::WriteAllText((Join-Path $env:PROVENANCE_DIRECTORY 'verified.json'),(($verification -join [Environment]::NewLine)+[Environment]::NewLine),[Text.UTF8Encoding]::new($false))
-          Copy-Item -LiteralPath $bundle -Destination (Join-Path $env:PROVENANCE_DIRECTORY 'BUILD-PROVENANCE.sigstore.json')
-      - name: Retain native installer provenance and verification results
+      - name: Retain the authenticated installer evidence for independent verification
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: installer-lifecycle-provenance-windows-${{ matrix.arch }}
-          path: build/installer-lifecycle-provenance/${{ matrix.arch }}/public/
-          if-no-files-found: error
-          retention-days: 14
-      - name: Retain the actual unsigned installer candidates and validated SBOMs
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: installer-lifecycle-candidates-windows-${{ matrix.arch }}
+          name: installer-lifecycle-provenance-windows-${{ matrix.arch }}-attempt-${{ github.run_attempt }}
           path: |
-            build/accessweaver-0.1.0-alpha-windows-${{ matrix.arch }}-setup.exe
-            build/accessweaver-0.1.0-alpha-windows-${{ matrix.arch }}-setup.exe.cdx.json
-            build/accessweaver-0.1.1-alpha-windows-${{ matrix.arch }}-setup.exe
-            build/accessweaver-0.1.1-alpha-windows-${{ matrix.arch }}-setup.exe.cdx.json
+            build/installer-lifecycle-provenance/${{ matrix.arch }}/candidate/
+            build/installer-lifecycle-provenance/${{ matrix.arch }}/public/verified.json
           if-no-files-found: error
           retention-days: 14
       - name: Retain scoped public lifecycle result
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: installer-lifecycle-windows-${{ matrix.arch }}
+          name: installer-lifecycle-windows-${{ matrix.arch }}-attempt-${{ github.run_attempt }}
           path: build/installer-lifecycle-checks/
           if-no-files-found: ignore
           retention-days: 14

@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "6cd8c3d5f3f6cfb28168e38c73fb52e72bd11726",
+  "runID": 42394914829,
+  "scope": "reproduced Linux ARM64 race closed-standard-stream failure",
+  "rootArchivesVerified": 4,
+  "modeReportsVerified": 6,
+  "modeReportsPassed": 5,
+  "modeReportsFailed": 1,
+  "failedRoot": "TestRecordedEngineClosedStandardPipeRepeated",
+  "closedFixedPhaseEvidence": {
+    "schemaVersion": 1,
+    "sourceCommit": "6cd8c3d5f3f6cfb28168e38c73fb52e72bd11726",
+    "runID": 42394914829,
+    "jobID": 128470105879,
+    "checkRunID": 128470105879,
+    "sourceProducerSHA256": "811a75b623b4bf17ea78db949ecf80f719330825fec029eccfa4355df118a57b",
+    "sourceFixtureSHA256": "10dfea0acca6d0b135799d6715b540efc7860cd4d4b6b5a5a05981a76397ac89",
+    "protocolTitle": "Source-known closed-pipe failure",
+    "labels": [
+      "github.com/Yunushan/accessweaver/cmd/accessweaver#TestRecordedEngineClosedStandardPipeRepeated/attempt-20/accepted",
+      "github.com/Yunushan/accessweaver/cmd/accessweaver#TestRecordedEngineClosedStandardPipeRepeated/attempt-20/accepted/scope-cleanup"
+    ],
+    "nonProtocolAnnotationsIgnored": 3,
+    "onlyImmutablePublicSourceLabelsRetained": true,
+    "rawLogsRead": false,
+    "otherAnnotationMessagesRetained": false,
+    "hostPathsAccountsCredentialsOrPrivateStateRetained": false
+  },
+  "knownCase": "accepted",
+  "knownAttempt": 20,
+  "knownParentPhase": "scope-cleanup",
+  "workerAssertionKnown": false,
+  "productionFixClaimed": false,
+  "privateOutputArchitectureChanged": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0,
+  "limitations": [
+    "The cleanup proof is absent or invalid; the phase does not establish which worker assertion failed.",
+    "Worker test failures can hit restored closed stdout themselves before failure text is emitted. Raw text was not read.",
+    "This new failure does not prove the earlier f3f1530 root failure had the same cofactor.",
+    "Previously passing repetitions remain valid evidence of those attempts, not proof the intermittent contract is fixed."
+  ]
+}

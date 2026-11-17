@@ -57,9 +57,41 @@ func TestInstallationBindsPinnedKeyAndTrustedRevisionFloor(t *testing.T) {
 }
 
 func FuzzDecodeInstallation(f *testing.F) {
+	fixture := deterministicFuzzRotation(f)
+	f.Add(fixture.prior)
 	f.Add([]byte(`{"schemaVersion":1,"publicKey":"invalid","minimumRevision":0,"envelope":{"schemaVersion":1,"keyId":"invalid","payload":"","signature":""}}`))
 	f.Add([]byte(`null`))
 	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _ = DecodeInstallation(data, time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
+		before := bytes.Clone(data)
+		authority, err := DecodeInstallation(data, fuzzPolicyNow)
+		if !bytes.Equal(before, data) {
+			t.Fatal("installation decoder changed input bytes")
+		}
+		if err != nil {
+			if authority != nil {
+				t.Fatal("rejected installation returned authority")
+			}
+			return
+		}
+		assertFuzzPolicy(t, authority.verified.Policy)
+		if _, err := DecodeInstallation(data, authority.verified.Policy.ExpiresAt); err == nil {
+			t.Fatal("raw accepted installation ignored expiry")
+		}
+
+		if !authority.verified.SignatureValid || authority.verified.RuntimeEnforced {
+			t.Fatal("offline installation decoding overstated authority")
+		}
+		var value Installation
+		if json.Unmarshal(data, &value) != nil {
+			t.Fatal("accepted installation unavailable")
+		}
+		value.MinimumRevision = authority.verified.Policy.Revision
+		replay, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal("installation floor mutation failed")
+		}
+		if _, err := DecodeInstallation(replay, fuzzPolicyNow); err == nil {
+			t.Fatal("installation ignored trusted replay floor")
+		}
 	})
 }

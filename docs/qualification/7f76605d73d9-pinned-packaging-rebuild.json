@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "scope": "Local unsigned previews using the hosted packaging script, with WSL host preparation and Linux tmpfs checkouts in Docker Desktop",
+  "sourceCommit": "7f76605d73d947c522e91c32a61f34ef7c8b5526",
+  "sourceSHA256": {
+    ".github/workflows/release.yml": "1a2552c3c0c61255f40c917739eeaf5c63fefa16f48ea5ccd2abe85f7b38303b",
+    "scripts/package-hosted-release.sh": "7904a0aff796e1edf4bc2a8695d9aa27d57bbcd4a01a1e06aaa32ccaa2e76a4e",
+    "scripts/package-release.sh": "467a7a8f0d3d225148e65cf2342c809cf52f50a3740400b3096e0ec890865b35",
+    "scripts/build-all.sh": "6d8712ac794b04cbd9406d819557db3d74d6f31db43c138a45f5f74be146ccdc",
+    "scripts/release_archive.py": "d4f2da52a8519042193e7bf1f330fff5372c2b6e736a5aed1442d218595dd517",
+    "scripts/sbom.py": "9248d425e4bfb3a13ce6a6d9834533cdecade2eeb9589cdaf5eb053b3c066df6",
+    "scripts/verify_release.py": "4338d95d41b2e7c3ab394a0403c1e81ac57f76e524e06f776c58b4a1b2976744",
+    "scripts/verify_release_rebuild.py": "97c9f081120517e8211480d9992e7d5070757921e0b99501008d4669a9b27c26",
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+    "scripts/sbom-tools/go.mod": "d31958b2a0537cc549be979c567d829812523558d713cc50c59f20caa747a211",
+    "scripts/sbom-tools/go.sum": "da615e479f84e5f7278666ec31f14478644b08f1b3c6f62b5b4a4fb6e417ba50"
+  },
+  "samePhysicalHost": true,
+  "separateCleanCheckoutsAndCaches": true,
+  "cachePreparation": "Each build reused its own cache from the Windows bind-mount attempt. Neither shared a cache with the other.",
+  "localReleaseFilesystem": "Linux tmpfs",
+  "initialWindowsBindMountPublication": "Both modes reached the directory publication step but the Windows bind mount rejected the atomic rename.",
+  "containerImage": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f",
+  "containerNetwork": "none",
+  "goVersion": "go version go1.27.4 linux/amd64",
+  "version": "0.1.0-alpha.6",
+  "releaseLabel": "readiness-preview",
+  "packaging": {
+    "pythonVersion": "3.12.3",
+    "zlibVersion": "1.3",
+    "zlibRuntimeVersion": "1.3",
+    "archiveEpoch": 1794757154
+  },
+  "archiveVerification": {
+    "package": "static and native metadata",
+    "rebuild": "static metadata"
+  },
+  "repeatPackageChecksumsMatched": true,
+  "archivesVerifiedPerBuild": 10,
+  "unsignedSubjectsCompared": 12,
+  "allUnsignedSubjectsByteIdentical": true,
+  "subjects": [
+    {
+      "file": "BUILD-MANIFEST.json",
+      "packageSHA256": "cb85718f77a302c25fe45f366531cfccd6e4267505332ce5c398fbecd996f167",
+      "rebuildSHA256": "cb85718f77a302c25fe45f366531cfccd6e4267505332ce5c398fbecd996f167",
+      "byteIdentical": true
+    },
+    {
+      "file": "SHA256SUMS.txt",
+      "packageSHA256": "171a3d3fe39c68512c91adaedd608f1579360e590460b891375a088648dc1cc4",
+      "rebuildSHA256": "171a3d3fe39c68512c91adaedd608f1579360e590460b891375a088648dc1cc4",
+      "byteIdentical": true
+    },
+    {
+      "file": "accessweaver-readiness-preview-darwin-amd64.tar.gz",
+      "packageSHA256": "00c7d0b7dae02de2696a596a41d7804388bfc1f3fb322e7af8054cb786564e81",
+      "rebuildSHA256": "00c7d0b7dae02de2696a596a41d7804388bfc1f3fb322e7af8054cb786564e81",
+      "byteIdentical": true
+    },
+    {
+      "file": "accessweaver-readiness-preview-darwin-arm64.tar.gz",
+      "packageSHA256": "0dcef56e6124e2b536e7dea241b0b5315f6f40f0834d353968785ee31d59b769",
+      "rebuildSHA256": "0dcef56e6124e2b536e7dea241b0b5315f6f40f0834d353968785ee31d59b769",
+      "byteIdentical": true
+    },
+    {
+      "file": "accessweaver-readiness-preview-freebsd-amd64.tar.gz",
+      "packageSHA256": "821a5e86f0e0e9cbb083c38836a1aa0d41631ca31f2e967f394d692535a32b93",
+      "rebuildSHA256": "821a5e86f0e0e9cbb083c38836a1aa0d41631ca31f2e967f394d692535a32b93",
+      "byteIdentical": true
+    },
+    {
+      "file": "accessweaver-readiness-preview-freebsd-arm64.tar.gz",
+      "packageSHA256": "96d364384361cd65fab357565ecfacadfecc4c493d768dc2c9293f9ca4302ff0",
+      "rebuildSHA256": "96d364384361cd65fab357565ecfacadfecc4c493d768dc2c9293f9ca4302ff0",
+      "byteIdentical": true
+    },
+    {
+      "file": "accessweaver-readiness-preview-linux-amd64.tar.gz",
+      "packageSHA256": "e31ece88c27a5c75d771226402a16e0a6756cc13dfb29fa8427b0195da9570a8",
+      "rebuildSHA256": "e31ece88c27a5c75d771226402a16e0a6756cc13dfb29fa8427b0195da9570a8",
+      "byteIdentical": true
+    },
+    {
+      "file": "accessweaver-readiness-preview-linux-arm64.tar.gz",
+      "packageSHA256": "3c038315807d57825088f23cb937f88e9b04a0647879478d7036e3a7d3d77075",
+      "rebuildSHA256": "3c038315807d57825088f23cb937f88e9b04a0647879478d7036e3a7d3d77075",
+      "byteIdentical": true
+    },
+    {
+      "file": "accessweaver-readiness-preview-openbsd-amd64.tar.gz",
+      "packageSHA256": "b8fbfb33d00874ce59bf7f7b1f23736021a223668d7ce51b148d3d69942cf3a0",
+      "rebuildSHA256": "b8fbfb33d00874ce59bf7f7b1f23736021a223668d7ce51b148d3d69942cf3a0",
+      "byteIdentical": true
+    },
+    {
+      "file": "accessweaver-readiness-preview-openbsd-arm64.tar.gz",
+      "packageSHA256": "e6105595e7abf556fc7adb02c98902bcdd98c9b9dc2492313b98732749022d8b",
+      "rebuildSHA256": "e6105595e7abf556fc7adb02c98902bcdd98c9b9dc2492313b98732749022d8b",
+      "byteIdentical": true
+    },
+    {
+      "file": "accessweaver-readiness-preview-windows-amd64.zip",
+      "packageSHA256": "6b48795b03e6bc5f3a9ff35da0f7c8312aaa3bcd69d1572f33f88ae629e54616",
+      "rebuildSHA256": "6b48795b03e6bc5f3a9ff35da0f7c8312aaa3bcd69d1572f33f88ae629e54616",
+      "byteIdentical": true
+    },
+    {
+      "file": "accessweaver-readiness-preview-windows-arm64.zip",
+      "packageSHA256": "120bbbe41ad57952d845ff126d2637300c6470a1e0bee17230cfef7009f9c31d",
+      "rebuildSHA256": "120bbbe41ad57952d845ff126d2637300c6470a1e0bee17230cfef7009f9c31d",
+      "byteIdentical": true
+    }
+  ],
+  "hostedProvenanceVerified": false,
+  "publisherSignatureVerified": false,
+  "productionQualificationComplete": false
+}

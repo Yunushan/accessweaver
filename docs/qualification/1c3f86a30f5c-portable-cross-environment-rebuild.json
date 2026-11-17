@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "scope": "Local unsigned preview rebuild across WSL and the pinned Docker Linux userspace",
+  "sourceCommit": "1c3f86a30f5ced6e30ce2bb27a1e50a845126bd3",
+  "sourceSHA256": {
+    ".gitattributes": "b7a4f11cbe3632d5d679c8a2c135860b4d31f1f434006be479808463d799f8bc",
+    ".github/workflows/release.yml": "f4b672e1655ee3f7c5498fd81c827a2e896050ca619f37711538b0ece5cd8e10",
+    "scripts/build-all.sh": "6d8712ac794b04cbd9406d819557db3d74d6f31db43c138a45f5f74be146ccdc",
+    "scripts/package-release.sh": "467a7a8f0d3d225148e65cf2342c809cf52f50a3740400b3096e0ec890865b35",
+    "scripts/release_archive.py": "d4f2da52a8519042193e7bf1f330fff5372c2b6e736a5aed1442d218595dd517",
+    "scripts/verify_release.py": "4338d95d41b2e7c3ab394a0403c1e81ac57f76e524e06f776c58b4a1b2976744",
+    "scripts/verify_release_rebuild.py": "97c9f081120517e8211480d9992e7d5070757921e0b99501008d4669a9b27c26",
+    "scripts/sbom.py": "9248d425e4bfb3a13ce6a6d9834533cdecade2eeb9589cdaf5eb053b3c066df6",
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+    "scripts/sbom-tools/go.mod": "d31958b2a0537cc549be979c567d829812523558d713cc50c59f20caa747a211",
+    "scripts/sbom-tools/go.sum": "da615e479f84e5f7278666ec31f14478644b08f1b3c6f62b5b4a4fb6e417ba50"
+  },
+  "samePhysicalHost": true,
+  "separateCleanCheckoutsAndCaches": true,
+  "goToolchainArchiveSHA256": "7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840",
+  "containerImage": "mcr.microsoft.com/playwright@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f",
+  "environment": {
+    "wsl": {
+      "sourceCommit": "1c3f86a30f5ced6e30ce2bb27a1e50a845126bd3",
+      "environment": "wsl",
+      "pythonVersion": "3.14.4",
+      "zlibRuntimeVersion": "1.3.1",
+      "timestamp": 1794755629,
+      "timezone": "UTC",
+      "nativeUpdateMetadataVerified": true
+    },
+    "container": {
+      "sourceCommit": "1c3f86a30f5ced6e30ce2bb27a1e50a845126bd3",
+      "environment": "container",
+      "pythonVersion": "3.12.3",
+      "zlibRuntimeVersion": "1.3",
+      "timestamp": 1794755629,
+      "timezone": "America/Los_Angeles",
+      "nativeUpdateMetadataVerified": true
+    }
+  },
+  "archivesVerifiedPerBuild": 10,
+  "coreArchivesByteIdentical": 10,
+  "manifestFieldsDiffering": [
+    "packaging"
+  ],
+  "allUnsignedSubjectsByteIdentical": false,
+  "subjects": [
+    {
+      "file": "BUILD-MANIFEST.json",
+      "wslSHA256": "44118208f02273e22c9d5cc92f9260aa13a3e9767295b12324c04b356028b320",
+      "containerSHA256": "8ba000013b30fe2307dc4b39a85c3a0718986b0b44482760b8ef07ee75eb2385",
+      "byteIdentical": false
+    },
+    {
+      "file": "SHA256SUMS.txt",
+      "wslSHA256": "e055eb373b63033ba8e010d3382fab1cce727b16d4be7d75ddd01885698529ed",
+      "containerSHA256": "b9735cddac8a861fe58f342898536ceac0fba8544caecb841446b350f9e13927",
+      "byteIdentical": false
+    },
+    {
+      "file": "accessweaver-readiness-preview-darwin-amd64.tar.gz",
+      "wslSHA256": "67fbf270f4dc995312f05c819b90f8d236b59f90385cc71c9a21926c031feb57",
+      "containerSHA256": "67fbf270f4dc995312f05c819b90f8d236b59f90385cc71c9a21926c031feb57",
+      "byteIdentical": true
+    },
+    {
+      "file": "accessweaver-readiness-preview-darwin-arm64.tar.gz",
+      "wslSHA256": "0c8b2e80913bb53cea535a60bd0927ef788ae2a0fceefeb1e3cb2b41119f6b58",
+      "containerSHA256": "0c8b2e80913bb53cea535a60bd0927ef788ae2a0fceefeb1e3cb2b41119f6b58",
+      "byteIdentical": true
+    },
+    {
+      "file": "accessweaver-readiness-preview-freebsd-amd64.tar.gz",
+      "wslSHA256": "1e7c3c10cd8a368d251ca06b3f21cb6bbfc177ee51bb1e74b6963ea483dfb4e5",
+      "containerSHA256": "1e7c3c10cd8a368d251ca06b3f21cb6bbfc177ee51bb1e74b6963ea483dfb4e5",
+      "byteIdentical": true
+    },
+    {
+      "file": "accessweaver-readiness-preview-freebsd-arm64.tar.gz",
+      "wslSHA256": "99afdaef88a00821de383799e89d3a189c2a055eb7ccc7911bfabaab1b884cc8",
+      "containerSHA256": "99afdaef88a00821de383799e89d3a189c2a055eb7ccc7911bfabaab1b884cc8",
+      "byteIdentical": true
+    },
+    {
+      "file": "accessweaver-readiness-preview-linux-amd64.tar.gz",
+      "wslSHA256": "ee9dbbbf234aa3852868de4afa7007762dc9c11c381f67fbca31b4435c221a91",
+      "containerSHA256": "ee9dbbbf234aa3852868de4afa7007762dc9c11c381f67fbca31b4435c221a91",
+      "byteIdentical": true
+    },
+    {
+      "file": "accessweaver-readiness-preview-linux-arm64.tar.gz",
+      "wslSHA256": "5e7a221aa433c5163e57a60d7b8b9af865d54ec28f827eab3c452048aedd30f3",
+      "containerSHA256": "5e7a221aa433c5163e57a60d7b8b9af865d54ec28f827eab3c452048aedd30f3",
+      "byteIdentical": true
+    },
+    {
+      "file": "accessweaver-readiness-preview-openbsd-amd64.tar.gz",
+      "wslSHA256": "c1cb351ffb1a3c714f26b131bec4145ee3c946da957ec0eb8cd05f7630b6075d",
+      "containerSHA256": "c1cb351ffb1a3c714f26b131bec4145ee3c946da957ec0eb8cd05f7630b6075d",
+      "byteIdentical": true
+    },
+    {
+      "file": "accessweaver-readiness-preview-openbsd-arm64.tar.gz",
+      "wslSHA256": "bd084b55b485835e4e3baa5635bb9975afb59fcbcf38082a2abcb588c11cb859",
+      "containerSHA256": "bd084b55b485835e4e3baa5635bb9975afb59fcbcf38082a2abcb588c11cb859",
+      "byteIdentical": true
+    },
+    {
+      "file": "accessweaver-readiness-preview-windows-amd64.zip",
+      "wslSHA256": "39d431cd1803cc1d8e7ed2e002a22f94a49c90d6b3eb438930efbbf3e1b624d9",
+      "containerSHA256": "39d431cd1803cc1d8e7ed2e002a22f94a49c90d6b3eb438930efbbf3e1b624d9",
+      "byteIdentical": true
+    },
+    {
+      "file": "accessweaver-readiness-preview-windows-arm64.zip",
+      "wslSHA256": "0b9d9082ef8a3ff141e3e7b8af1c8a3818eaa4d290ba7107c0293660e7268958",
+      "containerSHA256": "0b9d9082ef8a3ff141e3e7b8af1c8a3818eaa4d290ba7107c0293660e7268958",
+      "byteIdentical": true
+    }
+  ],
+  "hostedProvenanceVerified": false,
+  "productionQualificationComplete": false
+}

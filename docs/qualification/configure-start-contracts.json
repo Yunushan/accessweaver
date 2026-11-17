@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "scope": "private-configure-start-and-baseline-attribution-contracts",
+  "candidateSourceSHA256": {
+    ".github/workflows/native-doh-wire.yml": "5744247237da514d499831c2af09417c496d5b7438b370481daf4fca7695b6b0",
+    "scripts/native-doh-netevent-wire.ps1": "955d36ab9e37ffcea28e58a2ed058c0ae78a6d182edd8d7f76803272257292d3",
+    "scripts/native-doh-phase-evidence.ps1": "616f14f68c084bee24a090a41c6ec2870529ae3dc36f3d4e313ee2dc198eede2",
+    "scripts/ndis-private-phases.cjs": "dd6459fb4e5579cdba1811efd8396bb339577b0dca29a316875355fe63a4af32",
+    "scripts/read-native-ndis-phases.ps1": "f1af74724a00265a5b2a88868518e019e077ecc9ed71632380213751a0d7dc96",
+    "scripts/test-native-doh-netevent-contracts.ps1": "d9544567c3e3c64ad1dbda1f6e5b5a55519e1aa73b08389c8e0fdac7fc6a46c6",
+    "scripts/test-native-doh.ps1": "8087c7776787d2e736583153b8682b8b898d498b5b7a0229a44758fe1a40c508",
+    "scripts/test-ndis-private-phases.cjs": "06b374f76beeb9c6c3cf6782f333cb23c61b3323d01523f549f49cad875e427d",
+    "scripts/native-doh-baseline-evidence.ps1": "22f08623ceabb81dc860d00fe79262d74b1d05687d8873cb7ccc088ff36a7e79"
+  },
+  "purePhaseRolePortStartCasesPassed": 30,
+  "hostedSourceGroupsPrepared": 51,
+  "privatePhaseMapSchemaVersion": 2,
+  "publicPhaseCountSchemaVersion": 2,
+  "fullBeforeReturnPartitions": [
+    "preStart",
+    "startAt",
+    "during"
+  ],
+  "counterSubpartitionsPreserveAllPackets": true,
+  "allSourceKnownDNSRolePartitionsPreserved": true,
+  "baselineSnapshotMetadataMasks": true,
+  "effectiveResolverInventoryReadOnly": true,
+  "selectedAdapterIdentityReadTwice": true,
+  "staticResolverOrderMustMatchOriginal": true,
+  "dhcpAndUnexposedFamiliesExplicit": true,
+  "privateTimestampsVectorsAddressesNamesPublished": false,
+  "closedReaderNegativeControlsRefused": 14,
+  "strictDecoderChanged": false,
+  "runtimeChangedFrom40db05c": false,
+  "localNativeOrProductExecution": false,
+  "nativeQualificationPerformed": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0
+}

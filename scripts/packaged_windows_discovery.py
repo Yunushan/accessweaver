@@ -26,6 +26,7 @@ DEADLINE_SECONDS = 45
 MAX_OUTPUT = 1 << 20
 ENGINES = {'byedpi', 'proxifyre', 'wgcf', 'zapret', 'zapret2', 'goodbyedpi', 'dnscrypt', 'drover'}
 APPS = {'discord', 'discord-ptb', 'splitcord'}
+INSTALLER_RECOVERY_STATES = ('clear', 'pending', 'unavailable')
 WORKFLOW_PHASES = 'storage-ready script-ready request-ready environment-ready launch first-output child-exited shell-input shell-parse shell-initialize shell-utility-ready shell-management-ready shell-request-decoded shell-network-ready shell-root-ready shell-state-ready shell-catalog-ready shell-dispatch'.split()
 DISCOVERY_PHASES = 'services components applications conflicts refresh-task final-paths complete'.split()
 TASK_PHASES = 'start started capture-ready exited timed-out drained cleanup tree-helper-returned disposed'.split()
@@ -99,7 +100,7 @@ def validate_job(job):
             and result.get('journal') is None and result.get('events') == [], 'Read-only discovery changed workflow state')
     data = result.get('data')
     require(isinstance(data, dict) and set(data) == {'services', 'serviceInspectionError', 'components', 'applications',
-            'wiresockCLI', 'conflicts', 'managedRoot', 'refreshTask', 'refreshTaskInspectionError', 'dnsSnapshot'},
+            'wiresockCLI', 'conflicts', 'managedRoot', 'refreshTask', 'refreshTaskInspectionError', 'dnsSnapshot', 'installerRecovery'},
             'Discovery result omitted or added inventory fields')
     nullable_text = lambda value: value is None or isinstance(value, str)
     require(isinstance(data['services'], list) and all(isinstance(item, dict) and set(item) == {'name', 'status', 'owned'}
@@ -116,6 +117,7 @@ def validate_job(job):
             and nullable_text(data['refreshTaskInspectionError'])
             and ((data['refreshTask'] is None) == bool(data['refreshTaskInspectionError'])),
             'Unknown task state was confused with a known result')
+    require(data['installerRecovery'] in INSTALLER_RECOVERY_STATES, 'Invalid installer recovery status')
     return job['id']
 
 
@@ -218,11 +220,12 @@ def probe(staged, report_dir=Path('build/packaged-native-checks')):
     finally:
         cleanup_capsule(capsule, temporary_root)
     report = {key: receipt[key] for key in ('sourceCommit', 'sourceRef', 'target', 'binarySha256', 'archiveSha256', 'manifestSha256', 'bundleSha256', 'build')}
-    report.update(schemaVersion=1, probeElapsedMilliseconds=elapsed, deadlineMilliseconds=DEADLINE_SECONDS*1000,
+    report.update(schemaVersion=2, probeElapsedMilliseconds=elapsed, deadlineMilliseconds=DEADLINE_SECONDS*1000,
                   phases=phases, originalArchiveExecuted=True, readOnlyActionVerified=True, fullDiscoveryShapeVerified=True,
                   ownedProcessStopped=True, ownedCapsuleRemoved=True,
                   serviceInspectionSucceeded=job['result']['data']['serviceInspectionError'] is None,
                   taskInspectionSucceeded=type(job['result']['data']['refreshTask']) is bool and job['result']['data']['refreshTaskInspectionError'] is None,
+                  installerRecovery=job['result']['data']['installerRecovery'],
                   settingsChanged=False, productionQualificationComplete=False)
     require(not report_dir.is_symlink(), 'Unexpected discovery report directory')
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -239,6 +242,7 @@ def main():
     try:
         report = probe(args.staged)
         require(report['serviceInspectionSucceeded'] and report['taskInspectionSucceeded'], 'Packaged discovery retained an unknown service or task inspection')
+        require(report['installerRecovery'] == 'clear', 'Packaged discovery did not confirm a clear installer recovery state')
         print(json.dumps(report))
     except Exception as error:
         # Never echo child stdout/stderr, inventory values or temporary paths.

@@ -1,0 +1,284 @@
+{
+  "schemaVersion": 1,
+  "scope": "windows-release-recorded-audit-command-prerequisite",
+  "sourceCommit": "4914ada21b2779acc258fbd770fb7500f2833e0d",
+  "sourceSHA256": {
+    "cmd/accessweaver/managed_audit_ordinary_windows_test.go": "8e25902b8c52b2023430c4eb92399c04b42aef106a2352a6d820558cf09ea2a0",
+    "cmd/accessweaver/managed_audit_commands_windows_test.go": "b8ca46cbaeec291837ceb48edaa19efa0a3a9346bf26ea2ac517761338806323",
+    ".github/workflows/windows-audit-storage.yml": "be09662286f2069e3ba825aa0188d969d9fafc51cfa45c50caebad2e91602dad"
+  },
+  "runID": 43423807322,
+  "reports": [
+    {
+      "architecture": "amd64",
+      "artifactID": 14043134183,
+      "providerZIPDigest": "sha256:31388d177555b16678c4cc4d86a76eb924195cfc4c5cd6b71dc70d08f96e477a",
+      "providerZIPDigestVerified": true,
+      "passed": false,
+      "cleanupComplete": false,
+      "cases": [
+        {
+          "id": "host-context",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "fresh-normal-account",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "protected-source-staging",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "private-windowstation-desktop",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "suspended-primary-token",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "bound-loaded-profile",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "held-job-before-resume",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "pid-bound-pipe",
+          "executed": true,
+          "passed": false
+        },
+        {
+          "id": "worker-primary-token",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "worker-loaded-profile-hkcu",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "worker-native-image",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "worker-isolated-console-interrupt",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "worker-public-recording-support-contract",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "worker-exit",
+          "executed": true,
+          "passed": false
+        },
+        {
+          "id": "exact-owned-cleanup",
+          "executed": true,
+          "passed": false
+        },
+        {
+          "id": "signed-required-audit-admission",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "initialize-import-retained-head",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "audited-private-http-desktop",
+          "executed": true,
+          "passed": false
+        },
+        {
+          "id": "read-only-export-verify",
+          "executed": false,
+          "passed": false
+        },
+        {
+          "id": "current-recorded-export-key-boundary",
+          "executed": false,
+          "passed": false
+        },
+        {
+          "id": "actual-output-alias-admission",
+          "executed": false,
+          "passed": false
+        },
+        {
+          "id": "full-journal-reservation-refusal",
+          "executed": false,
+          "passed": false
+        },
+        {
+          "id": "approved-recorded-foreground-run",
+          "executed": false,
+          "passed": false
+        },
+        {
+          "id": "recorded-foreground-output-cancellation-drain",
+          "executed": false,
+          "passed": false
+        },
+        {
+          "id": "private-command-workspace-cleanup",
+          "executed": true,
+          "passed": false
+        }
+      ]
+    },
+    {
+      "architecture": "arm64",
+      "artifactID": 14043628666,
+      "providerZIPDigest": "sha256:777bf569f85066674c6f852337a5775e29686994f4cb67338ccdf63c0a9ebac3",
+      "providerZIPDigestVerified": true,
+      "passed": false,
+      "cleanupComplete": false,
+      "cases": [
+        {
+          "id": "host-context",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "fresh-normal-account",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "protected-source-staging",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "private-windowstation-desktop",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "suspended-primary-token",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "bound-loaded-profile",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "held-job-before-resume",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "pid-bound-pipe",
+          "executed": true,
+          "passed": false
+        },
+        {
+          "id": "worker-primary-token",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "worker-loaded-profile-hkcu",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "worker-native-image",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "worker-isolated-console-interrupt",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "worker-public-recording-support-contract",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "worker-exit",
+          "executed": true,
+          "passed": false
+        },
+        {
+          "id": "exact-owned-cleanup",
+          "executed": true,
+          "passed": false
+        },
+        {
+          "id": "signed-required-audit-admission",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "initialize-import-retained-head",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "audited-private-http-desktop",
+          "executed": true,
+          "passed": false
+        },
+        {
+          "id": "read-only-export-verify",
+          "executed": false,
+          "passed": false
+        },
+        {
+          "id": "current-recorded-export-key-boundary",
+          "executed": false,
+          "passed": false
+        },
+        {
+          "id": "actual-output-alias-admission",
+          "executed": false,
+          "passed": false
+        },
+        {
+          "id": "full-journal-reservation-refusal",
+          "executed": false,
+          "passed": false
+        },
+        {
+          "id": "approved-recorded-foreground-run",
+          "executed": false,
+          "passed": false
+        },
+        {
+          "id": "recorded-foreground-output-cancellation-drain",
+          "executed": false,
+          "passed": false
+        },
+        {
+          "id": "private-command-workspace-cleanup",
+          "executed": true,
+          "passed": false
+        }
+      ]
+    }
+  ],
+  "productionQualificationComplete": false
+}

@@ -6,6 +6,7 @@ $computer=Get-CimInstance Win32_ComputerSystem
 if($env:USERNAME -ne 'WDAGUtilityAccount' -and $computer.Model -notmatch 'Virtual|VMware') { throw 'Disposable Windows guest required' }
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
 if(-not ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){throw 'Guest administrator token required'}
+. (Join-Path $PSScriptRoot 'dns-acceptance-state.ps1')
 [void](New-Item -ItemType Directory -Force -Path $Results)
 $env:ACCESSWEAVER_HOME='C:\AccessWeaver-Test-State'
 $exe=Join-Path $Bundle $Executable
@@ -59,23 +60,11 @@ try {
         Start-Service 'AccessWeaver-byedpi';(Get-Service 'AccessWeaver-byedpi').WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
     }
     Test-Step 'native DoH configure and exact adapter restoration' {
-        $before=Get-DnsClientServerAddress|Select-Object InterfaceIndex,AddressFamily,ServerAddresses|ConvertTo-Json -Depth 6
-        $dohBefore=Get-DnsClientDohServerAddress|Sort-Object ServerAddress|Select-Object ServerAddress,DohTemplate,AllowFallbackToUdp,AutoUpgrade|ConvertTo-Json -Depth 4
-        [void](Invoke-Workflow @{action='dns';dns='doh'})
-        [void](Invoke-Workflow @{action='dns-restore'})
-        $after=Get-DnsClientServerAddress|Select-Object InterfaceIndex,AddressFamily,ServerAddresses|ConvertTo-Json -Depth 6
-        if($before -ne $after){throw 'Adapter DNS differs after restoration'}
-        $dohAfter=Get-DnsClientDohServerAddress|Sort-Object ServerAddress|Select-Object ServerAddress,DohTemplate,AllowFallbackToUdp,AutoUpgrade|ConvertTo-Json -Depth 4
-        if($dohBefore -ne $dohAfter){throw 'Native DoH metadata differs after restoration'}
+        Invoke-DNSAcceptanceRoundTrip 'doh' {param($request) Invoke-Workflow $request}
     }
     if($Extended){
         if(-not $SkipDNSCrypt){Test-Step 'DNSCrypt service and resolver restoration' {
-            $before=Get-DnsClientServerAddress|Select-Object InterfaceIndex,AddressFamily,ServerAddresses|ConvertTo-Json -Depth 6
-            [void](Invoke-Workflow @{action='dns';dns='dnscrypt'})
-            if((Get-Service 'AccessWeaver-dnscrypt').Status -ne 'Running'){throw 'DNSCrypt service not running'}
-            [void](Invoke-Workflow @{action='dns-restore'})
-            $after=Get-DnsClientServerAddress|Select-Object InterfaceIndex,AddressFamily,ServerAddresses|ConvertTo-Json -Depth 6
-            if($before -ne $after){throw 'DNSCrypt DNS restoration differs'}
+            Invoke-DNSAcceptanceRoundTrip 'dnscrypt' {param($request) Invoke-Workflow $request}
             [void](Invoke-Workflow @{action='remove';engine='dnscrypt'})
         }}else{$tests.Add(@{name='DNSCrypt service and resolver restoration';skipped=$true;reason='Default Windows resolver timeout remains under investigation; prior failure reports retained'});Save-Results}
         foreach($engine in @('goodbyedpi','zapret','zapret2')){

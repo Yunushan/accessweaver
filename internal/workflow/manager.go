@@ -46,6 +46,7 @@ type Request struct {
 	Domains               []string `json:"domains,omitempty"`
 	Enabled               bool     `json:"enabled"`
 	Clean                 bool     `json:"clean"`
+	RepairProxy           bool     `json:"repairProxy,omitempty"`
 	Args                  []string `json:"args,omitempty"`
 	DownloadURL           string   `json:"downloadUrl,omitempty"`
 	SHA256                string   `json:"sha256,omitempty"`
@@ -101,19 +102,20 @@ func Catalog() []Operation {
 		{"install", "Install an access method", []string{"Check administrator rights and dependencies; stage components", "Generate application routing and optional wgcf configuration", "Install and verify requested services and firewall rules", "Apply optional DNS and periodic refresh settings"}},
 		{"config", "Generate WireSock application configuration", []string{"Register and generate with wgcf if no configuration was supplied", "Compile default, browser and custom application rules into a private .conf file"}},
 		{"connect", "Connect an installed WireSock profile", []string{"Verify installed vendor services", "Import the managed profile, connect and inspect vendor status"}},
-		{"disconnect", "Disconnect a managed WireSock profile", []string{"Disconnect the managed profile through the product CLI"}},
+		{"disconnect", "Disconnect a managed WireSock profile", []string{"Remove the scheduled reconnect task if present", "Disconnect the managed profile and retain its ownership record"}},
 		{"scan", "Find a Zapret strategy", []string{"Run upstream blockcheck at the requested scan level", "Save the complete output and detected strategies for review"}},
 		{"auto-install", "Find and install a Zapret strategy", []string{"Run blockcheck at the selected scan level", "Select a reported common strategy, preferring HTTPS", "Install it as a managed service and retain the complete scan evidence"}},
 		{"hostlist", "Save or toggle a live hostlist", []string{"Validate domain names", "Atomically replace the active and preserved lists for the selected managed engine"}},
 		{"dns", "Configure encrypted DNS", []string{"Snapshot adapter DNS and native DoH settings before changing them", "Configure DNSCrypt or native Windows DoH", "Verify the selected resolver responds"}},
-		{"dns-restore", "Restore saved DNS settings", []string{"Restore the original adapter DNS and DoH snapshot"}},
+		{"dns-restore", "Restore saved DNS settings", []string{"Restore the original adapter DNS and DoH snapshot", "Remove AccessWeaver's DoH firewall rules if present"}},
 		{"refresh", "Configure periodic WireSock reconnect", []string{"Create or remove the AccessWeaver scheduled reconnect task"}},
-		{"remove", "Remove a managed access method", []string{"Stop dependent services before removing owned services and firewall rules", "Restore owned drover files and remove the owned refresh task where applicable"}},
+		{"remove", "Remove a managed access method", []string{"Restore owned Drover files before removing ByeDPI and its dependent proxy service", "Remove the owned reconnect task before removing the WireSock profile"}},
 		{"vendor-uninstall", "Uninstall the WireSock vendor product", []string{"Remove the managed WireSock profile and reconnect task", "Run the registered, publisher-verified vendor uninstaller", "Verify removal or report that a reboot is required"}},
-		{"remove-all", "Remove all managed methods", []string{"Remove owned proxy services before packet engines and tunnel configuration", "Restore DNS and owned application files", "Keep unrelated services and vendor products intact"}},
+		{"remove-all", "Remove all managed methods", []string{"Restore and verify DNS, then restore owned Drover files", "Remove owned proxy services before packet engines and tunnel configuration", "Keep unrelated services and vendor products intact"}},
 		{"app-install", "Install Discord, PTB or SplitCord", []string{"Obtain an official installer", "Run it for the interactive user and verify installation"}},
 		{"app-start", "Start an installed Discord variant", []string{"Find and start the selected application in the interactive user session"}},
 		{"app-remove", "Uninstall a Discord variant", []string{"Close only the selected application's processes", "Run its registered or Squirrel uninstaller and verify removal"}},
+		{"app-reinstall", "Reinstall stable Discord", []string{"Verify and lock the official replacement installer", "Remove and reinstall the stable client in the current desktop session", "Verify the replacement executable"}},
 		{"app-repair", "Repair Discord", []string{"Unavailable until user application maintenance and administrative proxy/DLL changes use a privilege-separated broker"}},
 		{"updates", "Check for a newer AccessWeaver release", []string{"Read the official project's GitHub release metadata; do not install anything"}},
 		{"uninstall", "Undo AccessWeaver system changes", []string{"Remove AccessWeaver-owned services, tasks and firewall rules", "Restore DNS and application-file backups", "Remove the registered AccessWeaver installation when present"}},
@@ -123,28 +125,47 @@ func Catalog() []Operation {
 }
 
 type Manager struct {
-	startMu      sync.Mutex
-	guard        *managed.Guard
-	mu           sync.Mutex
-	root         string
-	plans        map[string]Plan
-	job          Job
-	cancel       context.CancelFunc
-	done         chan struct{}
-	closing      bool
-	execute      func(context.Context, string, Request) (json.RawMessage, error)
-	persist      func(string, []byte) error
-	platform     string
-	requireAdmin func() error
+	startMu                sync.Mutex
+	guard                  *managed.Guard
+	mu                     sync.Mutex
+	root                   string
+	storeRoot              string
+	openStoreLease         func(string) (workflowStoreLease, error)
+	writeLifecycle         func(string, []byte, string) error
+	publishLifecycle       func(string, string, string) error
+	historyStagingHooks    *historyStagingHooks
+	controllerBudget       *controllerStorageBudget
+	controllerStorageHooks *controllerStorageHooks
+	releaseWitness         *localReleaseWitness
+	reconciliationPlans    map[string]*privateReconciliationPlan
+	maintenance            *reconciliationCompletion
+	storeFailure           error
+	retainedStoreLeases    []workflowStoreLease
+	plans                  map[string]Plan
+	job                    Job
+	cancel                 context.CancelFunc
+	done                   chan struct{}
+	completion             *workflowCompletion
+	shutdown               *workflowShutdown
+	closing                bool
+	execute                func(context.Context, string, Request) (json.RawMessage, error)
+	persist                func(string, []byte) error
+	persistProbe           *workflowPersistObservation
+	lastJobPersistClosed   bool
+	platform               string
+	requireAdmin           func() error
+	requireDesktop         func() error
 }
 
 func New(root string) *Manager { return NewWithGuard(root, managed.NewGuard(nil)) }
 func NewWithGuard(root string, guard *managed.Guard) *Manager {
-	return &Manager{guard: guard, root: filepath.Join(root, "workflows"), plans: map[string]Plan{}, execute: execute, persist: profile.AtomicWrite, platform: runtime.GOOS, requireAdmin: requireAdministrator}
+	m := &Manager{guard: guard, root: filepath.Join(root, "workflows"), storeRoot: filepath.Clean(root), openStoreLease: openWorkflowStoreLease, plans: map[string]Plan{}, execute: execute, platform: runtime.GOOS, requireAdmin: requireAdministrator, requireDesktop: requireDesktopUser}
+	m.persist = m.defaultPersist
+	return m
 }
 
 func (m *Manager) Preview(r Request) (Plan, error) {
-	p := Plan{RequiresAdministrator: requiresAdministrator(r.Action), Request: r, Steps: []string{}, Issues: []string{}, Warnings: []string{}, ExpiresAt: time.Now().Add(10 * time.Minute).UTC()}
+	p := Plan{RequiresAdministrator: requiresAdministrator(r.Action) || r.splitCordMaintenance(), Request: r, Steps: []string{}, Issues: []string{}, Warnings: []string{}, ExpiresAt: time.Now().Add(10 * time.Minute).UTC()}
 	found := false
 	for _, op := range Catalog() {
 		if op.ID == r.Action {
@@ -168,16 +189,18 @@ func (m *Manager) Preview(r Request) (Plan, error) {
 	if m.platform != "windows" {
 		p.Issues = append(p.Issues, "Windows system workflows require a Windows host")
 	}
-	if m.platform == "windows" && p.RequiresAdministrator {
-		if err := m.checkAdministrativeAccess(); err != nil {
+	if m.platform == "windows" {
+		if err := m.checkWorkflowAccess(p); err != nil {
 			p.Issues = append(p.Issues, err.Error())
 		}
 	}
 	if r.Action == "app-repair" {
 		p.Issues = append(p.Issues, "Combined Discord repair requires a privilege-separated broker and is unavailable. Run application install/remove as your normal desktop user and manage the proxy separately.")
 	}
-	if r.Action == "app-install" || r.Action == "app-remove" {
-		p.Warnings = append(p.Warnings, "Run this application operation as the signed-in desktop user without administrator rights. Application installers and uninstallers must never inherit an elevated token.")
+	if r.splitCordMaintenance() {
+		p.Warnings = append(p.Warnings, "SplitCord setup and removal affect all users and its Windows service. Apply the reviewed request from a separately elevated CLI. Start the installed client from the unelevated desktop.")
+	} else if r.Action == "app-install" || r.Action == "app-remove" || r.Action == "app-reinstall" {
+		p.Warnings = append(p.Warnings, "Run this application operation as the signed-in desktop user without administrator rights. Discord installers and uninstallers must never inherit an elevated token.")
 	}
 	if (r.Action == "config" || (r.Action == "install" && r.Engine == "wiresock")) && r.ConfigPath == "" && !r.AcceptCloudflareTerms {
 		p.Issues = append(p.Issues, "Generating a new WARP account requires accepting Cloudflare's terms; otherwise provide an existing configPath")
@@ -188,8 +211,17 @@ func (m *Manager) Preview(r Request) (Plan, error) {
 	if r.Action == "config" || r.Action == "install" && r.Engine == "wiresock" {
 		p.Warnings = append(p.Warnings, "Generating WARP credentials uses wgcf and Cloudflare's service. Existing configPath avoids registration. Vendor terms apply.")
 	}
-	if r.Action == "app-remove" || r.Action == "app-repair" || r.Clean {
-		p.Warnings = append(p.Warnings, "Application removal or repair can sign you out. Repair preserves cache in the private recovery directory.")
+	if r.DNS == "doh" && (r.Action == "dns" || r.Action == "install" || r.Action == "scan" || r.Action == "auto-install") {
+		p.Warnings = append(p.Warnings, "Windows DoH requires Windows Firewall. AccessWeaver blocks plaintext DNS Client traffic to Google and Quad9 until you restore DNS or switch to DNSCrypt. During configuration, plaintext DNS to these providers is temporarily blocked for all applications.")
+	}
+	if r.Action == "app-remove" || r.Action == "app-reinstall" || r.Action == "app-repair" || r.Clean {
+		p.Warnings = append(p.Warnings, "Application removal or reinstall can sign you out.")
+	}
+	if r.RepairProxy {
+		p.Warnings = append(p.Warnings, "Download the official signed Discord installer through a trusted local SOCKS5 proxy at 127.0.0.1:1080.")
+	}
+	if r.Action == "app-reinstall" {
+		p.Warnings = append(p.Warnings, "Retry an interrupted reinstall from the same AccessWeaver state directory to reuse the verified replacement installer. Review the current installation if a client or updater has appeared after replacement setup started.")
 	}
 	if r.Action == "vendor-uninstall" {
 		p.Warnings = append(p.Warnings, "Uninstalling the selected WireSock product can remove independently created profiles and vendor services. Back up profiles you need before applying this operation.")
@@ -225,8 +257,14 @@ func (m *Manager) Preview(r Request) (Plan, error) {
 }
 
 func (r Request) Validate() error {
-	if (r.Action == "app-install" || r.Action == "app-remove" || r.Action == "app-start") && r.DNS != "" && r.DNS != "unchanged" {
+	if r.RepairProxy && (r.Action != "app-reinstall" || r.Engine != "discord") {
+		return errors.New("the local repair proxy is available only for stable Discord reinstall")
+	}
+	if (r.Action == "app-install" || r.Action == "app-remove" || r.Action == "app-start" || r.Action == "app-reinstall") && r.DNS != "" && r.DNS != "unchanged" {
 		return errors.New("configure system DNS separately from user application operations")
+	}
+	if r.Action == "app-reinstall" && (r.Clean || r.DownloadURL != "" || r.SHA256 != "" || r.ConfigPath != "" || r.BundlePath != "") {
+		return errors.New("Discord reinstall uses the official signed installer and fixed desktop-user inputs")
 	}
 	if len(r.Args) > 128 || len(r.Applications) > 100 || len(r.Domains) > 4096 || len(r.Targets) > 32 {
 		return errors.New("workflow list limit exceeded")
@@ -273,6 +311,7 @@ func (r Request) Validate() error {
 		"app-install":      {"discord", "discord-ptb", "splitcord"},
 		"app-start":        {"discord", "discord-ptb", "splitcord"},
 		"app-remove":       {"discord", "discord-ptb", "splitcord"},
+		"app-reinstall":    {"discord"},
 		"app-repair":       {"discord"},
 	}
 	if choices, ok := components[r.Action]; ok && !allowed(r.Engine, choices...) {
@@ -336,6 +375,14 @@ func (r Request) Validate() error {
 	if r.Action == "install" && (r.Browsers || len(r.Applications) > 0) && !allowed(r.Engine, "byedpi", "wiresock") {
 		return errors.New("application selection requires WireSock or ByeDPI interception")
 	}
+	if r.Action == "install" && r.Engine == "wiresock" && r.DownloadURL != "" {
+		if !strings.HasPrefix(r.DownloadURL, "https://") || len(r.SHA256) != 64 {
+			return errors.New("custom WireSock installer requires an HTTPS URL and SHA-256")
+		}
+		if _, err := hex.DecodeString(r.SHA256); err != nil {
+			return errors.New("invalid custom WireSock installer SHA-256")
+		}
+	}
 	if r.Action == "download" {
 		if !strings.HasPrefix(r.DownloadURL, "https://") || len(r.SHA256) != 64 {
 			return errors.New("official HTTPS download URL and SHA-256 are required")
@@ -379,14 +426,16 @@ func installationSteps(r Request) []string {
 			steps = append(steps, "Register the five-minute reconnect task")
 		}
 	case "byedpi":
-		steps = append(steps, "Stage ByeDPI and listen on the local SOCKS endpoint 127.0.0.1:1080")
-		if r.Mode == "once" {
-			steps = append(steps, "Run until the operation is cancelled")
-		} else {
-			steps = append(steps, "Install an automatic Windows service and its firewall rules")
-		}
 		if r.Mode == "dll" {
-			steps = append(steps, "Close Discord and deploy drover files with original-file backups")
+			steps = append(steps, "Install the ByeDPI service and firewall rules if absent, or verify the running managed service and its matching strategy")
+			steps = append(steps, "Verify SOCKS5 on 127.0.0.1:1080, then close Discord and deploy drover files with original-file backups")
+		} else {
+			steps = append(steps, "Stage ByeDPI and listen on the local SOCKS endpoint 127.0.0.1:1080")
+			if r.Mode == "once" {
+				steps = append(steps, "Run until the operation is cancelled")
+			} else {
+				steps = append(steps, "Install an automatic Windows service and its firewall rules")
+			}
 		}
 		if r.Mode == "split" || r.Mode == "" {
 			steps = append(steps, "Install Windows Packet Filter and runtime prerequisites if needed, then start ProxiFyre for the selected applications")
@@ -424,6 +473,9 @@ func (m *Manager) Start(id string) (Job, error) {
 	defer m.mu.Unlock()
 	if m.closing {
 		return Job{}, errors.New("system workflow manager is shutting down")
+	}
+	if m.storeFailure != nil {
+		return Job{}, workflowFinalFailure(workflowFailure(ErrWorkflowAdmission, m.storeFailure))
 	}
 	if m.job.State == "running" {
 		return Job{}, errors.New("a system workflow is already running")
@@ -464,56 +516,150 @@ func (m *Manager) Start(id string) (Job, error) {
 	if m.closing {
 		return Job{}, errors.New("system workflow manager is shutting down")
 	}
+	if m.storeFailure != nil {
+		return Job{}, workflowFinalFailure(workflowFailure(ErrWorkflowAdmission, m.storeFailure))
+	}
 	if m.job.State == "running" {
 		return Job{}, errors.New("a system workflow is already running")
 	}
 	if _, ok := m.plans[id]; !ok || time.Now().After(p.ExpiresAt) {
 		return Job{}, errors.New("workflow plan expired; preview again")
 	}
-	if p.RequiresAdministrator {
-		if err := m.checkAdministrativeAccess(); err != nil {
-			return Job{}, err
-		}
+	if err := m.checkWorkflowAccess(p); err != nil {
+		return Job{}, err
 	}
-	delete(m.plans, id)
 	m.cancel = cancel
 	m.job = Job{ID: id, Action: p.Request.Action, State: "running", StartedAt: time.Now().UTC()}
 	job := m.job
-	done := make(chan struct{})
-	m.done = done
+	completion := &workflowCompletion{done: make(chan struct{})}
+	done := completion.done
+	m.done, m.completion = done, completion
 	// Reserve admission and its completion before storage I/O. Controls can
 	// cancel or wait with their own deadline while this private write is
 	// pending; execution requires a durable running record.
 	m.mu.Unlock()
-	initialErr := os.MkdirAll(m.root, 0700)
+	activeLease, activeErr := m.acquireWorkflowStoreLease(workflowActiveLockName)
+	initialErr := activeErr
+	initialRecordClosed := false
+	var lifecycle *workflowLifecycle
+	var prepared *preparedWorkflowInput
 	if initialErr == nil {
-		initialErr = m.saveJob(&job)
+		initialErr = ctx.Err()
 	}
-	m.mu.Lock()
+	if initialErr == nil {
+		prepared, initialErr = prepareWorkflowInput(filepath.Join(m.root, id), p.Request, permission)
+	}
+	if initialErr == nil {
+		initialErr = permission.Authorization.Check()
+	}
+	if initialErr == nil {
+		var budget *controllerStorageBudget
+		budget, initialErr = m.reserveControllerStorage(ctx, job, prepared)
+		if initialErr == nil {
+			m.mu.Lock()
+			m.controllerBudget = budget
+			m.mu.Unlock()
+			if m.controllerStorageHooks != nil && m.controllerStorageHooks.afterReserved != nil {
+				m.controllerStorageHooks.afterReserved()
+			}
+			ctx = context.WithValue(ctx, preparedWorkflowInputKey{}, prepared)
+			ctx = context.WithValue(ctx, controllerStorageBudgetKey{}, budget)
+			// A durable reservation has crossed admission. Finish its intent even if
+			// canceled, then use the original canceled context for the worker branch.
+			lifecycle, initialErr = m.beginWorkflowLifecycle(context.WithoutCancel(ctx), job, p.Request)
+		}
+	}
+	if initialErr == nil {
+		// Contention does not consume a still-reviewed plan. Once this reserved
+		// generation owns the root, its ordinary admission durability proceeds.
+		m.mu.Lock()
+		delete(m.plans, id)
+		m.mu.Unlock()
+		initialErr = os.MkdirAll(m.root, 0700)
+		if initialErr == nil {
+			initialErr = m.saveJob(&job)
+			m.mu.Lock()
+			initialRecordClosed = m.lastJobPersistClosed
+			m.mu.Unlock()
+		}
+	}
 	if initialErr != nil {
-		cancel()
+		preIntentCancellation := lifecycle == nil && (initialErr == context.Canceled || initialErr == context.DeadlineExceeded)
+		admissionCause := initialErr
+		if activeErr == nil && !preIntentCancellation {
+			admissionCause = workflowCause(ErrWorkflowPersistence, admissionCause)
+		}
 		job.State = "failed"
 		job.FinishedAt = time.Now().UTC()
 		job.Error = boundedJobError(initialErr.Error())
+		lifecycleErr := m.sealWorkflowLifecycle(lifecycle, job, workflowFailure(ErrWorkflowAdmission, admissionCause))
+		admissionCause = errors.Join(admissionCause, lifecycleErr)
+		// Sample before internal cancellation, and observe lease cleanup outside
+		// mu. Shutdown keeps this exact reserved completion until both finish.
+		closeErr := m.closeWorkflowStoreLease(activeLease)
+		admissionCause = errors.Join(admissionCause, workflowFailure(ErrWorkflowCleanup, closeErr))
+		if cause := context.Cause(ctx); cause != nil {
+			admissionCause = errors.Join(admissionCause, cause)
+		}
+		cancel()
+		m.mu.Lock()
+		job.State = "failed"
+		job.FinishedAt = time.Now().UTC()
+		job.Error = boundedJobError(errors.Join(initialErr, closeErr).Error())
 		m.job = job
+		completion.err = workflowFinalFailure(workflowFailure(ErrWorkflowAdmission, admissionCause))
+		if preIntentCancellation && initialErr == context.Canceled && completion.cancelRequested && context.Cause(ctx) == context.Canceled && lifecycleErr == nil && closeErr == nil {
+			// Explicit cancellation refused a still-unwritten generation. All
+			// actual owners closed cleanly; retain Start's canceled refusal but
+			// do not invent persistence/cleanup uncertainty for Shutdown.
+			completion.err = nil
+		}
 		close(done)
+		if errors.Is(initialErr, ErrWorkflowStore) || errors.Is(initialErr, ErrWorkflowLifecycle) || errors.Is(initialErr, ErrWorkflowStoragePending) || errors.Is(initialErr, ErrWorkflowStorageCapacity) || closeErr != nil {
+			// New coordination errors never print an underlying OS pathname.
+			return Job{}, completion.err
+		}
+		if preIntentCancellation && managed.IsPolicyError(context.Cause(ctx)) {
+			return Job{}, completion.err
+		}
 		return Job{}, initialErr
 	}
+	m.mu.Lock()
 
 	started = true
 	go func() {
-		defer close(done)
 		var result json.RawMessage
+		executionObservation := &localExecutionObservation{}
 		err := ctx.Err()
-		if err == nil {
-			result, err = m.execute(ctx, filepath.Join(m.root, id), p.Request)
+		if err != nil {
+			executionObservation.NeverCalled = true
 		}
-		if cause := context.Cause(ctx); managed.IsPolicyError(cause) {
+		if err == nil {
+			result, err = m.execute(context.WithValue(ctx, localExecutionObservationKey{}, executionObservation), filepath.Join(m.root, id), p.Request)
+		}
+		cause := context.Cause(ctx)
+		if managed.IsPolicyError(cause) {
 			err = errors.Join(cause, err)
 		}
-		if resultErr := validateResult(result); resultErr != nil {
+		// Only a plain cooperative cancellation, already explicitly requested
+		// when the worker observes completion, may be clean for shutdown. Never erase a
+		// wrapped/joined failure merely because errors.Is finds Canceled.
+		m.mu.Lock()
+		cooperative := completion.cancelRequested && err == context.Canceled && ctx.Err() == context.Canceled && cause == context.Canceled
+		m.mu.Unlock()
+		executionKnown := executionObservation.NeverCalled || executionObservation.NoNativeOwners || executionObservation.Invoked && executionObservation.Setup && executionObservation.Waited && executionObservation.Bound && executionObservation.OwnerClosed && executionObservation.OutputClosed && executionObservation.ReportValid && executionObservation.Finished
+		if !executionKnown {
+			err = errors.Join(err, workflowCause(ErrWorkflowCleanup, ErrLifecycleReconciliationUnavailable))
+		}
+		terminalErr := workflowFailure(ErrWorkflowExecution, err)
+		if !initialRecordClosed {
+			terminalErr = errors.Join(terminalErr, workflowFailure(ErrWorkflowPersistence, ErrLifecycleReconciliationUnavailable))
+		}
+		resultErr := validateResult(result)
+		if resultErr != nil {
 			result = nil
 			err = errors.Join(err, resultErr)
+			terminalErr = errors.Join(terminalErr, workflowFailure(ErrWorkflowResult, resultErr))
 		}
 		cancel()
 		// Keep the published job running until its terminal write finishes.
@@ -526,12 +672,68 @@ func (m *Manager) Start(id string) (Job, error) {
 			job.State = "failed"
 			job.Error = err.Error()
 		}
-		if e := m.saveJob(&job); e != nil {
+		persistErr := m.saveJob(&job)
+		if persistErr != nil {
 			job.State = "failed"
-			job.Error = boundedJobError("persist result: " + e.Error() + "; " + job.Error)
+			job.Error = boundedJobError("persist result: " + persistErr.Error() + "; " + job.Error)
+			terminalErr = errors.Join(terminalErr, workflowFailure(ErrWorkflowPersistence, persistErr))
+		}
+		// Seal exact persisted record bytes and the bounded local artifact
+		// observation while the original active owner still excludes admission.
+		m.mu.Lock()
+		recordClosed := m.lastJobPersistClosed
+		m.mu.Unlock()
+		if !recordClosed {
+			terminalErr = errors.Join(terminalErr, workflowFailure(ErrWorkflowPersistence, ErrLifecycleReconciliationUnavailable))
+		}
+		lifecycleErr := m.sealWorkflowLifecycle(lifecycle, job, terminalErr)
+		if lifecycleErr != nil {
+			job.State = "failed"
+			job.Error = boundedJobError(job.Error + "; seal local lifecycle: " + lifecycleErr.Error())
+			terminalErr = errors.Join(terminalErr, lifecycleErr)
+		}
+		// The lease covers all actual work and attempted terminal persistence.
+		// Its close is observed before in-memory completion publication; never
+		// rewrite the record after releasing an uncertain/closed reservation.
+		leaseErr := m.closeWorkflowStoreLease(activeLease)
+		if leaseErr != nil {
+			job.State = "failed"
+			job.Error = boundedJobError("release workflow store: " + leaseErr.Error() + "; " + job.Error)
+			terminalErr = errors.Join(terminalErr, workflowFailure(ErrWorkflowCleanup, leaseErr))
+		}
+		var witness *localReleaseWitness
+		if (executionObservation.NeverCalled || executionObservation.NoNativeOwners || executionObservation.Invoked && executionObservation.Setup && executionObservation.Waited && executionObservation.Bound && executionObservation.OwnerClosed && executionObservation.OutputClosed && executionObservation.ReportValid && executionObservation.Finished) && persistErr == nil && lifecycleErr == nil && leaseErr == nil && lifecycle != nil && lifecycle.sealPublished && lifecycle.sealTransactionClosed && lifecycle.receipt.Seal.LocalReleasePermitted {
+			witness = &localReleaseWitness{Receipt: lifecycle.receipt, Done: done}
+			m.mu.Lock()
+			m.releaseWitness = witness
+			m.mu.Unlock()
+		}
+		var acknowledgementErr error
+		if lifecycleErr == nil && leaseErr == nil {
+			acknowledgementErr = m.acknowledgeWorkflowLifecycle(lifecycle)
+			if acknowledgementErr != nil {
+				job.State = "failed"
+				job.Error = boundedJobError(job.Error + "; acknowledge local release: " + acknowledgementErr.Error())
+				terminalErr = errors.Join(terminalErr, acknowledgementErr)
+			}
+		}
+		if witness != nil {
+			witness.Ack = lifecycle.ackObservation
+			if acknowledgementErr == nil {
+				m.mu.Lock()
+				if m.releaseWitness == witness {
+					m.releaseWitness = nil
+				}
+				m.mu.Unlock()
+			}
+		}
+		if cooperative && resultErr == nil && persistErr == nil && leaseErr == nil && lifecycleErr == nil && acknowledgementErr == nil {
+			terminalErr = nil
 		}
 		m.mu.Lock()
 		m.job = job
+		completion.err = workflowFinalFailure(terminalErr)
+		close(done)
 		m.mu.Unlock()
 	}()
 	return m.job, nil
@@ -545,7 +747,49 @@ func (m *Manager) saveJob(job *Job) error {
 	if e != nil {
 		return e
 	}
-	return m.persist(filepath.Join(m.root, job.ID+".json"), b)
+	m.mu.Lock()
+	budget := m.controllerBudget
+	m.mu.Unlock()
+	if budget != nil && budget.reservation.Generation == job.ID {
+		if err := budget.chargeRecord(b); err != nil {
+			return err
+		}
+	}
+	lease, err := m.acquireWorkflowStoreLease(workflowTransactionLockName)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	m.lastJobPersistClosed = false
+	m.mu.Unlock()
+	writeErr := m.bumpWorkflowStoreRevision()
+	if writeErr == nil {
+		path := filepath.Join(m.root, job.ID+".json")
+		probe := &workflowPersistObservation{path: path, sha: workflowLifecycleHash(b)}
+		m.mu.Lock()
+		m.persistProbe = probe
+		m.mu.Unlock()
+		writeErr = m.persist(path, b)
+		m.mu.Lock()
+		m.persistProbe = nil
+		m.lastJobPersistClosed = writeErr == nil && probe.closed
+		m.mu.Unlock()
+	}
+	closeErr := workflowFailure(ErrWorkflowCleanup, m.closeWorkflowStoreLease(lease))
+	if closeErr != nil {
+		m.mu.Lock()
+		m.lastJobPersistClosed = false
+		m.mu.Unlock()
+	}
+	if closeErr == nil {
+		// Preserve the original persistence error's identity when coordination
+		// succeeded; existing admission callers observe that exact local cause.
+		return writeErr
+	}
+	if writeErr == nil {
+		return closeErr
+	}
+	return errors.Join(writeErr, closeErr)
 }
 func (m *Manager) Snapshot() Job {
 	m.mu.Lock()
@@ -554,55 +798,165 @@ func (m *Manager) Snapshot() Job {
 	j.Result = append(json.RawMessage(nil), j.Result...)
 	return j
 }
+
+// TerminalError observes only the completed current reservation matching jobID.
+// It never waits for completion, cancels work, closes admission or loads history.
+func (m *Manager) TerminalError(jobID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.job.ID != jobID || m.completion == nil {
+		return ErrWorkflowOutcomeUnavailable
+	}
+	select {
+	case <-m.completion.done:
+		return m.completion.err
+	default:
+		return ErrWorkflowOutcomeUnavailable
+	}
+}
+
 func (m *Manager) Cancel() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.cancel != nil {
+		if m.completion != nil {
+			select {
+			case <-m.completion.done:
+			default:
+				m.completion.cancelRequested = true
+			}
+		}
 		m.cancel()
 	}
 }
 
-// Shutdown rejects new jobs and waits for cancellation and durable outcome recording.
-// A timeout does not claim that vendor cleanup or rollback completed.
+// Shutdown rejects new jobs and retains the generation active or reserved at
+// the first call through outcome publication and attempted final persistence.
+// Caller cancellation ends only that wait. Repeated calls share its typed final
+// result; an unchanged inactive historical failure is not a shutdown failure.
+// Completion never proves vendor rollback or complete external tree cleanup.
 func (m *Manager) Shutdown(ctx context.Context) error {
 	m.mu.Lock()
 	m.closing = true
-	if m.cancel != nil {
-		m.cancel()
+	if m.shutdown == nil {
+		m.shutdown = &workflowShutdown{}
+		if m.maintenance != nil && !reconciliationDone(m.maintenance.done) {
+			m.shutdown.maintenance = m.maintenance
+			m.maintenance.cancel()
+		}
+		if completion := m.completion; completion != nil {
+			select {
+			case <-completion.done:
+				// This generation was already inactive at first shutdown.
+			default:
+				m.shutdown.completion = completion
+				completion.cancelRequested = true
+				if m.cancel != nil {
+					m.cancel()
+				}
+			}
+		}
 	}
-	done := m.done
+	completion := m.shutdown.completion
+	maintenance := m.shutdown.maintenance
 	m.mu.Unlock()
-	if done == nil {
+	for _, done := range []<-chan struct{}{func() <-chan struct{} {
+		if completion != nil {
+			return completion.done
+		}
 		return nil
-	}
-	select {
-	case <-done:
+	}(), func() <-chan struct{} {
+		if maintenance != nil {
+			return maintenance.done
+		}
 		return nil
-	case <-ctx.Done():
-		return ctx.Err()
+	}()} {
+		if done == nil || reconciliationDone(done) {
+			continue
+		}
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.shutdown.finished {
+		if completion != nil {
+			m.shutdown.err = completion.err
+		}
+		if maintenance != nil && maintenance.err != nil {
+			if m.shutdown.err == nil {
+				m.shutdown.err = maintenance.err
+			} else {
+				m.shutdown.err = errors.Join(m.shutdown.err, maintenance.err)
+			}
+		}
+		m.shutdown.finished = true
+	}
+	return m.shutdown.err
 }
 
 func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error) {
+	return executeWorkflow(ctx, dir, r, nil)
+}
+
+// A nil constructor uses the sole trusted production shell. A private per-call
+// constructor permits source tests to exercise this same owned pipeline with
+// an inert source-built child; no profile/environment selector exists.
+func executeWorkflow(ctx context.Context, dir string, r Request, commandFactory func(context.Context, []byte, string) (*exec.Cmd, error)) (result json.RawMessage, failure error) {
+	observation := localExecutionFrom(ctx)
+	if observation != nil {
+		observation.Invoked = true
+		defer func() { observation.Finished = true }()
+	}
 	started := time.Now()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if runtime.GOOS != "windows" {
+	if commandFactory == nil && runtime.GOOS != "windows" {
 		return nil, errors.New("Windows required")
 	}
-	permission, err := workflowPermission(managed.NewGuard(nil), r)
-	if err != nil {
+	prepared := preparedWorkflowFrom(ctx)
+	if prepared == nil {
+		permission, err := workflowPermission(managed.NewGuard(nil), r)
+		if err != nil {
+			return nil, err
+		}
+		prepared, err = prepareWorkflowInput(dir, r, permission)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := prepared.Authorization.Check(); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	requestBytes, err := json.Marshal(r)
+	if err != nil || prepared.RequestSHA256 != workflowLifecycleHash(requestBytes) || prepared.ResultPath != filepath.Join(dir, "result.json") {
+		return nil, ErrWorkflowStoragePending
+	}
+	if preparedWorkflowFrom(ctx) != nil {
+		if err := os.Mkdir(dir, 0700); err != nil {
+			return nil, err
+		}
+	} else if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
 	log, err := logfile.Open(filepath.Join(dir, "process.log"), 4<<20, 2)
 	if err != nil {
 		return nil, err
 	}
-	defer log.Close()
+	logClosed := false
+	defer func() {
+		if !logClosed {
+			closeErr := log.Close()
+			if observation != nil {
+				observation.OutputClosed = closeErr == nil
+			}
+			failure = errors.Join(failure, workflowFailure(ErrWorkflowCleanup, closeErr))
+		}
+	}()
 	phase := func(name string) error {
 		_, err := fmt.Fprintf(log, "Workflow timing ms: %s %d\n", name, time.Since(started).Milliseconds())
 		return err
@@ -610,35 +964,25 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 	if err := phase("storage-ready"); err != nil {
 		return nil, err
 	}
-	script, _ := scripts.ReadFile("windows.ps1")
+	script := prepared.Script
+	b := prepared.Input
 	scriptPath := filepath.Join(dir, "workflow.ps1")
-	if err := profile.AtomicWrite(scriptPath, script); err != nil {
+	scriptLimit, err := snapshotAllowance(ctx, "script", script)
+	if err != nil {
+		return nil, err
+	}
+	if err := writeControllerSnapshot(scriptPath, script, scriptLimit); err != nil {
 		return nil, err
 	}
 	if err := phase("script-ready"); err != nil {
 		return nil, err
 	}
-	executable, err := os.Executable()
+	requestPath := filepath.Join(dir, "request.json")
+	requestLimit, err := snapshotAllowance(ctx, "request", b)
 	if err != nil {
 		return nil, err
 	}
-	hook, _ := presetFiles.ReadFile("presets/00-accessweaver-isp.sh")
-	// Unavailable host identity stays unknown. Read-only workflows may proceed,
-	// but driver prerequisite selection must refuse it without an x64 fallback.
-	nativeArchitecture, _ := nativepath.WindowsArchitecture()
-	input := struct {
-		NativeArchitecture string                 `json:"nativeArchitecture"`
-		Request            Request                `json:"request"`
-		Controller         string                 `json:"controller"`
-		ResultPath         string                 `json:"resultPath"`
-		ISPHook            string                 `json:"ispHook"`
-		ManagedPolicy      bool                   `json:"managedPolicy"`
-		AllowDownloads     bool                   `json:"allowDownloads"`
-		Downloads          []managed.DownloadRule `json:"downloads"`
-	}{nativeArchitecture, r, executable, filepath.Join(dir, "result.json"), string(hook), permission.Managed, permission.AllowDownloads, permission.Downloads}
-	b, _ := json.Marshal(input)
-	requestPath := filepath.Join(dir, "request.json")
-	if err := profile.AtomicWrite(requestPath, b); err != nil {
+	if err := writeControllerSnapshot(requestPath, b, requestLimit); err != nil {
 		return nil, err
 	}
 	if err := phase("request-ready"); err != nil {
@@ -649,45 +993,90 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 	// reread as privileged code or as a different request after launch review.
 	program := strings.Replace(string(script), "param([Parameter(Mandatory=$true)][string]$RequestPath)", "param()", 1)
 	program = strings.Replace(program, "$inputData = Get-Content -LiteralPath $RequestPath -Raw | ConvertFrom-Json", "$inputData = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+base64.StdEncoding.EncodeToString(b)+"')) | ConvertFrom-Json", 1)
-	systemDirectory, err := nativepath.SystemDirectory()
-	if err != nil {
+	if err := prepared.Authorization.Check(); err != nil {
 		return nil, err
 	}
-	powershell := filepath.Join(systemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe")
-	environment, err := nativepath.ProcessEnvironment()
-	if err != nil {
-		return nil, err
+	var cmd *exec.Cmd
+	if commandFactory != nil {
+		cmd, err = commandFactory(ctx, b, program)
+		if err != nil {
+			return nil, err
+		}
+		if cmd == nil {
+			return nil, ErrWorkflowExecution
+		}
+	} else {
+		systemDirectory, err := nativepath.SystemDirectory()
+		if err != nil {
+			return nil, err
+		}
+		powershell := filepath.Join(systemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe")
+		environment, err := nativepath.ProcessEnvironment()
+		if err != nil {
+			return nil, err
+		}
+		if err := phase("environment-ready"); err != nil {
+			return nil, err
+		}
+		cmd = exec.CommandContext(ctx, powershell, "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", "$script:workflowClock=[Diagnostics.Stopwatch]::StartNew(); [Console]::WriteLine('Workflow phase: input'); [Console]::WriteLine(('Workflow timing ms: shell-input {0}' -f $script:workflowClock.ElapsedMilliseconds)); $source=[Console]::In.ReadToEnd(); [Console]::WriteLine('Workflow phase: parse'); [Console]::WriteLine(('Workflow timing ms: shell-parse {0}' -f $script:workflowClock.ElapsedMilliseconds)); & ([scriptblock]::Create($source))")
+		cmd.Env = environment
+		cmd.Dir = systemDirectory
+		cmd.Stdin = strings.NewReader(program)
 	}
-	if err := phase("environment-ready"); err != nil {
-		return nil, err
+	if cmd.Stdin == nil {
+		cmd.Stdin = strings.NewReader(program)
 	}
-	cmd := exec.CommandContext(ctx, powershell, "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", "$script:workflowClock=[Diagnostics.Stopwatch]::StartNew(); [Console]::WriteLine('Workflow phase: input'); [Console]::WriteLine(('Workflow timing ms: shell-input {0}' -f $script:workflowClock.ElapsedMilliseconds)); $source=[Console]::In.ReadToEnd(); [Console]::WriteLine('Workflow phase: parse'); [Console]::WriteLine(('Workflow timing ms: shell-parse {0}' -f $script:workflowClock.ElapsedMilliseconds)); & ([scriptblock]::Create($source))")
-	cmd.Env = environment
-	cmd.Dir = systemDirectory
-	cmd.Stdin = strings.NewReader(program)
 	cmd.WaitDelay = 2 * time.Second
-	configureCommand(cmd)
 	output := &startupLog{writer: log, started: started}
 	cmd.Stdout = output
 	cmd.Stderr = output
 	if err := phase("launch"); err != nil {
 		return nil, err
 	}
-	// Finish persistence before interpreting a successful child result.
-	runErr := cmd.Run()
-	err = errors.Join(runErr, phase("child-exited"), log.Close())
+	owner := configureCommand(cmd)
+	cancellation := captureCommandCancellation(cmd)
+	// Bind ownership before the consuming Wait; retain it through cancellation
+	// and output completion, then finish persistence before result validation.
+	if observation != nil {
+		observation.Setup = true
+	}
+	commandObservation, outputClosed, runErr := runWorkflowCommandWithOutput(cmd, owner, output)
+	if observation != nil {
+		observation.Waited = commandObservation.Waited
+		observation.Bound = commandObservation.Bound
+		observation.OwnerClosed = commandObservation.OwnerClosed
+	}
+	// Wait has joined the context watcher, so every configured Cancel outcome
+	// is now available even if Wait preferred the process ExitError over it.
+	cleanupErr := cancellation.failure()
+	phaseErr := phase("child-exited")
+	closeLogErr := log.Close()
+	if observation != nil {
+		observation.OutputClosed = outputClosed && closeLogErr == nil && output.failure() == nil && cleanupErr == nil && phaseErr == nil
+	}
+	err = errors.Join(runErr, cleanupErr, workflowFailure(ErrWorkflowPersistence, output.failure()), phaseErr, workflowFailure(ErrWorkflowCleanup, closeLogErr))
+	logClosed = true
 	if err != nil {
 		if contextErr := ctx.Err(); contextErr != nil {
 			err = errors.Join(err, contextErr)
 		}
 	}
-	result, readErr := readWorkflowFile(input.ResultPath, maxResultBytes)
+	result, readErr := readWorkflowLifecycleFile(context.Background(), prepared.ResultPath, maxResultBytes)
 	if readErr != nil {
-		return nil, errors.Join(err, fmt.Errorf("read workflow result: %w", readErr))
+		return nil, errors.Join(err, workflowCause(ErrWorkflowResult, fmt.Errorf("read workflow result: %w", readErr)))
 	}
 	if resultErr := validateResult(result); resultErr != nil {
-		return nil, errors.Join(err, resultErr)
+		return nil, errors.Join(err, workflowCause(ErrWorkflowResult, resultErr))
 	}
+	report, reportErr := decodeWorkerReport(result, prepared.ResultToken)
+	if reportErr != nil {
+		// Never publish an unrelated or stale file as this launch's result.
+		return nil, errors.Join(err, workflowCause(ErrWorkflowResult, reportErr))
+	}
+	if observation != nil {
+		observation.ReportValid = report.failure() == nil
+	}
+	err = errors.Join(err, report.failure())
 	if err != nil {
 		var outcome struct {
 			Error string `json:"error"`
@@ -702,7 +1091,7 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 		Error string `json:"error"`
 	}
 	if e := json.Unmarshal(result, &outcome); e != nil {
-		return nil, e
+		return nil, workflowCause(ErrWorkflowResult, e)
 	}
 	if !outcome.OK {
 		return result, errors.New(outcome.Error)
@@ -712,17 +1101,41 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 
 // Keep the few non-administrative operations explicit. New machine operations
 // default to requiring an administrative process, independently of UI consent.
+func (r Request) splitCordMaintenance() bool {
+	return r.Engine == "splitcord" && (r.Action == "app-install" || r.Action == "app-remove")
+}
+
 func requiresAdministrator(action string) bool {
 	switch action {
-	case "discover", "updates", "choose-folder", "app-install", "app-start", "app-remove":
+	case "discover", "updates", "choose-folder", "app-install", "app-start", "app-remove", "app-reinstall":
 		return false
 	default:
 		return true
 	}
 }
-func (m *Manager) checkAdministrativeAccess() error {
-	if m.requireAdmin == nil {
-		return errors.New("cannot determine administrator access; use a separately elevated system apply CLI")
+func (r Request) requiresDesktopUser() bool {
+	switch r.Action {
+	case "app-install", "app-remove":
+		return !r.splitCordMaintenance()
+	case "app-start", "app-reinstall":
+		return true
+	default:
+		return false
 	}
-	return m.requireAdmin()
+}
+
+func (m *Manager) checkWorkflowAccess(plan Plan) error {
+	if plan.RequiresAdministrator {
+		if m.requireAdmin == nil {
+			return errors.New("cannot determine administrator access; use a separately elevated system apply CLI")
+		}
+		return m.requireAdmin()
+	}
+	if plan.Request.requiresDesktopUser() {
+		if m.requireDesktop == nil {
+			return errors.New("apply from the signed-in user's Windows desktop so AccessWeaver can verify desktop access")
+		}
+		return m.requireDesktop()
+	}
+	return nil
 }

@@ -1,0 +1,443 @@
+{
+  "schemaVersion": 1,
+  "scope": "component-redirect-source-contracts",
+  "sourceCommit": "a2294ef432b1c9c8b773897689c6d0da22369773",
+  "runID": 42641197344,
+  "sealedDoNotRepoll": true,
+  "sourceSHA256": {
+    "internal/workflow/windows.ps1": "4106dee0dc6728221a3f915da7ada03acf41744a1a4f74f2d19739c984bcc1d0",
+    "scripts/test-windows-workflow.ps1": "5b6b444cfe8d6b82ba891b4a2b86a7aeaa460484c0e0590560bd0b45d92e56ff",
+    "scripts/test-windows-component-downloads.ps1": "792dc2256a3139567562ac5e380eae9431ab98bc6d6bf30448ea83954f5d55c1",
+    ".github/workflows/windows-component-discovery.yml": "43d70d89709628534947a251cebfeec2b37ab65301396c2df35f1e6568930068"
+  },
+  "reports": [
+    {
+      "artifactID": 13685122820,
+      "name": "windows-component-source-amd64",
+      "providerZIPDigest": "sha256:5d7b7250a39a4ba7be4f677eaa910cb1425d4cd01b7ec7f663d31d95574e7da4",
+      "providerZIPDigestVerified": true,
+      "architecture": "amd64",
+      "outcome": "failed",
+      "suitePassed": false,
+      "cases": [
+        {
+          "name": "zapret selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "zapret2 selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret2 refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects scan-incomplete before saving or installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects scan-missing before saving or installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects parser-incomplete before installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects parser-missing before installation",
+          "passed": true
+        },
+        {
+          "name": "Complete complete scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Complete complete-default scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Complete complete-multi scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Single-target scan does not require a common section",
+          "passed": true
+        },
+        {
+          "name": "Multi-target complete-default scan requires a common section",
+          "passed": true
+        },
+        {
+          "name": "Multi-target complete-multi scan requires a common section",
+          "passed": true
+        },
+        {
+          "name": "App launch ignores matching processes in another session",
+          "passed": true
+        },
+        {
+          "name": "App launch ignores another executable in the current session",
+          "passed": true
+        },
+        {
+          "name": "App launch accepts the matching executable in the current session",
+          "passed": true
+        },
+        {
+          "name": "Application removal stops on a matching process failure and records an external effect",
+          "passed": true
+        },
+        {
+          "name": "Application process exit race remains a recorded external effect",
+          "passed": true
+        },
+        {
+          "name": "Application process stop records an external effect",
+          "passed": true
+        },
+        {
+          "name": "PTB clean download failure preserves the existing client",
+          "passed": true
+        },
+        {
+          "name": "PTB clean stages the replacement before removing the existing client",
+          "passed": true
+        },
+        {
+          "name": "PTB clean removal failure prevents installer execution",
+          "passed": true
+        },
+        {
+          "name": "Discord installer rejects other publisher categories",
+          "passed": true
+        },
+        {
+          "name": "Microsoft installer rejects other publisher categories",
+          "passed": true
+        },
+        {
+          "name": "WireSock installer requires its own publisher category",
+          "passed": true
+        },
+        {
+          "name": "Dedicated component download contracts pass in an isolated stock shell",
+          "passed": false
+        },
+        {
+          "name": "Custom WireSock installer without a hash is rejected before discovery",
+          "passed": true
+        },
+        {
+          "name": "Hashed custom WireSock request reaches mocked discovery",
+          "passed": true
+        },
+        {
+          "name": "Default WireSock request reaches mocked discovery",
+          "passed": true
+        },
+        {
+          "name": "Discord discovery selects the highest version before modification time",
+          "passed": true
+        },
+        {
+          "name": "Discord discovery retains nonstandard directory fallback after valid versions",
+          "passed": true
+        },
+        {
+          "name": "Discord application lookup uses the highest discovered version",
+          "passed": true
+        },
+        {
+          "name": "Component download fixture entered",
+          "passed": false
+        },
+        {
+          "name": "Component download source parsed",
+          "passed": false
+        },
+        {
+          "name": "Component download first five definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download first ten definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download first fifteen definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download first twenty definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download first twenty-five definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download definitions fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component download stream fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component download composition fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component download metadata fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component redirect policy fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component .NET redirect fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component curl owner fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component curl redirect fixture completed",
+          "passed": false
+        }
+      ],
+      "milestones": {
+        "dns": true,
+        "service": true,
+        "archive": true,
+        "main": true,
+        "vendor": true,
+        "staging": false,
+        "child": true,
+        "arguments": true
+      }
+    },
+    {
+      "artifactID": 13684842831,
+      "name": "windows-component-source-arm64",
+      "providerZIPDigest": "sha256:a8eca3cfbe395d2a6551a1f8ef0f4c2905c43cf3b986ab6aa63d95f772791aa2",
+      "providerZIPDigestVerified": true,
+      "architecture": "arm64",
+      "outcome": "failed",
+      "suitePassed": false,
+      "cases": [
+        {
+          "name": "zapret selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "zapret2 selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret2 refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects scan-incomplete before saving or installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects scan-missing before saving or installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects parser-incomplete before installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects parser-missing before installation",
+          "passed": true
+        },
+        {
+          "name": "Complete complete scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Complete complete-default scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Complete complete-multi scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Single-target scan does not require a common section",
+          "passed": true
+        },
+        {
+          "name": "Multi-target complete-default scan requires a common section",
+          "passed": true
+        },
+        {
+          "name": "Multi-target complete-multi scan requires a common section",
+          "passed": true
+        },
+        {
+          "name": "App launch ignores matching processes in another session",
+          "passed": true
+        },
+        {
+          "name": "App launch ignores another executable in the current session",
+          "passed": true
+        },
+        {
+          "name": "App launch accepts the matching executable in the current session",
+          "passed": true
+        },
+        {
+          "name": "Application removal stops on a matching process failure and records an external effect",
+          "passed": true
+        },
+        {
+          "name": "Application process exit race remains a recorded external effect",
+          "passed": true
+        },
+        {
+          "name": "Application process stop records an external effect",
+          "passed": true
+        },
+        {
+          "name": "PTB clean download failure preserves the existing client",
+          "passed": true
+        },
+        {
+          "name": "PTB clean stages the replacement before removing the existing client",
+          "passed": true
+        },
+        {
+          "name": "PTB clean removal failure prevents installer execution",
+          "passed": true
+        },
+        {
+          "name": "Discord installer rejects other publisher categories",
+          "passed": true
+        },
+        {
+          "name": "Microsoft installer rejects other publisher categories",
+          "passed": true
+        },
+        {
+          "name": "WireSock installer requires its own publisher category",
+          "passed": true
+        },
+        {
+          "name": "Dedicated component download contracts pass in an isolated stock shell",
+          "passed": false
+        },
+        {
+          "name": "Custom WireSock installer without a hash is rejected before discovery",
+          "passed": true
+        },
+        {
+          "name": "Hashed custom WireSock request reaches mocked discovery",
+          "passed": true
+        },
+        {
+          "name": "Default WireSock request reaches mocked discovery",
+          "passed": true
+        },
+        {
+          "name": "Discord discovery selects the highest version before modification time",
+          "passed": true
+        },
+        {
+          "name": "Discord discovery retains nonstandard directory fallback after valid versions",
+          "passed": true
+        },
+        {
+          "name": "Discord application lookup uses the highest discovered version",
+          "passed": true
+        },
+        {
+          "name": "Component download fixture entered",
+          "passed": false
+        },
+        {
+          "name": "Component download source parsed",
+          "passed": false
+        },
+        {
+          "name": "Component download first five definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download first ten definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download first fifteen definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download first twenty definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download first twenty-five definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download definitions fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component download stream fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component download composition fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component download metadata fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component redirect policy fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component .NET redirect fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component curl owner fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component curl redirect fixture completed",
+          "passed": false
+        }
+      ],
+      "milestones": {
+        "staging": false,
+        "vendor": true,
+        "child": true,
+        "service": true,
+        "archive": true,
+        "dns": true,
+        "arguments": true,
+        "main": true
+      }
+    }
+  ],
+  "realVendorExecuted": false,
+  "productionQualificationComplete": false
+}

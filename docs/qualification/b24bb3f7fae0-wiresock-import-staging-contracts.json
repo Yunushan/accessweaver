@@ -1,0 +1,916 @@
+{
+  "schemaVersion": 1,
+  "scope": "wiresock-import-staging-source-contracts",
+  "sourceCommit": "b24bb3f7fae05d788af0b55a57543cedf87c12a5",
+  "runID": 43415792704,
+  "sealedDoNotRepoll": true,
+  "sourceSHA256": {
+    "internal/workflow/windows.ps1": "eacf4bcfebc967bd6f5e4f24973bdaf521cfe9a8907f11f556152c15df2bee1c",
+    "scripts/test-windows-workflow.ps1": "1493ee7f6c065ae72fc89c48fa2472d9bcd67ea47fabd463da233e5aea1fadfb",
+    "scripts/test-windows-component-downloads.ps1": "ba0edaf63cce7269dbd9447f965205a15f2f959ad9e09066bb7be5b40ac1b744",
+    "scripts/test-windows-vendor-preflight.ps1": "56dc8af608d2d5dd9d27d93b4dab43c94733fac56b8bf60d69af5ff2a70b7afe",
+    ".github/workflows/windows-component-discovery.yml": "2091a55023df75e198a6053c5a92dad8d676d75187fdfab7ddfe9ff6dd3d4f62"
+  },
+  "reports": [
+    {
+      "artifactID": 14033537052,
+      "name": "windows-component-source-amd64",
+      "providerZIPDigest": "sha256:479e5602628792b7d434f19b9f71a20785fa27e850a109b89d78b100be92b2e1",
+      "providerZIPDigestVerified": true,
+      "architecture": "amd64",
+      "outcome": "failed",
+      "suitePassed": false,
+      "cases": [
+        {
+          "name": "zapret selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "zapret2 selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret2 refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects scan-incomplete before saving or installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects scan-missing before saving or installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects parser-incomplete before installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects parser-missing before installation",
+          "passed": true
+        },
+        {
+          "name": "Complete complete scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Complete complete-default scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Complete complete-multi scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Single-target scan does not require a common section",
+          "passed": true
+        },
+        {
+          "name": "Multi-target complete-default scan requires a common section",
+          "passed": true
+        },
+        {
+          "name": "Multi-target complete-multi scan requires a common section",
+          "passed": true
+        },
+        {
+          "name": "App launch ignores matching processes in another session",
+          "passed": false
+        },
+        {
+          "name": "App launch ignores another executable in the current session",
+          "passed": false
+        },
+        {
+          "name": "App launch accepts the matching executable in the current session",
+          "passed": false
+        },
+        {
+          "name": "Application removal leaves processes running when the uninstaller is missing",
+          "passed": false
+        },
+        {
+          "name": "Application removal leaves processes running when uninstallers are ambiguous",
+          "passed": false
+        },
+        {
+          "name": "Application removal stops on a matching process failure and records an external effect",
+          "passed": false
+        },
+        {
+          "name": "Application process exit race remains a recorded external effect",
+          "passed": false
+        },
+        {
+          "name": "Application removal refuses an unconfirmed process exit",
+          "passed": false
+        },
+        {
+          "name": "Application process stop records an external effect",
+          "passed": false
+        },
+        {
+          "name": "PTB clean download failure preserves the existing client",
+          "passed": false
+        },
+        {
+          "name": "PTB clean stages the replacement before removing the existing client",
+          "passed": false
+        },
+        {
+          "name": "PTB clean removal failure prevents installer execution",
+          "passed": false
+        },
+        {
+          "name": "Bundled Visual C runtime rejects a valid signature from another publisher category",
+          "passed": true
+        },
+        {
+          "name": "Bundled Visual C runtime accepts the expected publisher category before mocked launch",
+          "passed": true
+        },
+        {
+          "name": "amd64 bundle selects only its platform, uses system MSI and preserves reboot exit codes",
+          "passed": true
+        },
+        {
+          "name": "arm64 bundle selects only its platform, uses system MSI and preserves reboot exit codes",
+          "passed": true
+        },
+        {
+          "name": "Bundled prerequisite launches only its verified protected copy and retires it",
+          "passed": true
+        },
+        {
+          "name": "Bundled prerequisite retires its protected copy after signature refusal",
+          "passed": true
+        },
+        {
+          "name": "Visual C runtime reboot defers packet filter and ProxiFyre setup",
+          "passed": true
+        },
+        {
+          "name": "Packet filter reboot defers ProxiFyre setup",
+          "passed": true
+        },
+        {
+          "name": "ProxiFyre refuses a successful runtime install without registration",
+          "passed": true
+        },
+        {
+          "name": "ProxiFyre refuses a successful packet filter install without registration",
+          "passed": true
+        },
+        {
+          "name": "ProxiFyre continues when both prerequisite registrations are visible",
+          "passed": true
+        },
+        {
+          "name": "Standalone prerequisite reports pending reboot without claiming installation",
+          "passed": true
+        },
+        {
+          "name": "Standalone prerequisite refuses installer success without registration",
+          "passed": true
+        },
+        {
+          "name": "Standalone prerequisite reports installation after registration",
+          "passed": true
+        },
+        {
+          "name": "Managed prerequisite ignores implicit unapproved local bundles",
+          "passed": true
+        },
+        {
+          "name": "Unmanaged prerequisite can still use the implicit local bundle",
+          "passed": true
+        },
+        {
+          "name": "Managed strategy scan refuses an absent approved bundle before saving",
+          "passed": true
+        },
+        {
+          "name": "Managed strategy scan runs from the staged approved bundle",
+          "passed": true
+        },
+        {
+          "name": "Discord installer rejects other publisher categories",
+          "passed": false
+        },
+        {
+          "name": "Microsoft installer rejects other publisher categories",
+          "passed": false
+        },
+        {
+          "name": "WireSock installer requires its own publisher category",
+          "passed": false
+        },
+        {
+          "name": "Update discovery filters release metadata and returns the official tag link",
+          "passed": false
+        },
+        {
+          "name": "Update discovery preserves a no-compatible-release result",
+          "passed": false
+        },
+        {
+          "name": "Update discovery refuses a selected tag absent from admitted metadata",
+          "passed": false
+        },
+        {
+          "name": "Update discovery rejects invalid list shapes before comparison",
+          "passed": false
+        },
+        {
+          "name": "WireSock recognizes its exact native installer pin with a Windows-valid signature",
+          "passed": false
+        },
+        {
+          "name": "WireSock pin recognition refuses invalid signatures and unrelated pins and categories",
+          "passed": false
+        },
+        {
+          "name": "WireSock uninstall accepts a signed cached copy of its exact native installer",
+          "passed": false
+        },
+        {
+          "name": "WireSock uninstall refuses a different native pin or invalid signature before cleanup",
+          "passed": false
+        },
+        {
+          "name": "WireSock uninstall refuses ambiguous registrations before cleanup",
+          "passed": false
+        },
+        {
+          "name": "WireSock MSI uninstall targets its registered product code",
+          "passed": false
+        },
+        {
+          "name": "WireSock MSI uninstall refuses mismatched or compound commands before cleanup",
+          "passed": false
+        },
+        {
+          "name": "WireSock uninstall waits for the registered package to disappear",
+          "passed": false
+        },
+        {
+          "name": "WireSock uninstall reports restart without claiming verified removal",
+          "passed": false
+        },
+        {
+          "name": "Bundled WireSock rejects an unrelated publisher and retires the staged copy",
+          "passed": true
+        },
+        {
+          "name": "Bundled WireSock launches only the verified staged installer and retires it",
+          "passed": true
+        },
+        {
+          "name": "WireSock selects separate installer plans for native AMD64 and ARM64",
+          "passed": true
+        },
+        {
+          "name": "WireSock refuses an installer plan for an unknown architecture",
+          "passed": true
+        },
+        {
+          "name": "WireSock defers connection after an installer restart request",
+          "passed": true
+        },
+        {
+          "name": "WireSock checks for both services before starting either",
+          "passed": true
+        },
+        {
+          "name": "WireSock refuses transitional service state before starting either service",
+          "passed": true
+        },
+        {
+          "name": "WireSock starts only a stopped vendor service and records the external effect",
+          "passed": true
+        },
+        {
+          "name": "WireSock accepts the existing modern ownership record format",
+          "passed": true
+        },
+        {
+          "name": "WireSock accepts its recorded legacy CLI alongside a modern installation",
+          "passed": true
+        },
+        {
+          "name": "WireSock rejects invalid records before commands or task changes",
+          "passed": true
+        },
+        {
+          "name": "WireSock disconnect refuses while scheduled reconnect removal is unconfirmed",
+          "passed": true
+        },
+        {
+          "name": "WireSock disconnect retires scheduled reconnect and retains its profile",
+          "passed": true
+        },
+        {
+          "name": "WireSock retains the profile when reconnect task removal is unconfirmed",
+          "passed": true
+        },
+        {
+          "name": "WireSock retires the reconnect task before disconnecting or deleting the profile",
+          "passed": true
+        },
+        {
+          "name": "WireSock import-only recovery leaves the active connection alone",
+          "passed": true
+        },
+        {
+          "name": "WireSock recovery after a connection attempt retains both cleanup steps",
+          "passed": true
+        },
+        {
+          "name": "WireSock retires failed import staging before any vendor command",
+          "passed": true
+        },
+        {
+          "name": "WireSock import failure rolls back only the generated profile",
+          "passed": true
+        },
+        {
+          "name": "WireSock journal failure before connect preserves the active tunnel",
+          "passed": true
+        },
+        {
+          "name": "WireSock connect failure uses the persisted connection recovery phase",
+          "passed": true
+        },
+        {
+          "name": "WireSock records only a fixed vendor status and discards private output",
+          "passed": false
+        },
+        {
+          "name": "WireSock retires import copies after completion and preserves the generated profile",
+          "passed": false
+        },
+        {
+          "name": "WireSock replaces plain and prefixed application rules in every peer",
+          "passed": false
+        },
+        {
+          "name": "WireSock retains other peer rules and the original configuration",
+          "passed": false
+        },
+        {
+          "name": "Dedicated component download contracts pass in an isolated stock shell",
+          "passed": false
+        },
+        {
+          "name": "Custom WireSock installer without a hash is rejected before discovery",
+          "passed": true
+        },
+        {
+          "name": "Hashed custom WireSock request reaches mocked discovery",
+          "passed": true
+        },
+        {
+          "name": "Default WireSock request reaches mocked discovery",
+          "passed": true
+        },
+        {
+          "name": "Discord discovery selects the highest version before modification time",
+          "passed": true
+        },
+        {
+          "name": "Discord discovery retains nonstandard directory fallback after valid versions",
+          "passed": true
+        },
+        {
+          "name": "Discord application lookup uses the highest discovered version",
+          "passed": true
+        },
+        {
+          "name": "Component download fixture entered",
+          "passed": false
+        },
+        {
+          "name": "Component download source parsed",
+          "passed": false
+        },
+        {
+          "name": "Component download first five definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download first ten definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download first fifteen definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download first twenty definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download first twenty-five definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download definitions fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component download stream fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component download composition fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component download metadata fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component redirect policy fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component .NET redirect fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component curl owner fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component curl redirect fixture completed",
+          "passed": false
+        }
+      ],
+      "milestones": {
+        "staging": false,
+        "main": false,
+        "vendor": true,
+        "child": false,
+        "archive": false,
+        "dns": false,
+        "arguments": false,
+        "service": true
+      }
+    },
+    {
+      "artifactID": 14032668171,
+      "name": "windows-component-source-arm64",
+      "providerZIPDigest": "sha256:903e242120f2b547e19aed1e2c5d1c073f523a948ebab85df9721e81214d27e1",
+      "providerZIPDigestVerified": true,
+      "architecture": "arm64",
+      "outcome": "failed",
+      "suitePassed": false,
+      "cases": [
+        {
+          "name": "zapret selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "zapret2 selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret2 refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects scan-incomplete before saving or installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects scan-missing before saving or installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects parser-incomplete before installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects parser-missing before installation",
+          "passed": true
+        },
+        {
+          "name": "Complete complete scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Complete complete-default scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Complete complete-multi scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Single-target scan does not require a common section",
+          "passed": true
+        },
+        {
+          "name": "Multi-target complete-default scan requires a common section",
+          "passed": true
+        },
+        {
+          "name": "Multi-target complete-multi scan requires a common section",
+          "passed": true
+        },
+        {
+          "name": "App launch ignores matching processes in another session",
+          "passed": false
+        },
+        {
+          "name": "App launch ignores another executable in the current session",
+          "passed": false
+        },
+        {
+          "name": "App launch accepts the matching executable in the current session",
+          "passed": false
+        },
+        {
+          "name": "Application removal leaves processes running when the uninstaller is missing",
+          "passed": false
+        },
+        {
+          "name": "Application removal leaves processes running when uninstallers are ambiguous",
+          "passed": false
+        },
+        {
+          "name": "Application removal stops on a matching process failure and records an external effect",
+          "passed": false
+        },
+        {
+          "name": "Application process exit race remains a recorded external effect",
+          "passed": false
+        },
+        {
+          "name": "Application removal refuses an unconfirmed process exit",
+          "passed": false
+        },
+        {
+          "name": "Application process stop records an external effect",
+          "passed": false
+        },
+        {
+          "name": "PTB clean download failure preserves the existing client",
+          "passed": false
+        },
+        {
+          "name": "PTB clean stages the replacement before removing the existing client",
+          "passed": false
+        },
+        {
+          "name": "PTB clean removal failure prevents installer execution",
+          "passed": false
+        },
+        {
+          "name": "Bundled Visual C runtime rejects a valid signature from another publisher category",
+          "passed": true
+        },
+        {
+          "name": "Bundled Visual C runtime accepts the expected publisher category before mocked launch",
+          "passed": true
+        },
+        {
+          "name": "amd64 bundle selects only its platform, uses system MSI and preserves reboot exit codes",
+          "passed": true
+        },
+        {
+          "name": "arm64 bundle selects only its platform, uses system MSI and preserves reboot exit codes",
+          "passed": true
+        },
+        {
+          "name": "Bundled prerequisite launches only its verified protected copy and retires it",
+          "passed": true
+        },
+        {
+          "name": "Bundled prerequisite retires its protected copy after signature refusal",
+          "passed": true
+        },
+        {
+          "name": "Visual C runtime reboot defers packet filter and ProxiFyre setup",
+          "passed": true
+        },
+        {
+          "name": "Packet filter reboot defers ProxiFyre setup",
+          "passed": true
+        },
+        {
+          "name": "ProxiFyre refuses a successful runtime install without registration",
+          "passed": true
+        },
+        {
+          "name": "ProxiFyre refuses a successful packet filter install without registration",
+          "passed": true
+        },
+        {
+          "name": "ProxiFyre continues when both prerequisite registrations are visible",
+          "passed": true
+        },
+        {
+          "name": "Standalone prerequisite reports pending reboot without claiming installation",
+          "passed": true
+        },
+        {
+          "name": "Standalone prerequisite refuses installer success without registration",
+          "passed": true
+        },
+        {
+          "name": "Standalone prerequisite reports installation after registration",
+          "passed": true
+        },
+        {
+          "name": "Managed prerequisite ignores implicit unapproved local bundles",
+          "passed": true
+        },
+        {
+          "name": "Unmanaged prerequisite can still use the implicit local bundle",
+          "passed": true
+        },
+        {
+          "name": "Managed strategy scan refuses an absent approved bundle before saving",
+          "passed": true
+        },
+        {
+          "name": "Managed strategy scan runs from the staged approved bundle",
+          "passed": true
+        },
+        {
+          "name": "Discord installer rejects other publisher categories",
+          "passed": false
+        },
+        {
+          "name": "Microsoft installer rejects other publisher categories",
+          "passed": false
+        },
+        {
+          "name": "WireSock installer requires its own publisher category",
+          "passed": false
+        },
+        {
+          "name": "Update discovery filters release metadata and returns the official tag link",
+          "passed": false
+        },
+        {
+          "name": "Update discovery preserves a no-compatible-release result",
+          "passed": false
+        },
+        {
+          "name": "Update discovery refuses a selected tag absent from admitted metadata",
+          "passed": false
+        },
+        {
+          "name": "Update discovery rejects invalid list shapes before comparison",
+          "passed": false
+        },
+        {
+          "name": "WireSock recognizes its exact native installer pin with a Windows-valid signature",
+          "passed": false
+        },
+        {
+          "name": "WireSock pin recognition refuses invalid signatures and unrelated pins and categories",
+          "passed": false
+        },
+        {
+          "name": "WireSock uninstall accepts a signed cached copy of its exact native installer",
+          "passed": false
+        },
+        {
+          "name": "WireSock uninstall refuses a different native pin or invalid signature before cleanup",
+          "passed": false
+        },
+        {
+          "name": "WireSock uninstall refuses ambiguous registrations before cleanup",
+          "passed": false
+        },
+        {
+          "name": "WireSock MSI uninstall targets its registered product code",
+          "passed": false
+        },
+        {
+          "name": "WireSock MSI uninstall refuses mismatched or compound commands before cleanup",
+          "passed": false
+        },
+        {
+          "name": "WireSock uninstall waits for the registered package to disappear",
+          "passed": false
+        },
+        {
+          "name": "WireSock uninstall reports restart without claiming verified removal",
+          "passed": false
+        },
+        {
+          "name": "Bundled WireSock rejects an unrelated publisher and retires the staged copy",
+          "passed": true
+        },
+        {
+          "name": "Bundled WireSock launches only the verified staged installer and retires it",
+          "passed": true
+        },
+        {
+          "name": "WireSock selects separate installer plans for native AMD64 and ARM64",
+          "passed": true
+        },
+        {
+          "name": "WireSock refuses an installer plan for an unknown architecture",
+          "passed": true
+        },
+        {
+          "name": "WireSock defers connection after an installer restart request",
+          "passed": true
+        },
+        {
+          "name": "WireSock checks for both services before starting either",
+          "passed": true
+        },
+        {
+          "name": "WireSock refuses transitional service state before starting either service",
+          "passed": true
+        },
+        {
+          "name": "WireSock starts only a stopped vendor service and records the external effect",
+          "passed": true
+        },
+        {
+          "name": "WireSock accepts the existing modern ownership record format",
+          "passed": true
+        },
+        {
+          "name": "WireSock accepts its recorded legacy CLI alongside a modern installation",
+          "passed": true
+        },
+        {
+          "name": "WireSock rejects invalid records before commands or task changes",
+          "passed": true
+        },
+        {
+          "name": "WireSock disconnect refuses while scheduled reconnect removal is unconfirmed",
+          "passed": true
+        },
+        {
+          "name": "WireSock disconnect retires scheduled reconnect and retains its profile",
+          "passed": true
+        },
+        {
+          "name": "WireSock retains the profile when reconnect task removal is unconfirmed",
+          "passed": true
+        },
+        {
+          "name": "WireSock retires the reconnect task before disconnecting or deleting the profile",
+          "passed": true
+        },
+        {
+          "name": "WireSock import-only recovery leaves the active connection alone",
+          "passed": true
+        },
+        {
+          "name": "WireSock recovery after a connection attempt retains both cleanup steps",
+          "passed": true
+        },
+        {
+          "name": "WireSock retires failed import staging before any vendor command",
+          "passed": true
+        },
+        {
+          "name": "WireSock import failure rolls back only the generated profile",
+          "passed": true
+        },
+        {
+          "name": "WireSock journal failure before connect preserves the active tunnel",
+          "passed": true
+        },
+        {
+          "name": "WireSock connect failure uses the persisted connection recovery phase",
+          "passed": true
+        },
+        {
+          "name": "WireSock records only a fixed vendor status and discards private output",
+          "passed": false
+        },
+        {
+          "name": "WireSock retires import copies after completion and preserves the generated profile",
+          "passed": false
+        },
+        {
+          "name": "WireSock replaces plain and prefixed application rules in every peer",
+          "passed": false
+        },
+        {
+          "name": "WireSock retains other peer rules and the original configuration",
+          "passed": false
+        },
+        {
+          "name": "Dedicated component download contracts pass in an isolated stock shell",
+          "passed": false
+        },
+        {
+          "name": "Custom WireSock installer without a hash is rejected before discovery",
+          "passed": true
+        },
+        {
+          "name": "Hashed custom WireSock request reaches mocked discovery",
+          "passed": true
+        },
+        {
+          "name": "Default WireSock request reaches mocked discovery",
+          "passed": true
+        },
+        {
+          "name": "Discord discovery selects the highest version before modification time",
+          "passed": true
+        },
+        {
+          "name": "Discord discovery retains nonstandard directory fallback after valid versions",
+          "passed": true
+        },
+        {
+          "name": "Discord application lookup uses the highest discovered version",
+          "passed": true
+        },
+        {
+          "name": "Component download fixture entered",
+          "passed": false
+        },
+        {
+          "name": "Component download source parsed",
+          "passed": false
+        },
+        {
+          "name": "Component download first five definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download first ten definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download first fifteen definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download first twenty definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download first twenty-five definitions loaded",
+          "passed": false
+        },
+        {
+          "name": "Component download definitions fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component download stream fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component download composition fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component download metadata fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component redirect policy fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component .NET redirect fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component curl owner fixture completed",
+          "passed": false
+        },
+        {
+          "name": "Component curl redirect fixture completed",
+          "passed": false
+        }
+      ],
+      "milestones": {
+        "child": false,
+        "dns": false,
+        "arguments": false,
+        "main": false,
+        "service": true,
+        "staging": false,
+        "vendor": true,
+        "archive": false
+      }
+    }
+  ],
+  "realVendorExecuted": false,
+  "productionQualificationComplete": false
+}

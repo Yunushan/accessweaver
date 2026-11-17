@@ -1,0 +1,513 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "23d9cc72678c5fa939c32adff42452612db5595b",
+  "productSourceCommit": "c970261cc2c2730e64dd25527bbfa9fdfe3d5a9f",
+  "sourceRunID": 42478399885,
+  "nativeRunID": 42478399776,
+  "scope": "Source-fixture hash isolation and containment ordering; actual hosted native round trips with all outcomes retained. No real index renumbering, encrypted traffic transport, reboot or full DNS qualification.",
+  "sourceSHA256": {
+    "scripts/test-native-doh.ps1": "1f813bb5ce3e30e85154a5a520cf2b21d7e7b8669b78ba6e177f55680701f2a7",
+    "scripts/native-doh-scenario.ps1": "7da2981919835f9792d5b8be1319da930248bec9f5e8923a5a0f71ffb36352db",
+    "scripts/dns-acceptance-state.ps1": "a8332f9d043c4f3577a5229a4831e7e88df52a1c9733eba4e4e254012622a2de",
+    "scripts/test-dns-acceptance-state.ps1": "16db2807ad0807251d549fbb66cee8682a817be91b776cc5f503c8e6e09775d9",
+    "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+    ".github/workflows/native-doh.yml": "7a373b86da9de96909db6ff01dcf7f4aa0115c5efc719b5540f1f84a4643df40",
+    "internal/workflow/windows.ps1": "e60b0c01f491cff9fa6da10c3d260e527b091c078317818e252a3d757b794141",
+    "internal/workflow/manager.go": "e1eae98c45c8ccd7b77675d9a05be300c2d02cb85b8a372c1b3f8f74c04f8f1d",
+    "cmd/accessweaver/system.go": "205880642ec0814629f754b7f44ae3d36b00a584ee937e2705849b2ddead1f94",
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00"
+  },
+  "sourceContracts": {
+    "jobsPassed": 6,
+    "shellReportsPassed": 16,
+    "workerAssertionsPerShell": 516,
+    "oracleAssertionsPerShell": 616,
+    "assertionInstances": 9056
+  },
+  "nativeResults": {
+    "passed": 4,
+    "failed": 6,
+    "cases": [
+      {
+        "artifactID": 13616676954,
+        "artifactName": "native-dns-dnscrypt-verification-failure-windows-amd64",
+        "providerZIPDigest": "sha256:faa20f4db86d1f67e1883c26238f004038f5d5c5f7ee14461c1e9d105ccbcc3b",
+        "parsedReportSHA256": "46ae079ceb151fdf156f0d375a829a3b9de1a2139b4f95fb2216495c97240747",
+        "architecture": "amd64",
+        "method": "dnscrypt",
+        "scenarioKind": "verification-failure",
+        "outcome": "failed",
+        "code": "component-stage",
+        "componentFailureCode": "timeout",
+        "componentHTTPStatus": 0,
+        "cliCount": 0,
+        "snapshotRemoved": false
+      },
+      {
+        "artifactID": 13616606280,
+        "artifactName": "native-dns-dnscrypt-service-loss-windows-arm64",
+        "providerZIPDigest": "sha256:12da39dd92b081b90dbdb73c1522b8fbde4cb2c7a101d85cefa5242d541224d1",
+        "parsedReportSHA256": "a2f95cbce28bf673a06f1446c5e6af47e45f1910c2bc542247ef86c718238974",
+        "architecture": "arm64",
+        "method": "dnscrypt",
+        "scenarioKind": "service-loss",
+        "outcome": "passed",
+        "code": "none",
+        "componentFailureCode": "none",
+        "componentHTTPStatus": 200,
+        "cliCount": 3,
+        "snapshotRemoved": true
+      },
+      {
+        "artifactID": 13616152422,
+        "artifactName": "native-dns-doh-static-ipv6-windows-arm64",
+        "providerZIPDigest": "sha256:6b7ab0d3c49d84352631741e744cae621ad88fde197617d2b3f6eb365f89de8b",
+        "parsedReportSHA256": "d3ef46e97d44c43656968eda849280858f6f85ccc9537a2f668b455076f9fa56",
+        "architecture": "arm64",
+        "method": "doh",
+        "scenarioKind": "static-ipv6",
+        "outcome": "failed",
+        "code": "native-roundtrip-failed",
+        "componentFailureCode": "none",
+        "componentHTTPStatus": 0,
+        "cliCount": 0,
+        "snapshotRemoved": true,
+        "staticFixture": {
+          "stagingVerified": false,
+          "exercisePassed": false,
+          "cleanupAttempted": true,
+          "originalResolverPassed": true,
+          "operationCode": "stage",
+          "code": "operation-failed",
+          "stagingAttempted": true,
+          "baselineResolverPassed": true,
+          "originalStateRestored": true,
+          "baselineCaptured": true,
+          "cleanupCode": "none",
+          "outcome": "failed",
+          "exerciseAttempted": false
+        },
+        "staticFailurePhase": "stage-verification",
+        "staticFailureCode": "unexpected",
+        "staticFirewallProtected": true,
+        "staticFirewallRemoved": true,
+        "staticSnapshotNormalized": false
+      },
+      {
+        "artifactID": 13616074012,
+        "artifactName": "native-dns-doh-roundtrip-windows-amd64",
+        "providerZIPDigest": "sha256:62c8bab53654de8979f89deae3f20018d0f9c438747f305931f7f3573500c040",
+        "parsedReportSHA256": "d1ecdc833ce53adaa21db318fb1838dee49f978ce458a7711e318ef2c7a2b6d5",
+        "architecture": "amd64",
+        "method": "doh",
+        "scenarioKind": "roundtrip",
+        "outcome": "passed",
+        "code": "none",
+        "componentFailureCode": "none",
+        "componentHTTPStatus": 0,
+        "cliCount": 2,
+        "snapshotRemoved": true
+      },
+      {
+        "artifactID": 13616062770,
+        "artifactName": "native-dns-dnscrypt-roundtrip-windows-amd64",
+        "providerZIPDigest": "sha256:affd8af7abc9dce1c13b3f4484737b0f512f40380c55bbff9851d41dff561223",
+        "parsedReportSHA256": "8abe34c464aa25de05cdd6efd4bc03a522e66a6349811aabf237e7c8b5c2fda8",
+        "architecture": "amd64",
+        "method": "dnscrypt",
+        "scenarioKind": "roundtrip",
+        "outcome": "failed",
+        "code": "component-stage",
+        "componentFailureCode": "timeout",
+        "componentHTTPStatus": 0,
+        "cliCount": 0,
+        "snapshotRemoved": false
+      },
+      {
+        "artifactID": 13616048087,
+        "artifactName": "native-dns-dnscrypt-roundtrip-windows-arm64",
+        "providerZIPDigest": "sha256:3773f8036c73837a441fd1c4fad2f6ffba257f13d2b54b2584408fc11353e596",
+        "parsedReportSHA256": "324f28e488d9f496e6b640af6f8b57329956f1105a2bfae68325c352b4b7f4b4",
+        "architecture": "arm64",
+        "method": "dnscrypt",
+        "scenarioKind": "roundtrip",
+        "outcome": "failed",
+        "code": "component-stage",
+        "componentFailureCode": "timeout",
+        "componentHTTPStatus": 0,
+        "cliCount": 0,
+        "snapshotRemoved": false
+      },
+      {
+        "artifactID": 13616009445,
+        "artifactName": "native-dns-dnscrypt-service-loss-windows-amd64",
+        "providerZIPDigest": "sha256:5731d601bcdda542d9b83023a1b817b38e4c82658f3bbe905d76173e701ba2e4",
+        "parsedReportSHA256": "a784a41b89eb170bc9087cc0395a2b66c022f7d2239b5b7ad9d3c62a5b87b53b",
+        "architecture": "amd64",
+        "method": "dnscrypt",
+        "scenarioKind": "service-loss",
+        "outcome": "passed",
+        "code": "none",
+        "componentFailureCode": "none",
+        "componentHTTPStatus": 200,
+        "cliCount": 3,
+        "snapshotRemoved": true
+      },
+      {
+        "artifactID": 13616004609,
+        "artifactName": "native-dns-doh-static-ipv6-windows-amd64",
+        "providerZIPDigest": "sha256:8e919e736322ddfea3a5cc156a3b9680cb7bcd49799056806b52c8044b1f4322",
+        "parsedReportSHA256": "aac865629293297a2150c2dcd7080b9cca031c08d1007430e1f5068253bf7efe",
+        "architecture": "amd64",
+        "method": "doh",
+        "scenarioKind": "static-ipv6",
+        "outcome": "failed",
+        "code": "native-roundtrip-failed",
+        "componentFailureCode": "none",
+        "componentHTTPStatus": 0,
+        "cliCount": 0,
+        "snapshotRemoved": true,
+        "staticFixture": {
+          "stagingVerified": false,
+          "exercisePassed": false,
+          "cleanupAttempted": true,
+          "originalResolverPassed": true,
+          "operationCode": "stage",
+          "code": "operation-failed",
+          "stagingAttempted": true,
+          "baselineResolverPassed": true,
+          "originalStateRestored": true,
+          "baselineCaptured": true,
+          "cleanupCode": "none",
+          "outcome": "failed",
+          "exerciseAttempted": false
+        },
+        "staticFailurePhase": "stage-verification",
+        "staticFailureCode": "unexpected",
+        "staticFirewallProtected": true,
+        "staticFirewallRemoved": true,
+        "staticSnapshotNormalized": false
+      },
+      {
+        "artifactID": 13615999998,
+        "artifactName": "native-dns-dnscrypt-verification-failure-windows-arm64",
+        "providerZIPDigest": "sha256:1606cf6e94559b578a4fe0ef8f004f87497d7526f5d2020ce5dcba41c11332df",
+        "parsedReportSHA256": "ba5ad3e1ffa9eac45ce76084587e0db2f477693a249922256656eb73fea1eefd",
+        "architecture": "arm64",
+        "method": "dnscrypt",
+        "scenarioKind": "verification-failure",
+        "outcome": "failed",
+        "code": "component-stage",
+        "componentFailureCode": "timeout",
+        "componentHTTPStatus": 0,
+        "cliCount": 0,
+        "snapshotRemoved": false
+      },
+      {
+        "artifactID": 13615829090,
+        "artifactName": "native-dns-doh-roundtrip-windows-arm64",
+        "providerZIPDigest": "sha256:16fbd7f8bed8f4e89693aecee82f1bb3df7eb638f8e8605115f3e496991b848f",
+        "parsedReportSHA256": "2b30affce4e2b82ce9d89ea9b54ba85ca0062120202b5b0305a1003b670bc89b",
+        "architecture": "arm64",
+        "method": "doh",
+        "scenarioKind": "roundtrip",
+        "outcome": "passed",
+        "code": "none",
+        "componentFailureCode": "none",
+        "componentHTTPStatus": 0,
+        "cliCount": 2,
+        "snapshotRemoved": true
+      }
+    ]
+  },
+  "history": [
+    {
+      "sourceCommit": "b74acb7d81e0976e0c07b38223797756e3241b27",
+      "sourceRunID": 42472415888,
+      "allSixteenShellRunsPassed": false,
+      "sourceZIPs": [
+        {
+          "artifactID": 13614405682,
+          "artifactName": "dns-acceptance-source-contracts-darwin-amd64",
+          "providerZIPDigest": "sha256:6b22aa20714f95df06bc2f748123b1e622408dea268e4ff3d941e9393cdb938d"
+        },
+        {
+          "artifactID": 13614380826,
+          "artifactName": "dns-acceptance-source-contracts-linux-amd64",
+          "providerZIPDigest": "sha256:791d57e8d4ba15cd27fd72c0cd8af95e8733763ee83d564cdecffe3f8d7d5ec3"
+        },
+        {
+          "artifactID": 13614300994,
+          "artifactName": "dns-source-contracts-darwin-amd64",
+          "providerZIPDigest": "sha256:fbc2562e599e0820317f2817e0334b28592b54abc8e2fabd0dfa5e490536aa49"
+        },
+        {
+          "artifactID": 13614295862,
+          "artifactName": "dns-acceptance-source-contracts-linux-arm64",
+          "providerZIPDigest": "sha256:0722fadf864db95e08a1ebeea6b8425cbb5e1062c2638edfc691d767ccf3e375"
+        },
+        {
+          "artifactID": 13614027070,
+          "artifactName": "dns-acceptance-source-contracts-windows-arm64",
+          "providerZIPDigest": "sha256:b475c79753c3af4a98940bde8865ed319d3c3e616ce52bcf42db96c47db56c0c"
+        },
+        {
+          "artifactID": 13614026925,
+          "artifactName": "dns-source-contracts-darwin-arm64",
+          "providerZIPDigest": "sha256:2373fee6490afe63dfbc77e856b316e1e59785d3d59094d20df59904c2245b6a"
+        },
+        {
+          "artifactID": 13613892739,
+          "artifactName": "dns-acceptance-source-contracts-darwin-arm64",
+          "providerZIPDigest": "sha256:b048b7b9d9730bbb9cec32f7390384ce3cee012574f3ecd95f0db007d069c011"
+        },
+        {
+          "artifactID": 13613828611,
+          "artifactName": "dns-acceptance-source-contracts-windows-amd64",
+          "providerZIPDigest": "sha256:5506da1e410ec1b59cf0c6746cee57bd7f1eadeaf9d5972820a3fbaf9d7a5633"
+        },
+        {
+          "artifactID": 13613813408,
+          "artifactName": "dns-source-contracts-linux-arm64",
+          "providerZIPDigest": "sha256:027df597cc207147c834a2f56424454d4e7f45bb502f9b8836c39a314d0009c2"
+        },
+        {
+          "artifactID": 13613744514,
+          "artifactName": "dns-source-contracts-windows-amd64",
+          "providerZIPDigest": "sha256:dd4588f98a19a0c748bc16bd19eacd444ce4fe8f8808752f669bf5edbe114f39"
+        },
+        {
+          "artifactID": 13613719493,
+          "artifactName": "dns-source-contracts-linux-amd64",
+          "providerZIPDigest": "sha256:440d4bfa2276521a39131f2d857bf0c20cced94dcdd3ad9d88002e7945a5810d"
+        },
+        {
+          "artifactID": 13613709735,
+          "artifactName": "dns-source-contracts-windows-arm64",
+          "providerZIPDigest": "sha256:1491a06b305ed0c4b6bfab04244ca77b41b476901391ab878e436e407c665577"
+        }
+      ],
+      "nativeRunID": 42472415863,
+      "nativeReports": 0,
+      "nativeReportsMissing": 10,
+      "nativePreflightFailureBeforeChanges": true
+    },
+    {
+      "sourceCommit": "d08cbea9e909d63a0f2a27482be3e150edcdc3b6",
+      "sourceRunID": 42478122691,
+      "allSixteenShellRunsPassed": false,
+      "sourceZIPs": [
+        {
+          "artifactID": 13616860474,
+          "artifactName": "dns-acceptance-source-contracts-darwin-amd64",
+          "providerZIPDigest": "sha256:85140a1eef9647818c48141a84e7303ceeabb1ce2fb97ecda94cf3d5455ab4b4"
+        },
+        {
+          "artifactID": 13616810714,
+          "artifactName": "dns-acceptance-source-contracts-windows-arm64",
+          "providerZIPDigest": "sha256:d28a9c3a33413a5dc91985f444db5dbfd8dba46cca54d193a103dd77aa453d6d"
+        },
+        {
+          "artifactID": 13616661279,
+          "artifactName": "dns-source-contracts-darwin-amd64",
+          "providerZIPDigest": "sha256:0dd6058de0d47426d152d7d7909d4aeecead331a03adede2cf9f23c04d451eb5"
+        },
+        {
+          "artifactID": 13616491497,
+          "artifactName": "dns-acceptance-source-contracts-linux-arm64",
+          "providerZIPDigest": "sha256:239677a1ce171a9c8c0028b7f69665e230c7191a48483b074c8e2c7f4fb857c9"
+        },
+        {
+          "artifactID": 13616441753,
+          "artifactName": "dns-acceptance-source-contracts-linux-amd64",
+          "providerZIPDigest": "sha256:7ebd271b18639ddc3014d14b7d58b65ecfa56f2bc2edfba14aba56c9833974d0"
+        },
+        {
+          "artifactID": 13616337081,
+          "artifactName": "dns-acceptance-source-contracts-windows-amd64",
+          "providerZIPDigest": "sha256:5d3faea95ed55a69da126c4b4eea68dcc9470c31f7252fdf2929abaea4e6c9ce"
+        },
+        {
+          "artifactID": 13616267224,
+          "artifactName": "dns-source-contracts-linux-arm64",
+          "providerZIPDigest": "sha256:839882769823e022542dba93504fe4a929b86af2f53391dffe52d18607fb3f23"
+        },
+        {
+          "artifactID": 13616237593,
+          "artifactName": "dns-source-contracts-windows-arm64",
+          "providerZIPDigest": "sha256:a102f3b2c94577dcd19cefca1ee6c95b14bd24a33dd0dc3cd0169faf06991bc1"
+        },
+        {
+          "artifactID": 13616237485,
+          "artifactName": "dns-source-contracts-windows-amd64",
+          "providerZIPDigest": "sha256:5f736d5b53e263abdbce360862a6ad5b837a8942e0f60c73f41805f1e37caed5"
+        },
+        {
+          "artifactID": 13615859969,
+          "artifactName": "dns-source-contracts-darwin-arm64",
+          "providerZIPDigest": "sha256:3f98fa1c7589099a7b208bf4f652fa0ea0f492e0992bfc1ff199cd35d6a3d5d8"
+        },
+        {
+          "artifactID": 13615844976,
+          "artifactName": "dns-source-contracts-linux-amd64",
+          "providerZIPDigest": "sha256:b180b44544e2ef215fdbf4b1247f63ec39b9367707cfcf524dfacfa4587dbdc3"
+        },
+        {
+          "artifactID": 13615513980,
+          "artifactName": "dns-acceptance-source-contracts-darwin-arm64",
+          "providerZIPDigest": "sha256:97d8c2ece0d3070a5ab02bcbe25c8d0afec5358a351f72464572964a6695dd15"
+        }
+      ],
+      "nativeRunID": 42478122578,
+      "nativeReports": 0,
+      "nativeReportsMissing": 10,
+      "nativePreflightFailureBeforeChanges": true
+    },
+    {
+      "sourceCommit": "2539dd085cf22b1d53a9d7ee1adae42d0083a108",
+      "sourceRunID": 42478361540,
+      "allSixteenShellRunsPassed": true,
+      "sourceZIPs": [
+        {
+          "artifactID": 13616960036,
+          "artifactName": "dns-source-contracts-windows-amd64",
+          "providerZIPDigest": "sha256:0a8259b4b7597dd369685fec75ac48f9dddc2c2b691dcf2b4bff4c487678713a"
+        },
+        {
+          "artifactID": 13616885648,
+          "artifactName": "dns-acceptance-source-contracts-windows-amd64",
+          "providerZIPDigest": "sha256:00ad18f710a6cd970894fa9c53aeca31b181bf9e822c067c17d6a36df0d40403"
+        },
+        {
+          "artifactID": 13616860926,
+          "artifactName": "dns-source-contracts-windows-arm64",
+          "providerZIPDigest": "sha256:518ab728a10dc52672a41a1dc1d4727b63606285abc4f6ae06da2b686b861f3c"
+        },
+        {
+          "artifactID": 13616821911,
+          "artifactName": "dns-source-contracts-linux-amd64",
+          "providerZIPDigest": "sha256:59a71994a9fa6cefeb0b39a3a8d54e4b92ce06077d40895b5f6b1a418c09e0a6"
+        },
+        {
+          "artifactID": 13616621907,
+          "artifactName": "dns-acceptance-source-contracts-windows-arm64",
+          "providerZIPDigest": "sha256:acf6d163cfa686cb519b33db7e84366c0fadea66fe87f3184add767ee2058dcc"
+        },
+        {
+          "artifactID": 13616591700,
+          "artifactName": "dns-acceptance-source-contracts-linux-amd64",
+          "providerZIPDigest": "sha256:241f45d8c80203744fdff9ed9a0fdf1246b01e0fa4aa173a62f525f0e547c308"
+        },
+        {
+          "artifactID": 13616491916,
+          "artifactName": "dns-source-contracts-linux-arm64",
+          "providerZIPDigest": "sha256:aa731c3fc596c7cb2dbc05bdbc5405d7304a1993977b1729118fbca3e7dc4b15"
+        },
+        {
+          "artifactID": 13616357328,
+          "artifactName": "dns-source-contracts-darwin-arm64",
+          "providerZIPDigest": "sha256:2fbbda083a68bb022a04abac26e554a1b178325cda0074558337ed0f95053c59"
+        },
+        {
+          "artifactID": 13616297619,
+          "artifactName": "dns-acceptance-source-contracts-darwin-arm64",
+          "providerZIPDigest": "sha256:5f11869b7359d8e66ea2b51c156a970c6b0006b812ea4dbe9de5e1e9d1342a64"
+        },
+        {
+          "artifactID": 13615929895,
+          "artifactName": "dns-acceptance-source-contracts-linux-arm64",
+          "providerZIPDigest": "sha256:f1b87a94be791ec5d22743f307db21bb87d8edab7ac4a15e18bf86bd252347eb"
+        },
+        {
+          "artifactID": 13615783884,
+          "artifactName": "dns-source-contracts-darwin-amd64",
+          "providerZIPDigest": "sha256:88655b5c477da5e9ba7c4d425e834be1852b87f59f5e9044ec19604b0163e91c"
+        },
+        {
+          "artifactID": 13615439588,
+          "artifactName": "dns-acceptance-source-contracts-darwin-amd64",
+          "providerZIPDigest": "sha256:5acb307e97e7aaa12254a37841eb6ad12d7fdef527c1bca7f04ebe6a87bcad86"
+        }
+      ]
+    },
+    {
+      "sourceCommit": "23d9cc72678c5fa939c32adff42452612db5595b",
+      "sourceRunID": 42478399885,
+      "allSixteenShellRunsPassed": true,
+      "sourceZIPs": [
+        {
+          "artifactID": 13616865921,
+          "artifactName": "dns-acceptance-source-contracts-linux-amd64",
+          "providerZIPDigest": "sha256:542cd4a393a976f1035f276ee86658543784bd6b06b18df1679d470b1bc0f17b"
+        },
+        {
+          "artifactID": 13616831252,
+          "artifactName": "dns-acceptance-source-contracts-darwin-amd64",
+          "providerZIPDigest": "sha256:8eb10ccb28acf77c2a8da8ba95b3c0d648be69e4f5eecefe5ab709ae76bda2cf"
+        },
+        {
+          "artifactID": 13616786465,
+          "artifactName": "dns-source-contracts-darwin-amd64",
+          "providerZIPDigest": "sha256:ea3040cb98b57749dcf96ed1a0aad36a43c6108e8663d54cbf4e67cc1485a5f7"
+        },
+        {
+          "artifactID": 13616631856,
+          "artifactName": "dns-source-contracts-linux-arm64",
+          "providerZIPDigest": "sha256:ebbfcf2dbd7c1d7dc8f53ceb7ec2c142d3a76424cc226e7e900613c6a83f33ed"
+        },
+        {
+          "artifactID": 13616576229,
+          "artifactName": "dns-source-contracts-darwin-arm64",
+          "providerZIPDigest": "sha256:644bec5801fd6470762d8996a421c658d70b288526361dc96a529158b562d858"
+        },
+        {
+          "artifactID": 13616401487,
+          "artifactName": "dns-acceptance-source-contracts-darwin-arm64",
+          "providerZIPDigest": "sha256:bc5baa9a0510c3a70c0b142665dc2d114565d0704e1bd5070b4bab46ad203636"
+        },
+        {
+          "artifactID": 13616312683,
+          "artifactName": "dns-source-contracts-linux-amd64",
+          "providerZIPDigest": "sha256:814fbd6ecb2e30d2729386c14f1c6acf74ff64af8ea7c8da6f511aa7ce5c9749"
+        },
+        {
+          "artifactID": 13616271912,
+          "artifactName": "dns-source-contracts-windows-arm64",
+          "providerZIPDigest": "sha256:6e0b35ff709e3df2999ff26b9c27746f237657a6f4d86e7e445bac9c5de9dac8"
+        },
+        {
+          "artifactID": 13616163572,
+          "artifactName": "dns-acceptance-source-contracts-linux-arm64",
+          "providerZIPDigest": "sha256:7700b796ee64f3782021821be9f34afe79b9b6fd20e792a109d64efa177e4f9b"
+        },
+        {
+          "artifactID": 13616142515,
+          "artifactName": "dns-acceptance-source-contracts-windows-arm64",
+          "providerZIPDigest": "sha256:f01cd725a1d298238f995bf7d35a300b04435bed9e13a7773a3c4cef53b51b73"
+        },
+        {
+          "artifactID": 13616097656,
+          "artifactName": "dns-source-contracts-windows-amd64",
+          "providerZIPDigest": "sha256:0310d2fd82901c28302cebfb35eb3185bf872daeea83dafa27065cda3739a18c"
+        },
+        {
+          "artifactID": 13615464883,
+          "artifactName": "dns-acceptance-source-contracts-windows-amd64",
+          "providerZIPDigest": "sha256:64c1c1ebfd39f333ff1c21bfb50f6b842111e5d5f13bfe371ab1f66900108a4c"
+        }
+      ],
+      "nativeRunID": 42478399776,
+      "nativeReports": 10,
+      "nativeReportsMissing": 0
+    }
+  ],
+  "providerZIPDigestsVerified": 58,
+  "sourceQualificationAllPassed": true,
+  "nativeQualificationAllPassed": false,
+  "rawLogsRead": false,
+  "credentialQueries": false,
+  "localNativeOrFixtureExecution": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0
+}

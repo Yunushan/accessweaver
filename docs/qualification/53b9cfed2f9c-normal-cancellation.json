@@ -1,0 +1,1134 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "53b9cfed2f9c84b3a477b2df6a069fa3bb05ef13",
+  "runID": 42408549456,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/42408549456",
+  "runConclusion": "cancelled",
+  "scope": "Rejected native-font candidate normal workflow cancellation; metadata only",
+  "candidateAccepted": false,
+  "normalQualificationComplete": false,
+  "jobs": [
+    {
+      "id": 128511456783,
+      "name": "Parser mutations (linux/amd64)",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify immutable source identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify module integrity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Vet complete root source",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-known result privacy contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify numeric fuzz evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify browser profile input conformance",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed timestamp observation contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify canonical timestamp string spellings",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed timestamp spelling observations",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete root regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete Linux root race regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-known root regression outcomes",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate json-object for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate profile for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate policy for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate policy-envelope for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate signed-policy-payload for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate installation for thirty seconds",
+          "status": "completed",
+          "conclusion": "cancelled"
+        },
+        {
+          "name": "Mutate acceptance for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate recovery for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate rotation for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate signed-rotation-payload for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate audit for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate worker-report for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate workflow-metadata for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate stun for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Confirm source unchanged after qualification",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Retain fixed numeric parser mutation evidence",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128511456942,
+      "name": "Parser mutations (windows/arm64)",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify immutable source identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify module integrity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Vet complete root source",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-known result privacy contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify numeric fuzz evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify browser profile input conformance",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed timestamp observation contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify canonical timestamp string spellings",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed timestamp spelling observations",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete root regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete Linux root race regression",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Retain source-known root regression outcomes",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate json-object for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate profile for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate policy for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate policy-envelope for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate signed-policy-payload for thirty seconds",
+          "status": "completed",
+          "conclusion": "cancelled"
+        },
+        {
+          "name": "Mutate installation for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate acceptance for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate recovery for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate rotation for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate signed-rotation-payload for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate audit for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate worker-report for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate workflow-metadata for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate stun for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Confirm source unchanged after qualification",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Retain fixed numeric parser mutation evidence",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128511456957,
+      "name": "Parser mutations (windows/amd64)",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify immutable source identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify module integrity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Vet complete root source",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-known result privacy contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify numeric fuzz evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify browser profile input conformance",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed timestamp observation contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify canonical timestamp string spellings",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed timestamp spelling observations",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete root regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete Linux root race regression",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Retain source-known root regression outcomes",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate json-object for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate profile for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate policy for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate policy-envelope for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate signed-policy-payload for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate installation for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate acceptance for thirty seconds",
+          "status": "completed",
+          "conclusion": "cancelled"
+        },
+        {
+          "name": "Mutate recovery for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate rotation for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate signed-rotation-payload for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate audit for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate worker-report for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate workflow-metadata for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate stun for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Confirm source unchanged after qualification",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Retain fixed numeric parser mutation evidence",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128511456996,
+      "name": "Parser input browser compatibility / Real browser (arm64/chromium)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed keyboard evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify isolated application contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain test results without private controller state",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed modal keyboard contract evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound browser case status",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound desktop performance evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed browser image preflight evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed owned browser memory diagnostics",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128511456997,
+      "name": "Parser input browser compatibility / Real browser (arm64/webkit)",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed keyboard evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify isolated application contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "status": "completed",
+          "conclusion": "cancelled"
+        },
+        {
+          "name": "Retain test results without private controller state",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed modal keyboard contract evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound browser case status",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Retain source-bound desktop performance evidence",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Retain fixed browser image preflight evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed owned browser memory diagnostics",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "id": 128511457013,
+      "name": "Parser input browser compatibility / Real browser (arm64/firefox)",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed keyboard evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify isolated application contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "status": "completed",
+          "conclusion": "cancelled"
+        },
+        {
+          "name": "Retain test results without private controller state",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed modal keyboard contract evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound browser case status",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Retain source-bound desktop performance evidence",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Retain fixed browser image preflight evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed owned browser memory diagnostics",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "id": 128511457021,
+      "name": "Parser mutations (linux/arm64)",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify immutable source identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify module integrity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Vet complete root source",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-known result privacy contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify numeric fuzz evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify browser profile input conformance",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed timestamp observation contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify canonical timestamp string spellings",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed timestamp spelling observations",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete root regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete Linux root race regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-known root regression outcomes",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate json-object for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate profile for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate policy for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate policy-envelope for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate signed-policy-payload for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate installation for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Mutate acceptance for thirty seconds",
+          "status": "completed",
+          "conclusion": "cancelled"
+        },
+        {
+          "name": "Mutate recovery for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate rotation for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate signed-rotation-payload for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate audit for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate worker-report for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate workflow-metadata for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Mutate stun for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Confirm source unchanged after qualification",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Retain fixed numeric parser mutation evidence",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128511457038,
+      "name": "Parser input browser compatibility / Real browser (amd64/webkit)",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed keyboard evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify isolated application contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "status": "completed",
+          "conclusion": "cancelled"
+        },
+        {
+          "name": "Retain test results without private controller state",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed modal keyboard contract evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound browser case status",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Retain source-bound desktop performance evidence",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Retain fixed browser image preflight evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed owned browser memory diagnostics",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "id": 128511457081,
+      "name": "Parser input browser compatibility / Real browser (amd64/firefox)",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed keyboard evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify isolated application contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "status": "completed",
+          "conclusion": "cancelled"
+        },
+        {
+          "name": "Retain test results without private controller state",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed modal keyboard contract evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound browser case status",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Retain source-bound desktop performance evidence",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Retain fixed browser image preflight evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed owned browser memory diagnostics",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "id": 128511457100,
+      "name": "Parser input browser compatibility / Real browser (amd64/chromium)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed keyboard evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify isolated application contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain test results without private controller state",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed modal keyboard contract evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound browser case status",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound desktop performance evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed browser image preflight evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed owned browser memory diagnostics",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "jobsSucceeded": 2,
+  "jobsCancelled": 8,
+  "sourceBaselineRejectionReceipt": "53b9cfed2f9c-font-baseline-rejection.json",
+  "terminalSustainedReceipt": "53b9cfed2f9c-browser-soak-attempt.json",
+  "restorationAcceptanceReceipt": "b87fdfd8eabb-typography-restoration.json",
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0,
+  "limitations": [
+    "Cancellation follows the restoration push; no passing full normal qualification is inferred for the rejected source.",
+    "Source-known job/step metadata only. Raw logs, private browser traces and screenshots not read.",
+    "The discarded candidate is not re-run to manufacture a complete passing result."
+  ]
+}

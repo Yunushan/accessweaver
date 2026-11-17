@@ -8,8 +8,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/Yunushan/accessweaver/internal/profile"
 )
 
 func TestPendingAdmissionPersistenceKeepsControlsAvailable(t *testing.T) {
@@ -29,6 +27,7 @@ func TestPendingAdmissionPersistenceKeepsControlsAvailable(t *testing.T) {
 				executed <- struct{}{}
 				return json.RawMessage(`{"ok":true}`), nil
 			}
+			realPersist := m.persist
 			m.persist = func(path string, data []byte) error {
 				var job Job
 				if err := json.Unmarshal(data, &job); err != nil {
@@ -41,7 +40,7 @@ func TestPendingAdmissionPersistenceKeepsControlsAvailable(t *testing.T) {
 						return errors.New("injected initial persistence failure")
 					}
 				}
-				return profile.AtomicWrite(path, data)
+				return realPersist(path, data)
 			}
 			plan, err := m.Preview(Request{Action: "discover"})
 			if err != nil {
@@ -64,7 +63,13 @@ func TestPendingAdmissionPersistenceKeepsControlsAvailable(t *testing.T) {
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
-				if err := m.Shutdown(ctx); err != nil {
+				if err := m.Shutdown(ctx); failWrite {
+					// Completion now retains the reserved write failure, while
+					// the plain cooperative cancellation branch stays clean.
+					if !errors.Is(err, ErrWorkflowAdmission) || !errors.Is(err, ErrWorkflowPersistence) || !errors.Is(err, context.Canceled) {
+						t.Error("reserved admission write failure was not retained by shutdown")
+					}
+				} else if err != nil {
 					t.Error(err)
 				}
 			})
@@ -122,7 +127,11 @@ func TestPendingAdmissionPersistenceKeepsControlsAvailable(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			if err := m.Shutdown(ctx); err != nil {
+			if err := m.Shutdown(ctx); failWrite {
+				if !errors.Is(err, ErrWorkflowAdmission) || !errors.Is(err, ErrWorkflowPersistence) || !errors.Is(err, context.Canceled) {
+					t.Fatal("reserved admission write failure was erased by shutdown")
+				}
+			} else if err != nil {
 				t.Fatal(err)
 			}
 			select {

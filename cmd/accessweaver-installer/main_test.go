@@ -6,7 +6,7 @@ import (
 )
 
 func TestDeploymentCLIRefusesCallerPathsAndUnsealedOperation(t *testing.T) {
-	for _, op := range []string{"prepare-deployment", "activate-deployment", "deactivate-deployment", "abandon-deployment"} {
+	for _, op := range []string{"prepare-deployment", "activate-deployment", "deactivate-deployment", "abandon-deployment", "detect-deployment"} {
 		// The test/default build has no linked deployment seals. Known commands
 		// must reach the platform/root/seal guard and cannot mutate anything.
 		e := execute([]string{op})

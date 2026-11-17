@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "native-installer-fixed-standard-principal-refusal",
+  "sourceCommit": "ed049b12e54e15f95d29f7235bd80fca71cce17c",
+  "repository": "Yunushan/accessweaver",
+  "sourceRef": "refs/heads/codex/dns-adapter-coverage",
+  "workflow": ".github/workflows/installer-lifecycle.yml",
+  "runID": 43892537482,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/43892537482",
+  "verifiedProviderZIPDigests": 2,
+  "immutableProducerSourceSHA256": {
+    "scripts/windows-installer-native-state.ps1": "5227eb868e0269c1411b6596b2982dbfbf17b5874566280b5b98ef9ead3136e7",
+    "scripts/test-windows-installer-lifecycle.ps1": "b135532ec041762baecf2384e8ad96bf98dc654dbe9d37d3c5cad53513e7aa01"
+  },
+  "results": [
+    {
+      "sourceCommit": "ed049b12e54e15f95d29f7235bd80fca71cce17c",
+      "run": 43892537482,
+      "architecture": "amd64",
+      "artifact": 14241457134,
+      "artifactSHA256": "501eb8cf0baf2ca91d5dc4c258a951a7bf63f3e889b0ddeb9f8b07ce429e1630",
+      "stage": "uninstall-redirected-licenses",
+      "sourceLine": 814,
+      "uninstallBindingFailureCode": "untrusted-writer",
+      "passed": false,
+      "ownedFixturesRemoved": false,
+      "productionQualificationComplete": false,
+      "uninstallProtectionDiagnostic": {
+        "schemaVersion": 1,
+        "scope": "registration",
+        "aclKind": "registry",
+        "failureCategory": "untrusted-writer",
+        "ownerClass": "administrators",
+        "writerClass": "well-known-19",
+        "matchedWriteBits": 65542,
+        "inherited": true,
+        "inheritanceFlags": 0,
+        "propagationFlags": 0,
+        "aclSnapshotReadCompleted": true,
+        "offendingAceFound": true
+      }
+    },
+    {
+      "sourceCommit": "ed049b12e54e15f95d29f7235bd80fca71cce17c",
+      "run": 43892537482,
+      "architecture": "arm64",
+      "artifact": 14242307952,
+      "artifactSHA256": "bdcac7be3c3424e7c3508bf84f09d81446c69aa3040d215cc8c71e0cdaf3fa05",
+      "stage": "uninstall-redirected-licenses",
+      "sourceLine": 814,
+      "uninstallBindingFailureCode": "untrusted-writer",
+      "passed": false,
+      "ownedFixturesRemoved": false,
+      "productionQualificationComplete": false,
+      "uninstallProtectionDiagnostic": {
+        "schemaVersion": 1,
+        "scope": "registration",
+        "aclKind": "registry",
+        "failureCategory": "untrusted-writer",
+        "ownerClass": "administrators",
+        "writerClass": "well-known-19",
+        "matchedWriteBits": 65542,
+        "inherited": true,
+        "inheritanceFlags": 0,
+        "propagationFlags": 0,
+        "aclSnapshotReadCompleted": true,
+        "offendingAceFound": true
+      }
+    }
+  ],
+  "frameworkClassification": {
+    "type": "System.Security.Principal.WellKnownSidType",
+    "code": 19,
+    "name": "TerminalServerSid",
+    "enumMembershipAndNameVerified": true,
+    "rawSIDOrAccountNameRetained": false
+  },
+  "pinnedInstallerCreationReview": {
+    "upstreamSource": "https://github.com/jrsoftware/issrc/blob/is-6_7_1/Projects/Src/Setup.Install.pas",
+    "sourceSHA256": "9ff8c18e8af7e1a15d56aec3158f98e77d1291d6947544c00d6d2c99fc866682",
+    "procedure": "RegisterUninstallInfo",
+    "existingKeyDetectionLines": [
+      151,
+      159
+    ],
+    "existingKeyDeletionLine": 253,
+    "defaultDescriptorCreationLines": [
+      259,
+      260
+    ],
+    "existingKeyPreserved": false,
+    "securityAttributesArgument": "nil",
+    "uninstallDeletionRecordLines": [
+      368,
+      369
+    ]
+  },
+  "interpretation": [
+    "Both disposable Windows architectures refuse an inherited registry write ACE classified as framework TerminalServerSid, with matched write bits 65542.",
+    "The classification identifies a standard framework principal type, not a retained raw SID, RID or account name. It does not authorize that principal.",
+    "Pinned Inno Setup deletes an existing uninstall key and recreates it with default security attributes. Merely precreating a protected key would not preserve its DACL.",
+    "A correction must protect the owned registration at creation, preserve trusted ownership checks and bind metadata, while handling existing unsafe keys, links, failed setup, crash/retry, rollback and native uninstall.",
+    "Sealing permissions after creation can leave previously granted handles effective; do not use it to justify a trusted-registration claim.",
+    "The product trust guard remains unchanged. Complete lifecycle and cleanup remain unqualified."
+  ],
+  "rawJobLogsFetched": false,
+  "productTrustGuardChanged": false,
+  "nativeLifecycleQualified": false,
+  "productionQualificationComplete": false,
+  "readinessGatesPromoted": []
+}

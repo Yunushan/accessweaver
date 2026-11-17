@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "scope": "windows-packaged-portable-execution",
+  "build": {
+    "schemaVersion": 1,
+    "runId": 44056445749,
+    "artifactId": 14318077526,
+    "artifactSHA256": "c4b79ecacdb5fdda4728c4efc4596e66a12bec42c045a9e1a72e169df6ea9d28",
+    "checksumsSHA256": "4a07955462d30072e50a6599f534d1470eac38ffe0700992375890f4ecdcb191",
+    "repository": "Yunushan/accessweaver",
+    "workflow": "Yunushan/accessweaver/.github/workflows/release.yml",
+    "sourceCommit": "236e7db983a9b92de53137aee54af7477139bcce",
+    "sourceRef": "refs/heads/codex/qualified-readiness-followup",
+    "subjectsVerified": 12,
+    "hostedRunnerRequired": true,
+    "publisherSignatureVerified": false,
+    "productionQualificationComplete": false
+  },
+  "targets": [
+    {
+      "target": "windows/amd64",
+      "jobId": 133965219430,
+      "status": "completed",
+      "conclusion": "success",
+      "artifactId": 14319086098,
+      "artifactSHA256": "a7381d344fc762f810aab256ce591f2ca03e54407aac39ac13da11b8b54811cb",
+      "attestedSubjectsVerified": 2,
+      "packageSHA256": "961eca28d903db9992a5cde219e44b8a106ab38c8d924a40daef3c6a5d6ba07f",
+      "binarySHA256": "996a0175a8939738b5e9f101002fcd89b3a916f9c1a6078ccf878c7e0b98eecf",
+      "evidenceSHA256": {
+        "candidate.json": "fdeb5b0cb014e7a00901a29890f6ee45d1e44baf2562295affd0a2d8d38f42d9",
+        "execution.json": "5c38a4a1367c3f19541b9c5a8dc08605ee9f2282c2681c6e01ae2aed6853d3be",
+        "qualification.sigstore.json": "6db21996b77964c7552a5533113a8a1b022d42fdc5af19e85fc34931e29468da"
+      },
+      "windowsDiscoveryVerified": true
+    },
+    {
+      "target": "windows/arm64",
+      "jobId": 133965219509,
+      "status": "completed",
+      "conclusion": "success",
+      "artifactId": 14318492436,
+      "artifactSHA256": "632cb7e1592ba2670741b04ccd82984ab80ddbc5a845c200118bcba85ca23bfc",
+      "attestedSubjectsVerified": 2,
+      "packageSHA256": "a38f2b1090d760894704ae1d3f1d9b2670e4553fffb63eb0bb39d767833ad3b1",
+      "binarySHA256": "45d87daf59ad9c94e319a963635de8ef178f34ea1045a075227bf50a48fa6b4d",
+      "evidenceSHA256": {
+        "candidate.json": "38abe863d6b85317aaf0aa1607c4bc2953da86718dc308603699f466988bbce8",
+        "execution.json": "949e2291dc4579d993dce3f5172b93ecb605d36c3f7a9c9d3d5479361b5cabfb",
+        "qualification.sigstore.json": "04a6fa702c48164e33886eb9ce9f242a916f373ecbb0bf04c29bf02bdf67d4db"
+      },
+      "windowsDiscoveryVerified": true
+    }
+  ],
+  "productionQualificationComplete": false
+}

@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "scope": "local-linux-amd64-core-unit-race-and-static-analysis",
+  "sourceCommit": "86090c94048212d56561a62e33681cb3c858d32e",
+  "sourceTree": "3073dd85f7fa568900a2150a979c44564e45d38a",
+  "observedAt": "2026-11-16T09:02:55Z",
+  "environment": {
+    "os": "linux",
+    "architecture": "amd64",
+    "runtime": "Ubuntu under WSL2",
+    "source": "immutable Git export",
+    "goVersion": "go1.27.4",
+    "goToolSHA256": "de0ae3e082ce7599eae4fb69fa2ef1e43b8f31ffd3fce62cdf81930aa9005050",
+    "moduleVerificationPassed": true,
+    "testTemporaryStorage": "private local ext4 directory",
+    "disposableAdministrativeFixturesEnabled": false
+  },
+  "sourceFilesUnchanged": true,
+  "checks": [
+    {
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "./...",
+        "-count=1",
+        "-timeout=5m"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 42,
+      "discardedOutputSHA256": "b5de91df8c3d4487700bfeb797e9b0c0e62e99a8f65547f59a785244db397e9e",
+      "passedPackages": 29,
+      "passedTestAndSubtestEvents": 1973,
+      "skippedTestEvents": 20,
+      "failedEvents": 0
+    },
+    {
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-json",
+        "./...",
+        "-count=1",
+        "-timeout=6m"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 68,
+      "discardedOutputSHA256": "282bd6fd9cf6d3148ec96a21c4d5d5f273d84ecacd3ba80928863af977aa072a",
+      "passedPackages": 29,
+      "passedTestAndSubtestEvents": 1973,
+      "skippedTestEvents": 20,
+      "failedEvents": 0
+    },
+    {
+      "command": [
+        "go",
+        "vet",
+        "./..."
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 3,
+      "discardedOutputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "passedPackages": 0,
+      "passedTestAndSubtestEvents": 0,
+      "skippedTestEvents": 0,
+      "failedEvents": 0
+    }
+  ],
+  "rawOutputRetained": false,
+  "limits": [
+    "Local source tests and static analysis only; skipped tests remain unqualified.",
+    "Other architectures and operating systems, installed-product lifecycle, routing, publisher trust and managed endpoints require their own source-bound acceptance.",
+    "Output is hashed and discarded; this local result is not independently attested."
+  ],
+  "productionQualificationComplete": false,
+  "readinessGatesPromoted": [],
+  "diagnosticReporterPrivacy": {
+    "command": [
+      "node",
+      "--test",
+      "scripts/core-test-evidence.test.cjs"
+    ],
+    "nodeVersion": "v26.8.2",
+    "exitCode": 0,
+    "passedTests": 15,
+    "skippedTests": 0,
+    "sourceSHA256": {
+      "scripts/core-test-evidence.cjs": "5bc5938975ec46dd1ed00be055f96474e7893a4a95bab0a3266a588a81ec01cf",
+      "scripts/core-test-evidence.test.cjs": "ef4436a84981dafb6028360a01f18928950173cfff94a44ea3096d443a6f1aa8"
+    }
+  }
+}

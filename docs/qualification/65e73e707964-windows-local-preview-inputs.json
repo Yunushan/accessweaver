@@ -1,0 +1,304 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "65e73e707964ec079192842e6de82dc5eeee3b35",
+  "workflow": ".github/workflows/local-preview-inputs.yml",
+  "run": {
+    "id": 42347107705,
+    "head_sha": "65e73e707964ec079192842e6de82dc5eeee3b35",
+    "head_branch": "codex/local-preview-inputs",
+    "status": "completed",
+    "conclusion": "success",
+    "event": "push",
+    "path": ".github/workflows/local-preview-inputs.yml",
+    "html_url": "https://github.com/Yunushan/accessweaver/actions/runs/42347107705",
+    "run_attempt": 1
+  },
+  "sourceSHA256": {
+    ".github/workflows/local-preview-inputs.yml": "045f8bd2e0b888d576a52482cb2f60a07e9be9eb2aed97d485995f4eebf52502",
+    "internal/fileidentity/native_windows.go": "6cb68e18dca538cce9a54e7b24461253870d23484da8a581638462e97fe59b9f",
+    "internal/fileidentity/local_read_windows.go": "14244e03f6ba2c79ad703475668784e18114c3cdeb2f4c4aa64dd340fa58d321",
+    "internal/fileidentity/local_read_windows_test.go": "eddfd8efcc67e8c448f2bcfbe3dac8c09c334049ea31b987a103ccbc0d96d1ff",
+    "internal/engine/plan.go": "be1c9a6d104589f064d955fd8655a38a546a1965187fd57378fb660668de773e",
+    "internal/engine/config_input.go": "dc03135a88e9384d2e9aead0e6f00d96007ae5e8d094f0c43cb0e66d68d733f0",
+    "internal/engine/config_input_windows.go": "0e96526c3435e4e4170b95db76821a57bcf586b0f72000f02764cb3d0024a4a9",
+    "internal/engine/preview_input_windows.go": "3b1e0c148c70401c291eef1a1a840ac5b3e0dff5d2d96d066a4326df51c3d672",
+    "internal/engine/preview_input_other.go": "85db87d236d8761ad70e958bc0912b9b5d00a242df27bd8d6503bce6f99cacfc",
+    "internal/engine/preview_search.go": "8cd98baf0034cc17d9b032f972d3f8318f8739c9519aa5634afaa0f152e60147",
+    "internal/engine/preview_search_test.go": "b54514748efcb2b7e83d5392725df4c97ad9f8c0eaa3233fd58b92f65802163d",
+    "internal/engine/preview_input_windows_test.go": "b58b600caba44dd23c6e1b41b51745b9282ca78f9eb32b8e1d31d437d425bc42",
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00"
+  },
+  "hostedJobs": [
+    {
+      "id": 128327130057,
+      "name": "Local inputs (linux/amd64)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify immutable source identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify module integrity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Vet complete root source",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run engine and file identity regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Qualify native Windows local preview and namespace ownership",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run Linux engine and identity race regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Confirm source unchanged after qualification",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128327130230,
+      "name": "Local inputs (linux/arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify immutable source identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify module integrity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Vet complete root source",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run engine and file identity regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Qualify native Windows local preview and namespace ownership",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run Linux engine and identity race regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Confirm source unchanged after qualification",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128327130291,
+      "name": "Local inputs (windows/arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify immutable source identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify module integrity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Vet complete root source",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run engine and file identity regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Qualify native Windows local preview and namespace ownership",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run Linux engine and identity race regression",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Confirm source unchanged after qualification",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128327130421,
+      "name": "Local inputs (windows/amd64)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify immutable source identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify module integrity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Vet complete root source",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run engine and file identity regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Qualify native Windows local preview and namespace ownership",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run Linux engine and identity race regression",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Confirm source unchanged after qualification",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "hostedRequiredTargets": [
+    "windows/amd64",
+    "windows/arm64",
+    "linux/amd64",
+    "linux/arm64"
+  ],
+  "hostedAllRequiredStagesPassed": true,
+  "evidenceMethod": "Public provider run/job/step metadata plus mandatory source-known guarded test assertions; actual Go output counts and binary artifacts were not collected.",
+  "cryptographicArtifactAuthenticationPerformed": false,
+  "nativeWindows": {
+    "roots": [
+      "TestDisposableWindowsFileIdentityNative",
+      "TestWindowsLocalPreviewRead",
+      "TestWindowsPreviewLocalInputs"
+    ],
+    "newReaderGroups": [
+      "regular-and-local-links",
+      "remote-and-device-refusal",
+      "mapped-local-drive",
+      "mapped-remote-drive",
+      "reparse-substitution",
+      "same-parent-name-substitution",
+      "held-reader-survives-name-replacement"
+    ],
+    "previewAssertions": [
+      "local configuration and hash-pinned inert executable inspection",
+      "absolute local PATH selection while ignoring a UNC entry",
+      "UNC/device configuration refusal",
+      "remote executable preview refusal"
+    ],
+    "disposableHostedOnly": true,
+    "ownedDOSMappingCleanupRequired": true,
+    "inertPreviewEngineExecuted": false
+  },
+  "linuxRegression": {
+    "engineAndFileIdentityUnit": true,
+    "engineAndFileIdentityRace": true,
+    "architectures": [
+      "amd64",
+      "arm64"
+    ]
+  },
+  "localCompilation": {
+    "compiler": "go version go1.27.3 windows/amd64",
+    "checksPassed": 20,
+    "targets": [
+      "windows/amd64",
+      "windows/arm64",
+      "linux/amd64",
+      "linux/arm64",
+      "darwin/amd64",
+      "darwin/arm64",
+      "freebsd/amd64",
+      "freebsd/arm64",
+      "openbsd/amd64",
+      "openbsd/arm64"
+    ],
+    "packages": [
+      "internal/engine",
+      "internal/fileidentity"
+    ],
+    "mode": "compile-only",
+    "producedBinariesExecuted": false,
+    "sourceStableDuringChecks": true,
+    "nonMarkdownSourceSHA256": "c5973a2654458de35e3a9212d5877ee556138f2e46849eb7a552bb737d611641",
+    "qualificationBinding": "All non-Markdown source bytes matched the committed source after the final documentation-only edit.",
+    "initialMissingDependencyAttempt": "The first sweep stopped at macOS because the offline cache lacked existing pinned purego v0.11.2; the exact dependency was checksum-verified through the official proxy, then a complete fresh twenty-check sweep passed."
+  },
+  "rawLogsAnnotationsOrPrivateArtifactsFetched": false,
+  "limits": [
+    "Source-built disposable-host tests qualify the configured cases at this exact source; no installed or publisher-signed product qualification.",
+    "Remote labels and link/mapping fixtures are synthetic; no live SMB server, authentication capture or credential/relay experiment was performed, and transport-level isolation was not measured.",
+    "Preview fixture does not execute its inert engine; vendor/network/routing/DNS/tunnel lifecycle and power-loss acceptance remain separate.",
+    "Native checks cover Windows/Linux amd64/arm64; the other six desktop targets are compile-only here.",
+    "Whole-product security, signing, managed endpoint and long-duration acceptance remain incomplete."
+  ],
+  "gatesPromoted": false,
+  "productionQualificationComplete": false
+}

@@ -1,0 +1,126 @@
+{
+  "sourceCommit": "4ac5bfee004794c5db4a196319206470fedbc575",
+  "runID": 42602213445,
+  "rows": [
+    {
+      "name": "windows-component-source-amd64",
+      "digest": "sha256:af036acd4e8f290f8443bb7d882a70f07c82c6a45a46e6c66f54afbd1b497a31",
+      "outcome": "failed",
+      "suitePassed": false,
+      "cases": [
+        {
+          "passed": true,
+          "name": "zapret selects only its expected executable in the preferred folder"
+        },
+        {
+          "passed": true,
+          "name": "zapret refuses a preferred folder containing only the other executable"
+        },
+        {
+          "passed": true,
+          "name": "zapret2 selects only its expected executable in the preferred folder"
+        },
+        {
+          "passed": true,
+          "name": "zapret2 refuses a preferred folder containing only the other executable"
+        }
+      ]
+    },
+    {
+      "name": "windows-component-source-arm64",
+      "digest": "sha256:2847793c16a20a2855551c5abfc5469cf24f8bcc06022bf35df03404188b840e",
+      "outcome": "failed",
+      "suitePassed": false,
+      "cases": [
+        {
+          "name": "zapret selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "zapret2 selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret2 refuses a preferred folder containing only the other executable",
+          "passed": true
+        }
+      ]
+    }
+  ],
+  "rawLogsRead": false,
+  "schemaVersion": 1,
+  "scope": "component-discovery-source-attempt",
+  "sealedDoNotRepoll": true,
+  "sourceSHA256": {
+    "internal/workflow/windows.ps1": "712356b8caf0adf37246edd9926fb69495e76e79f3458bc8487cfe580ef5fd45",
+    "scripts/test-windows-workflow.ps1": "ac463a8a45f21f8ed6710684ad2101b1abc1dddddd036ec4dd95ad184d092809",
+    ".github/workflows/windows-component-discovery.yml": "c93c7bc19893d3af5b9cc93fcd8ae70772318140a74090e724b5ad74776ed50f"
+  },
+  "allFourNewCasesPassed": true,
+  "wholeFixturePassed": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0,
+  "wireCohort": {
+    "runID": 42602213251,
+    "sealedDoNotRepoll": true,
+    "sourceReports": [
+      {
+        "artifactName": "native-doh-netevent-source-windows-arm64",
+        "providerZIPDigest": "sha256:6aa579e9baca7e315832a15a49143f065f122d6ea745dd945f8a5e565b914c6c",
+        "providerZIPDigestVerified": true,
+        "passed": true,
+        "cases": 56
+      },
+      {
+        "artifactName": "native-doh-netevent-source-windows-amd64",
+        "providerZIPDigest": "sha256:1e8df633ac9b63e6856255dfdc122369b7f7541fa0a723c05a4925c6e0840c28",
+        "providerZIPDigestVerified": true,
+        "passed": true,
+        "cases": 56
+      }
+    ],
+    "reports": [
+      {
+        "artifactName": "native-doh-wire-windows-amd64",
+        "providerZIPDigest": "sha256:886c27a1cbfafb84221c5bf3cec3189bd76c3bf0deffbbcc08bd23024408645f",
+        "providerZIPDigestVerified": true,
+        "architecture": "amd64",
+        "outcome": "passed",
+        "failurePhase": "none",
+        "decoderCode": "none",
+        "tlsObservation": "tls-observed",
+        "udp53During": 0,
+        "googleBootstrap": 0,
+        "quad9Bootstrap": 0,
+        "snapshotRemoved": true,
+        "restored": true,
+        "toolProcesses": 29,
+        "toolProcessesJoined": 29,
+        "cleanupCode": "none"
+      },
+      {
+        "artifactName": "native-doh-wire-windows-arm64",
+        "providerZIPDigest": "sha256:66b65a2986556c16ff1eb67e5f9dbbc8c69acf48f2481e1668793f880a63de02",
+        "providerZIPDigestVerified": true,
+        "architecture": "arm64",
+        "outcome": "failed",
+        "failurePhase": "decode",
+        "decoderCode": "provider-port",
+        "tlsObservation": "refused",
+        "udp53During": 16,
+        "googleBootstrap": 16,
+        "quad9Bootstrap": 0,
+        "snapshotRemoved": true,
+        "restored": true,
+        "toolProcesses": 29,
+        "toolProcessesJoined": 29,
+        "cleanupCode": "none"
+      }
+    ],
+    "encryptedTrafficQualified": false
+  }
+}

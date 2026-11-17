@@ -1,0 +1,42 @@
+name: Windows native reconnect task cleanup
+
+on:
+  push:
+    branches: [main, codex/dns-adapter-coverage]
+    paths:
+      - internal/workflow/windows.ps1
+      - scripts/test-windows-native-refresh-cleanup.ps1
+      - .github/workflows/windows-native-refresh-cleanup.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    name: Native reconnect cleanup (windows/${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 6
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64, os: windows-latest}
+          - {arch: arm64, os: windows-11-arm}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify real Task Scheduler cleanup
+        shell: powershell
+        env:
+          ACCESSWEAVER_NATIVE_REFRESH_CHECK: '1'
+        run: ./scripts/test-windows-native-refresh-cleanup.ps1 -Architecture '${{ matrix.arch }}'
+      - name: Retain fixed scheduler qualification results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-refresh-cleanup-windows-${{ matrix.arch }}
+          path: build/native-refresh-cleanup/status.json
+          if-no-files-found: error
+          retention-days: 7

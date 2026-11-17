@@ -2,6 +2,9 @@ package managed
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -48,6 +51,27 @@ func (a *Authorization) Check() error {
 		return fmt.Errorf("%w: machine policy changed; review and restart the operation", ErrDenied)
 	}
 	return nil
+}
+
+// ReviewBinding is a stable opaque digest of this retained authority identity,
+// after checking its current source and validity. It is review material only:
+// possessing the digest grants no permission and cannot replace a fresh grant.
+func (a *Authorization) ReviewBinding() (string, error) {
+	if err := a.Check(); err != nil {
+		return "", err
+	}
+	identity := struct {
+		Managed       bool   `json:"managed"`
+		KeyID         string `json:"keyId"`
+		PayloadSHA256 string `json:"payloadSHA256"`
+		ExpiresAt     string `json:"expiresAt"`
+	}{a.managed, a.keyID, a.payloadSHA256, a.expiresAt.UTC().Format(time.RFC3339Nano)}
+	encoded, err := json.Marshal(identity)
+	if err != nil {
+		return "", fmt.Errorf("%w: review identity encoding failed: %w", ErrUnavailable, err)
+	}
+	digest := sha256.Sum256(append([]byte("AccessWeaver authorization review binding v1\x00"), encoded...))
+	return hex.EncodeToString(digest[:]), nil
 }
 
 // Context checks before starting and then once per second, or at the retained

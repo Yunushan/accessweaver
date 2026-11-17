@@ -89,19 +89,42 @@ func compareVersion(a, b []string) int {
 	return 0
 }
 func CheckVersions(current string, candidates []string) (VersionCheck, error) {
+	return checkVersions(current, candidates, false)
+}
+
+// CheckReleaseVersions keeps stable installations on stable releases. A
+// prerelease installation can still discover newer prereleases and stable releases.
+func CheckReleaseVersions(current string, candidates []string) (VersionCheck, error) {
+	return checkVersions(current, candidates, true)
+}
+
+func checkVersions(current string, candidates []string, followChannel bool) (VersionCheck, error) {
 	base := parseVersion(current)
 	if base == nil {
 		return VersionCheck{}, errors.New("invalid current semantic version")
 	}
 	var best []string
 	var tag string
+	stableOnly := followChannel && base[4] == ""
+	prereleaseSeen := false
 	for _, candidate := range candidates {
-		if parsed := parseVersion(candidate); parsed != nil && (best == nil || compareVersion(parsed, best) > 0) {
+		parsed := parseVersion(candidate)
+		if parsed == nil {
+			continue
+		}
+		if stableOnly && parsed[4] != "" {
+			prereleaseSeen = true
+			continue
+		}
+		if best == nil || compareVersion(parsed, best) > 0 {
 			best = parsed
 			tag = candidate
 		}
 	}
 	if best == nil {
+		if prereleaseSeen {
+			return VersionCheck{CurrentVersion: current}, nil
+		}
 		return VersionCheck{}, errors.New("no published semantic release version found")
 	}
 	return VersionCheck{tag, current, compareVersion(best, base) > 0}, nil

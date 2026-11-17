@@ -1,19 +1,60 @@
 [CmdletBinding()]
-param([Parameter(Mandatory=$true)][string]$Compiler, [string]$Version='0.1.0-alpha', [string]$Go='go', [ValidateSet('amd64','arm64')][string]$TargetArch)
+param(
+    [Parameter(Mandatory=$true)][string]$Compiler,
+    [string]$Version='0.1.0-alpha',
+    [string]$Go='go',
+    [ValidateSet('amd64','arm64')][string]$TargetArch,
+    [string]$SigningTool,
+    [string]$PublisherCertificateSHA256,
+    [string]$PayloadSigningTool,
+    [string]$PayloadPublisherCertificateSHA256,
+    [switch]$ProtectedRegistrationQualification,
+    [string]$PreviousPayloadInventory,
+    [string]$PreviousPayloadInventorySHA256
+)
 $ErrorActionPreference='Stop'
 $project=Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'windows-installer-common.ps1')
 Assert-InstallerReleaseVersion $Version
+if(($PreviousPayloadInventory -or $PreviousPayloadInventorySHA256) -and
+   (-not $PreviousPayloadInventory -or -not $PreviousPayloadInventorySHA256)){
+    throw 'Legacy migration requires both the approved prior payload inventory and its digest'
+}
+if($PreviousPayloadInventory){$PreviousPayloadInventory=(Resolve-Path -LiteralPath $PreviousPayloadInventory).ProviderPath}
+$callback=Join-Path $PSScriptRoot 'sign-windows-installer-artifact.ps1'
+$setupScript=Join-Path $PSScriptRoot 'windows-installer.iss'
+$signingArguments=@()
+$setupModeArguments=@()
+if($ProtectedRegistrationQualification){$setupModeArguments+='/DProtectedRegistrationQualification=1'}
+$payloadSigning=Get-InstallerPayloadSigning $SigningTool $PublisherCertificateSHA256 $PayloadSigningTool $PayloadPublisherCertificateSHA256
+$organizationSigning=[bool]($SigningTool -or $PublisherCertificateSHA256)
+if($organizationSigning){
+    $shell=[Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+    $signingArguments=@(Get-InstallerSigningArguments $SigningTool $PublisherCertificateSHA256 $shell $callback)
+    foreach($signer in @($SigningTool,$payloadSigning.signer) | Select-Object -Unique){
+        $signingToolItem=Get-Item -LiteralPath $signer -Force
+        if($signingToolItem.PSIsContainer -or ($signingToolItem.Attributes -band [IO.FileAttributes]::ReparsePoint)){
+            throw 'The approved signer must be a regular executable'
+        }
+    }
+}
 $sdkJSON=& $Go env -json GOHOSTOS GOHOSTARCH GOVERSION
 if($LASTEXITCODE -ne 0){throw 'Cannot inspect the installer Go SDK host'}
 $sdk=($sdkJSON -join "`n") | ConvertFrom-Json
 $TargetArch=Resolve-InstallerTarget $sdk.GOHOSTOS $sdk.GOHOSTARCH $TargetArch
 $stage=Join-Path $project ('build\installer-'+$TargetArch+'-'+[guid]::NewGuid().ToString('N'))
+if($organizationSigning){
+    $signingRoot=$stage
+    $stage=Join-Path $signingRoot 'payload'
+    [void](New-Item -ItemType Directory -Path (Join-Path $signingRoot 'signed-uninstallers') -Force)
+}
 [void](New-Item -ItemType Directory -Force -Path $stage)
 Push-Location $project
 $previousOS=$env:GOOS;$previousArch=$env:GOARCH;$previousCGO=$env:CGO_ENABLED
+$previousGoEnv=$env:GOENV;$previousGoWork=$env:GOWORK;$previousGoFlags=$env:GOFLAGS
 try {
     $env:GOOS='windows';$env:GOARCH=$TargetArch;$env:CGO_ENABLED='0'
+    $env:GOENV='off';$env:GOWORK='off';$env:GOFLAGS=''
     $commit='unknown';$sourceState='unknown'
     if(Get-Command git -ErrorAction SilentlyContinue){
         $revision=& git rev-parse HEAD 2>$null
@@ -24,27 +65,51 @@ try {
             if($changes){$sourceState='modified'}
         }
     }
-    $builtAt=[DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+    if($organizationSigning -and $sourceState -cne 'clean'){throw 'Organization signing requires a clean source checkout'}
+    $epoch=$env:SOURCE_DATE_EPOCH
+    if($null -eq $epoch){
+        if($commit -ceq 'unknown'){
+            $epoch=[DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString([Globalization.CultureInfo]::InvariantCulture)
+        }else{
+            $epoch=& git show -s --format=%ct $commit
+            if($LASTEXITCODE -ne 0){throw 'Cannot read the installer source commit timestamp'}
+        }
+    }
+    $builtAt=Get-InstallerBuildTimestamp $epoch
     $flags='-X github.com/Yunushan/accessweaver/internal/buildinfo.Version='+$Version+' -X github.com/Yunushan/accessweaver/internal/buildinfo.Commit='+$commit+' -X github.com/Yunushan/accessweaver/internal/buildinfo.SourceState='+$sourceState+' -X github.com/Yunushan/accessweaver/internal/buildinfo.BuiltAt='+$builtAt
-    & $Go build -trimpath -buildvcs=false -ldflags $flags -o (Join-Path $stage 'accessweaver.exe') ./cmd/accessweaver
+    & $Go build -mod=readonly -trimpath -buildvcs=false -ldflags $flags -o (Join-Path $stage 'accessweaver.exe') ./cmd/accessweaver
     if($LASTEXITCODE -ne 0){throw 'Go build failed'}
     Assert-InstallerPEArchitecture (Join-Path $stage 'accessweaver.exe') $TargetArch
-    $identity=& (Join-Path $stage 'accessweaver.exe') version --json
+    $payload=Join-Path $stage 'accessweaver.exe'
+    if($organizationSigning){
+        Invoke-InstallerSigningContext $payloadSigning.signer $payloadSigning.publisher {
+            & $callback -Artifact $payload
+        }
+        $signedPayloadSHA256=Get-WindowsPublisherArtifactSHA256 $payload $payloadSigning.publisher
+    }
+    $identity=& $payload version --json
     if($LASTEXITCODE -ne 0){throw 'Cannot read staged runtime build identity'}
-    $buildIdentity=($identity -join "`n") | ConvertFrom-Json
+    $identityOptions=@{}
+    if((Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')){$identityOptions.DateKind='String'}
+    $buildIdentity=($identity -join "`n") | ConvertFrom-Json @identityOptions
     Assert-InstallerPayloadIdentity (Join-Path $stage 'accessweaver.exe') $buildIdentity @{version=$Version;commit=$commit;sourceState=$sourceState;builtAt=$builtAt;goVersion=$sdk.GOVERSION;platform='windows';arch=$TargetArch}
-    [IO.File]::WriteAllText((Join-Path $stage 'BUILD-INFO.json'),($identity -join "`n"))
+    $buildInfoPath=Join-Path $stage 'BUILD-INFO.json'
+    [IO.File]::WriteAllText($buildInfoPath,($identity -join "`n"))
+    $buildInfoDigest=(Get-FileHash -LiteralPath $buildInfoPath -Algorithm SHA256).Hash.ToLowerInvariant()
     foreach($file in @('LICENSE','README.md','README.tr.md','THIRD_PARTY.md','SECURITY.md')){Copy-Item -LiteralPath (Join-Path $project $file) -Destination $stage}
-    Copy-Item -LiteralPath (Join-Path $project 'docs') -Destination (Join-Path $stage 'docs') -Recurse
+    & python (Join-Path $PSScriptRoot 'release_archive.py') stage-docs $project $stage
+    if($LASTEXITCODE -ne 0){throw 'Installer documentation staging failed'}
     [void](New-Item -ItemType Directory -Path (Join-Path $stage 'licenses'))
     Copy-Item -LiteralPath (Join-Path $project 'internal\workflow\presets\LICENSE.SplitWire-Turkey') -Destination (Join-Path $stage 'licenses\SplitWire-Turkey-MIT.txt')
     $goRoot=& $Go env GOROOT
     if($LASTEXITCODE -ne 0){throw 'Could not locate Go runtime license'}
     Copy-Item -LiteralPath (Join-Path $goRoot 'LICENSE') -Destination (Join-Path $stage 'licenses\Go-runtime-LICENSE')
+    # An upgraded installation can retain an older Inno uninstaller.
     [IO.File]::WriteAllText((Join-Path $stage 'uninstall-system.json'),'{"action":"remove-all"}')
     $compilerLicense=Join-Path (Split-Path -Parent $Compiler) 'License.txt'
     if(-not (Test-Path -LiteralPath $compilerLicense -PathType Leaf)){throw 'Inno Setup license evidence is missing'}
-    Copy-Item -LiteralPath $compilerLicense -Destination (Join-Path $stage 'licenses\Inno-Setup-License.txt')
+    $runtimeNoticePath=Join-Path $stage 'licenses\Inno-Setup-License.txt'
+    Copy-Item -LiteralPath $compilerLicense -Destination $runtimeNoticePath
     $validator=Join-Path $project ('build\tools\sbom-schema-'+$TargetArch+'.exe')
     & $Go -C (Join-Path $project 'scripts\sbom-tools') build -mod=readonly -trimpath -o $validator .
     if($LASTEXITCODE -ne 0){throw 'SBOM validator build failed'}
@@ -54,22 +119,86 @@ try {
     & $validator --schemas (Join-Path $project 'scripts\sbom\schema') $payloadSBOM
     if($LASTEXITCODE -ne 0){throw 'Installer payload SBOM validation failed'}
     $evidence=Join-Path $project ('build\installer-checks\'+$TargetArch)
+    if($organizationSigning){$evidence=Join-Path $signingRoot 'evidence'}
     [void](New-Item -ItemType Directory -Force -Path $evidence)
     $preprocessed=Join-Path $evidence 'setup-preprocessed.iss'
-    $compilerOutput=@(& $Compiler ('/DBuildRoot='+$stage) ('/DReleaseVersion='+$Version) ('/DTargetArch='+$TargetArch) ('/DEvidenceOutput='+$preprocessed) (Join-Path $PSScriptRoot 'windows-installer.iss'))
-    if($LASTEXITCODE -ne 0){throw 'Installer compilation failed'}
-    $null=Assert-InstallerSetupScript $preprocessed $TargetArch $Version
+    Assert-InstallerPackageDirectories $stage $setupScript
+    if($PreviousPayloadInventory){
+        $include=$stage+'.retirement.iss'
+        $digest=New-InstallerRetiredPayloadPlan $stage $PreviousPayloadInventory $PreviousPayloadInventorySHA256 $include
+        $setupModeArguments+=@(('/DRetiredPayloadInclude='+$include),('/DRetiredPayloadIncludeSHA256='+$digest))
+    }
+    $compile={
+        & $Compiler ('/DBuildRoot='+$stage) ('/DReleaseVersion='+$Version) ('/DTargetArch='+$TargetArch) ('/DEvidenceOutput='+$preprocessed) '/DRequireInnoRuntimeNotice' @setupModeArguments @signingArguments $setupScript
+        if($LASTEXITCODE -ne 0){throw 'Installer compilation failed'}
+    }
+    $noticeGuard=[IO.File]::Open($runtimeNoticePath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        $noticeDigest=(Get-FileHash -InputStream $noticeGuard -Algorithm SHA256).Hash.ToLowerInvariant()
+        $noticeLength=$noticeGuard.Length
+        $compilerOutput=@(if($organizationSigning){
+            Invoke-InstallerSigningContext $SigningTool $PublisherCertificateSHA256 $compile
+        } else {& $compile})
+        $expectedNoticeCheck="AWVerifyInstalledFile(Destination + '\licenses\Inno-Setup-License.txt', '$noticeDigest', $noticeLength, True, RuntimeNotice)"
+        if([IO.File]::ReadAllText($preprocessed).IndexOf($expectedNoticeCheck,[StringComparison]::OrdinalIgnoreCase) -lt 0){
+            throw 'Installer completion is missing the compiled Inno Setup notice identity'
+        }
+    } finally {$noticeGuard.Dispose()}
+    $null=Assert-InstallerSetupScript $preprocessed $TargetArch $Version -OrganizationSigning:$organizationSigning
+    $expanded=[IO.File]::ReadAllText($preprocessed)
+    $logMode=if($PreviousPayloadInventory){'overwrite'}else{'append'}
+    if($expanded -cnotmatch '(?m)^CreateUninstallRegKey=no\s*$' -or
+       $expanded -cnotmatch ('(?m)^UninstallLogMode='+$logMode+'\s*$')){
+        throw 'Compiled Setup did not select the expected protected registration and uninstall log mode'
+    }
+    $payloadFingerprint='';$payloadInventory=''
+    Assert-InstallerPackageDirectories $stage $setupScript $preprocessed ([ref]$payloadFingerprint) ([ref]$payloadInventory)
     $compilerOutput | Write-Output
     $actualVersion=[regex]::Match(($compilerOutput -join "`n"),'(?im)^Compiler engine version:\s*Inno Setup\s+(\d+\.\d+\.\d+)\b')
     if(-not $actualVersion.Success){throw 'Could not identify installer compiler version'}
     $artifact=Join-Path $project ('build\accessweaver-'+$Version+'-windows-'+$TargetArch+'-setup.exe')
-    & python (Join-Path $project 'scripts\sbom.py') --binary $artifact --payload-sbom $payloadSBOM --compiler $Compiler --compiler-version $actualVersion.Groups[1].Value --compiler-license $compilerLicense --notices (Join-Path $stage 'licenses') --out ($artifact+'.cdx.json')
+    if($organizationSigning){
+        $artifact=Join-Path (Join-Path $signingRoot 'signed') ([IO.Path]::GetFileName($artifact))
+        $verifiedInstaller=Get-WindowsPublisherArtifactSHA256 $artifact $PublisherCertificateSHA256
+    }
+    if((Get-FileHash -LiteralPath $buildInfoPath -Algorithm SHA256).Hash -ine $buildInfoDigest){throw 'Installer build metadata changed during compilation'}
+    & python (Join-Path $project 'scripts\sbom.py') --binary $artifact --payload-sbom $payloadSBOM --windows-build-info-sha256 $buildInfoDigest --windows-staged-payload-sha256 $payloadFingerprint --compiler $Compiler --compiler-version $actualVersion.Groups[1].Value --compiler-license $compilerLicense --notices (Join-Path $stage 'licenses') --out ($artifact+'.cdx.json')
     if($LASTEXITCODE -ne 0){throw 'Installer SBOM generation failed'}
+    if((Get-FileHash -LiteralPath $runtimeNoticePath -Algorithm SHA256).Hash -ine $noticeDigest){
+        throw 'Installer SBOM notice differs from the staged notice used during compilation'
+    }
     & $validator --schemas (Join-Path $project 'scripts\sbom\schema') ($artifact+'.cdx.json')
     if($LASTEXITCODE -ne 0){throw 'Installer SBOM validation failed'}
+    [IO.File]::WriteAllText((Join-Path $evidence 'payload-files.txt'),$payloadInventory,[Text.UTF8Encoding]::new($false))
     Copy-Item -LiteralPath $payloadSBOM -Destination (Join-Path $evidence 'payload-SBOM.cdx.json') -Force
     Copy-Item -LiteralPath (Join-Path $stage 'BUILD-INFO.json') -Destination (Join-Path $evidence 'payload-BUILD-INFO.json') -Force
-    Copy-Item -LiteralPath (Join-Path $stage 'accessweaver.exe') -Destination (Join-Path $evidence 'payload.exe') -Force
+    $evidencePayload=Join-Path $evidence 'payload.exe'
+    Copy-Item -LiteralPath $payload -Destination $evidencePayload -Force
     Copy-Item -LiteralPath (Join-Path $stage 'licenses') -Destination $evidence -Recurse -Force
-    Get-FileHash -LiteralPath $artifact -Algorithm SHA256
-} finally { $env:GOOS=$previousOS;$env:GOARCH=$previousArch;$env:CGO_ENABLED=$previousCGO;Pop-Location }
+    $artifactHash=Get-FileHash -LiteralPath $artifact -Algorithm SHA256
+    if($organizationSigning){
+        if($artifactHash.Hash -ine $verifiedInstaller){throw 'Setup changed after publisher verification'}
+        $verifiedPayload=Get-WindowsPublisherArtifactSHA256 $evidencePayload $payloadSigning.publisher $signedPayloadSHA256
+        Assert-InstallerSBOMSubject ($artifact+'.cdx.json') $verifiedInstaller
+        Assert-InstallerSBOMSubject (Join-Path $evidence 'payload-SBOM.cdx.json') $verifiedPayload
+        $signingReceipt=[ordered]@{
+            schemaVersion=3
+            scope='windows-organization-signed-installer-build'
+            sourceCommit=$commit
+            target='windows/'+$TargetArch
+            version=$Version
+            installerSHA256=$verifiedInstaller
+            payloadSHA256=$verifiedPayload
+            buildInfoSHA256=$buildInfoDigest
+            publisherCertificateSHA256=$PublisherCertificateSHA256.ToLowerInvariant()
+            payloadPublisherCertificateSHA256=$payloadSigning.publisher.ToLowerInvariant()
+            productionQualificationComplete=$false
+        }
+        [IO.File]::WriteAllText((Join-Path $evidence 'publisher-signing.json'),($signingReceipt | ConvertTo-Json),[Text.UTF8Encoding]::new($false))
+    }
+    $artifactHash
+} finally {
+    $env:GOOS=$previousOS;$env:GOARCH=$previousArch;$env:CGO_ENABLED=$previousCGO
+    $env:GOENV=$previousGoEnv;$env:GOWORK=$previousGoWork;$env:GOFLAGS=$previousGoFlags
+    Pop-Location
+}

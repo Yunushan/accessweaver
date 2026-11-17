@@ -7,42 +7,17 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
-	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
 	"github.com/Yunushan/accessweaver/internal/backup"
+	"github.com/Yunushan/accessweaver/internal/fileinput"
 	"github.com/Yunushan/accessweaver/internal/managed"
 	"github.com/Yunushan/accessweaver/internal/profile"
 )
-
-func readBackupInput(path string, limit int64) ([]byte, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() || info.Size() > limit {
-		return nil, errors.New("backup input must be a bounded regular file")
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	current, err := f.Stat()
-	if err != nil || !os.SameFile(info, current) {
-		return nil, errors.New("backup input changed during open")
-	}
-	data, err := io.ReadAll(io.LimitReader(f, limit+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(data)) > limit {
-		return nil, errors.New("backup input exceeds size limit")
-	}
-	return data, nil
-}
 
 const backupUsage = `Encrypted saved-profile backup (no engines or OS state):
   accessweaver backup create --out FILE --passphrase-file PRIVATE_FILE
@@ -53,6 +28,14 @@ See docs/BACKUP_RESTORE.md for recovery and privacy limits.
 `
 
 func backupCommand(args []string, root string) error {
+	signals, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(signals, time.Minute)
+	defer cancel()
+	return backupCommandContext(ctx, args, root)
+}
+
+func backupCommandContext(ctx context.Context, args []string, root string) error {
 	if len(args) == 1 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
 		fmt.Print(backupUsage)
 		return nil
@@ -95,9 +78,12 @@ func backupCommand(args []string, root string) error {
 			return err
 		}
 	}
-	passwordBytes, err := readBackupInput(*passwordFile, 1026)
+	if err := ctx.Err(); err != nil {
+		return backupFailure("backup operation canceled", err)
+	}
+	passwordBytes, err := fileinput.Read(ctx, *passwordFile, 1026)
 	if err != nil {
-		return fmt.Errorf("read passphrase file: %w", err)
+		return backupFailure("backup passphrase input failed", err)
 	}
 	defer clear(passwordBytes)
 	// Remove exactly one conventional file line ending. Never trim spaces,
@@ -112,68 +98,70 @@ func backupCommand(args []string, root string) error {
 	if !utf8.Valid(password) || len(password) < 12 || len(password) > 1024 {
 		return errors.New("backup passphrase must contain 12-1024 UTF-8 bytes")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
 	if action == "create" {
 		// A nonexistent source must not create or seed application state.
 		info, err := os.Stat(filepath.Join(root, "profiles"))
 		if err != nil || !info.IsDir() {
 			return errors.New("backup source has no existing profile directory")
 		}
-		output, err := filepath.Abs(*out)
+		destination, err := prepareBackupOutput(ctx, *out, root)
 		if err != nil {
 			return err
 		}
-		sourceRoot, err := filepath.EvalSymlinks(root)
-		if err != nil {
-			return err
-		}
-		outputParent, err := filepath.EvalSymlinks(filepath.Dir(output))
-		if err != nil {
-			return err
-		}
-		relative, err := filepath.Rel(sourceRoot, filepath.Join(outputParent, filepath.Base(output)))
-		if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(os.PathSeparator)) {
-			return errors.New("backup output must be outside the source data directory")
-		}
+		// The held output parent is retained through crypto and all output I/O.
+		defer destination.Close()
 		store, err := profile.NewStore(root)
 		if err != nil {
-			return err
+			return backupFailure("backup source snapshot failed", errors.Join(err, destination.Close(), ctx.Err()))
 		}
 		profiles, err := store.SnapshotContext(ctx)
 		if err != nil {
-			return err
+			return backupFailure("backup source snapshot failed", errors.Join(err, destination.Close(), ctx.Err()))
+		}
+		if err = ctx.Err(); err != nil {
+			return backupFailure("backup operation canceled", errors.Join(err, destination.Close(), ctx.Err()))
 		}
 		data, err := backup.Encrypt(profiles, string(password), time.Now())
 		if err != nil {
-			return err
+			return backupFailure("backup encryption failed", errors.Join(err, destination.Close(), ctx.Err()))
 		}
-		f, err := os.OpenFile(*out, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err = ctx.Err(); err != nil {
+			clear(data)
+			return backupFailure("backup operation canceled", errors.Join(err, destination.Close(), ctx.Err()))
+		}
+		err = destination.Write(ctx, data)
+		clear(data)
 		if err != nil {
-			return fmt.Errorf("backup output requires a new file: %w", err)
-		}
-		_, writeErr := f.Write(data)
-		if writeErr == nil {
-			writeErr = f.Sync()
-		}
-		if err := errors.Join(writeErr, f.Close()); err != nil {
-			return fmt.Errorf("backup output incomplete; preserve for inspection and do not distribute: %w", err)
+			return err
 		}
 		return printJSON(map[string]any{"operation": "backup-create", "schemaVersion": 1, "profiles": len(profiles), "encrypted": true, "externalFilesIncluded": false})
 	}
-	data, err := readBackupInput(*archive, backup.MaxArchiveBytes)
+	data, err := fileinput.Read(ctx, *archive, backup.MaxArchiveBytes)
 	if err != nil {
-		return err
+		return backupFailure("backup archive input failed", err)
+	}
+	defer clear(data)
+	if err = ctx.Err(); err != nil {
+		return backupFailure("backup operation canceled", err)
 	}
 	snapshot, err := backup.Decrypt(data, string(password))
 	if err != nil {
-		return err
+		if errors.Is(err, backup.ErrAuthentication) {
+			return backupFailure(backup.ErrAuthentication.Error(), errors.Join(err, ctx.Err()))
+		}
+		return backupFailure("backup archive validation failed", errors.Join(err, ctx.Err()))
+	}
+	if err = ctx.Err(); err != nil {
+		return backupFailure("backup operation canceled", err)
 	}
 	if action == "inspect" {
 		return printJSON(map[string]any{"operation": "backup-inspect", "schemaVersion": 1, "createdAt": snapshot.CreatedAt, "profiles": len(snapshot.Profiles), "authenticated": true, "externalFilesIncluded": false})
 	}
 	if err := profile.RestoreSnapshot(ctx, *into, snapshot.Profiles, *resume, managed.NewGuard(nil)); err != nil {
-		return err
+		return backupFailure("backup restore failed; preserve the destination for inspection", err)
+	}
+	if err = ctx.Err(); err != nil {
+		return backupFailure("backup operation canceled", err)
 	}
 	return printJSON(map[string]any{"operation": "backup-restore", "profiles": len(snapshot.Profiles), "complete": true, "startedEngines": false, "machinePolicyRestored": false})
 }

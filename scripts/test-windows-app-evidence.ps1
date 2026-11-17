@@ -1,0 +1,746 @@
+# Load only the process and discovery predicates from the interactive fixture.
+$ErrorActionPreference='Stop'
+$fixture=Join-Path $PSScriptRoot 'test-windows-apps.ps1'
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($fixture,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'Interactive Windows app fixture failed parsing'}
+foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Assert-FixtureCommunicationImage','Test-FixtureCommunication','Check-FixtureCommunications','Test-FixtureAppChecks','Get-FixtureBaselineFailureStage','Start-FixtureApp','Remove-FixtureApp','Assert-FixtureDiscordUpdaterAbsent','Assert-FixtureSplitCordServiceState','New-SplitCordHandoff','Read-SplitCordHandoff','Get-DiscordProxyRequest','New-DiscordProxyReceipt','Assert-DiscordProxyReceipt','Assert-FixtureDroverApplied','Assert-FixtureDroverRestored','Test-FixtureDiscordDroverLoaded','Get-FixtureDroverFiles','Get-FixtureDiscordProxy')){
+    $nodes=@($ast.EndBlock.Statements|Where-Object {
+        $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
+    })
+    if($nodes.Count -ne 1){throw 'Expected one application evidence predicate'}
+    . ([scriptblock]::Create($nodes[0].Extent.Text))
+}
+$image='C:\Fixture\Discord.exe'
+$valid=[pscustomobject]@{Path=$image;SessionId=7;HasExited=$false}
+$wrongSession=[pscustomobject]@{Path=$image;SessionId=8;HasExited=$false}
+$wrongPath=[pscustomobject]@{Path='C:\Other\Discord.exe';SessionId=7;HasExited=$false}
+$exited=[pscustomobject]@{Path=$image;SessionId=7;HasExited=$true}
+$unavailable=[pscustomobject]@{Path=$image;SessionId=7;HasExited=$null}
+$unreadablePath=[pscustomobject]@{Path=$null;SessionId=7;HasExited=$false}
+$otherUnreadablePath=[pscustomobject]@{Path=$null;SessionId=8;HasExited=$false}
+$unreadableSession=[pscustomobject]@{Path=$image;SessionId=$null;HasExited=$false}
+if((Test-FixtureAppProcess $image 7 @($wrongSession,$valid,$wrongPath)) -ne $true){throw 'Exact live desktop process was missed'}
+if((Test-FixtureAppProcess $image 7 @($wrongSession,$wrongPath,$exited,$otherUnreadablePath)) -ne $false){throw 'Unrelated or exited process was accepted'}
+if((Test-FixtureAppProcess $image 7 @()) -ne $false){throw 'Empty process inventory did not prove absence'}
+foreach($process in @($unavailable,$unreadablePath,$unreadableSession)){
+    if($null -ne (Test-FixtureAppProcess $image 7 @($wrongPath,$process))){throw 'Unobservable process was treated as absent'}
+    if((Test-FixtureAppProcess $image 7 @($process,$valid)) -ne $true){throw 'An independent matching process was missed'}
+}
+$unrelated=[pscustomobject]@{ProcessName='other';HasExited=$null}
+if((Test-FixtureAppProcess $image 7 @($unrelated) 'Discord') -ne $false){throw 'Unrelated process prevented absence verification'}
+$unknownName=[pscustomobject]@{ProcessName=$null;HasExited=$false}
+if($null -ne (Test-FixtureAppProcess $image 7 @($unknownName) 'Discord')){throw 'Unknown process name was treated as absent'}
+$commands=@($ast.FindAll({param($node)
+    $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -ceq 'Check'
+},$true))
+$stages=@($commands | ForEach-Object {$_.CommandElements[1].Value})
+$stableRemove=[array]::IndexOf($stages,'discord-remove')
+$stableInstall=[array]::IndexOf($stages,'discord-install-for-ptb-clean')
+$ptbClean=[array]::IndexOf($stages,'ptb-clean-install')
+$coexistence=@('ptb-install-with-stable','ptb-start-with-stable','ptb-remove-with-stable')
+if($stableRemove -lt 0 -or $stableInstall -ne ($stableRemove+1) -or $ptbClean -ne ($stableInstall+4) -or
+    ($stages[($stableInstall+1)..($ptbClean-1)] -join ',') -cne ($coexistence -join ',')){
+    throw 'Standard PTB coexistence must run separately before PTB clean mode'
+}
+$peerRoutine=@($ast.FindAll({param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Assert-FixtureStablePeer'
+},$true))
+if($peerRoutine.Count -ne 1){throw 'Expected one stable Discord preservation observation'}
+& {
+    . ([scriptblock]::Create($peerRoutine[0].Extent.Text))
+    $peer='C:\Fixture\Discord.exe'
+    $pin='A'*64
+    function Inspect-Apps {return [pscustomobject]@{discord=$currentPeer}}
+    function Get-FileHash {
+        [CmdletBinding()]param($LiteralPath,$Algorithm)
+        if($LiteralPath -cne $peer -or $Algorithm -cne 'SHA256'){throw 'Unexpected stable executable digest request'}
+        return @{Hash=$currentDigest}
+    }
+    foreach($case in @(
+        @{path=$peer;digest=$pin;accepted=$true},
+        @{path=$null;digest=$pin;accepted=$false},
+        @{path='C:\Fixture\Changed\Discord.exe';digest=$pin;accepted=$false},
+        @{path=$peer;digest=('B'*64);accepted=$false}
+    )){
+        $currentPeer=$case.path
+        $currentDigest=$case.digest
+        $accepted=$false
+        try {Assert-FixtureStablePeer $peer $pin;$accepted=$true}catch{}
+        if($accepted -ne $case.accepted){throw 'Standard PTB incorrectly credited a changed stable peer'}
+    }
+}
+foreach($stage in $coexistence){
+    $command=$commands[[array]::IndexOf($stages,$stage)]
+    if($command.Extent.Text -notmatch 'Assert-FixtureStablePeer'){throw 'A standard PTB stage omitted stable Discord verification'}
+}
+$cleanCommand=$commands[$ptbClean].Extent.Text
+if($cleanCommand -notmatch '(?s)\$stablePeer\.removalVerified.*Get-FixtureAppImage.*Test-Path.*Assert-FixtureLiveImage.*-AllSessions.*Install-FixtureApp'){
+    throw 'PTB clean mode did not require a fresh PTB baseline before setup'
+}
+$splitCord='C:\Fixture\SplitCord\SplitCord-Turkey.exe'
+$main=[pscustomobject]@{Path=$splitCord;ProcessName='SplitCord-Turkey';SessionId=8;HasExited=$false}
+$helper=[pscustomobject]@{Path='C:\Fixture\SplitCord\crashpad_handler.exe';ProcessName='crashpad_handler';SessionId=8;HasExited=$false}
+$neighbor=[pscustomobject]@{Path='C:\Fixture\SplitCord-other\crashpad_handler.exe';ProcessName='crashpad_handler';SessionId=8;HasExited=$false}
+$hidden=[pscustomobject]@{Path=$null;ProcessName='crashpad_handler';SessionId=8;HasExited=$false}
+if((Test-FixtureAppProcess $splitCord 7 @($main) 'SplitCord-Turkey') -ne $false){throw 'Launch credited a different session'}
+if((Test-FixtureAppProcess $splitCord 7 @($main) 'SplitCord-Turkey' -AllSessions) -ne $true){throw 'Removal missed a live client in another session'}
+if((Test-FixtureAppProcess $splitCord 7 @($helper) 'SplitCord-Turkey' -AllSessions -CleanupVariant 'splitcord') -ne $true){throw 'Removal missed a live SplitCord crash handler'}
+if((Test-FixtureAppProcess $splitCord 7 @($neighbor) 'SplitCord-Turkey' -AllSessions -CleanupVariant 'splitcord') -ne $false){throw 'Removal included a neighboring application crash handler'}
+if($null -ne (Test-FixtureAppProcess $splitCord 7 @($hidden) 'SplitCord-Turkey' -AllSessions -CleanupVariant 'splitcord')){throw 'Removal credited an unreadable crash handler as absent'}
+$helper.HasExited=$true
+if((Test-FixtureAppProcess $splitCord 7 @($helper,$neighbor) 'SplitCord-Turkey' -AllSessions -CleanupVariant 'splitcord') -ne $false){throw 'Exited and unrelated crash handlers blocked removal evidence'}
+
+$priorLocalAppData=$env:LOCALAPPDATA
+try {
+    $env:LOCALAPPDATA='C:\Fixture\Local'
+    foreach($variant in @('discord','discord-ptb')){
+        $folder=if($variant -ceq 'discord'){'Discord'}else{'DiscordPTB'}
+        $other=if($variant -ceq 'discord'){'DiscordPTB'}else{'Discord'}
+        $base=Join-Path $env:LOCALAPPDATA $folder
+        $installed=Join-Path $base ("app-2.0.0\"+$folder+'.exe')
+        foreach($suffix in @('Update.exe','app-1.0.0\crashpad_handler.exe',('app-1.0.0\'+$folder+'.exe'))){
+            $process=[pscustomobject]@{
+                ProcessName=[IO.Path]::GetFileNameWithoutExtension($suffix)
+                Path=(Join-Path $base $suffix);SessionId=8;HasExited=$false
+            }
+            if((Test-FixtureAppProcess $installed 7 @($process) $folder -AllSessions -CleanupVariant $variant) -ne $true){
+                throw 'Discord removal missed a live process in its installation'
+            }
+            $process.Path=Join-Path (Join-Path $env:LOCALAPPDATA $other) $suffix
+            if((Test-FixtureAppProcess $installed 7 @($process) $folder -AllSessions -CleanupVariant $variant) -ne $false){
+                throw 'Discord removal included a process from the other channel'
+            }
+            $process.Path=$null
+            if($null -ne (Test-FixtureAppProcess $installed 7 @($process) $folder -AllSessions -CleanupVariant $variant)){
+                throw 'Discord removal credited an unreadable desktop process as absent'
+            }
+            $process.SessionId=0
+            $process.HasExited=$null
+            $absence=Test-FixtureAppProcess $installed 7 @($process) $folder -AllSessions -CleanupVariant $variant
+            if($process.ProcessName -eq $folder){
+                if($null -ne $absence){throw 'Discord cleanup ignored an unreadable service-session client'}
+            }elseif($absence -cne $false){
+                throw 'Discord cleanup could not exclude a generic service-session process'
+            }
+            $process.HasExited=$false
+            $process.Path=Join-Path $base $suffix
+            if((Test-FixtureAppProcess $installed 7 @($process) $folder -AllSessions -CleanupVariant $variant) -cne $true){
+                throw 'Discord cleanup missed an identified image in the service session'
+            }
+        }
+    }
+}finally{$env:LOCALAPPDATA=$priorLocalAppData}
+
+$script:observations=[Collections.Generic.Queue[object]]::new()
+function Find-FixtureLiveImage {
+    if(-not $script:observations.Count){throw 'Fixture observation limit reached'}
+    return $script:observations.Dequeue()
+}
+function Start-Sleep {param($Milliseconds);if($Milliseconds -ne 250){throw 'Unexpected fixture observation interval'}}
+$script:observations.Enqueue($null)
+$script:observations.Enqueue($false)
+Assert-FixtureLiveImage $image $false
+if($script:observations.Count){throw 'Indeterminate first read was credited as removal'}
+$script:observations.Enqueue($null)
+$refused=$false
+try{Assert-FixtureLiveImage $image $false}catch{$refused=$_.Exception.Message -ceq 'Fixture observation limit reached'}
+if(-not $refused){throw 'No conclusive readback was accepted as removal'}
+$blocked=[Exception]::new('Private fixture context',[ComponentModel.Win32Exception]::new(4551))
+$otherLaunchFault=[ComponentModel.Win32Exception]::new(5)
+if((Get-FixtureBaselineFailureStage 'discovery' $blocked) -cne 'controller-launch-policy' -or
+   (Get-FixtureBaselineFailureStage 'discovery' $otherLaunchFault) -cne 'discovery' -or
+   (Get-FixtureBaselineFailureStage 'updater-baseline' $blocked) -cne 'updater-baseline'){
+    throw 'Baseline reporting did not preserve fixed stages and distinguish an application policy block'
+}
+
+if((Get-FixtureAppImage ([pscustomobject]@{discord=$image}) 'discord') -cne $image){throw 'Approved discovery identity was missed'}
+if(Get-FixtureAppImage ([pscustomobject]@{'discord-ptb'=$null}) 'discord-ptb'){throw 'Absent discovery unexpectedly returned a path'}
+foreach($inventory in @(
+    [pscustomobject]@{},
+    [pscustomobject]@{discord=@($image,$image)},
+    [pscustomobject]@{discord='C:\Fixture\DiscordPTB.exe'},
+    [pscustomobject]@{discord='\\untrusted\share\Discord.exe'},
+    [pscustomobject]@{discord='C:\Fixture\Other\..\Discord.exe'}
+)){
+    $refused=$false
+    try {$null=Get-FixtureAppImage $inventory 'discord'}catch{$refused=$true}
+    if(-not $refused){throw 'Unverified discovery identity was accepted'}
+}
+# Drive the same prompt function with an inert process inventory and terminal.
+& {
+    $clientImages=@{discord=$image;'discord-ptb'='C:\Fixture\DiscordPTB.exe';splitcord=$splitCord}
+    $expectedDigest='a'*64
+    $script:promptCount=0
+    $script:changeDuringPrompt=''
+    $script:communicationDigest=$expectedDigest
+    $serviceChecks=[Collections.Generic.List[string]]::new()
+    $serviceFailure=''
+    function Assert-FixtureSplitCordServiceState([string]$Expected,[string]$Image){
+        if($Expected -cne 'Running' -or $Image -cne $splitCord){throw 'Unexpected communication service query'}
+        $serviceChecks.Add($Image)
+        if($serviceFailure -ceq 'before' -or ($serviceFailure -ceq 'after' -and $serviceChecks.Count -eq 2)){
+            throw 'Fixture SplitCord service stopped'
+        }
+    }
+    function Inspect-Apps {return [pscustomobject]$clientImages}
+    function Get-FileHash {
+        [CmdletBinding()]param($LiteralPath,$Algorithm)
+        if($Algorithm -cne 'SHA256' -or $LiteralPath -notin $clientImages.Values){throw 'Unexpected communication hash query'}
+        return @{Hash=$script:communicationDigest}
+    }
+    $script:promptAnswer='PASS'
+    function Read-Host([string]$Prompt){
+        if($Prompt -notmatch 'two-way|both directions'){throw 'Prompt omitted the two-way condition'}
+        $script:promptCount++
+        if($script:changeDuringPrompt -ceq 'bytes'){$script:communicationDigest='b'*64}
+        if($script:changeDuringPrompt -ceq 'path'){$clientImages.discord='C:\Fixture\New\Discord.exe'}
+        return $script:promptAnswer
+    }
+    foreach($kind in @('text','voice')){
+        $script:observations.Enqueue($true)
+        $script:observations.Enqueue($true)
+        Test-FixtureCommunication 'discord' $image $kind $expectedDigest
+        if($script:observations.Count){throw 'Communication check omitted the post-prompt process check'}
+    }
+    if($script:promptCount -ne 2){throw 'Expected distinct text and voice confirmations'}
+    foreach($answer in @('','pass','PASS ')){
+        $script:promptAnswer=$answer
+        $script:observations.Enqueue($true)
+        $refused=$false
+        try{Test-FixtureCommunication 'discord-ptb' $clientImages['discord-ptb'] 'text' $expectedDigest}catch{
+            $refused=$_.Exception.Message -ceq 'Operator did not confirm two-way communication'
+        }
+        if(-not $refused -or $script:observations.Count){throw 'Unconfirmed communication was accepted'}
+    }
+    $before=$script:promptCount
+    $refused=$false
+    try{Test-FixtureCommunication 'splitcord' $splitCord 'voice' $expectedDigest}catch{
+        $refused=$_.Exception.Message -ceq 'Fixture observation limit reached'
+    }
+    if(-not $refused -or $script:promptCount -ne $before){throw 'Communication was prompted without a live image'}
+    $script:promptAnswer='PASS'
+    $script:observations.Enqueue($true)
+    $refused=$false
+    try{Test-FixtureCommunication 'splitcord' $splitCord 'voice' $expectedDigest}catch{
+        $refused=$_.Exception.Message -ceq 'Fixture observation limit reached'
+    }
+    if(-not $refused -or $script:promptCount -ne ($before+1)){throw 'Operator input replaced final live-image verification'}
+    foreach($failure in @('before','after','')){
+        $serviceFailure=$failure
+        $serviceChecks.Clear()
+        $before=$script:promptCount
+        $script:observations.Enqueue($true)
+        if($failure -cne 'before'){$script:observations.Enqueue($true)}
+        $refused=$false
+        try{Test-FixtureCommunication 'splitcord' $splitCord 'voice' $expectedDigest}catch{
+            if($_.Exception.Message -cne 'Fixture SplitCord service stopped'){throw}
+            $refused=$true
+        }
+        $expectedChecks=if($failure -ceq 'before'){1}else{2}
+        $expectedPrompts=if($failure -ceq 'before'){0}else{1}
+        if($refused -ne [bool]$failure -or $serviceChecks.Count -ne $expectedChecks -or
+            $script:promptCount -ne ($before+$expectedPrompts) -or $script:observations.Count){
+            throw 'SplitCord communication did not require a running service before and after the prompt'
+        }
+    }
+    foreach($change in @('bytes','path')){
+        $before=$script:promptCount
+        $script:changeDuringPrompt=$change
+        $script:observations.Enqueue($true)
+        $refused=$false
+        try{Test-FixtureCommunication 'discord' $image 'text' $expectedDigest}catch{
+            $refused=$_.Exception.Message -ceq 'Application identity changed during communication verification'
+        }
+        if(-not $refused -or $script:promptCount -ne ($before+1) -or $script:observations.Count){
+            throw 'Communication confirmation survived a changed application'
+        }
+        $clientImages.discord=$image
+        $script:communicationDigest=$expectedDigest
+    }
+}
+# Earlier install or launch failures must keep both communication claims false.
+& {
+    $InteractiveCommunications=$true
+    $installedImages=@{discord=$image}
+    $installedDigests=@{discord=('a'*64)}
+    $script:reviewedCommunicationKinds=[Collections.Generic.List[string]]::new()
+    function Test-FixtureCommunication([string]$Variant,[string]$Image,[string]$Kind,[string]$ExpectedDigest){
+        if($Variant -cne 'discord' -or $Image -cne $image -or $ExpectedDigest -cne ('a'*64)){
+            throw 'Communication check lost the approved client identity'
+        }
+        $script:reviewedCommunicationKinds.Add($Kind)
+    }
+    function Check([string]$Name,[scriptblock]$Body){
+        try {& $Body;$checks.Add(@{name=$Name;passed=$true})}
+        catch {$checks.Add(@{name=$Name;passed=$false})}
+    }
+    $expectedCommunications=@('communications-discord-text','communications-discord-voice')
+    foreach($case in @(
+        @{launch=@();image=$true;digest=$true;accepted=$false},
+        @{launch=@(@{name='discord-start';passed=$true});image=$true;digest=$true;accepted=$false},
+        @{launch=@(@{name='discord-start-after-reinstall';passed=$false});image=$true;digest=$true;accepted=$false},
+        @{launch=@(@{name='discord-start-after-reinstall';passed=$true});image=$false;digest=$true;accepted=$false},
+        @{launch=@(@{name='discord-start-after-reinstall';passed=$true});image=$true;digest=$false;accepted=$false},
+        @{launch=@(@{name='discord-start-after-reinstall';passed=$true});image=$true;digest=$true;accepted=$true}
+    )){
+        $checks=[Collections.Generic.List[object]]::new()
+        foreach($check in $case.launch){$checks.Add($check)}
+        $installedImages=if($case.image){@{discord=$image}}else{@{}}
+        $installedDigests=if($case.digest){@{discord=('a'*64)}}else{@{}}
+        $script:reviewedCommunicationKinds.Clear()
+        Check-FixtureCommunications 'discord' 'discord-start-after-reinstall'
+        $reported=@($checks.ToArray() | Where-Object {$_.name -clike 'communications-*'})
+        if($reported.Count -ne 2 -or (Test-FixtureAppChecks $reported $expectedCommunications) -ne $case.accepted){
+            throw 'Communication result did not reflect the fresh start and install prerequisites'
+        }
+        $expectedKinds=if($case.accepted){'text,voice'}else{''}
+        if(($script:reviewedCommunicationKinds -join ',') -cne $expectedKinds){
+            throw 'Communication prompt ran despite a missing prerequisite'
+        }
+    }
+}
+$installedImages=@{discord=$image}
+$launchTrace=[Collections.Generic.List[string]]::new()
+$launchResult=@{application='discord';alreadyRunning=$false}
+function Invoke-AppWorkflow([hashtable]$Request){
+    if($Request.action -cne 'app-start' -or $Request.engine -cne 'discord'){throw 'Unexpected fixture launch request'}
+    $launchTrace.Add('start')
+    return $launchResult
+}
+$script:observations.Enqueue($false)
+$script:observations.Enqueue($true)
+Start-FixtureApp 'discord'
+if($launchTrace.Count -ne 1 -or $script:observations.Count){throw 'Fresh start evidence omitted a baseline or readback'}
+foreach($alreadyRunning in @($true,'false',$null)){
+    $launchResult.alreadyRunning=$alreadyRunning
+    $script:observations.Enqueue($false)
+    $refused=$false
+    try{Start-FixtureApp 'discord'}catch{$refused=$_.Exception.Message -ceq 'The application workflow did not confirm a fresh start'}
+    if(-not $refused -or $script:observations.Count){throw 'Existing or untyped process evidence was credited as a new start'}
+}
+& {
+    $installedImages=@{splitcord=$splitCord}
+    $trace=[Collections.Generic.List[string]]::new()
+    function Invoke-AppWorkflow([hashtable]$Request){
+        if($Request.action -cne 'app-start' -or $Request.engine -cne 'splitcord'){throw 'Unexpected SplitCord launch request'}
+        $trace.Add('launch')
+        return @{application='splitcord';alreadyRunning=$false}
+    }
+    function Assert-FixtureSplitCordServiceState([string]$Expected,[string]$Image){
+        if($Expected -cne 'Running' -or $Image -cne $splitCord){throw 'Unexpected launch service query'}
+        $trace.Add('service')
+        if($serviceStopped){throw 'Fixture SplitCord service stopped'}
+    }
+    foreach($serviceStopped in @($false,$true)){
+        $trace.Clear()
+        $script:observations.Enqueue($false)
+        $script:observations.Enqueue($true)
+        $refused=$false
+        try{Start-FixtureApp 'splitcord'}catch{
+            if($_.Exception.Message -cne 'Fixture SplitCord service stopped'){throw}
+            $refused=$true
+        }
+        if($refused -ne $serviceStopped -or ($trace -join ',') -cne 'launch,service' -or $script:observations.Count){
+            throw 'SplitCord fresh launch did not require a running service'
+        }
+    }
+}
+& {
+    $replacement='C:\Fixture\Updated\Discord.exe'
+    $stableUpdater=Join-Path (Join-Path $env:LOCALAPPDATA 'Discord') 'Update.exe'
+    function Inspect-Apps {
+        $trace.Add('discovery')
+        if(-not $observed.Count){throw 'Unexpected removal inventory read'}
+        return [pscustomobject]@{discord=$observed.Dequeue()}
+    }
+    function Invoke-AppWorkflow([hashtable]$Request){
+        if($Request.action -cne 'app-remove' -or $Request.engine -cne 'discord'){throw 'Unexpected removal request'}
+        $trace.Add('remove')
+        return @{application='discord';removed=$removalOutcome}
+    }
+    function Assert-FixtureLiveImage([string]$Path,[bool]$Expected,[switch]$AllSessions,[string]$CleanupVariant){
+        if($Expected -or -not $AllSessions -or $CleanupVariant -cne 'discord' -or $Path -cnotin @($image,$replacement,$stableUpdater)){
+            throw 'Unexpected removal process check'
+        }
+        $trace.Add('process:'+ $Path)
+        if($case.orphanProcess){throw 'Fixture orphan process remains'}
+    }
+    function Test-Path {
+        [CmdletBinding()]param($LiteralPath,$PathType)
+        if($ErrorActionPreference -ne 'Stop' -or $LiteralPath -cnotin @($image,$replacement,$stableUpdater)){throw 'Unexpected removal file check'}
+        if($PathType -eq 'Leaf'){return $baselineHasFile}
+        return $LiteralPath -ceq $remainingFile
+    }
+    foreach($case in @(
+        @{name='missing';before=$null;previous=$image;file=$false;launch=$false;success=$false},
+        @{name='unrecorded';before=$image;previous=$null;file=$true;launch=$false;success=$false},
+        @{name='changed';before=$replacement;previous=$image;file=$true;launch=$false;success=$false},
+        @{name='no-file';before=$image;previous=$image;file=$false;launch=$false;success=$false},
+        @{name='ordinary';before=$image;previous=$image;file=$true;launch=$true;success=$true},
+        @{name='workflow-no-op';before=$image;previous=$image;file=$true;result=$false;launch=$true;success=$false},
+        @{name='workflow-invalid-result';before=$image;previous=$image;file=$true;result='true';launch=$true;success=$false},
+        @{name='remains-discoverable';before=$image;previous=$image;file=$true;after=$image;launch=$true;success=$false},
+        @{name='remains-on-disk';before=$image;previous=$image;file=$true;remaining=$image;launch=$true;success=$false},
+        @{name='updater-remains-on-disk';before=$image;previous=$image;file=$true;remaining=$stableUpdater;launch=$true;success=$false},
+        @{name='clean-guest';before=$null;previous=$image;cleanup=$true;result=$false;launch=$true;success=$true},
+        @{name='clean-guest-no-image';cleanup=$true;result=$false;launch=$true;success=$true;processProbe=$true},
+        @{name='orphan-updater-no-image';cleanup=$true;result=$false;launch=$true;success=$false;remaining=$stableUpdater},
+        @{name='orphan-process-no-image';cleanup=$true;result=$false;launch=$true;success=$false;orphanProcess=$true;processProbe=$true},
+        @{name='clean-guest-unverified';before=$null;previous=$image;cleanup=$true;result='false';launch=$true;success=$false},
+        @{name='cleanup-newly-discovered';before=$replacement;previous=$image;cleanup=$true;launch=$true;success=$true},
+        @{name='cleanup-must-check-previous';before=$replacement;previous=$image;cleanup=$true;remaining=$image;launch=$true;success=$false}
+    )){
+        $installedImages=@{discord=$case.previous}
+        $removalOutcome=if($case.ContainsKey('result')){$case.result}else{$true}
+        $baselineHasFile=$case.file
+        $remainingFile=$case.remaining
+        $trace=[Collections.Generic.List[string]]::new()
+        $observed=[Collections.Generic.Queue[object]]::new()
+        $observed.Enqueue($case.before)
+        $observed.Enqueue($case.after)
+        $passed=$false
+        try{Remove-FixtureApp 'discord' -Cleanup:([bool]$case.cleanup);$passed=$true}catch{}
+        if($passed -ne $case.success -or $trace.Contains('remove') -ne $case.launch){
+            throw ('Unexpected removal result: '+$case.name)
+        }
+        if($trace.Contains('process:'+$stableUpdater) -ne [bool]$case.processProbe){
+            throw ('Removal did not verify expected orphan process scope: '+$case.name)
+        }
+        if($passed -and $case.previous -and -not $trace.Contains('process:'+$case.previous)){
+            throw ('Removal omitted the previous image: '+$case.name)
+        }
+        if($passed -and $case.before -and -not $trace.Contains('process:'+$case.before)){
+            throw ('Removal omitted the discovered image: '+$case.name)
+        }
+    }
+}
+# Run the real service evidence predicate against a closed installation fixture.
+& {
+    $client='C:\Fixture\SplitCord-Turkey.exe'
+    $binary='C:\Fixture\resources\service-installer\SplitCordService.exe'
+    $service=[pscustomobject]@{Name='SplitCordDpiService';State='Running';PathName='"'+$binary+'"'}
+    $requests=[Collections.Generic.List[string]]::new()
+    function Get-FixtureSplitCordServiceState {return $scmState}
+    function Get-Item {
+        [CmdletBinding()]param($LiteralPath,[switch]$Force)
+        if($LiteralPath -ine $binary -or -not $Force){throw 'Unexpected SplitCord executable inspection'}
+        $requests.Add('image')
+        if($binaryPresent){return [pscustomobject]@{PSIsContainer=$binaryDirectory;Attributes=$binaryAttributes}}
+    }
+    function Get-CimInstance {
+        [CmdletBinding()]param($ClassName,$Filter)
+        if($ClassName -cne 'Win32_Service' -or $Filter -cne "Name='SplitCordDpiService'"){
+            throw 'Unexpected SplitCord service query'
+        }
+        $requests.Add('query')
+        return $rows
+    }
+    $scmState='Absent';$binaryPresent=$true;$binaryDirectory=$false
+    $binaryAttributes=[IO.FileAttributes]::Normal;$rows=@($service)
+    Assert-FixtureSplitCordServiceState 'Absent'
+    if($requests.Count -ne 0){throw 'Absent SplitCord verification queried a running registration'}
+    $scmState='Running'
+    Assert-FixtureSplitCordServiceState 'Running' $client
+    $service.PathName=$binary
+    Assert-FixtureSplitCordServiceState 'Running' $client
+    if(($requests -join ',') -cne 'query,image,query,image'){throw 'Service image was inspected before registration readback'}
+    foreach($fault in @('missing-image','missing-binary','directory-binary','linked-binary','missing-service','duplicate','wrong-name','stopped','wrong-path','arguments')){
+        $image=$client;$binaryPresent=$true;$binaryDirectory=$false;$binaryAttributes=[IO.FileAttributes]::Normal
+        $rows=@($service);$service.Name='SplitCordDpiService'
+        $service.State='Running';$service.PathName=$binary
+        $expected='Running SplitCord service could not be bound to the installed client'
+        switch -CaseSensitive ($fault){
+            'missing-image' {$image='';$expected='SplitCord service verification requires the installed client path'}
+            'missing-binary' {$binaryPresent=$false;$expected='SplitCord service executable could not be verified'}
+            'directory-binary' {$binaryDirectory=$true;$expected='SplitCord service executable could not be verified'}
+            'linked-binary' {$binaryAttributes=[IO.FileAttributes]::ReparsePoint;$expected='SplitCord service executable could not be verified'}
+            'missing-service' {$rows=@()}
+            'duplicate' {$rows=@($service,$service)}
+            'wrong-name' {$service.Name='OtherService'}
+            'stopped' {$service.State='Stopped'}
+            'wrong-path' {$service.PathName='C:\Other\SplitCordService.exe'}
+            'arguments' {$service.PathName='"'+$binary+'" --other'}
+        }
+        $refused=$false
+        try{Assert-FixtureSplitCordServiceState 'Running' $image}catch{$refused=$_.Exception.Message -ceq $expected}
+        if(-not $refused){throw ('SplitCord service evidence accepted '+$fault)}
+    }
+}
+
+# A missing client executable alone cannot clear SplitCord's cleanup case.
+& {
+    $installedImages=@{}
+    function Inspect-Apps {return [pscustomobject]@{splitcord=$null}}
+    function Invoke-AppWorkflow([hashtable]$Request){
+        if($Request.action -cne 'app-remove' -or $Request.engine -cne 'splitcord'){throw 'Unexpected SplitCord cleanup request'}
+        $trace.Add('remove')
+        if($workerRefuses){throw 'Fixture worker could not confirm service removal'}
+        return @{application='splitcord';removed=$false}
+    }
+    function Assert-FixtureSplitCordServiceState([string]$Expected){
+        if($Expected -cne 'Absent'){throw 'Unexpected SplitCord service expectation'}
+        $trace.Add('service')
+        if($serviceRemains){throw 'Fixture service remains registered'}
+    }
+    foreach($case in @(
+        @{workerRefuses=$false;serviceRemains=$false;passed=$true;trace='remove,service'},
+        @{workerRefuses=$true;serviceRemains=$true;passed=$false;trace='remove'},
+        @{workerRefuses=$false;serviceRemains=$true;passed=$false;trace='remove,service'}
+    )){
+        $workerRefuses=$case.workerRefuses;$serviceRemains=$case.serviceRemains
+        $trace=[Collections.Generic.List[string]]::new()
+        $passed=$false
+        try {Remove-FixtureApp 'splitcord' -Cleanup;$passed=$true}catch{}
+        if($passed -ne $case.passed -or ($trace -join ',') -cne $case.trace){
+            throw 'SplitCord cleanup omitted the product or independent service check'
+        }
+    }
+}
+$communicationCalls=@($ast.FindAll({param($node)
+    $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -ceq 'Check-FixtureCommunications'
+},$true))
+foreach($case in @(
+    @{variant='discord';start='discord-start-after-reinstall';remove='discord-remove'},
+    @{variant='discord-ptb';start='ptb-start';remove='ptb-remove'},
+    @{variant='splitcord';start='splitcord-start';remove='splitcord-remove'}
+)){
+    $calls=@($communicationCalls | Where-Object {$_.CommandElements[1].Value -ceq $case.variant})
+    $start=$commands[[array]::IndexOf($stages,$case.start)].Extent.StartOffset
+    $remove=$commands[[array]::IndexOf($stages,$case.remove)].Extent.StartOffset
+    if($calls.Count -ne 1 -or $calls[0].CommandElements[2].Value -cne $case.start -or
+       $calls[0].Extent.StartOffset -le $start -or $calls[0].Extent.StartOffset -ge $remove){
+        throw 'Communication checks must run with the intended client installed and started'
+    }
+}
+$expected=@('discord-install','discord-start','cleanup-discord')
+$complete=@(
+    @{name='discord-start';passed=$true},@{name='discord-install';passed=$true},@{name='cleanup-discord';passed=$true}
+)
+if(-not (Test-FixtureAppChecks $complete $expected)){throw 'Complete application checks were rejected'}
+foreach($bad in @(
+    @{checks=@()},
+    @{checks=$complete[0..1]},
+    @{checks=@($complete[0],$complete[1],$complete[1])},
+    @{checks=@($complete[0],$complete[1],@{name='Cleanup-Discord';passed=$true})},
+    @{checks=@($complete[0],$complete[1],@{name='cleanup-discord';passed=$false})},
+    @{checks=@($complete[0],$complete[1],@{name='cleanup-discord';passed='true'})},
+    @{checks=@($complete[0],$complete[1],@{name='cleanup-discord'})}
+)){
+    if(Test-FixtureAppChecks $bad.checks $expected){throw 'Incomplete or invalid application evidence was credited'}
+}
+$id='a'*32
+$pin='b'*64
+$action='app-install'
+$job=@{action=$action;state='succeeded';result=@{ok=$true;finalizationFailures=@();data=@{application='splitcord';installed=$true;previouslyInstalled=$false;path='private fixture path'}}}
+$receipt=New-SplitCordHandoff ($job | ConvertTo-Json -Depth 5 -Compress) $id $action $pin
+$decoded=Read-SplitCordHandoff $receipt $id $action $pin
+if($receipt.Length -ge 512 -or $receipt.Contains('private fixture path') -or $decoded.application -cne 'splitcord' -or $decoded.installed -ne $true -or
+   $decoded.previouslyInstalled -isnot [bool] -or $decoded.previouslyInstalled){
+    throw 'SplitCord receipt did not retain only the approved handoff result'
+}
+foreach($case in @(
+    @{id=('c'*32);action=$action;pin=$pin;receipt=$receipt},
+    @{id=$id;action='app-remove';pin=$pin;receipt=$receipt},
+    @{id=$id;action=$action;pin=('c'*64);receipt=$receipt},
+    @{id=$id;action=$action;pin=$pin;receipt=($receipt.Replace('"changed":true','"changed":"true"'))},
+    @{id=$id;action=$action;pin=$pin;receipt=($receipt.Replace('"previouslyInstalled":false','"previouslyInstalled":"false"'))},
+    @{id=$id;action=$action;pin=$pin;receipt=('['+$receipt+']')},
+    @{id=$id;action=$action;pin=$pin;receipt=''}
+)){
+    $refused=$false
+    try {Read-SplitCordHandoff $case.receipt $case.id $case.action $case.pin | Out-Null} catch {$refused=$true}
+    if(-not $refused){throw 'Unrelated or malformed SplitCord receipt was accepted'}
+}
+foreach($case in @(
+    @{action=$action;state='failed';ok=$true;data=$job.result.data},
+    @{action='app-remove';state='succeeded';ok=$true;data=$job.result.data},
+    @{action=$action;state='succeeded';ok='true';data=$job.result.data},
+    @{action=$action;state='succeeded';ok=$true;data=@{application='discord';installed=$true}},
+    @{action=$action;state='succeeded';ok=$true;data=@{application='splitcord';installed=$false;previouslyInstalled=$false}},
+    @{action=$action;state='succeeded';ok=$true;data=@{application='splitcord';installed=$true}},
+    @{action=$action;state='succeeded';ok=$true;data=@{application='splitcord';installed=$true;previouslyInstalled='false'}}
+)){
+    $candidate=@{action=$case.action;state=$case.state;result=@{ok=$case.ok;finalizationFailures=@();data=$case.data}} | ConvertTo-Json -Depth 5
+    $refused=$false
+    try {New-SplitCordHandoff $candidate $id $action $pin | Out-Null} catch {$refused=$true}
+    if(-not $refused){throw 'Invalid product result produced a SplitCord receipt'}
+}
+$job.result.data.previouslyInstalled=$true
+$existing=New-SplitCordHandoff ($job | ConvertTo-Json -Depth 5) $id $action $pin
+if((Read-SplitCordHandoff $existing $id $action $pin).previouslyInstalled -ne $true){
+    throw 'SplitCord receipt changed an existing installation into a fresh install'
+}
+$install=@($ast.FindAll({param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Install-FixtureApp'
+},$true))
+if($install.Count -ne 1){throw 'Expected one application installation verifier'}
+& {
+    . ([scriptblock]::Create($install[0].Extent.Text))
+    $attempted=[Collections.Generic.List[string]]::new()
+    $installedImages=@{}
+    $installedDigests=@{}
+    $InteractiveCommunications=$false
+    function Invoke-AppWorkflow([hashtable]$Request){
+        if($Request.action -cne 'app-install' -or $Request.engine -cne 'splitcord'){throw 'Unexpected fixture request'}
+        Read-SplitCordHandoff $selected $id $action $pin
+    }
+    function Inspect-Apps {return [pscustomobject]@{splitcord=$splitCord}}
+    function Test-Path {
+        [CmdletBinding()]param($LiteralPath,$PathType)
+        if($LiteralPath -cne $splitCord -or $PathType -cne 'Leaf'){throw 'Unexpected fixture path'}
+        return $true
+    }
+    function Assert-FixtureSplitCordServiceState([string]$Expected,[string]$Image){
+        if($Expected -cne 'Running' -or $Image -cne $splitCord){throw 'Unexpected fixture service check'}
+        $serviceChecks.Add($Image)
+    }
+    $serviceChecks=[Collections.Generic.List[string]]::new()
+    $selected=$receipt
+    Install-FixtureApp 'splitcord'
+    if($serviceChecks.Count -ne 1 -or $installedImages['splitcord'] -cne $splitCord){
+        throw 'A clean SplitCord receipt did not reach the independent installation readback'
+    }
+    $selected=$existing
+    $refused=$false
+    try {Install-FixtureApp 'splitcord'}catch{$refused=$_.Exception.Message -ceq 'New application installation could not be verified'}
+    if(-not $refused -or $serviceChecks.Count -ne 1){throw 'An existing SplitCord installation was credited as a clean install'}
+}
+
+$job.result.finalizationFailures=@('synthetic')
+$refused=$false
+try {New-SplitCordHandoff ($job | ConvertTo-Json -Depth 5) $id $action $pin | Out-Null} catch {$refused=$true}
+if(-not $refused){throw 'Workflow finalization failure produced a SplitCord receipt'}
+$job.result.finalizationFailures=@()
+$job.action='app-remove'
+$job.result.data=@{application='splitcord';removed=$false}
+$receipt=New-SplitCordHandoff ($job | ConvertTo-Json -Depth 5) $id 'app-remove' $pin
+$decoded=Read-SplitCordHandoff $receipt $id 'app-remove' $pin
+if($decoded.removed -ne $false){throw 'Idempotent SplitCord cleanup lost the absent result'}
+$stageOrder=@('discord-proxy-stage','discord-proxy-detach','discord-reinstall','discord-proxy-reapply','discord-start-after-reinstall','discord-proxy-cleanup','discord-remove')
+$stageIndexes=@($stageOrder | ForEach-Object {[array]::IndexOf($stages,$_)})
+for($i=0;$i -lt $stageIndexes.Count;$i++){
+    if($stageIndexes[$i] -lt 0 -or ($i -gt 0 -and $stageIndexes[$i] -le $stageIndexes[$i-1])){
+        throw 'Staged repair lost the required desktop and machine operation order'
+    }
+}
+if($commands[$stageIndexes[4]].Extent.Text -notmatch 'Test-FixtureDiscordDroverLoaded'){
+    throw 'Staged repair omitted module load verification after launch'
+}
+
+& {
+    $fixtureID='1'*32
+    $controllerPin='a'*64
+    $job=@{action='install';state='succeeded';result=@{
+        ok=$true;finalizationFailures=@();data=@{installed='byedpi'}
+        events=@('fixture-time Reused the running managed ByeDPI service for Discord')
+    }}
+    $expectedRequests=@{
+        stage='install:byedpi:dll:unchanged';detach='remove:drover::'
+        reapply='install:byedpi:dll:unchanged';cleanup='remove:byedpi::'
+    }
+    foreach($phase in $expectedRequests.Keys){
+        $request=Get-DiscordProxyRequest $phase
+        if(('{0}:{1}:{2}:{3}' -f $request.action,$request.engine,$request.mode,$request.dns) -cne $expectedRequests[$phase]){
+            throw 'Staged repair admitted the wrong machine request'
+        }
+    }
+    $json=$job | ConvertTo-Json -Depth 5 -Compress
+    $receipt=New-DiscordProxyReceipt $json $fixtureID 'reapply' $controllerPin
+    Assert-DiscordProxyReceipt $receipt $fixtureID 'reapply' $controllerPin
+    foreach($rejected in @(
+        {$null=New-DiscordProxyReceipt ($json.Replace('Reused the running','Started a new')) $fixtureID 'reapply' $controllerPin},
+        {Assert-DiscordProxyReceipt $receipt ('2'*32) 'reapply' $controllerPin},
+        {Assert-DiscordProxyReceipt $receipt $fixtureID 'stage' $controllerPin},
+        {Assert-DiscordProxyReceipt $receipt $fixtureID 'reapply' ('b'*64)}
+    )){
+        $refused=$false
+        try {& $rejected}catch{$refused=$true}
+        if(-not $refused){throw 'Discord proxy receipt admitted mismatched evidence'}
+    }
+
+    $image='C:\Fixture\Discord\app-1\Discord.exe'
+    $original=[pscustomobject][ordered]@{image=$image;'Discord.exe'=('A'*64);'version.dll'=$null;'drover.ini'=('B'*64)}
+    $applied=[pscustomobject][ordered]@{image=$image;'Discord.exe'=('A'*64);'version.dll'=('C'*64);'drover.ini'=('D'*64)}
+    Assert-FixtureDroverApplied @($original) @($applied) $applied
+    Assert-FixtureDroverRestored @($original) @($original)
+    foreach($rejected in @(
+        {Assert-FixtureDroverApplied @($original) @() $applied},
+        {Assert-FixtureDroverApplied @($original) @($original) $applied},
+        {Assert-FixtureDroverApplied @($original) @($applied) $original},
+        {Assert-FixtureDroverRestored @($original) @($applied)}
+    )){
+        $refused=$false
+        try {& $rejected}catch{$refused=$true}
+        if(-not $refused){throw 'Discord proxy readback accepted a changed file state'}
+    }
+    $process=[pscustomobject]@{SessionId=7;Path=$image;HasExited=$false;Modules=@(@{FileName='C:\Windows\System32\version.dll'})}
+    if(Test-FixtureDiscordDroverLoaded $image 7 @($process)){throw 'Staged repair credited a different version DLL'}
+    $process.Modules=@(@{FileName='C:\Fixture\Discord\app-1\version.dll'})
+    if(Test-FixtureDiscordDroverLoaded $image 8 @($process)){throw 'Staged repair credited a different desktop session'}
+    if(-not (Test-FixtureDiscordDroverLoaded $image 7 @($process))){throw 'Staged repair missed the expected live DLL'}
+    $process.HasExited=$true
+    if(Test-FixtureDiscordDroverLoaded $image 7 @($process)){throw 'Staged repair credited an exited process'}
+}
+
+& {
+    function Get-CimInstance {
+        [CmdletBinding()]param($ClassName,$Filter,$Property)
+        if($ClassName -ceq 'Win32_Service' -and $Filter -ceq "Name='AccessWeaver-byedpi'"){
+            if($null -ne $service){return $service}
+            return
+        }
+        if($ClassName -ceq 'Win32_Process' -and $Filter -ceq 'ProcessId=21' -and ($Property -join ',') -ceq 'ProcessId,CreationDate'){
+            return $processRow
+        }
+        throw 'Unexpected proxy identity query'
+    }
+    $service=$null
+    if(Get-FixtureDiscordProxy){throw 'Absent proxy was treated as registered'}
+    $service=@{Name='AccessWeaver-byedpi';State='Running';StartMode='Auto';ProcessId=21;PathName='fixture registration'}
+    $processRow=@{ProcessId=21;CreationDate=[datetime]'2024-01-01'}
+    $first=Get-FixtureDiscordProxy
+    $processRow.CreationDate=$processRow.CreationDate.AddSeconds(1)
+    if(-not $first -or (Get-FixtureDiscordProxy) -ceq $first){throw 'Proxy identity missed a reused PID'}
+    $processRow.ProcessId=22
+    $refused=$false
+    try {[void](Get-FixtureDiscordProxy)}catch{$refused=$true}
+    if(-not $refused){throw 'Proxy observer accepted an unrelated process'}
+}
+& {
+    $priorLocalAppData=$env:LOCALAPPDATA
+    $temp=Join-Path (Split-Path -Parent $PSScriptRoot) ('build\staged-discord-fixture-'+[guid]::NewGuid().ToString('N'))
+    try {
+        $env:LOCALAPPDATA=$temp
+        $base=Join-Path $temp 'Discord'
+        $first=Join-Path $base 'app-1'
+        $second=Join-Path $base 'app-2'
+        [void][IO.Directory]::CreateDirectory($first)
+        [void][IO.Directory]::CreateDirectory($second)
+        $image=Join-Path $second 'Discord.exe'
+        [IO.File]::WriteAllText((Join-Path $first 'Discord.exe'),'first image')
+        [IO.File]::WriteAllText($image,'second image')
+        $baseline=@(Get-FixtureDroverFiles $image)
+        if($baseline.Count -ne 2 -or $baseline[0].'Discord.exe' -eq $baseline[1].'Discord.exe' -or
+            $baseline[0].'version.dll' -or $baseline[1].'drover.ini'){
+            throw 'Proxy snapshot did not record both original Discord version directories'
+        }
+        foreach($directory in @($first,$second)){
+            [IO.File]::WriteAllText((Join-Path $directory 'version.dll'),'fixture DLL')
+            [IO.File]::WriteAllText((Join-Path $directory 'drover.ini'),'fixture config')
+        }
+        $applied=@(Get-FixtureDroverFiles $image)
+        Assert-FixtureDroverApplied $baseline $applied $applied[0]
+        [IO.File]::WriteAllText((Join-Path $first 'version.dll'),'wrong DLL')
+        $refused=$false
+        try {Assert-FixtureDroverApplied $baseline @(Get-FixtureDroverFiles $image) $applied[0]}catch{$refused=$true}
+        if(-not $refused){throw 'Proxy snapshot missed an altered older version directory'}
+        foreach($directory in @($first,$second)){
+            [IO.File]::Delete((Join-Path $directory 'version.dll'))
+            [IO.File]::Delete((Join-Path $directory 'drover.ini'))
+        }
+        Assert-FixtureDroverRestored $baseline @(Get-FixtureDroverFiles $image)
+    }finally{$env:LOCALAPPDATA=$priorLocalAppData}
+}
+
+Write-Output 'Interactive Windows application evidence contracts passed.'

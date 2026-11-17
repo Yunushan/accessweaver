@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"syscall"
 
 	"github.com/Yunushan/accessweaver/internal/darwintrust"
@@ -29,7 +30,9 @@ type deploymentStore struct {
 	encoded                                            []byte
 	// Native tests inject a stopped operation at durable phase boundaries.
 	// There is no environment or configuration route to this callback.
-	observe func(string) error
+	observe   func(string) error
+	closeOnce sync.Once
+	closeErr  error
 }
 
 func openDeployment(initialize bool) (*deploymentStore, error) {
@@ -43,11 +46,14 @@ func openDeployment(initialize bool) (*deploymentStore, error) {
 	return beginDeploymentMode(parent, 0, nil, initialize)
 }
 func deploymentDirectory(parent *os.File, name string, owner uint32, create bool) (*os.File, error) {
+	return nativeRuntimeReads().deploymentDirectory(parent, name, owner, create)
+}
+func (r runtimeReadOps) deploymentDirectory(parent *os.File, name string, owner uint32, create bool) (*os.File, error) {
 	f, e := darwintrust.OpenDirectoryAt(parent, name, owner)
-	if errors.Is(e, unix.ENOENT) && create {
+	if darwintrust.IsReadAbsent(e) && create {
 		f, e = darwintrust.CreateDirectoryAt(parent, name, owner)
 		if errors.Is(e, unix.EEXIST) {
-			return deploymentDirectory(parent, name, owner, false)
+			return r.deploymentDirectory(parent, name, owner, false)
 		}
 		if e == nil {
 			if owner == 0 {
@@ -62,7 +68,7 @@ func deploymentDirectory(parent *os.File, name string, owner uint32, create bool
 		e = deploymentObject(f, true, owner, 0755)
 	}
 	if e != nil && f != nil {
-		f.Close()
+		e = r.finish(f, e)
 		f = nil
 	}
 	return f, e
@@ -93,11 +99,14 @@ func fullDeploymentSync(f *os.File) error {
 	return errors.Join(e, syncErr)
 }
 func sameDeploymentEntry(parent *os.File, name string, held *os.File, owner uint32) error {
+	return nativeRuntimeReads().sameDeploymentEntry(parent, name, held, owner)
+}
+func (r runtimeReadOps) sameDeploymentEntry(parent *os.File, name string, held *os.File, owner uint32) (failure error) {
 	actual, e := darwintrust.OpenDirectoryAt(parent, name, owner)
 	if e != nil {
 		return e
 	}
-	defer actual.Close()
+	defer func() { failure = r.finish(actual, failure) }()
 	a, e := held.Stat()
 	if e != nil {
 		return e
@@ -112,13 +121,21 @@ func sameDeploymentEntry(parent *os.File, name string, held *os.File, owner uint
 	return nil
 }
 func deploymentEntries(dir *os.File, owner uint32, limit int) ([]os.DirEntry, error) {
+	return nativeRuntimeReads().deploymentEntries(dir, owner, limit)
+}
+func (r runtimeReadOps) deploymentEntries(dir *os.File, owner uint32, limit int) (result []os.DirEntry, failure error) {
 	// Fresh descriptor avoids sharing enumeration offsets with the held root.
 	fd, e := unix.Openat(int(dir.Fd()), ".", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if e != nil {
 		return nil, e
 	}
 	f := os.NewFile(uintptr(fd), dir.Name())
-	defer f.Close()
+	defer func() {
+		failure = r.finish(f, failure)
+		if failure != nil {
+			result = nil
+		}
+	}()
 	if _, e = darwintrust.Check(f, true, owner); e != nil {
 		return nil, e
 	}
@@ -284,12 +301,15 @@ func beginDeploymentMode(parent *os.File, owner uint32, observe func(string) err
 	if !os.SameFile(runtimeInfo, currentInfo) {
 		return fail(errors.New("runtime coordination identity changed"))
 	}
+	if e = s.refuseReservedRemoval(entries); e != nil {
+		return fail(e)
+	}
 	s.versions, e = deploymentDirectory(s.root, "versions", owner, initialize && !hasHistory)
 	if e != nil {
 		return fail(e)
 	}
 	s.current, e = deploymentDirectory(s.root, "state", owner, false)
-	if errors.Is(e, unix.ENOENT) {
+	if darwintrust.IsReadAbsent(e) {
 		slots, readErr := deploymentEntries(s.versions, owner, maxRetainedDeployments)
 		if readErr != nil {
 			return fail(readErr)
@@ -312,10 +332,21 @@ func beginDeploymentMode(parent *os.File, owner uint32, observe func(string) err
 		if e != nil {
 			return fail(e)
 		}
+		if history == 0 && s.state.Generation != 0 && s.state.Active == (deploymentSlot{}) && len(s.state.Pending) == 0 {
+			// An inactive authority may have just been exchanged with an
+			// archived removal. Make the parent binding durable under the
+			// writer and runtime leases before the first subsequent mutation.
+			if e = fullDeploymentSync(s.parent); e != nil {
+				return fail(e)
+			}
+			if e = s.checkRoot(); e != nil {
+				return fail(e)
+			}
+		}
 	}
 	return s, nil
 }
-func (s *deploymentStore) checkRoot() error {
+func (s *deploymentStore) checkRoot() (failure error) {
 	if s.root == nil || s.lock == nil {
 		return errors.New("deployment store is closed")
 	}
@@ -334,7 +365,7 @@ func (s *deploymentStore) checkRoot() error {
 	if e != nil {
 		return e
 	}
-	defer actual.Close()
+	defer func() { failure = nativeRuntimeReads().finish(actual, failure) }()
 	if e = deploymentObject(actual, false, s.owner, 0600); e != nil {
 		return e
 	}
@@ -363,7 +394,10 @@ func (s *deploymentStore) phase(name string) error {
 	return nil
 }
 func (s *deploymentStore) readRecord(dir *os.File) ([]byte, error) {
-	entries, e := deploymentEntries(dir, s.owner, 1)
+	return nativeRuntimeReads().readRecord(s, dir)
+}
+func (r runtimeReadOps) readRecord(s *deploymentStore, dir *os.File) (payload []byte, failure error) {
+	entries, e := r.deploymentEntries(dir, s.owner, 1)
 	if e != nil {
 		return nil, e
 	}
@@ -374,7 +408,12 @@ func (s *deploymentStore) readRecord(dir *os.File) ([]byte, error) {
 	if e != nil {
 		return nil, e
 	}
-	defer f.Close()
+	defer func() {
+		failure = r.finish(f, failure)
+		if failure != nil {
+			payload = nil
+		}
+	}()
 	if e = deploymentObject(f, false, s.owner, 0644); e != nil {
 		return nil, e
 	}
@@ -401,7 +440,10 @@ func (s *deploymentStore) readRecord(dir *os.File) ([]byte, error) {
 
 // commit returns published even if a post-rename durability/error probe fails.
 // Callers must reopen/reconcile, never undo a possibly published generation.
-func (s *deploymentStore) commit(next deploymentState) (published bool, result error) {
+func (s *deploymentStore) commit(next deploymentState) (bool, error) {
+	return nativeDeploymentCompletion().commit(s, next)
+}
+func (d deploymentCompletion) commit(s *deploymentStore, next deploymentState) (published bool, result error) {
 	encoded, e := encodeDeployment(next)
 	if e != nil {
 		return false, e
@@ -445,7 +487,7 @@ func (s *deploymentStore) commit(next deploymentState) (published bool, result e
 	}
 	defer func() {
 		if staged != nil {
-			result = errors.Join(result, staged.Close())
+			result = d.finish(staged, result)
 		}
 	}()
 	if e = s.phase("record-reserved"); e != nil {
@@ -459,7 +501,7 @@ func (s *deploymentStore) commit(next deploymentState) (published bool, result e
 	if writeErr == nil && n != len(encoded) {
 		writeErr = io.ErrShortWrite
 	}
-	e = errors.Join(writeErr, f.Chmod(0644), fullDeploymentSync(f), f.Close())
+	e = d.finish(f, errors.Join(writeErr, f.Chmod(0644), fullDeploymentSync(f)))
 	if e != nil {
 		return false, e
 	}
@@ -495,7 +537,7 @@ func (s *deploymentStore) commit(next deploymentState) (published bool, result e
 	s.encoded = encoded
 	var closeErr error
 	if old != nil {
-		closeErr = old.Close()
+		closeErr = d.finish(old, nil)
 	}
 	if e = s.phase("record-published"); e != nil {
 		return true, errors.Join(e, closeErr)
@@ -515,6 +557,9 @@ func slotFromDirectory(f *os.File, id string, identity deploymentIdentity) (depl
 	return deploymentSlot{ID: id, Device: int64(st.Dev), Inode: st.Ino, Identity: identity}, nil
 }
 func (s *deploymentStore) prepare(identity deploymentIdentity) (deploymentSlot, error) {
+	return nativeDeploymentCompletion().prepare(s, identity)
+}
+func (d deploymentCompletion) prepare(s *deploymentStore, identity deploymentIdentity) (result deploymentSlot, failure error) {
 	if e := identity.validate(); e != nil {
 		return deploymentSlot{}, e
 	}
@@ -540,7 +585,7 @@ func (s *deploymentStore) prepare(identity deploymentIdentity) (deploymentSlot, 
 	if e != nil {
 		return deploymentSlot{}, e
 	}
-	defer dir.Close()
+	defer func() { failure = d.finish(dir, failure) }()
 	slot, e := slotFromDirectory(dir, id, identity)
 	if e != nil {
 		return slot, e
@@ -555,10 +600,13 @@ func (s *deploymentStore) prepare(identity deploymentIdentity) (deploymentSlot, 
 	if e != nil {
 		return slot, e
 	}
-	_, e = s.commit(next)
+	_, e = d.commit(s, next)
 	return slot, e
 }
 func (s *deploymentStore) openSlot(slot deploymentSlot) (*os.File, error) {
+	return nativeRuntimeReads().openSlot(s, slot)
+}
+func (r runtimeReadOps) openSlot(s *deploymentStore, slot deploymentSlot) (*os.File, error) {
 	if e := slot.validate(); e != nil {
 		return nil, e
 	}
@@ -571,32 +619,28 @@ func (s *deploymentStore) openSlot(slot deploymentSlot) (*os.File, error) {
 		e = errors.New("reserved deployment slot identity changed")
 	}
 	if e != nil {
-		dir.Close()
-		return nil, e
+		return nil, r.finish(dir, e)
 	}
 	return dir, nil
 }
 func (s *deploymentStore) deactivate() (bool, error) {
+	return nativeDeploymentCompletion().deactivate(s)
+}
+func (d deploymentCompletion) deactivate(s *deploymentStore) (bool, error) {
 	next, e := s.state.deactivate()
 	if e != nil {
 		return false, e
 	}
-	return s.commit(next)
+	return d.commit(s, next)
 }
 func (s *deploymentStore) abandon(id string) (bool, error) {
+	return nativeDeploymentCompletion().abandon(s, id)
+}
+func (d deploymentCompletion) abandon(s *deploymentStore, id string) (bool, error) {
 	next, e := s.state.abandon(id)
 	if e != nil {
 		return false, e
 	}
-	return s.commit(next)
+	return d.commit(s, next)
 }
-func (s *deploymentStore) Close() error {
-	var result error
-	for _, p := range []**os.File{&s.current, &s.runtimeLock, &s.lock, &s.versions, &s.root, &s.parent} {
-		if *p != nil {
-			result = errors.Join(result, (*p).Close())
-			*p = nil
-		}
-	}
-	return result
-}
+func (s *deploymentStore) Close() error { return s.closeWith(nativeDeploymentCompletion()) }

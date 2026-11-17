@@ -1,0 +1,2095 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "0bb491ef5e2e232d3abc7e7112819c87c931fbc4",
+  "sourceTree": "8fa7e604f5e770e98ff771bc9ebabdc03358ce80",
+  "runID": 42386332360,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/42386332360",
+  "runStatus": "completed",
+  "runConclusion": "failure",
+  "scope": "owned-linux-browser-15-minute-soak-attempt",
+  "qualified": false,
+  "baselineBudgetsChanged": false,
+  "workingDaySoakQualified": false,
+  "nativeInstalledQualified": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0,
+  "requiredTargetCount": 6,
+  "expectedSecondsPerTarget": 900,
+  "expectedInventoryRequestsPerTarget": 3600,
+  "expectedNavigationPerTarget": 180,
+  "expectedEditorOpensPerTarget": 30,
+  "expectedSamplesPerTarget": 901,
+  "baselineLimitsPerTarget": 25,
+  "sustainedLimitsPerTarget": 22,
+  "providerZIPDigestsVerified": 10,
+  "missingFixedArtifacts": [
+    "browser-soak-amd64-webkit",
+    "browser-soak-arm64-webkit"
+  ],
+  "producerSourceSHA256": {
+    "browser-soak.cjs": {
+      "scripts/browser-tests/browser-timing.cjs": "0fcf23d142e810b0765891e16c9512f41433b469e835dcdb202f4f73a4675446",
+      "scripts/browser-tests/browser-timing.test.cjs": "aab24077fb3dab603c53ca463294fcb5e972ccf9688ab5efb9ab6b035097a44a",
+      "scripts/browser-tests/browser-soak.cjs": "ccc191277f37a99153a2e9baee635691c22a39d99f4a54cb5d5a65699b29fcde",
+      "scripts/browser-tests/browser-soak.test.cjs": "ecf574d9b7d792ec45aeaf2334eefe93e2f6fae0ab1f0b94a811dfd522a539f9",
+      "scripts/browser-tests/soak.config.cjs": "7f2abf43c8ab0ff40332042a3f497297f528508ce69203140bbed34332570e39",
+      "scripts/browser-tests/desktop.spec.cjs": "917e1c6f5bcf5d318478c93ddb08c401a57ec13a84583eac709ea930f491b6fc",
+      "scripts/browser-tests/desktop-performance.cjs": "ff1f540bb84f08071d5685843d059489c953786ffbc4727eae839b23f2cd4b55",
+      "scripts/browser-tests/browser-resources.cjs": "5aeab55a5dd67264a96baf34b264815fb80bcdf9c2ad086b22613ca675c1e5e1",
+      "scripts/browser-tests/browser-memory.cjs": "6e3e73268803a6aa43794f62a40bd04a652a06c3d87d7396a1b16ddb5910fc03",
+      "scripts/browser-tests/job-cpu.cjs": "4812d6387bcec43bc84855eef4f223000440fb2e7d15f1ca7a7fe31a85980b37",
+      "scripts/browser-tests/performance-budgets.json": "97e105bb42966d2b4a0cf4b8505385dbaab1aa1a4afab9670be4f8ee9785160e",
+      "scripts/browser-tests/playwright.config.cjs": "fb951bf6f1eca621cb69eab2d46517b1a57a3779714142879d8f4f93cc719fa9",
+      "scripts/browser-tests/package-lock.json": "8be62d9880021ca910c493d5540682379b6bc5f0b907707a7579dc4f74fbbd6a",
+      "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+      "scripts/browser-tests/check-image-environment.cjs": "e19b4bf61bc94d045e2566f0353a04e267e45d404aae4fabfae63dcec87f460b",
+      "web/app.js": "d00ba0125aef7136f4d5f0e3804190d99acdced19e34a7673b9e961168625d06",
+      "web/system.js": "b0da03f86609e356ecd5a56a63ab7ad02ee18bc8b56ecf94e270ad297b28383b",
+      "web/locales.js": "3e76feaab403e9356420b183de3eb10d2aa7590f263d33a935730ff02ee63b8c",
+      "web/app.css": "b1d26ad09d6c136c0402e0c761c1bba055e8db92fa3e6a59e03b896024ef41d0",
+      "web/index.html": "4de9b17ac88a7c9b304245c08b5c59bbe48fba803f8be67247a2290689c2f4ca",
+      ".github/workflows/browser-soak.yml": "e1b192f57c1a408af32227985b67bb9c12b4575bac753ce0d5a9501725e56035"
+    },
+    "desktop-performance.cjs": {
+      "scripts/browser-tests/browser-timing.cjs": "0fcf23d142e810b0765891e16c9512f41433b469e835dcdb202f4f73a4675446",
+      "scripts/browser-tests/browser-timing.test.cjs": "aab24077fb3dab603c53ca463294fcb5e972ccf9688ab5efb9ab6b035097a44a",
+      "internal/profile/testdata/timestamps.json": "2009c2b8f7b48e28fd62586809dabff9029c8b386227093345c225dbabb39ffe",
+      "scripts/browser-tests/job-cpu.cjs": "4812d6387bcec43bc84855eef4f223000440fb2e7d15f1ca7a7fe31a85980b37",
+      "scripts/browser-tests/browser-memory.cjs": "6e3e73268803a6aa43794f62a40bd04a652a06c3d87d7396a1b16ddb5910fc03",
+      "scripts/browser-tests/browser-resources.cjs": "5aeab55a5dd67264a96baf34b264815fb80bcdf9c2ad086b22613ca675c1e5e1",
+      "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+      "scripts/browser-tests/check-image-environment.cjs": "e19b4bf61bc94d045e2566f0353a04e267e45d404aae4fabfae63dcec87f460b",
+      "scripts/browser-tests/browser-native-binary.cjs": "8194f82559f9b7f32b43d74c3d3c0df6bf00b48e34c23bb3e8ed3132f82db972",
+      "web/app.js": "d00ba0125aef7136f4d5f0e3804190d99acdced19e34a7673b9e961168625d06",
+      "web/index.html": "4de9b17ac88a7c9b304245c08b5c59bbe48fba803f8be67247a2290689c2f4ca",
+      "web/app.css": "b1d26ad09d6c136c0402e0c761c1bba055e8db92fa3e6a59e03b896024ef41d0",
+      "web/locales.js": "3e76feaab403e9356420b183de3eb10d2aa7590f263d33a935730ff02ee63b8c",
+      "web/system.js": "b0da03f86609e356ecd5a56a63ab7ad02ee18bc8b56ecf94e270ad297b28383b",
+      "scripts/browser-tests/desktop.spec.cjs": "917e1c6f5bcf5d318478c93ddb08c401a57ec13a84583eac709ea930f491b6fc",
+      "scripts/browser-tests/desktop-performance.cjs": "ff1f540bb84f08071d5685843d059489c953786ffbc4727eae839b23f2cd4b55",
+      "scripts/browser-tests/performance-budgets.json": "97e105bb42966d2b4a0cf4b8505385dbaab1aa1a4afab9670be4f8ee9785160e",
+      "scripts/browser-tests/package-lock.json": "8be62d9880021ca910c493d5540682379b6bc5f0b907707a7579dc4f74fbbd6a",
+      "scripts/browser-tests/playwright.config.cjs": "fb951bf6f1eca621cb69eab2d46517b1a57a3779714142879d8f4f93cc719fa9",
+      ".github/workflows/browser.yml": "c033c5ec7d780bde99b33176f00bba197517c9cf00687b745df18a42d3e00863"
+    },
+    "browser-timing.cjs": {
+      "scripts/browser-tests/browser-timing.cjs": "0fcf23d142e810b0765891e16c9512f41433b469e835dcdb202f4f73a4675446",
+      "scripts/browser-tests/browser-timing.test.cjs": "aab24077fb3dab603c53ca463294fcb5e972ccf9688ab5efb9ab6b035097a44a",
+      "scripts/browser-tests/desktop-performance.cjs": "ff1f540bb84f08071d5685843d059489c953786ffbc4727eae839b23f2cd4b55",
+      "scripts/browser-tests/desktop.spec.cjs": "917e1c6f5bcf5d318478c93ddb08c401a57ec13a84583eac709ea930f491b6fc",
+      "scripts/browser-tests/soak.config.cjs": "7f2abf43c8ab0ff40332042a3f497297f528508ce69203140bbed34332570e39",
+      "scripts/browser-tests/playwright.config.cjs": "fb951bf6f1eca621cb69eab2d46517b1a57a3779714142879d8f4f93cc719fa9",
+      "scripts/browser-tests/package-lock.json": "8be62d9880021ca910c493d5540682379b6bc5f0b907707a7579dc4f74fbbd6a",
+      "internal/uiaccess/launcher.go": "051be5ba8dffe85ba1278b181998b28d6d7bbdd7ebd1dd87ce443a0768d14675",
+      "internal/api/server.go": "d7a49af6bc47ffccf548c01ac6265cc403a348d082d5cf94f924de6877a201c0",
+      "web/app.js": "d00ba0125aef7136f4d5f0e3804190d99acdced19e34a7673b9e961168625d06",
+      "web/system.js": "b0da03f86609e356ecd5a56a63ab7ad02ee18bc8b56ecf94e270ad297b28383b",
+      "web/locales.js": "3e76feaab403e9356420b183de3eb10d2aa7590f263d33a935730ff02ee63b8c",
+      "web/index.html": "4de9b17ac88a7c9b304245c08b5c59bbe48fba803f8be67247a2290689c2f4ca",
+      "web/app.css": "b1d26ad09d6c136c0402e0c761c1bba055e8db92fa3e6a59e03b896024ef41d0",
+      ".github/workflows/browser-soak.yml": "e1b192f57c1a408af32227985b67bb9c12b4575bac753ce0d5a9501725e56035"
+    }
+  },
+  "jobs": [
+    {
+      "id": 128444994966,
+      "name": "Real browser (amd64/chromium)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed keyboard evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify isolated application contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain sustained browser evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain unchanged baseline performance evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed baseline memory diagnostics",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed numeric performance phase timings",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128444995194,
+      "name": "Real browser (arm64/webkit)",
+      "status": "completed",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed keyboard evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify isolated application contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Retain sustained browser evidence",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Retain unchanged baseline performance evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed baseline memory diagnostics",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed numeric performance phase timings",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128444995200,
+      "name": "Real browser (amd64/firefox)",
+      "status": "completed",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed keyboard evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify isolated application contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Retain sustained browser evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain unchanged baseline performance evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed baseline memory diagnostics",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed numeric performance phase timings",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128444995205,
+      "name": "Real browser (amd64/webkit)",
+      "status": "completed",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed keyboard evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify isolated application contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Retain sustained browser evidence",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Retain unchanged baseline performance evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed baseline memory diagnostics",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed numeric performance phase timings",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128444995219,
+      "name": "Real browser (arm64/firefox)",
+      "status": "completed",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed keyboard evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify isolated application contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Retain sustained browser evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain unchanged baseline performance evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed baseline memory diagnostics",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed numeric performance phase timings",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128444995306,
+      "name": "Real browser (arm64/chromium)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed keyboard evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify isolated application contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain sustained browser evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain unchanged baseline performance evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed baseline memory diagnostics",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed numeric performance phase timings",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "reports": [
+    {
+      "artifactName": "browser-soak-amd64-chromium",
+      "artifactID": 13580560748,
+      "providerZIPSize": 2066,
+      "providerZIPDigest": "sha256:c7b8b769a4e14217f0719101f6e1bd9dedea79aee0b2d08468c9d1b74123e2cb",
+      "providerZIPDigestVerified": true,
+      "canonicalReportSHA256": "caa25fb4080368eed315cefa4e298a5e116d74794d84644840630f41fe81d437",
+      "sourceHashesVerified": 21,
+      "sourceCommit": "0bb491ef5e2e232d3abc7e7112819c87c931fbc4",
+      "binarySHA256": "486b34ab6c22d2a311787b63493953ac72c27085e3be0ef9088e169de840c010",
+      "outcome": "passed",
+      "stage": "complete",
+      "failureKind": "none",
+      "counts": {
+        "seconds": 900,
+        "requests": 3600,
+        "navigation": 180,
+        "editor": 30,
+        "samples": 901,
+        "elapsedMilliseconds": 900014
+      },
+      "metrics": {
+        "browserPeakRssBytes": 834453504,
+        "controllerPeakRssBytes": 18128896,
+        "browserPeakDescriptors": 167,
+        "browserPeakThreads": 65,
+        "browserPeakProcesses": 6,
+        "controllerPeakDescriptors": 14,
+        "controllerPeakThreads": 12,
+        "browserRssGrowthBytes": 203710464,
+        "controllerRssGrowthBytes": 294912,
+        "browserDescriptorGrowth": 3,
+        "browserThreadGrowth": 0,
+        "browserProcessGrowth": 0,
+        "controllerDescriptorGrowth": 0,
+        "controllerThreadGrowth": 1,
+        "navigationP95Ms": 263.8542540000053,
+        "editorP95Ms": 117.19453899993096,
+        "apiP95Ms": 38.800000000046566,
+        "browserCpuPercentOneCore": 4.437708746752828,
+        "controllerCpuPercentOneCore": 2.665514092003013,
+        "jobCpuPercentOneCore": 12.974919849729094,
+        "maximumSampleGapMs": 1026.4537899999414,
+        "lateMedianRssGrowthBytes": 23093248
+      },
+      "violations": [],
+      "checkpoints": [
+        {
+          "second": 0,
+          "browserRssBytes": 600494080,
+          "controllerRssBytes": 17162240,
+          "browserDescriptors": 162,
+          "controllerDescriptors": 9,
+          "browserThreads": 64,
+          "controllerThreads": 11,
+          "browserProcesses": 6
+        },
+        {
+          "second": 100,
+          "browserRssBytes": 651956224,
+          "controllerRssBytes": 16969728,
+          "browserDescriptors": 165,
+          "controllerDescriptors": 12,
+          "browserThreads": 65,
+          "controllerThreads": 12,
+          "browserProcesses": 6
+        },
+        {
+          "second": 200,
+          "browserRssBytes": 691920896,
+          "controllerRssBytes": 17670144,
+          "browserDescriptors": 165,
+          "controllerDescriptors": 12,
+          "browserThreads": 64,
+          "controllerThreads": 12,
+          "browserProcesses": 6
+        },
+        {
+          "second": 300,
+          "browserRssBytes": 729313280,
+          "controllerRssBytes": 17276928,
+          "browserDescriptors": 165,
+          "controllerDescriptors": 12,
+          "browserThreads": 65,
+          "controllerThreads": 12,
+          "browserProcesses": 6
+        },
+        {
+          "second": 400,
+          "browserRssBytes": 765464576,
+          "controllerRssBytes": 16777216,
+          "browserDescriptors": 165,
+          "controllerDescriptors": 12,
+          "browserThreads": 64,
+          "controllerThreads": 12,
+          "browserProcesses": 6
+        },
+        {
+          "second": 500,
+          "browserRssBytes": 803393536,
+          "controllerRssBytes": 17018880,
+          "browserDescriptors": 165,
+          "controllerDescriptors": 12,
+          "browserThreads": 64,
+          "controllerThreads": 12,
+          "browserProcesses": 6
+        },
+        {
+          "second": 600,
+          "browserRssBytes": 810180608,
+          "controllerRssBytes": 17342464,
+          "browserDescriptors": 165,
+          "controllerDescriptors": 12,
+          "browserThreads": 64,
+          "controllerThreads": 12,
+          "browserProcesses": 6
+        },
+        {
+          "second": 700,
+          "browserRssBytes": 806756352,
+          "controllerRssBytes": 16560128,
+          "browserDescriptors": 165,
+          "controllerDescriptors": 12,
+          "browserThreads": 64,
+          "controllerThreads": 12,
+          "browserProcesses": 6
+        },
+        {
+          "second": 800,
+          "browserRssBytes": 811188224,
+          "controllerRssBytes": 16994304,
+          "browserDescriptors": 165,
+          "controllerDescriptors": 12,
+          "browserThreads": 64,
+          "controllerThreads": 12,
+          "browserProcesses": 6
+        },
+        {
+          "second": 900,
+          "browserRssBytes": 814739456,
+          "controllerRssBytes": 17457152,
+          "browserDescriptors": 165,
+          "controllerDescriptors": 12,
+          "browserThreads": 64,
+          "controllerThreads": 12,
+          "browserProcesses": 6
+        }
+      ]
+    },
+    {
+      "artifactName": "browser-soak-amd64-firefox",
+      "artifactID": 13580630529,
+      "providerZIPSize": 2075,
+      "providerZIPDigest": "sha256:5b447a0113f93ff312cc42c894310e81b9607ee659690bb393272b723e2de019",
+      "providerZIPDigestVerified": true,
+      "canonicalReportSHA256": "2c2f66aea56b89a94486eb09c29177e95821b4007eeb659bfd23ee2ce00d7fbc",
+      "sourceHashesVerified": 21,
+      "sourceCommit": "0bb491ef5e2e232d3abc7e7112819c87c931fbc4",
+      "binarySHA256": "486b34ab6c22d2a311787b63493953ac72c27085e3be0ef9088e169de840c010",
+      "outcome": "failed",
+      "stage": "complete",
+      "failureKind": "none",
+      "counts": {
+        "seconds": 900,
+        "requests": 3600,
+        "navigation": 180,
+        "editor": 30,
+        "samples": 901,
+        "elapsedMilliseconds": 900022
+      },
+      "metrics": {
+        "browserPeakRssBytes": 1088315392,
+        "controllerPeakRssBytes": 18325504,
+        "browserPeakDescriptors": 274,
+        "browserPeakThreads": 142,
+        "browserPeakProcesses": 7,
+        "controllerPeakDescriptors": 13,
+        "controllerPeakThreads": 12,
+        "browserRssGrowthBytes": 94511104,
+        "controllerRssGrowthBytes": 122880,
+        "browserDescriptorGrowth": 2,
+        "browserThreadGrowth": -4,
+        "browserProcessGrowth": 0,
+        "controllerDescriptorGrowth": 0,
+        "controllerThreadGrowth": 1,
+        "navigationP95Ms": 266.65178499999456,
+        "editorP95Ms": 189.40958300000057,
+        "apiP95Ms": 43,
+        "browserCpuPercentOneCore": 8.522013906326734,
+        "controllerCpuPercentOneCore": 2.7143780929799495,
+        "jobCpuPercentOneCore": 21.80402478569895,
+        "maximumSampleGapMs": 1039.6458100000164,
+        "lateMedianRssGrowthBytes": -5505024
+      },
+      "violations": [
+        "browserPeakRssBytes"
+      ],
+      "checkpoints": [
+        {
+          "second": 0,
+          "browserRssBytes": 926257152,
+          "controllerRssBytes": 16834560,
+          "browserDescriptors": 268,
+          "controllerDescriptors": 10,
+          "browserThreads": 140,
+          "controllerThreads": 11,
+          "browserProcesses": 7
+        },
+        {
+          "second": 100,
+          "browserRssBytes": 995282944,
+          "controllerRssBytes": 16809984,
+          "browserDescriptors": 270,
+          "controllerDescriptors": 12,
+          "browserThreads": 136,
+          "controllerThreads": 11,
+          "browserProcesses": 7
+        },
+        {
+          "second": 200,
+          "browserRssBytes": 991383552,
+          "controllerRssBytes": 16830464,
+          "browserDescriptors": 272,
+          "controllerDescriptors": 12,
+          "browserThreads": 136,
+          "controllerThreads": 12,
+          "browserProcesses": 7
+        },
+        {
+          "second": 300,
+          "browserRssBytes": 1045098496,
+          "controllerRssBytes": 17334272,
+          "browserDescriptors": 272,
+          "controllerDescriptors": 12,
+          "browserThreads": 137,
+          "controllerThreads": 12,
+          "browserProcesses": 7
+        },
+        {
+          "second": 400,
+          "browserRssBytes": 1010479104,
+          "controllerRssBytes": 16330752,
+          "browserDescriptors": 272,
+          "controllerDescriptors": 12,
+          "browserThreads": 134,
+          "controllerThreads": 12,
+          "browserProcesses": 7
+        },
+        {
+          "second": 500,
+          "browserRssBytes": 1050062848,
+          "controllerRssBytes": 16965632,
+          "browserDescriptors": 272,
+          "controllerDescriptors": 12,
+          "browserThreads": 134,
+          "controllerThreads": 12,
+          "browserProcesses": 7
+        },
+        {
+          "second": 600,
+          "browserRssBytes": 1025359872,
+          "controllerRssBytes": 16429056,
+          "browserDescriptors": 272,
+          "controllerDescriptors": 12,
+          "browserThreads": 137,
+          "controllerThreads": 12,
+          "browserProcesses": 7
+        },
+        {
+          "second": 700,
+          "browserRssBytes": 1071124480,
+          "controllerRssBytes": 17260544,
+          "browserDescriptors": 272,
+          "controllerDescriptors": 12,
+          "browserThreads": 134,
+          "controllerThreads": 12,
+          "browserProcesses": 7
+        },
+        {
+          "second": 800,
+          "browserRssBytes": 1016119296,
+          "controllerRssBytes": 17129472,
+          "browserDescriptors": 272,
+          "controllerDescriptors": 12,
+          "browserThreads": 134,
+          "controllerThreads": 12,
+          "browserProcesses": 7
+        },
+        {
+          "second": 900,
+          "browserRssBytes": 1077112832,
+          "controllerRssBytes": 16957440,
+          "browserDescriptors": 272,
+          "controllerDescriptors": 12,
+          "browserThreads": 137,
+          "controllerThreads": 12,
+          "browserProcesses": 7
+        }
+      ]
+    },
+    {
+      "artifactName": "browser-soak-arm64-chromium",
+      "artifactID": 13580605685,
+      "providerZIPSize": 2044,
+      "providerZIPDigest": "sha256:831e35d5c419e755a55ed1d7840c5d96e12917913b74fd7aee655cd24351c222",
+      "providerZIPDigestVerified": true,
+      "canonicalReportSHA256": "2a5e8dae26551b5f5fcd7999039209a6822298eb13eb6ffa4b2c26cac0caa015",
+      "sourceHashesVerified": 21,
+      "sourceCommit": "0bb491ef5e2e232d3abc7e7112819c87c931fbc4",
+      "binarySHA256": "a24ce1879ad679e15e0e8e50eb11101bcbdd8281e7433192562d2456896afb76",
+      "outcome": "passed",
+      "stage": "complete",
+      "failureKind": "none",
+      "counts": {
+        "seconds": 900,
+        "requests": 3600,
+        "navigation": 180,
+        "editor": 30,
+        "samples": 901,
+        "elapsedMilliseconds": 900012
+      },
+      "metrics": {
+        "browserPeakRssBytes": 818307072,
+        "controllerPeakRssBytes": 18010112,
+        "browserPeakDescriptors": 163,
+        "browserPeakThreads": 65,
+        "browserPeakProcesses": 6,
+        "controllerPeakDescriptors": 12,
+        "controllerPeakThreads": 11,
+        "browserRssGrowthBytes": 202170368,
+        "controllerRssGrowthBytes": 348160,
+        "browserDescriptorGrowth": 3,
+        "browserThreadGrowth": 0,
+        "browserProcessGrowth": 0,
+        "controllerDescriptorGrowth": 0,
+        "controllerThreadGrowth": 0,
+        "navigationP95Ms": 260.2405279999366,
+        "editorP95Ms": 133.44339000000036,
+        "apiP95Ms": 25.39999999999418,
+        "browserCpuPercentOneCore": 4.833268889748137,
+        "controllerCpuPercentOneCore": 1.576645644724737,
+        "jobCpuPercentOneCore": 11.492087447578312,
+        "maximumSampleGapMs": 1032.0831769999932,
+        "lateMedianRssGrowthBytes": 24952832
+      },
+      "violations": [],
+      "checkpoints": [
+        {
+          "second": 0,
+          "browserRssBytes": 586825728,
+          "controllerRssBytes": 16187392,
+          "browserDescriptors": 160,
+          "controllerDescriptors": 9,
+          "browserThreads": 64,
+          "controllerThreads": 11,
+          "browserProcesses": 6
+        },
+        {
+          "second": 100,
+          "browserRssBytes": 637526016,
+          "controllerRssBytes": 15785984,
+          "browserDescriptors": 163,
+          "controllerDescriptors": 12,
+          "browserThreads": 64,
+          "controllerThreads": 11,
+          "browserProcesses": 6
+        },
+        {
+          "second": 200,
+          "browserRssBytes": 675151872,
+          "controllerRssBytes": 15630336,
+          "browserDescriptors": 163,
+          "controllerDescriptors": 12,
+          "browserThreads": 64,
+          "controllerThreads": 11,
+          "browserProcesses": 6
+        },
+        {
+          "second": 300,
+          "browserRssBytes": 712560640,
+          "controllerRssBytes": 16539648,
+          "browserDescriptors": 163,
+          "controllerDescriptors": 12,
+          "browserThreads": 64,
+          "controllerThreads": 11,
+          "browserProcesses": 6
+        },
+        {
+          "second": 400,
+          "browserRssBytes": 746205184,
+          "controllerRssBytes": 15634432,
+          "browserDescriptors": 163,
+          "controllerDescriptors": 12,
+          "browserThreads": 64,
+          "controllerThreads": 11,
+          "browserProcesses": 6
+        },
+        {
+          "second": 500,
+          "browserRssBytes": 786931712,
+          "controllerRssBytes": 16879616,
+          "browserDescriptors": 163,
+          "controllerDescriptors": 12,
+          "browserThreads": 64,
+          "controllerThreads": 11,
+          "browserProcesses": 6
+        },
+        {
+          "second": 600,
+          "browserRssBytes": 790274048,
+          "controllerRssBytes": 16228352,
+          "browserDescriptors": 163,
+          "controllerDescriptors": 12,
+          "browserThreads": 64,
+          "controllerThreads": 11,
+          "browserProcesses": 6
+        },
+        {
+          "second": 700,
+          "browserRssBytes": 791343104,
+          "controllerRssBytes": 16379904,
+          "browserDescriptors": 163,
+          "controllerDescriptors": 12,
+          "browserThreads": 64,
+          "controllerThreads": 11,
+          "browserProcesses": 6
+        },
+        {
+          "second": 800,
+          "browserRssBytes": 791212032,
+          "controllerRssBytes": 16183296,
+          "browserDescriptors": 163,
+          "controllerDescriptors": 12,
+          "browserThreads": 64,
+          "controllerThreads": 11,
+          "browserProcesses": 6
+        },
+        {
+          "second": 900,
+          "browserRssBytes": 799502336,
+          "controllerRssBytes": 16535552,
+          "browserDescriptors": 163,
+          "controllerDescriptors": 12,
+          "browserThreads": 64,
+          "controllerThreads": 11,
+          "browserProcesses": 6
+        }
+      ]
+    },
+    {
+      "artifactName": "browser-soak-arm64-firefox",
+      "artifactID": 13579683375,
+      "providerZIPSize": 2087,
+      "providerZIPDigest": "sha256:dd7b60ac2b3edfecb7f8eb04e15afeb451326b054a91b5443861f4dc4d42746a",
+      "providerZIPDigestVerified": true,
+      "canonicalReportSHA256": "7f6e224478ac7b23310cbc092547b7191bbe332749820c1a255fd0f59559f79d",
+      "sourceHashesVerified": 21,
+      "sourceCommit": "0bb491ef5e2e232d3abc7e7112819c87c931fbc4",
+      "binarySHA256": "a24ce1879ad679e15e0e8e50eb11101bcbdd8281e7433192562d2456896afb76",
+      "outcome": "failed",
+      "stage": "complete",
+      "failureKind": "none",
+      "counts": {
+        "seconds": 900,
+        "requests": 3600,
+        "navigation": 180,
+        "editor": 30,
+        "samples": 901,
+        "elapsedMilliseconds": 900019
+      },
+      "metrics": {
+        "browserPeakRssBytes": 1133928448,
+        "controllerPeakRssBytes": 18272256,
+        "browserPeakDescriptors": 274,
+        "browserPeakThreads": 143,
+        "browserPeakProcesses": 7,
+        "controllerPeakDescriptors": 13,
+        "controllerPeakThreads": 12,
+        "browserRssGrowthBytes": 86302720,
+        "controllerRssGrowthBytes": 557056,
+        "browserDescriptorGrowth": 2,
+        "browserThreadGrowth": -3,
+        "browserProcessGrowth": 0,
+        "controllerDescriptorGrowth": 0,
+        "controllerThreadGrowth": 1,
+        "navigationP95Ms": 259.914877000032,
+        "editorP95Ms": 186.5284549999924,
+        "apiP95Ms": 31,
+        "browserCpuPercentOneCore": 8.274269765416063,
+        "controllerCpuPercentOneCore": 1.6432986414731243,
+        "jobCpuPercentOneCore": 19.203630974397,
+        "maximumSampleGapMs": 1043.7516279999982,
+        "lateMedianRssGrowthBytes": -1306624
+      },
+      "violations": [
+        "browserPeakRssBytes"
+      ],
+      "checkpoints": [
+        {
+          "second": 0,
+          "browserRssBytes": 1011286016,
+          "controllerRssBytes": 15994880,
+          "browserDescriptors": 267,
+          "controllerDescriptors": 9,
+          "browserThreads": 139,
+          "controllerThreads": 11,
+          "browserProcesses": 7
+        },
+        {
+          "second": 100,
+          "browserRssBytes": 1055875072,
+          "controllerRssBytes": 15491072,
+          "browserDescriptors": 270,
+          "controllerDescriptors": 12,
+          "browserThreads": 137,
+          "controllerThreads": 11,
+          "browserProcesses": 7
+        },
+        {
+          "second": 200,
+          "browserRssBytes": 1086963712,
+          "controllerRssBytes": 16293888,
+          "browserDescriptors": 272,
+          "controllerDescriptors": 12,
+          "browserThreads": 139,
+          "controllerThreads": 12,
+          "browserProcesses": 7
+        },
+        {
+          "second": 300,
+          "browserRssBytes": 1109966848,
+          "controllerRssBytes": 16490496,
+          "browserDescriptors": 272,
+          "controllerDescriptors": 12,
+          "browserThreads": 137,
+          "controllerThreads": 12,
+          "browserProcesses": 7
+        },
+        {
+          "second": 400,
+          "browserRssBytes": 1094651904,
+          "controllerRssBytes": 16683008,
+          "browserDescriptors": 272,
+          "controllerDescriptors": 12,
+          "browserThreads": 134,
+          "controllerThreads": 12,
+          "browserProcesses": 7
+        },
+        {
+          "second": 500,
+          "browserRssBytes": 1118294016,
+          "controllerRssBytes": 16801792,
+          "browserDescriptors": 272,
+          "controllerDescriptors": 12,
+          "browserThreads": 135,
+          "controllerThreads": 12,
+          "browserProcesses": 7
+        },
+        {
+          "second": 600,
+          "browserRssBytes": 1096441856,
+          "controllerRssBytes": 16457728,
+          "browserDescriptors": 272,
+          "controllerDescriptors": 12,
+          "browserThreads": 137,
+          "controllerThreads": 12,
+          "browserProcesses": 7
+        },
+        {
+          "second": 700,
+          "browserRssBytes": 1128521728,
+          "controllerRssBytes": 16896000,
+          "browserDescriptors": 272,
+          "controllerDescriptors": 12,
+          "browserThreads": 134,
+          "controllerThreads": 12,
+          "browserProcesses": 7
+        },
+        {
+          "second": 800,
+          "browserRssBytes": 1099694080,
+          "controllerRssBytes": 15978496,
+          "browserDescriptors": 272,
+          "controllerDescriptors": 12,
+          "browserThreads": 134,
+          "controllerThreads": 12,
+          "browserProcesses": 7
+        },
+        {
+          "second": 900,
+          "browserRssBytes": 1125822464,
+          "controllerRssBytes": 16551936,
+          "browserDescriptors": 272,
+          "controllerDescriptors": 12,
+          "browserThreads": 136,
+          "controllerThreads": 12,
+          "browserProcesses": 7
+        }
+      ]
+    },
+    {
+      "artifactName": "desktop-performance-amd64-chromium",
+      "artifactID": 13580610628,
+      "providerZIPSize": 2010,
+      "providerZIPDigest": "sha256:5fa6052a72dc8df7b060fdfb446033506243b730c345288aa064d01b8d416776",
+      "providerZIPDigestVerified": true,
+      "canonicalReportSHA256": "d0fe0ead33f38d5bb486f0a93da14d5fb63e54a88b6265c3196d6f96b0b0453d",
+      "sourceHashesVerified": 20,
+      "sourceCommit": "0bb491ef5e2e232d3abc7e7112819c87c931fbc4",
+      "binarySHA256": "486b34ab6c22d2a311787b63493953ac72c27085e3be0ef9088e169de840c010",
+      "outcome": "passed",
+      "stage": "complete",
+      "failureKind": "none",
+      "counts": {
+        "reload": 5,
+        "navigation": 24,
+        "editor": 10,
+        "burstRequests": 96,
+        "loadRequests": 240,
+        "resourceSamples": 296,
+        "loadMilliseconds": 60000,
+        "browserResourceSamples": 80,
+        "browserObservedExits": 0,
+        "browserCpuMilliseconds": 60925,
+        "browserFailureStage": 0,
+        "jobCpuMilliseconds": 60923,
+        "jobCpuFailureStage": 0
+      },
+      "metrics": {
+        "controllerStartupMs": 29.502130999999963,
+        "dashboardReadyMs": 404.15425200000004,
+        "reloadP95Ms": 249.9376360000001,
+        "navigationP95Ms": 274.09282899999926,
+        "editorP95Ms": 133.16225599999962,
+        "apiP95Ms": 37.80000000000291,
+        "burstRequestsPerSecond": 166.42128195353624,
+        "loadRequestsPerSecond": 3.9999343142786707,
+        "loadCpuPercentOneCore": 2.64995648320962,
+        "sampledPeakRssBytes": 17567744,
+        "sampledPeakDescriptors": 15,
+        "sampledPeakThreads": 11,
+        "cooldownRssGrowthBytes": 1855488,
+        "cooldownDescriptorGrowth": -2,
+        "cooldownThreadGrowth": 2,
+        "browserSampledPeakRssBytes": 672514048,
+        "browserSampledPeakDescriptors": 167,
+        "browserSampledPeakThreads": 66,
+        "browserSampledPeakProcesses": 6,
+        "browserObservedLoadCpuPercentOneCore": 3.9720602946193786,
+        "browserCooldownRssGrowthBytes": 67796992,
+        "browserCooldownDescriptorGrowth": -1,
+        "browserCooldownThreadGrowth": -2,
+        "browserCooldownProcessGrowth": 0,
+        "jobLoadCpuPercentOneCore": 12.235226990100468
+      },
+      "violations": []
+    },
+    {
+      "artifactName": "desktop-performance-amd64-firefox",
+      "artifactID": 13580695363,
+      "providerZIPSize": 2008,
+      "providerZIPDigest": "sha256:2ec0f102f29b48363d193726a449d37cfd0e4b0053fd3cfbab7f6641900d5c31",
+      "providerZIPDigestVerified": true,
+      "canonicalReportSHA256": "a505cacb3887232440b3868296cdfa2bf4e945f7661be0a606cc8bd1605aee39",
+      "sourceHashesVerified": 20,
+      "sourceCommit": "0bb491ef5e2e232d3abc7e7112819c87c931fbc4",
+      "binarySHA256": "486b34ab6c22d2a311787b63493953ac72c27085e3be0ef9088e169de840c010",
+      "outcome": "passed",
+      "stage": "complete",
+      "failureKind": "none",
+      "counts": {
+        "reload": 5,
+        "navigation": 24,
+        "editor": 10,
+        "burstRequests": 96,
+        "loadRequests": 240,
+        "resourceSamples": 305,
+        "loadMilliseconds": 60001,
+        "browserResourceSamples": 81,
+        "browserObservedExits": 0,
+        "browserCpuMilliseconds": 60958,
+        "browserFailureStage": 0,
+        "jobCpuMilliseconds": 60956,
+        "jobCpuFailureStage": 0
+      },
+      "metrics": {
+        "controllerStartupMs": 29.500425000000178,
+        "dashboardReadyMs": 604.5070770000002,
+        "reloadP95Ms": 424.31441399999994,
+        "navigationP95Ms": 323.51139700000203,
+        "editorP95Ms": 249.99177599999894,
+        "apiP95Ms": 39,
+        "burstRequestsPerSecond": 144.78812498354063,
+        "loadRequestsPerSecond": 3.9999309879906852,
+        "loadCpuPercentOneCore": 2.633287900427201,
+        "sampledPeakRssBytes": 17620992,
+        "sampledPeakDescriptors": 14,
+        "sampledPeakThreads": 11,
+        "cooldownRssGrowthBytes": 2576384,
+        "cooldownDescriptorGrowth": -2,
+        "cooldownThreadGrowth": 2,
+        "browserSampledPeakRssBytes": 1017417728,
+        "browserSampledPeakDescriptors": 283,
+        "browserSampledPeakThreads": 155,
+        "browserSampledPeakProcesses": 7,
+        "browserObservedLoadCpuPercentOneCore": 6.906393454848496,
+        "browserCooldownRssGrowthBytes": 139935744,
+        "browserCooldownDescriptorGrowth": -14,
+        "browserCooldownThreadGrowth": -10,
+        "browserCooldownProcessGrowth": 0,
+        "jobLoadCpuPercentOneCore": 20.549685359913752
+      },
+      "violations": []
+    },
+    {
+      "artifactName": "desktop-performance-amd64-webkit",
+      "artifactID": 13579628034,
+      "providerZIPSize": 2009,
+      "providerZIPDigest": "sha256:089a1528dfe121d92373e61855deeedbb72ff017b483f6620da899c1779b2333",
+      "providerZIPDigestVerified": true,
+      "canonicalReportSHA256": "c1db8328be605cb42c36d030a904fa0abb4ba6b2a5b751f4f13eeac48f3c121d",
+      "sourceHashesVerified": 20,
+      "sourceCommit": "0bb491ef5e2e232d3abc7e7112819c87c931fbc4",
+      "binarySHA256": "486b34ab6c22d2a311787b63493953ac72c27085e3be0ef9088e169de840c010",
+      "outcome": "failed",
+      "stage": "complete",
+      "failureKind": "none",
+      "counts": {
+        "reload": 5,
+        "navigation": 24,
+        "editor": 10,
+        "burstRequests": 96,
+        "loadRequests": 240,
+        "resourceSamples": 312,
+        "loadMilliseconds": 60001,
+        "browserResourceSamples": 84,
+        "browserObservedExits": 0,
+        "browserCpuMilliseconds": 60834,
+        "browserFailureStage": 0,
+        "jobCpuMilliseconds": 60832,
+        "jobCpuFailureStage": 0
+      },
+      "metrics": {
+        "controllerStartupMs": 30.63051900000005,
+        "dashboardReadyMs": 4328.955951,
+        "reloadP95Ms": 217.69013199999972,
+        "navigationP95Ms": 377.54715099999885,
+        "editorP95Ms": 717.9078549999995,
+        "apiP95Ms": 37,
+        "burstRequestsPerSecond": 153.7025131822683,
+        "loadRequestsPerSecond": 3.999888866421087,
+        "loadCpuPercentOneCore": 2.6165939667837947,
+        "sampledPeakRssBytes": 17575936,
+        "sampledPeakDescriptors": 14,
+        "sampledPeakThreads": 11,
+        "cooldownRssGrowthBytes": 2011136,
+        "cooldownDescriptorGrowth": -2,
+        "cooldownThreadGrowth": 2,
+        "browserSampledPeakRssBytes": 887422976,
+        "browserSampledPeakDescriptors": 101,
+        "browserSampledPeakThreads": 66,
+        "browserSampledPeakProcesses": 5,
+        "browserObservedLoadCpuPercentOneCore": 7.8738085183946644,
+        "browserCooldownRssGrowthBytes": 153161728,
+        "browserCooldownDescriptorGrowth": 5,
+        "browserCooldownThreadGrowth": -10,
+        "browserCooldownProcessGrowth": 0,
+        "jobLoadCpuPercentOneCore": 17.25459530307849
+      },
+      "violations": [
+        "dashboardReadyMs",
+        "editorP95Ms"
+      ]
+    },
+    {
+      "artifactName": "desktop-performance-arm64-chromium",
+      "artifactID": 13580545718,
+      "providerZIPSize": 2007,
+      "providerZIPDigest": "sha256:18c4d0fe33be6b8827b0c75edaee08b27560124055e379a9d201b6505d09e1e1",
+      "providerZIPDigestVerified": true,
+      "canonicalReportSHA256": "1dcb92c08de0954173b2c74cba13e3d8cd066516dd89342796e7524c11dc5233",
+      "sourceHashesVerified": 20,
+      "sourceCommit": "0bb491ef5e2e232d3abc7e7112819c87c931fbc4",
+      "binarySHA256": "a24ce1879ad679e15e0e8e50eb11101bcbdd8281e7433192562d2456896afb76",
+      "outcome": "passed",
+      "stage": "complete",
+      "failureKind": "none",
+      "counts": {
+        "reload": 5,
+        "navigation": 24,
+        "editor": 10,
+        "burstRequests": 96,
+        "loadRequests": 240,
+        "resourceSamples": 295,
+        "loadMilliseconds": 60001,
+        "browserResourceSamples": 80,
+        "browserObservedExits": 0,
+        "browserCpuMilliseconds": 60844,
+        "browserFailureStage": 0,
+        "jobCpuMilliseconds": 60842,
+        "jobCpuFailureStage": 0
+      },
+      "metrics": {
+        "controllerStartupMs": 29.072193999999968,
+        "dashboardReadyMs": 322.189343,
+        "reloadP95Ms": 242.90483199999994,
+        "navigationP95Ms": 273.85564699999986,
+        "editorP95Ms": 133.56934999999976,
+        "apiP95Ms": 28.30000000000291,
+        "burstRequestsPerSecond": 237.714248540305,
+        "loadRequestsPerSecond": 3.999898075930528,
+        "loadCpuPercentOneCore": 1.516628020456992,
+        "sampledPeakRssBytes": 17248256,
+        "sampledPeakDescriptors": 14,
+        "sampledPeakThreads": 11,
+        "cooldownRssGrowthBytes": 1925120,
+        "cooldownDescriptorGrowth": -3,
+        "cooldownThreadGrowth": 2,
+        "browserSampledPeakRssBytes": 656019456,
+        "browserSampledPeakDescriptors": 163,
+        "browserSampledPeakThreads": 65,
+        "browserSampledPeakProcesses": 6,
+        "browserObservedLoadCpuPercentOneCore": 4.289653343365455,
+        "browserCooldownRssGrowthBytes": 68427776,
+        "browserCooldownDescriptorGrowth": -2,
+        "browserCooldownThreadGrowth": 1,
+        "browserCooldownProcessGrowth": 0,
+        "jobLoadCpuPercentOneCore": 10.76235065759907
+      },
+      "violations": []
+    },
+    {
+      "artifactName": "desktop-performance-arm64-firefox",
+      "artifactID": 13580376160,
+      "providerZIPSize": 2004,
+      "providerZIPDigest": "sha256:c2dd79ea571ea67f0e7bb0c60ecdec562982d54d9e20c356a1af135980d9971b",
+      "providerZIPDigestVerified": true,
+      "canonicalReportSHA256": "44d72cab9bc1b005beebdf86a750fb7e3cc91656f4aea8aafcb4c4415cdc0aa2",
+      "sourceHashesVerified": 20,
+      "sourceCommit": "0bb491ef5e2e232d3abc7e7112819c87c931fbc4",
+      "binarySHA256": "a24ce1879ad679e15e0e8e50eb11101bcbdd8281e7433192562d2456896afb76",
+      "outcome": "passed",
+      "stage": "complete",
+      "failureKind": "none",
+      "counts": {
+        "reload": 5,
+        "navigation": 24,
+        "editor": 10,
+        "burstRequests": 96,
+        "loadRequests": 240,
+        "resourceSamples": 301,
+        "loadMilliseconds": 60005,
+        "browserResourceSamples": 80,
+        "browserObservedExits": 0,
+        "browserCpuMilliseconds": 61015,
+        "browserFailureStage": 0,
+        "jobCpuMilliseconds": 61012,
+        "jobCpuFailureStage": 0
+      },
+      "metrics": {
+        "controllerStartupMs": 28.399671000000012,
+        "dashboardReadyMs": 629.8611959999998,
+        "reloadP95Ms": 362.737439,
+        "navigationP95Ms": 288.35400799999843,
+        "editorP95Ms": 249.72690899999998,
+        "apiP95Ms": 27,
+        "burstRequestsPerSecond": 184.86918690035006,
+        "loadRequestsPerSecond": 3.9996643131737764,
+        "loadCpuPercentOneCore": 1.6165309932410679,
+        "sampledPeakRssBytes": 16707584,
+        "sampledPeakDescriptors": 13,
+        "sampledPeakThreads": 11,
+        "cooldownRssGrowthBytes": 1208320,
+        "cooldownDescriptorGrowth": -3,
+        "cooldownThreadGrowth": 2,
+        "browserSampledPeakRssBytes": 1044463616,
+        "browserSampledPeakDescriptors": 283,
+        "browserSampledPeakThreads": 154,
+        "browserSampledPeakProcesses": 7,
+        "browserObservedLoadCpuPercentOneCore": 6.850772228240023,
+        "browserCooldownRssGrowthBytes": 174411776,
+        "browserCooldownDescriptorGrowth": -14,
+        "browserCooldownThreadGrowth": -12,
+        "browserCooldownProcessGrowth": 0,
+        "jobLoadCpuPercentOneCore": 18.307737153014248
+      },
+      "violations": []
+    },
+    {
+      "artifactName": "desktop-performance-arm64-webkit",
+      "artifactID": 13580180949,
+      "providerZIPSize": 2012,
+      "providerZIPDigest": "sha256:7167d64e424bb987a6b4aa3420d37a9602ac417ba8d9fe5c61ef7d2a4c81c80a",
+      "providerZIPDigestVerified": true,
+      "canonicalReportSHA256": "c1953513ef0af02cedbbc65e2e7862791a8faa1d7069ea2d39ee41bf3172de27",
+      "sourceHashesVerified": 20,
+      "sourceCommit": "0bb491ef5e2e232d3abc7e7112819c87c931fbc4",
+      "binarySHA256": "a24ce1879ad679e15e0e8e50eb11101bcbdd8281e7433192562d2456896afb76",
+      "outcome": "failed",
+      "stage": "complete",
+      "failureKind": "none",
+      "counts": {
+        "reload": 5,
+        "navigation": 24,
+        "editor": 10,
+        "burstRequests": 96,
+        "loadRequests": 240,
+        "resourceSamples": 312,
+        "loadMilliseconds": 60002,
+        "browserResourceSamples": 84,
+        "browserObservedExits": 0,
+        "browserCpuMilliseconds": 60877,
+        "browserFailureStage": 0,
+        "jobCpuMilliseconds": 60875,
+        "jobCpuFailureStage": 0
+      },
+      "metrics": {
+        "controllerStartupMs": 28.756066000000033,
+        "dashboardReadyMs": 5629.286357999999,
+        "reloadP95Ms": 279.3017580000005,
+        "navigationP95Ms": 356.37982300000294,
+        "editorP95Ms": 1062.6498489999994,
+        "apiP95Ms": 24,
+        "burstRequestsPerSecond": 184.16714021282027,
+        "loadRequestsPerSecond": 3.9998407704720966,
+        "loadCpuPercentOneCore": 1.616602311399139,
+        "sampledPeakRssBytes": 17207296,
+        "sampledPeakDescriptors": 12,
+        "sampledPeakThreads": 11,
+        "cooldownRssGrowthBytes": 1380352,
+        "cooldownDescriptorGrowth": -2,
+        "cooldownThreadGrowth": 2,
+        "browserSampledPeakRssBytes": 955486208,
+        "browserSampledPeakDescriptors": 101,
+        "browserSampledPeakThreads": 66,
+        "browserSampledPeakProcesses": 5,
+        "browserObservedLoadCpuPercentOneCore": 9.31382217077514,
+        "browserCooldownRssGrowthBytes": 174067712,
+        "browserCooldownDescriptorGrowth": 0,
+        "browserCooldownThreadGrowth": -10,
+        "browserCooldownProcessGrowth": 0,
+        "jobLoadCpuPercentOneCore": 16.384341369979378
+      },
+      "violations": [
+        "dashboardReadyMs",
+        "editorP95Ms"
+      ]
+    }
+  ],
+  "localValidation": {
+    "newSyntheticContractsPassed": 9,
+    "affectedReportContractsPassed": 20,
+    "all900SchedulerSlotsAndFailureJoinsChecked": true,
+    "applicationSourcesAndGoModulesChanged": false,
+    "productBinariesOrBrowsersExecutedLocally": false,
+    "phaseContractsPassed": 3
+  },
+  "readinessManifestSHA256": "6aba24860c171a7a3931029589b0e04dac90ed4a6f22da3fc02bd058bf903b0e",
+  "privacy": {
+    "rawLogsRead": false,
+    "tracesRead": false,
+    "screenshotsRead": false,
+    "privateStateRead": false,
+    "rawProcBytesRetained": false
+  },
+  "limitations": [
+    "A failing or incomplete attempt does not qualify a target; failures and missing reports remain explicit.",
+    "All absolute and growth caps retain their preexisting values; the added64MiB late-median and5s observation-gap budgets were declared before measurement.",
+    "The separate53-case functional suite is not run by this selected performance-only configuration.",
+    "Even a passing15minute disposable Linux run does not satisfy the required eight-hour installed working-day soak, full ten-target native matrix, vendor traffic or any whole readiness gate.",
+    "Held BSD source mapping, Mac launch diagnostics, private-output architecture selection and signing public identities remain unresolved; this attempt changes none of those grants."
+  ],
+  "numericPhaseReports": [
+    {
+      "artifactName": "browser-timing-amd64-firefox",
+      "artifactID": 13580690302,
+      "providerZIPDigest": "sha256:97e6ff5a0040c5aab6631c91dc13b4020cc4cca7801e3a9611964f5edec041d1",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "0bb491ef5e2e232d3abc7e7112819c87c931fbc4",
+      "binarySHA256": "486b34ab6c22d2a311787b63493953ac72c27085e3be0ef9088e169de840c010",
+      "sourceHashesVerified": 15,
+      "mode": "diagnostic-only",
+      "stage": "complete",
+      "failureKind": "none",
+      "complete": true,
+      "dashboard": {
+        "navigationMs": 194.42784100000017,
+        "applicationMs": 349.84960599999977,
+        "paintMs": 60.22963000000027
+      },
+      "editor": [
+        {
+          "actionMs": 113.91622299999926,
+          "visibilityMs": 29.270519000000604,
+          "paintMs": 106.80503399999907,
+          "totalMs": 249.99177599999894
+        },
+        {
+          "actionMs": 96.58352999999988,
+          "visibilityMs": 27.31601199999932,
+          "paintMs": 64.97321200000079,
+          "totalMs": 188.872754
+        },
+        {
+          "actionMs": 105.26003700000001,
+          "visibilityMs": 20.6173060000001,
+          "paintMs": 64.68583600000056,
+          "totalMs": 190.56317900000067
+        },
+        {
+          "actionMs": 96.71118399999978,
+          "visibilityMs": 25.720683999999892,
+          "paintMs": 66.48498599999948,
+          "totalMs": 188.91685399999915
+        },
+        {
+          "actionMs": 82.25592200000028,
+          "visibilityMs": 29.304517000000487,
+          "paintMs": 64.42830499999945,
+          "totalMs": 175.98874400000022
+        },
+        {
+          "actionMs": 83.4899979999991,
+          "visibilityMs": 27.1580670000003,
+          "paintMs": 74.61256599999979,
+          "totalMs": 185.2606309999992
+        },
+        {
+          "actionMs": 90.74535499999911,
+          "visibilityMs": 20.853095000000394,
+          "paintMs": 63.95125999999982,
+          "totalMs": 175.54970999999932
+        },
+        {
+          "actionMs": 97.5027910000008,
+          "visibilityMs": 20.0023659999988,
+          "paintMs": 72.5021740000011,
+          "totalMs": 190.0073310000007
+        },
+        {
+          "actionMs": 86.48836400000073,
+          "visibilityMs": 27.459640999999465,
+          "paintMs": 67.47727200000008,
+          "totalMs": 181.42527700000028
+        },
+        {
+          "actionMs": 92.11755699999958,
+          "visibilityMs": 18.798689000001104,
+          "paintMs": 65.09887399999934,
+          "totalMs": 176.01512000000002
+        }
+      ]
+    },
+    {
+      "artifactName": "browser-timing-arm64-chromium",
+      "artifactID": 13580685256,
+      "providerZIPDigest": "sha256:660b6ac9e8e4712daae12a35d504092e28405c0a94043afd445b8e8644673981",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "0bb491ef5e2e232d3abc7e7112819c87c931fbc4",
+      "binarySHA256": "a24ce1879ad679e15e0e8e50eb11101bcbdd8281e7433192562d2456896afb76",
+      "sourceHashesVerified": 15,
+      "mode": "diagnostic-only",
+      "stage": "complete",
+      "failureKind": "none",
+      "complete": true,
+      "dashboard": {
+        "navigationMs": 28.418391999999926,
+        "applicationMs": 147.18864200000007,
+        "paintMs": 146.582309
+      },
+      "editor": [
+        {
+          "actionMs": 65.52186400000028,
+          "visibilityMs": 7.177725999999893,
+          "paintMs": 60.86975999999959,
+          "totalMs": 133.56934999999976
+        },
+        {
+          "actionMs": 45.051791999999296,
+          "visibilityMs": 6.566526000000522,
+          "paintMs": 54.38058099999944,
+          "totalMs": 105.99889899999926
+        },
+        {
+          "actionMs": 48.38884399999915,
+          "visibilityMs": 6.587372000000869,
+          "paintMs": 53.76737999999932,
+          "totalMs": 108.74359599999934
+        },
+        {
+          "actionMs": 47.056289000000106,
+          "visibilityMs": 6.263623999999254,
+          "paintMs": 56.13579000000027,
+          "totalMs": 109.45570299999963
+        },
+        {
+          "actionMs": 47.78498600000057,
+          "visibilityMs": 6.166478999999526,
+          "paintMs": 54.29957100000047,
+          "totalMs": 108.25103600000057
+        },
+        {
+          "actionMs": 46.98499600000014,
+          "visibilityMs": 6.3222139999998035,
+          "paintMs": 55.02806799999962,
+          "totalMs": 108.33527799999956
+        },
+        {
+          "actionMs": 48.5236589999995,
+          "visibilityMs": 6.444437000000107,
+          "paintMs": 53.66065200000048,
+          "totalMs": 108.62874800000009
+        },
+        {
+          "actionMs": 41.39109699999972,
+          "visibilityMs": 6.210235999999895,
+          "paintMs": 56.49241499999971,
+          "totalMs": 104.09374799999932
+        },
+        {
+          "actionMs": 48.08921499999997,
+          "visibilityMs": 6.289550999999847,
+          "paintMs": 54.98640699999942,
+          "totalMs": 109.36517299999923
+        },
+        {
+          "actionMs": 46.85226899999998,
+          "visibilityMs": 6.688590000000659,
+          "paintMs": 55.33723299999929,
+          "totalMs": 108.87809199999992
+        }
+      ]
+    },
+    {
+      "artifactName": "browser-timing-amd64-chromium",
+      "artifactID": 13580555781,
+      "providerZIPDigest": "sha256:770bca09064cb86505b0630e19cf979ea91168ef36c12d3508bc03b5e0a54478",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "0bb491ef5e2e232d3abc7e7112819c87c931fbc4",
+      "binarySHA256": "486b34ab6c22d2a311787b63493953ac72c27085e3be0ef9088e169de840c010",
+      "sourceHashesVerified": 15,
+      "mode": "diagnostic-only",
+      "stage": "complete",
+      "failureKind": "none",
+      "complete": true,
+      "dashboard": {
+        "navigationMs": 33.20014500000002,
+        "applicationMs": 197.03009500000007,
+        "paintMs": 173.92401199999995
+      },
+      "editor": [
+        {
+          "actionMs": 61.11705399999937,
+          "visibilityMs": 7.480145999999877,
+          "paintMs": 64.56505600000037,
+          "totalMs": 133.16225599999962
+        },
+        {
+          "actionMs": 39.59353199999987,
+          "visibilityMs": 10.300004000000627,
+          "paintMs": 59.7508600000001,
+          "totalMs": 109.6443960000006
+        },
+        {
+          "actionMs": 42.94922200000019,
+          "visibilityMs": 8.430139999999483,
+          "paintMs": 61.14296900000045,
+          "totalMs": 112.52233100000012
+        },
+        {
+          "actionMs": 42.56137800000033,
+          "visibilityMs": 8.935916000000361,
+          "paintMs": 60.927598999999645,
+          "totalMs": 112.42489300000034
+        },
+        {
+          "actionMs": 29.381827999999587,
+          "visibilityMs": 12.253531000000294,
+          "paintMs": 56.95278899999994,
+          "totalMs": 98.58814799999982
+        },
+        {
+          "actionMs": 42.46821499999987,
+          "visibilityMs": 8.838353000000097,
+          "paintMs": 60.80079500000011,
+          "totalMs": 112.10736300000008
+        },
+        {
+          "actionMs": 42.29767300000003,
+          "visibilityMs": 7.970304000000397,
+          "paintMs": 61.982272000000194,
+          "totalMs": 112.25024900000062
+        },
+        {
+          "actionMs": 42.94095500000003,
+          "visibilityMs": 8.194174000000203,
+          "paintMs": 60.9753069999997,
+          "totalMs": 112.11043599999994
+        },
+        {
+          "actionMs": 38.45611999999983,
+          "visibilityMs": 9.554747000000134,
+          "paintMs": 60.80968899999971,
+          "totalMs": 108.82055599999967
+        },
+        {
+          "actionMs": 43.18990699999995,
+          "visibilityMs": 10.00213900000017,
+          "paintMs": 59.741322999999284,
+          "totalMs": 112.9333689999994
+        }
+      ]
+    },
+    {
+      "artifactName": "browser-timing-arm64-firefox",
+      "artifactID": 13580261644,
+      "providerZIPDigest": "sha256:fb3b6aac53a3ad3f9cd47b03c12af4ce8ed8b49ed6b1083885190c9fe408409f",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "0bb491ef5e2e232d3abc7e7112819c87c931fbc4",
+      "binarySHA256": "a24ce1879ad679e15e0e8e50eb11101bcbdd8281e7433192562d2456896afb76",
+      "sourceHashesVerified": 15,
+      "mode": "diagnostic-only",
+      "stage": "complete",
+      "failureKind": "none",
+      "complete": true,
+      "dashboard": {
+        "navigationMs": 210.28827,
+        "applicationMs": 346.49806599999965,
+        "paintMs": 73.07486000000017
+      },
+      "editor": [
+        {
+          "actionMs": 109.17177399999946,
+          "visibilityMs": 22.380535999999665,
+          "paintMs": 118.17459900000085,
+          "totalMs": 249.72690899999998
+        },
+        {
+          "actionMs": 96.54750799999965,
+          "visibilityMs": 19.181714000000284,
+          "paintMs": 63.824837000000116,
+          "totalMs": 179.55405900000005
+        },
+        {
+          "actionMs": 94.77402200000051,
+          "visibilityMs": 18.15773799999988,
+          "paintMs": 47.001634999998714,
+          "totalMs": 159.9333949999991
+        },
+        {
+          "actionMs": 98.25649700000031,
+          "visibilityMs": 19.949585000000297,
+          "paintMs": 65.36745999999948,
+          "totalMs": 183.5735420000001
+        },
+        {
+          "actionMs": 101.27630900000077,
+          "visibilityMs": 18.33800799999881,
+          "paintMs": 46.6226630000001,
+          "totalMs": 166.23697999999968
+        },
+        {
+          "actionMs": 99.45158100000117,
+          "visibilityMs": 20.567772000000332,
+          "paintMs": 46.02982999999949,
+          "totalMs": 166.049183000001
+        },
+        {
+          "actionMs": 106.47586000000047,
+          "visibilityMs": 22.354347000000416,
+          "paintMs": 111.56070199999886,
+          "totalMs": 240.39090899999974
+        },
+        {
+          "actionMs": 99.5899929999996,
+          "visibilityMs": 19.122520000000804,
+          "paintMs": 46.258724999999686,
+          "totalMs": 164.97123800000008
+        },
+        {
+          "actionMs": 99.6162260000001,
+          "visibilityMs": 20.92972699999882,
+          "paintMs": 65.57114700000056,
+          "totalMs": 186.11709999999948
+        },
+        {
+          "actionMs": 99.95498100000077,
+          "visibilityMs": 18.082488000000012,
+          "paintMs": 47.0120509999997,
+          "totalMs": 165.04952000000048
+        }
+      ]
+    },
+    {
+      "artifactName": "browser-timing-amd64-webkit",
+      "artifactID": 13579782729,
+      "providerZIPDigest": "sha256:166b644402540e7080e84a486e2b8a78f4033ca95d5d5fedda6903418d4ff466",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "0bb491ef5e2e232d3abc7e7112819c87c931fbc4",
+      "binarySHA256": "486b34ab6c22d2a311787b63493953ac72c27085e3be0ef9088e169de840c010",
+      "sourceHashesVerified": 15,
+      "mode": "diagnostic-only",
+      "stage": "complete",
+      "failureKind": "none",
+      "complete": true,
+      "dashboard": {
+        "navigationMs": 35.88684799999987,
+        "applicationMs": 4143.062191,
+        "paintMs": 150.00691199999983
+      },
+      "editor": [
+        {
+          "actionMs": 166.96620299999995,
+          "visibilityMs": 18.319659000000684,
+          "paintMs": 532.6219929999988,
+          "totalMs": 717.9078549999995
+        },
+        {
+          "actionMs": 137.54181400000016,
+          "visibilityMs": 11.998105999999098,
+          "paintMs": 130.93948600000112,
+          "totalMs": 280.4794060000004
+        },
+        {
+          "actionMs": 142.19437800000014,
+          "visibilityMs": 11.288630000000921,
+          "paintMs": 130.4669789999989,
+          "totalMs": 283.94998699999996
+        },
+        {
+          "actionMs": 136.73241700000108,
+          "visibilityMs": 10.469085999999152,
+          "paintMs": 128.5667689999991,
+          "totalMs": 275.76827199999934
+        },
+        {
+          "actionMs": 148.07987400000093,
+          "visibilityMs": 10.44856400000026,
+          "paintMs": 132.1206229999989,
+          "totalMs": 290.6490610000001
+        },
+        {
+          "actionMs": 232.85142900000028,
+          "visibilityMs": 10.906805000000531,
+          "paintMs": 131.7968349999992,
+          "totalMs": 375.555069
+        },
+        {
+          "actionMs": 142.84271099999933,
+          "visibilityMs": 10.189470999999685,
+          "paintMs": 166.93210200000067,
+          "totalMs": 319.9642839999997
+        },
+        {
+          "actionMs": 132.06728100000146,
+          "visibilityMs": 10.217961999998806,
+          "paintMs": 163.43306500000108,
+          "totalMs": 305.71830800000134
+        },
+        {
+          "actionMs": 127.67970999999852,
+          "visibilityMs": 9.701532000000952,
+          "paintMs": 167.96188299999994,
+          "totalMs": 305.3431249999994
+        },
+        {
+          "actionMs": 136.1099720000002,
+          "visibilityMs": 9.88896399999976,
+          "paintMs": 168.93019300000014,
+          "totalMs": 314.9291290000001
+        }
+      ]
+    },
+    {
+      "artifactName": "browser-timing-arm64-webkit",
+      "artifactID": 13579687903,
+      "providerZIPDigest": "sha256:f552bdc871373439c9e1551d6d839296bf9bdc838daf9f20f827827b5f477539",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "0bb491ef5e2e232d3abc7e7112819c87c931fbc4",
+      "binarySHA256": "a24ce1879ad679e15e0e8e50eb11101bcbdd8281e7433192562d2456896afb76",
+      "sourceHashesVerified": 15,
+      "mode": "diagnostic-only",
+      "stage": "complete",
+      "failureKind": "none",
+      "complete": true,
+      "dashboard": {
+        "navigationMs": 22.554038999999875,
+        "applicationMs": 5420.896846,
+        "paintMs": 185.8354730000001
+      },
+      "editor": [
+        {
+          "actionMs": 167.87591600000087,
+          "visibilityMs": 75.81302999999934,
+          "paintMs": 818.9609029999992,
+          "totalMs": 1062.6498489999994
+        },
+        {
+          "actionMs": 140.91249000000062,
+          "visibilityMs": 11.751822000000175,
+          "paintMs": 214.3410760000006,
+          "totalMs": 367.0053880000014
+        },
+        {
+          "actionMs": 140.62490500000058,
+          "visibilityMs": 11.19887000000017,
+          "paintMs": 185.98785700000008,
+          "totalMs": 337.8116320000008
+        },
+        {
+          "actionMs": 142.61835699999938,
+          "visibilityMs": 10.996017999999822,
+          "paintMs": 192.77987100000064,
+          "totalMs": 346.39424599999984
+        },
+        {
+          "actionMs": 146.74145400000089,
+          "visibilityMs": 14.709729999998672,
+          "paintMs": 188.06892900000094,
+          "totalMs": 349.5201130000005
+        },
+        {
+          "actionMs": 127.86695700000018,
+          "visibilityMs": 10.84776199999942,
+          "paintMs": 188.11273400000027,
+          "totalMs": 326.8274529999999
+        },
+        {
+          "actionMs": 140.93435900000077,
+          "visibilityMs": 10.046152999999322,
+          "paintMs": 184.86912999999913,
+          "totalMs": 335.8496419999992
+        },
+        {
+          "actionMs": 141.5994640000008,
+          "visibilityMs": 10.55714799999987,
+          "paintMs": 194.0352299999995,
+          "totalMs": 346.1918420000002
+        },
+        {
+          "actionMs": 148.20688899999914,
+          "visibilityMs": 10.534636000000319,
+          "paintMs": 185.99711300000126,
+          "totalMs": 344.7386380000007
+        },
+        {
+          "actionMs": 142.5329700000002,
+          "visibilityMs": 9.975149000001693,
+          "paintMs": 186.34025199999815,
+          "totalMs": 338.84837100000004
+        }
+      ]
+    }
+  ],
+  "numericPhaseProviderZIPDigestsVerified": 6,
+  "normalSuiteFailure": {
+    "runID": 42386332384,
+    "runConclusion": "failure",
+    "successfulJobCountFromMetadata": 9,
+    "failedJobCountFromMetadata": 1,
+    "fixedReports": [
+      {
+        "artifactId": 13580106758,
+        "artifactName": "desktop-performance-arm64-firefox",
+        "providerZIPDigest": "sha256:86696ed816880ca3c621e144329f7192a909915dec85911dd65aa1b14dfa6fc4",
+        "providerZIPDigestVerified": true,
+        "sourceCommit": "0bb491ef5e2e232d3abc7e7112819c87c931fbc4",
+        "project": "firefox",
+        "binarySHA256": "a24ce1879ad679e15e0e8e50eb11101bcbdd8281e7433192562d2456896afb76",
+        "outcome": "failed",
+        "sourceHashesVerified": 20,
+        "stage": "complete",
+        "failureKind": "none",
+        "violations": [
+          "browserSampledPeakRssBytes"
+        ],
+        "metrics": {
+          "controllerStartupMs": 32.89942600001814,
+          "dashboardReadyMs": 624.4237299999804,
+          "reloadP95Ms": 363.91034499998204,
+          "navigationP95Ms": 318.0480519999983,
+          "editorP95Ms": 248.9045089999563,
+          "apiP95Ms": 31,
+          "burstRequestsPerSecond": 179.97287696261344,
+          "loadRequestsPerSecond": 3.9998129628128067,
+          "loadCpuPercentOneCore": 1.616591072470176,
+          "sampledPeakRssBytes": 16924672,
+          "sampledPeakDescriptors": 14,
+          "sampledPeakThreads": 11,
+          "cooldownRssGrowthBytes": 1654784,
+          "cooldownDescriptorGrowth": -3,
+          "cooldownThreadGrowth": 2,
+          "browserSampledPeakRssBytes": 1098240000,
+          "browserSampledPeakDescriptors": 283,
+          "browserSampledPeakThreads": 156,
+          "browserSampledPeakProcesses": 7,
+          "browserObservedLoadCpuPercentOneCore": 6.525257718763303,
+          "browserCooldownRssGrowthBytes": 216973312,
+          "browserCooldownDescriptorGrowth": -10,
+          "browserCooldownThreadGrowth": -12,
+          "browserCooldownProcessGrowth": 0,
+          "jobLoadCpuPercentOneCore": 18.32891661724736
+        },
+        "environment": {
+          "platform": "linux",
+          "architecture": "arm64",
+          "node": "v26.8.2",
+          "playwright": "1.64.1",
+          "cpuCount": 4,
+          "pageBytes": 4096,
+          "clockTicksPerSecond": 100
+        },
+        "counts": {
+          "reload": 5,
+          "navigation": 24,
+          "editor": 10,
+          "burstRequests": 96,
+          "loadRequests": 240,
+          "resourceSamples": 300,
+          "loadMilliseconds": 60002,
+          "browserResourceSamples": 80,
+          "browserObservedExits": 0,
+          "browserCpuMilliseconds": 60840,
+          "browserFailureStage": 0,
+          "jobCpuMilliseconds": 60835,
+          "jobCpuFailureStage": 0
+        }
+      },
+      {
+        "artifactId": 13580087022,
+        "artifactName": "browser-contract-status-arm64-firefox",
+        "providerZIPDigest": "sha256:d9730bfca8575c5c803546d5a6b940ab10fe08c4b344b1e0fb21262035f7f1b2",
+        "providerZIPDigestVerified": true,
+        "sourceCommit": "0bb491ef5e2e232d3abc7e7112819c87c931fbc4",
+        "project": "firefox",
+        "binarySHA256": "a24ce1879ad679e15e0e8e50eb11101bcbdd8281e7433192562d2456896afb76",
+        "outcome": "failed",
+        "sourceHashesVerified": 24,
+        "registered": 53,
+        "passedCases": 52,
+        "nonPassingCases": [
+          {
+            "id": 52,
+            "status": "failed",
+            "attempts": 1,
+            "sourceRole": "other",
+            "sourceLine": 0,
+            "sourceColumn": 0
+          }
+        ],
+        "attempts": 53
+      }
+    ],
+    "rawDiagnosticsRead": false
+  },
+  "previousAttempt": {
+    "sourceCommit": "74ee55a13392af2964de841497302bd286d18f29",
+    "runID": 42384781754,
+    "receipt": "docs/qualification/74ee55a13392-browser-soak-attempt.json",
+    "conclusion": "failure"
+  }
+}

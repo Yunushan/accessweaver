@@ -1,0 +1,4047 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "1ba63973adb9d62fae5abab0e1a0a1fb2814278e",
+  "runID": 42446310813,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/42446310813",
+  "scope": "Public fixed-shape sprite appearance only; first sprite drawn above element fill",
+  "providerRunConclusion": "failure",
+  "allSixObservationsComplete": true,
+  "observations": 144,
+  "pixelBudget": 2,
+  "appearancePassed": false,
+  "referenceRepeatFailures": 0,
+  "visibleNegativeControls": 144,
+  "providerZIPDigestsVerified": 6,
+  "sourceHashesVerifiedPerArtifact": 16,
+  "artifacts": [
+    {
+      "artifactID": 13603806610,
+      "artifactName": "public-shadow-pixels-arm64-webkit",
+      "providerZIPDigest": "sha256:1a8768d4a20f89446d38248b25d5f0b44c73f77c74886a8d0bae48d98edb7f7e",
+      "providerZIPDigestVerified": true,
+      "parsedReportSHA256": "cb8cf88db4e448913b02e2ce3b72f018e08e3df255ce019df65600b56af2b1ba",
+      "sourceHashesVerified": 16,
+      "summary": {
+        "complete": true,
+        "appearancePassed": false,
+        "rows": 24,
+        "failureKind": "none",
+        "failureOperation": "none",
+        "pendingCase": 0,
+        "maximumChannelDelta": 7,
+        "rowsOverBudget": 19,
+        "repeatFailures": 0,
+        "visibleNegativeControls": 24
+      },
+      "report": {
+        "schemaVersion": 1,
+        "sourceCommit": "1ba63973adb9d62fae5abab0e1a0a1fb2814278e",
+        "sourceSHA256": {
+          "scripts/browser-tests/public-shadow-pixels.cjs": "8c7a14c25434830811bea90bdf0d0ba005be41e07101f5a08ce90f97deee7c7f",
+          "scripts/browser-tests/public-shadow-pixels.test.cjs": "bac3e9faf9a72b5095c3deec0eb745c844d797899b1fd333249c6160a9d4f78f",
+          "scripts/browser-tests/public-shadow-pixels.spec.cjs": "e350aca2bd10a5aa56f8a1b5622b20f1265218c99988b6f89cc2ea842941d22b",
+          "scripts/browser-tests/public-shadow-fixtures.json": "d0c668d73689745cdd727563ea9103bba266e60c37c6825d1116354fadad5de2",
+          "scripts/generate-public-shadow-fixtures.py": "08813373e072137fb3d5f0018519951b86fdf096407a025e8d39d127c9b067f8",
+          "scripts/browser-tests/pixels.config.cjs": "39e805f77f272f42e334604d5bb633f0d78511d9c1871b39bc3f74b66c5caca2",
+          "scripts/browser-tests/playwright.config.cjs": "fb951bf6f1eca621cb69eab2d46517b1a57a3779714142879d8f4f93cc719fa9",
+          "scripts/browser-tests/package-lock.json": "8be62d9880021ca910c493d5540682379b6bc5f0b907707a7579dc4f74fbbd6a",
+          "scripts/browser-tests/desktop-performance.cjs": "51208a7b3b0904d29c9fee55f206401b0922eeea7c1b91ee15b7c81a7a548e59",
+          "scripts/browser-tests/browser-resources.cjs": "5aeab55a5dd67264a96baf34b264815fb80bcdf9c2ad086b22613ca675c1e5e1",
+          "scripts/browser-tests/browser-native-binary.cjs": "8194f82559f9b7f32b43d74c3d3c0df6bf00b48e34c23bb3e8ed3132f82db972",
+          "scripts/browser-tests/job-cpu.cjs": "4812d6387bcec43bc84855eef4f223000440fb2e7d15f1ca7a7fe31a85980b37",
+          "scripts/browser-tests/check-image-environment.cjs": "e19b4bf61bc94d045e2566f0353a04e267e45d404aae4fabfae63dcec87f460b",
+          "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+          ".github/workflows/public-shadow-pixels.yml": "5fccc9aa12b312215734b4b9db83b563f3a452234a4c21c24a862074b1d6fbdd",
+          "web/app.css": "2a60b91d0c6c04b8fa3d4fc50f948e326dc1408648ac0fda41ec37ffc77de9d6"
+        },
+        "project": "webkit",
+        "architecture": "arm64",
+        "environment": {
+          "platform": "linux",
+          "architecture": "arm64",
+          "node": "v26.8.2",
+          "playwright": "1.64.1"
+        },
+        "scope": "public-synthetic-shadow-pixels",
+        "pixelBudget": 2,
+        "stage": "complete",
+        "failureKind": "none",
+        "failureOperation": "none",
+        "pendingCase": 0,
+        "networkRequests": 0,
+        "contextsOpened": 2,
+        "contextsClosed": 2,
+        "rows": [
+          {
+            "shape": "brand",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 142,
+            "pixelHeight": 154,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 21868,
+              "changedPixels": 4185,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 94007
+            },
+            "negative": {
+              "pixelsCompared": 21868,
+              "changedPixels": 4494,
+              "maxChannelDelta": 32,
+              "overBudgetPixels": 2644,
+              "meanAbsChannelDeltaMicro": 635964
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 71,
+            "pixelHeight": 71,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 5041,
+              "changedPixels": 636,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 8,
+              "meanAbsChannelDeltaMicro": 66703
+            },
+            "negative": {
+              "pixelsCompared": 5041,
+              "changedPixels": 694,
+              "maxChannelDelta": 11,
+              "overBudgetPixels": 382,
+              "meanAbsChannelDeltaMicro": 283575
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 70,
+            "pixelHeight": 70,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 4900,
+              "changedPixels": 544,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 8,
+              "meanAbsChannelDeltaMicro": 64082
+            },
+            "negative": {
+              "pixelsCompared": 4900,
+              "changedPixels": 640,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 308,
+              "meanAbsChannelDeltaMicro": 222653
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 80,
+            "pixelHeight": 80,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1080,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 16,
+              "meanAbsChannelDeltaMicro": 84063
+            },
+            "negative": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1204,
+              "maxChannelDelta": 17,
+              "overBudgetPixels": 672,
+              "meanAbsChannelDeltaMicro": 478750
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 291,
+            "pixelHeight": 291,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 84681,
+              "changedPixels": 15730,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 67719
+            },
+            "negative": {
+              "pixelsCompared": 84681,
+              "changedPixels": 19074,
+              "maxChannelDelta": 11,
+              "overBudgetPixels": 8299,
+              "meanAbsChannelDeltaMicro": 395912
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 280,
+            "pixelHeight": 280,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 78400,
+              "changedPixels": 14221,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 1,
+              "meanAbsChannelDeltaMicro": 67975
+            },
+            "negative": {
+              "pixelsCompared": 78400,
+              "changedPixels": 16828,
+              "maxChannelDelta": 11,
+              "overBudgetPixels": 6913,
+              "meanAbsChannelDeltaMicro": 350121
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "brand",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 142,
+            "pixelHeight": 154,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 21868,
+              "changedPixels": 4461,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 2,
+              "meanAbsChannelDeltaMicro": 117512
+            },
+            "negative": {
+              "pixelsCompared": 21868,
+              "changedPixels": 4919,
+              "maxChannelDelta": 25,
+              "overBudgetPixels": 2574,
+              "meanAbsChannelDeltaMicro": 493998
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 71,
+            "pixelHeight": 71,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 5041,
+              "changedPixels": 728,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 5,
+              "meanAbsChannelDeltaMicro": 76324
+            },
+            "negative": {
+              "pixelsCompared": 5041,
+              "changedPixels": 690,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 292,
+              "meanAbsChannelDeltaMicro": 160583
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 70,
+            "pixelHeight": 70,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 4900,
+              "changedPixels": 644,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 69796
+            },
+            "negative": {
+              "pixelsCompared": 4900,
+              "changedPixels": 632,
+              "maxChannelDelta": 6,
+              "overBudgetPixels": 252,
+              "meanAbsChannelDeltaMicro": 126939
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 80,
+            "pixelHeight": 80,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1060,
+              "maxChannelDelta": 4,
+              "overBudgetPixels": 16,
+              "meanAbsChannelDeltaMicro": 78750
+            },
+            "negative": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1076,
+              "maxChannelDelta": 14,
+              "overBudgetPixels": 556,
+              "meanAbsChannelDeltaMicro": 296406
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 291,
+            "pixelHeight": 291,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 84681,
+              "changedPixels": 18184,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 106517
+            },
+            "negative": {
+              "pixelsCompared": 84681,
+              "changedPixels": 17258,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 7450,
+              "meanAbsChannelDeltaMicro": 301850
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 280,
+            "pixelHeight": 280,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 78400,
+              "changedPixels": 16150,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 1,
+              "meanAbsChannelDeltaMicro": 101138
+            },
+            "negative": {
+              "pixelsCompared": 78400,
+              "changedPixels": 15171,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 6142,
+              "meanAbsChannelDeltaMicro": 266393
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "brand",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 284,
+            "pixelHeight": 308,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 87472,
+              "changedPixels": 16359,
+              "maxChannelDelta": 5,
+              "overBudgetPixels": 21,
+              "meanAbsChannelDeltaMicro": 92441
+            },
+            "negative": {
+              "pixelsCompared": 87472,
+              "changedPixels": 17382,
+              "maxChannelDelta": 33,
+              "overBudgetPixels": 10239,
+              "meanAbsChannelDeltaMicro": 626069
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 142,
+            "pixelHeight": 142,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2590,
+              "maxChannelDelta": 4,
+              "overBudgetPixels": 24,
+              "meanAbsChannelDeltaMicro": 62934
+            },
+            "negative": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2920,
+              "maxChannelDelta": 10,
+              "overBudgetPixels": 1526,
+              "meanAbsChannelDeltaMicro": 275813
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 140,
+            "pixelHeight": 140,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2401,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 6,
+              "meanAbsChannelDeltaMicro": 60242
+            },
+            "negative": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2684,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 1248,
+              "meanAbsChannelDeltaMicro": 215306
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 160,
+            "pixelHeight": 160,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 25600,
+              "changedPixels": 4274,
+              "maxChannelDelta": 7,
+              "overBudgetPixels": 35,
+              "meanAbsChannelDeltaMicro": 75020
+            },
+            "negative": {
+              "pixelsCompared": 25600,
+              "changedPixels": 4814,
+              "maxChannelDelta": 16,
+              "overBudgetPixels": 2615,
+              "meanAbsChannelDeltaMicro": 462705
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 582,
+            "pixelHeight": 582,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 338724,
+              "changedPixels": 64175,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 9,
+              "meanAbsChannelDeltaMicro": 71776
+            },
+            "negative": {
+              "pixelsCompared": 338724,
+              "changedPixels": 76609,
+              "maxChannelDelta": 11,
+              "overBudgetPixels": 33394,
+              "meanAbsChannelDeltaMicro": 397585
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 560,
+            "pixelHeight": 560,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 313600,
+              "changedPixels": 58022,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 8,
+              "meanAbsChannelDeltaMicro": 71606
+            },
+            "negative": {
+              "pixelsCompared": 313600,
+              "changedPixels": 67553,
+              "maxChannelDelta": 11,
+              "overBudgetPixels": 27813,
+              "meanAbsChannelDeltaMicro": 351740
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "brand",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 284,
+            "pixelHeight": 308,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 87472,
+              "changedPixels": 17071,
+              "maxChannelDelta": 5,
+              "overBudgetPixels": 8,
+              "meanAbsChannelDeltaMicro": 117943
+            },
+            "negative": {
+              "pixelsCompared": 87472,
+              "changedPixels": 19111,
+              "maxChannelDelta": 25,
+              "overBudgetPixels": 10023,
+              "meanAbsChannelDeltaMicro": 486347
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 142,
+            "pixelHeight": 142,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2858,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 12,
+              "meanAbsChannelDeltaMicro": 71290
+            },
+            "negative": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2906,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 1210,
+              "meanAbsChannelDeltaMicro": 158624
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 140,
+            "pixelHeight": 140,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2578,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 66658
+            },
+            "negative": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2674,
+              "maxChannelDelta": 6,
+              "overBudgetPixels": 948,
+              "meanAbsChannelDeltaMicro": 122959
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 160,
+            "pixelHeight": 160,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 25600,
+              "changedPixels": 4012,
+              "maxChannelDelta": 5,
+              "overBudgetPixels": 32,
+              "meanAbsChannelDeltaMicro": 72383
+            },
+            "negative": {
+              "pixelsCompared": 25600,
+              "changedPixels": 4277,
+              "maxChannelDelta": 12,
+              "overBudgetPixels": 2188,
+              "meanAbsChannelDeltaMicro": 286836
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 582,
+            "pixelHeight": 582,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 338724,
+              "changedPixels": 72385,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 1,
+              "meanAbsChannelDeltaMicro": 103422
+            },
+            "negative": {
+              "pixelsCompared": 338724,
+              "changedPixels": 69494,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 29990,
+              "meanAbsChannelDeltaMicro": 303296
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 560,
+            "pixelHeight": 560,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 313600,
+              "changedPixels": 64503,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 3,
+              "meanAbsChannelDeltaMicro": 98151
+            },
+            "negative": {
+              "pixelsCompared": 313600,
+              "changedPixels": 60974,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 24723,
+              "meanAbsChannelDeltaMicro": 268314
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          }
+        ],
+        "browserChecks": {
+          "before": true,
+          "after": true
+        },
+        "jobCpuChecks": {
+          "privateMembership": true,
+          "mountUnique": true,
+          "mountRoot": true,
+          "mountReadOnly": true,
+          "mountCgroupV2": true,
+          "rootDirectory": true,
+          "filesystemCgroupV2": true,
+          "controlsReadOnly": true,
+          "counterRegular": true,
+          "counterStable": true,
+          "counterRead": true,
+          "closeConfirmed": true
+        },
+        "cleanup": {
+          "contextClosed": true,
+          "browserStopped": true,
+          "jobClosed": true
+        },
+        "complete": true,
+        "appearancePassed": false,
+        "productOrControllerExecuted": false,
+        "privatePagesOrDataUsed": false,
+        "rawScreenshotsRetained": false,
+        "qualificationCredit": false,
+        "productionQualificationComplete": false
+      }
+    },
+    {
+      "artifactID": 13603623041,
+      "artifactName": "public-shadow-pixels-amd64-firefox",
+      "providerZIPDigest": "sha256:db09bb11c4e7bb3b4c61adc43c8fde160787992e28fe52a53ca373a62643a5da",
+      "providerZIPDigestVerified": true,
+      "parsedReportSHA256": "13952f034e99a8b8835b2eb3fb80931a57cd86d3832abbd0afa84de6aa916ae6",
+      "sourceHashesVerified": 16,
+      "summary": {
+        "complete": true,
+        "appearancePassed": false,
+        "rows": 24,
+        "failureKind": "none",
+        "failureOperation": "none",
+        "pendingCase": 0,
+        "maximumChannelDelta": 3,
+        "rowsOverBudget": 12,
+        "repeatFailures": 0,
+        "visibleNegativeControls": 24
+      },
+      "report": {
+        "schemaVersion": 1,
+        "sourceCommit": "1ba63973adb9d62fae5abab0e1a0a1fb2814278e",
+        "sourceSHA256": {
+          "scripts/browser-tests/public-shadow-pixels.cjs": "8c7a14c25434830811bea90bdf0d0ba005be41e07101f5a08ce90f97deee7c7f",
+          "scripts/browser-tests/public-shadow-pixels.test.cjs": "bac3e9faf9a72b5095c3deec0eb745c844d797899b1fd333249c6160a9d4f78f",
+          "scripts/browser-tests/public-shadow-pixels.spec.cjs": "e350aca2bd10a5aa56f8a1b5622b20f1265218c99988b6f89cc2ea842941d22b",
+          "scripts/browser-tests/public-shadow-fixtures.json": "d0c668d73689745cdd727563ea9103bba266e60c37c6825d1116354fadad5de2",
+          "scripts/generate-public-shadow-fixtures.py": "08813373e072137fb3d5f0018519951b86fdf096407a025e8d39d127c9b067f8",
+          "scripts/browser-tests/pixels.config.cjs": "39e805f77f272f42e334604d5bb633f0d78511d9c1871b39bc3f74b66c5caca2",
+          "scripts/browser-tests/playwright.config.cjs": "fb951bf6f1eca621cb69eab2d46517b1a57a3779714142879d8f4f93cc719fa9",
+          "scripts/browser-tests/package-lock.json": "8be62d9880021ca910c493d5540682379b6bc5f0b907707a7579dc4f74fbbd6a",
+          "scripts/browser-tests/desktop-performance.cjs": "51208a7b3b0904d29c9fee55f206401b0922eeea7c1b91ee15b7c81a7a548e59",
+          "scripts/browser-tests/browser-resources.cjs": "5aeab55a5dd67264a96baf34b264815fb80bcdf9c2ad086b22613ca675c1e5e1",
+          "scripts/browser-tests/browser-native-binary.cjs": "8194f82559f9b7f32b43d74c3d3c0df6bf00b48e34c23bb3e8ed3132f82db972",
+          "scripts/browser-tests/job-cpu.cjs": "4812d6387bcec43bc84855eef4f223000440fb2e7d15f1ca7a7fe31a85980b37",
+          "scripts/browser-tests/check-image-environment.cjs": "e19b4bf61bc94d045e2566f0353a04e267e45d404aae4fabfae63dcec87f460b",
+          "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+          ".github/workflows/public-shadow-pixels.yml": "5fccc9aa12b312215734b4b9db83b563f3a452234a4c21c24a862074b1d6fbdd",
+          "web/app.css": "2a60b91d0c6c04b8fa3d4fc50f948e326dc1408648ac0fda41ec37ffc77de9d6"
+        },
+        "project": "firefox",
+        "architecture": "amd64",
+        "environment": {
+          "platform": "linux",
+          "architecture": "x64",
+          "node": "v26.8.2",
+          "playwright": "1.64.1"
+        },
+        "scope": "public-synthetic-shadow-pixels",
+        "pixelBudget": 2,
+        "stage": "complete",
+        "failureKind": "none",
+        "failureOperation": "none",
+        "pendingCase": 0,
+        "networkRequests": 0,
+        "contextsOpened": 2,
+        "contextsClosed": 2,
+        "rows": [
+          {
+            "shape": "brand",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 142,
+            "pixelHeight": 154,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 21868,
+              "changedPixels": 1765,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 9,
+              "meanAbsChannelDeltaMicro": 30204
+            },
+            "negative": {
+              "pixelsCompared": 21868,
+              "changedPixels": 3928,
+              "maxChannelDelta": 32,
+              "overBudgetPixels": 2821,
+              "meanAbsChannelDeltaMicro": 601392
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 71,
+            "pixelHeight": 71,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 5041,
+              "changedPixels": 372,
+              "maxChannelDelta": 1,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 24053
+            },
+            "negative": {
+              "pixelsCompared": 5041,
+              "changedPixels": 587,
+              "maxChannelDelta": 10,
+              "overBudgetPixels": 336,
+              "meanAbsChannelDeltaMicro": 242908
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 70,
+            "pixelHeight": 70,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 4900,
+              "changedPixels": 314,
+              "maxChannelDelta": 1,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 23878
+            },
+            "negative": {
+              "pixelsCompared": 4900,
+              "changedPixels": 528,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 268,
+              "meanAbsChannelDeltaMicro": 183878
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 80,
+            "pixelHeight": 80,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 6400,
+              "changedPixels": 807,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 45117
+            },
+            "negative": {
+              "pixelsCompared": 6400,
+              "changedPixels": 940,
+              "maxChannelDelta": 16,
+              "overBudgetPixels": 583,
+              "meanAbsChannelDeltaMicro": 416328
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 291,
+            "pixelHeight": 291,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 84681,
+              "changedPixels": 9020,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 33898
+            },
+            "negative": {
+              "pixelsCompared": 84681,
+              "changedPixels": 15384,
+              "maxChannelDelta": 12,
+              "overBudgetPixels": 9280,
+              "meanAbsChannelDeltaMicro": 351000
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 280,
+            "pixelHeight": 280,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 78400,
+              "changedPixels": 7651,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 29968
+            },
+            "negative": {
+              "pixelsCompared": 78400,
+              "changedPixels": 13385,
+              "maxChannelDelta": 10,
+              "overBudgetPixels": 7820,
+              "meanAbsChannelDeltaMicro": 306381
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "brand",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 142,
+            "pixelHeight": 154,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 21868,
+              "changedPixels": 1842,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 5,
+              "meanAbsChannelDeltaMicro": 34480
+            },
+            "negative": {
+              "pixelsCompared": 21868,
+              "changedPixels": 3927,
+              "maxChannelDelta": 24,
+              "overBudgetPixels": 2466,
+              "meanAbsChannelDeltaMicro": 447137
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 71,
+            "pixelHeight": 71,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 5041,
+              "changedPixels": 423,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 40220
+            },
+            "negative": {
+              "pixelsCompared": 5041,
+              "changedPixels": 584,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 288,
+              "meanAbsChannelDeltaMicro": 141887
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 70,
+            "pixelHeight": 70,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 4900,
+              "changedPixels": 363,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 38316
+            },
+            "negative": {
+              "pixelsCompared": 4900,
+              "changedPixels": 528,
+              "maxChannelDelta": 6,
+              "overBudgetPixels": 224,
+              "meanAbsChannelDeltaMicro": 108316
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 80,
+            "pixelHeight": 80,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 6400,
+              "changedPixels": 839,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 5,
+              "meanAbsChannelDeltaMicro": 63164
+            },
+            "negative": {
+              "pixelsCompared": 6400,
+              "changedPixels": 936,
+              "maxChannelDelta": 13,
+              "overBudgetPixels": 516,
+              "meanAbsChannelDeltaMicro": 259727
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 291,
+            "pixelHeight": 291,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 84681,
+              "changedPixels": 13283,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 5,
+              "meanAbsChannelDeltaMicro": 81143
+            },
+            "negative": {
+              "pixelsCompared": 84681,
+              "changedPixels": 16070,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 7754,
+              "meanAbsChannelDeltaMicro": 297239
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 280,
+            "pixelHeight": 280,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 78400,
+              "changedPixels": 11706,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 4,
+              "meanAbsChannelDeltaMicro": 78434
+            },
+            "negative": {
+              "pixelsCompared": 78400,
+              "changedPixels": 14041,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 6392,
+              "meanAbsChannelDeltaMicro": 261783
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "brand",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 284,
+            "pixelHeight": 308,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 87472,
+              "changedPixels": 5139,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 22599
+            },
+            "negative": {
+              "pixelsCompared": 87472,
+              "changedPixels": 15276,
+              "maxChannelDelta": 33,
+              "overBudgetPixels": 10915,
+              "meanAbsChannelDeltaMicro": 593824
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 142,
+            "pixelHeight": 142,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 20164,
+              "changedPixels": 1270,
+              "maxChannelDelta": 1,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 18511
+            },
+            "negative": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2492,
+              "maxChannelDelta": 10,
+              "overBudgetPixels": 1407,
+              "meanAbsChannelDeltaMicro": 249938
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 140,
+            "pixelHeight": 140,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 19600,
+              "changedPixels": 1081,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 16020
+            },
+            "negative": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2266,
+              "maxChannelDelta": 7,
+              "overBudgetPixels": 1150,
+              "meanAbsChannelDeltaMicro": 190918
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 160,
+            "pixelHeight": 160,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 25600,
+              "changedPixels": 2866,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 1,
+              "meanAbsChannelDeltaMicro": 33701
+            },
+            "negative": {
+              "pixelsCompared": 25600,
+              "changedPixels": 3826,
+              "maxChannelDelta": 16,
+              "overBudgetPixels": 2367,
+              "meanAbsChannelDeltaMicro": 426006
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 582,
+            "pixelHeight": 582,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 338724,
+              "changedPixels": 34532,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 2,
+              "meanAbsChannelDeltaMicro": 31517
+            },
+            "negative": {
+              "pixelsCompared": 338724,
+              "changedPixels": 61705,
+              "maxChannelDelta": 12,
+              "overBudgetPixels": 37269,
+              "meanAbsChannelDeltaMicro": 352804
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 560,
+            "pixelHeight": 560,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 313600,
+              "changedPixels": 29470,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 2,
+              "meanAbsChannelDeltaMicro": 28092
+            },
+            "negative": {
+              "pixelsCompared": 313600,
+              "changedPixels": 53717,
+              "maxChannelDelta": 10,
+              "overBudgetPixels": 31353,
+              "meanAbsChannelDeltaMicro": 307904
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "brand",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 284,
+            "pixelHeight": 308,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 87472,
+              "changedPixels": 4856,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 6,
+              "meanAbsChannelDeltaMicro": 20975
+            },
+            "negative": {
+              "pixelsCompared": 87472,
+              "changedPixels": 15278,
+              "maxChannelDelta": 25,
+              "overBudgetPixels": 9646,
+              "meanAbsChannelDeltaMicro": 441173
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 142,
+            "pixelHeight": 142,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 20164,
+              "changedPixels": 1618,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 41200
+            },
+            "negative": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2489,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 1188,
+              "meanAbsChannelDeltaMicro": 144019
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 140,
+            "pixelHeight": 140,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 19600,
+              "changedPixels": 1444,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 38189
+            },
+            "negative": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2260,
+              "maxChannelDelta": 6,
+              "overBudgetPixels": 935,
+              "meanAbsChannelDeltaMicro": 111250
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 160,
+            "pixelHeight": 160,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 25600,
+              "changedPixels": 3396,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 18,
+              "meanAbsChannelDeltaMicro": 66084
+            },
+            "negative": {
+              "pixelsCompared": 25600,
+              "changedPixels": 3816,
+              "maxChannelDelta": 13,
+              "overBudgetPixels": 2179,
+              "meanAbsChannelDeltaMicro": 266826
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 582,
+            "pixelHeight": 582,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 338724,
+              "changedPixels": 52813,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 2,
+              "meanAbsChannelDeltaMicro": 81323
+            },
+            "negative": {
+              "pixelsCompared": 338724,
+              "changedPixels": 64606,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 31097,
+              "meanAbsChannelDeltaMicro": 298882
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 560,
+            "pixelHeight": 560,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 313600,
+              "changedPixels": 46875,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 3,
+              "meanAbsChannelDeltaMicro": 79118
+            },
+            "negative": {
+              "pixelsCompared": 313600,
+              "changedPixels": 56433,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 25753,
+              "meanAbsChannelDeltaMicro": 263862
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          }
+        ],
+        "browserChecks": {
+          "before": true,
+          "after": true
+        },
+        "jobCpuChecks": {
+          "privateMembership": true,
+          "mountUnique": true,
+          "mountRoot": true,
+          "mountReadOnly": true,
+          "mountCgroupV2": true,
+          "rootDirectory": true,
+          "filesystemCgroupV2": true,
+          "controlsReadOnly": true,
+          "counterRegular": true,
+          "counterStable": true,
+          "counterRead": true,
+          "closeConfirmed": true
+        },
+        "cleanup": {
+          "contextClosed": true,
+          "browserStopped": true,
+          "jobClosed": true
+        },
+        "complete": true,
+        "appearancePassed": false,
+        "productOrControllerExecuted": false,
+        "privatePagesOrDataUsed": false,
+        "rawScreenshotsRetained": false,
+        "qualificationCredit": false,
+        "productionQualificationComplete": false
+      }
+    },
+    {
+      "artifactID": 13603538190,
+      "artifactName": "public-shadow-pixels-arm64-chromium",
+      "providerZIPDigest": "sha256:d71a158083cf2aeae11bb1425e73e490ff5bce7357d6a5e1b14dcdc19c2deef0",
+      "providerZIPDigestVerified": true,
+      "parsedReportSHA256": "4c004f2e3736d1e04b8321ff205e2ad9c9590f537a924e2fec495e59c8a47eb7",
+      "sourceHashesVerified": 16,
+      "summary": {
+        "complete": true,
+        "appearancePassed": false,
+        "rows": 24,
+        "failureKind": "none",
+        "failureOperation": "none",
+        "pendingCase": 0,
+        "maximumChannelDelta": 6,
+        "rowsOverBudget": 15,
+        "repeatFailures": 0,
+        "visibleNegativeControls": 24
+      },
+      "report": {
+        "schemaVersion": 1,
+        "sourceCommit": "1ba63973adb9d62fae5abab0e1a0a1fb2814278e",
+        "sourceSHA256": {
+          "scripts/browser-tests/public-shadow-pixels.cjs": "8c7a14c25434830811bea90bdf0d0ba005be41e07101f5a08ce90f97deee7c7f",
+          "scripts/browser-tests/public-shadow-pixels.test.cjs": "bac3e9faf9a72b5095c3deec0eb745c844d797899b1fd333249c6160a9d4f78f",
+          "scripts/browser-tests/public-shadow-pixels.spec.cjs": "e350aca2bd10a5aa56f8a1b5622b20f1265218c99988b6f89cc2ea842941d22b",
+          "scripts/browser-tests/public-shadow-fixtures.json": "d0c668d73689745cdd727563ea9103bba266e60c37c6825d1116354fadad5de2",
+          "scripts/generate-public-shadow-fixtures.py": "08813373e072137fb3d5f0018519951b86fdf096407a025e8d39d127c9b067f8",
+          "scripts/browser-tests/pixels.config.cjs": "39e805f77f272f42e334604d5bb633f0d78511d9c1871b39bc3f74b66c5caca2",
+          "scripts/browser-tests/playwright.config.cjs": "fb951bf6f1eca621cb69eab2d46517b1a57a3779714142879d8f4f93cc719fa9",
+          "scripts/browser-tests/package-lock.json": "8be62d9880021ca910c493d5540682379b6bc5f0b907707a7579dc4f74fbbd6a",
+          "scripts/browser-tests/desktop-performance.cjs": "51208a7b3b0904d29c9fee55f206401b0922eeea7c1b91ee15b7c81a7a548e59",
+          "scripts/browser-tests/browser-resources.cjs": "5aeab55a5dd67264a96baf34b264815fb80bcdf9c2ad086b22613ca675c1e5e1",
+          "scripts/browser-tests/browser-native-binary.cjs": "8194f82559f9b7f32b43d74c3d3c0df6bf00b48e34c23bb3e8ed3132f82db972",
+          "scripts/browser-tests/job-cpu.cjs": "4812d6387bcec43bc84855eef4f223000440fb2e7d15f1ca7a7fe31a85980b37",
+          "scripts/browser-tests/check-image-environment.cjs": "e19b4bf61bc94d045e2566f0353a04e267e45d404aae4fabfae63dcec87f460b",
+          "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+          ".github/workflows/public-shadow-pixels.yml": "5fccc9aa12b312215734b4b9db83b563f3a452234a4c21c24a862074b1d6fbdd",
+          "web/app.css": "2a60b91d0c6c04b8fa3d4fc50f948e326dc1408648ac0fda41ec37ffc77de9d6"
+        },
+        "project": "chromium",
+        "architecture": "arm64",
+        "environment": {
+          "platform": "linux",
+          "architecture": "arm64",
+          "node": "v26.8.2",
+          "playwright": "1.64.1"
+        },
+        "scope": "public-synthetic-shadow-pixels",
+        "pixelBudget": 2,
+        "stage": "complete",
+        "failureKind": "none",
+        "failureOperation": "none",
+        "pendingCase": 0,
+        "networkRequests": 0,
+        "contextsOpened": 2,
+        "contextsClosed": 2,
+        "rows": [
+          {
+            "shape": "brand",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 142,
+            "pixelHeight": 154,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 21868,
+              "changedPixels": 4839,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 1,
+              "meanAbsChannelDeltaMicro": 141794
+            },
+            "negative": {
+              "pixelsCompared": 21868,
+              "changedPixels": 4486,
+              "maxChannelDelta": 32,
+              "overBudgetPixels": 2548,
+              "meanAbsChannelDeltaMicro": 540093
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 71,
+            "pixelHeight": 71,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 5041,
+              "changedPixels": 765,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 1,
+              "meanAbsChannelDeltaMicro": 104692
+            },
+            "negative": {
+              "pixelsCompared": 5041,
+              "changedPixels": 694,
+              "maxChannelDelta": 10,
+              "overBudgetPixels": 304,
+              "meanAbsChannelDeltaMicro": 222228
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 70,
+            "pixelHeight": 70,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 4900,
+              "changedPixels": 704,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 102041
+            },
+            "negative": {
+              "pixelsCompared": 4900,
+              "changedPixels": 640,
+              "maxChannelDelta": 7,
+              "overBudgetPixels": 244,
+              "meanAbsChannelDeltaMicro": 164694
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 80,
+            "pixelHeight": 80,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1244,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 12,
+              "meanAbsChannelDeltaMicro": 136094
+            },
+            "negative": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1204,
+              "maxChannelDelta": 16,
+              "overBudgetPixels": 556,
+              "meanAbsChannelDeltaMicro": 416250
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 291,
+            "pixelHeight": 291,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 84681,
+              "changedPixels": 20963,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 206959
+            },
+            "negative": {
+              "pixelsCompared": 84681,
+              "changedPixels": 16912,
+              "maxChannelDelta": 11,
+              "overBudgetPixels": 7657,
+              "meanAbsChannelDeltaMicro": 281834
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 280,
+            "pixelHeight": 280,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 78400,
+              "changedPixels": 18429,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 194825
+            },
+            "negative": {
+              "pixelsCompared": 78400,
+              "changedPixels": 14810,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 6335,
+              "meanAbsChannelDeltaMicro": 243619
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "brand",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 142,
+            "pixelHeight": 154,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 21868,
+              "changedPixels": 3021,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 58121
+            },
+            "negative": {
+              "pixelsCompared": 21868,
+              "changedPixels": 4485,
+              "maxChannelDelta": 24,
+              "overBudgetPixels": 2642,
+              "meanAbsChannelDeltaMicro": 501372
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 71,
+            "pixelHeight": 71,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 5041,
+              "changedPixels": 571,
+              "maxChannelDelta": 4,
+              "overBudgetPixels": 8,
+              "meanAbsChannelDeltaMicro": 42601
+            },
+            "negative": {
+              "pixelsCompared": 5041,
+              "changedPixels": 690,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 320,
+              "meanAbsChannelDeltaMicro": 164997
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 70,
+            "pixelHeight": 70,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 4900,
+              "changedPixels": 520,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 43265
+            },
+            "negative": {
+              "pixelsCompared": 4900,
+              "changedPixels": 632,
+              "maxChannelDelta": 7,
+              "overBudgetPixels": 248,
+              "meanAbsChannelDeltaMicro": 134898
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 80,
+            "pixelHeight": 80,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1024,
+              "maxChannelDelta": 5,
+              "overBudgetPixels": 16,
+              "meanAbsChannelDeltaMicro": 73750
+            },
+            "negative": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1196,
+              "maxChannelDelta": 14,
+              "overBudgetPixels": 604,
+              "meanAbsChannelDeltaMicro": 314375
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 291,
+            "pixelHeight": 291,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 84681,
+              "changedPixels": 16444,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 62859
+            },
+            "negative": {
+              "pixelsCompared": 84681,
+              "changedPixels": 16922,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 7933,
+              "meanAbsChannelDeltaMicro": 309417
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 280,
+            "pixelHeight": 280,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 78400,
+              "changedPixels": 14703,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 59892
+            },
+            "negative": {
+              "pixelsCompared": 78400,
+              "changedPixels": 14820,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 6580,
+              "meanAbsChannelDeltaMicro": 273715
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "brand",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 284,
+            "pixelHeight": 308,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 87472,
+              "changedPixels": 20109,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 6,
+              "meanAbsChannelDeltaMicro": 167479
+            },
+            "negative": {
+              "pixelsCompared": 87472,
+              "changedPixels": 17378,
+              "maxChannelDelta": 33,
+              "overBudgetPixels": 9917,
+              "meanAbsChannelDeltaMicro": 533717
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 142,
+            "pixelHeight": 142,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 20164,
+              "changedPixels": 3255,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 8,
+              "meanAbsChannelDeltaMicro": 116929
+            },
+            "negative": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2920,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 1186,
+              "meanAbsChannelDeltaMicro": 211925
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 140,
+            "pixelHeight": 140,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2965,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 111901
+            },
+            "negative": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2684,
+              "maxChannelDelta": 7,
+              "overBudgetPixels": 924,
+              "meanAbsChannelDeltaMicro": 157015
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 160,
+            "pixelHeight": 160,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 25600,
+              "changedPixels": 5014,
+              "maxChannelDelta": 5,
+              "overBudgetPixels": 35,
+              "meanAbsChannelDeltaMicro": 140000
+            },
+            "negative": {
+              "pixelsCompared": 25600,
+              "changedPixels": 4814,
+              "maxChannelDelta": 15,
+              "overBudgetPixels": 2191,
+              "meanAbsChannelDeltaMicro": 398564
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 582,
+            "pixelHeight": 582,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 338724,
+              "changedPixels": 84438,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 1,
+              "meanAbsChannelDeltaMicro": 213658
+            },
+            "negative": {
+              "pixelsCompared": 338724,
+              "changedPixels": 67913,
+              "maxChannelDelta": 11,
+              "overBudgetPixels": 30780,
+              "meanAbsChannelDeltaMicro": 283259
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 560,
+            "pixelHeight": 560,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 313600,
+              "changedPixels": 74365,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 1,
+              "meanAbsChannelDeltaMicro": 200870
+            },
+            "negative": {
+              "pixelsCompared": 313600,
+              "changedPixels": 59455,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 25451,
+              "meanAbsChannelDeltaMicro": 244731
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "brand",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 284,
+            "pixelHeight": 308,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 87472,
+              "changedPixels": 13872,
+              "maxChannelDelta": 5,
+              "overBudgetPixels": 14,
+              "meanAbsChannelDeltaMicro": 59225
+            },
+            "negative": {
+              "pixelsCompared": 87472,
+              "changedPixels": 17384,
+              "maxChannelDelta": 25,
+              "overBudgetPixels": 10235,
+              "meanAbsChannelDeltaMicro": 491852
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 142,
+            "pixelHeight": 142,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2108,
+              "maxChannelDelta": 4,
+              "overBudgetPixels": 18,
+              "meanAbsChannelDeltaMicro": 34542
+            },
+            "negative": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2906,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 1296,
+              "meanAbsChannelDeltaMicro": 163336
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 140,
+            "pixelHeight": 140,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 19600,
+              "changedPixels": 1889,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 31582
+            },
+            "negative": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2674,
+              "maxChannelDelta": 6,
+              "overBudgetPixels": 1008,
+              "meanAbsChannelDeltaMicro": 126684
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 160,
+            "pixelHeight": 160,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 25600,
+              "changedPixels": 3928,
+              "maxChannelDelta": 6,
+              "overBudgetPixels": 38,
+              "meanAbsChannelDeltaMicro": 53652
+            },
+            "negative": {
+              "pixelsCompared": 25600,
+              "changedPixels": 4811,
+              "maxChannelDelta": 13,
+              "overBudgetPixels": 2376,
+              "meanAbsChannelDeltaMicro": 306094
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 582,
+            "pixelHeight": 582,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 338724,
+              "changedPixels": 64671,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 2,
+              "meanAbsChannelDeltaMicro": 62019
+            },
+            "negative": {
+              "pixelsCompared": 338724,
+              "changedPixels": 67892,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 31954,
+              "meanAbsChannelDeltaMicro": 310669
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 560,
+            "pixelHeight": 560,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 313600,
+              "changedPixels": 58295,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 5,
+              "meanAbsChannelDeltaMicro": 59613
+            },
+            "negative": {
+              "pixelsCompared": 313600,
+              "changedPixels": 59436,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 26510,
+              "meanAbsChannelDeltaMicro": 274972
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          }
+        ],
+        "browserChecks": {
+          "before": true,
+          "after": true
+        },
+        "jobCpuChecks": {
+          "privateMembership": true,
+          "mountUnique": true,
+          "mountRoot": true,
+          "mountReadOnly": true,
+          "mountCgroupV2": true,
+          "rootDirectory": true,
+          "filesystemCgroupV2": true,
+          "controlsReadOnly": true,
+          "counterRegular": true,
+          "counterStable": true,
+          "counterRead": true,
+          "closeConfirmed": true
+        },
+        "cleanup": {
+          "contextClosed": true,
+          "browserStopped": true,
+          "jobClosed": true
+        },
+        "complete": true,
+        "appearancePassed": false,
+        "productOrControllerExecuted": false,
+        "privatePagesOrDataUsed": false,
+        "rawScreenshotsRetained": false,
+        "qualificationCredit": false,
+        "productionQualificationComplete": false
+      }
+    },
+    {
+      "artifactID": 13603502134,
+      "artifactName": "public-shadow-pixels-amd64-chromium",
+      "providerZIPDigest": "sha256:2fefb5a9d9cb65ae64503d0c4055c89d6e1be7acea863e7b963e2ec3b9150440",
+      "providerZIPDigestVerified": true,
+      "parsedReportSHA256": "85b2d71589f399d02d2487030d632b4399b129695796436841a3e6accfc79e44",
+      "sourceHashesVerified": 16,
+      "summary": {
+        "complete": true,
+        "appearancePassed": false,
+        "rows": 24,
+        "failureKind": "none",
+        "failureOperation": "none",
+        "pendingCase": 0,
+        "maximumChannelDelta": 6,
+        "rowsOverBudget": 16,
+        "repeatFailures": 0,
+        "visibleNegativeControls": 24
+      },
+      "report": {
+        "schemaVersion": 1,
+        "sourceCommit": "1ba63973adb9d62fae5abab0e1a0a1fb2814278e",
+        "sourceSHA256": {
+          "scripts/browser-tests/public-shadow-pixels.cjs": "8c7a14c25434830811bea90bdf0d0ba005be41e07101f5a08ce90f97deee7c7f",
+          "scripts/browser-tests/public-shadow-pixels.test.cjs": "bac3e9faf9a72b5095c3deec0eb745c844d797899b1fd333249c6160a9d4f78f",
+          "scripts/browser-tests/public-shadow-pixels.spec.cjs": "e350aca2bd10a5aa56f8a1b5622b20f1265218c99988b6f89cc2ea842941d22b",
+          "scripts/browser-tests/public-shadow-fixtures.json": "d0c668d73689745cdd727563ea9103bba266e60c37c6825d1116354fadad5de2",
+          "scripts/generate-public-shadow-fixtures.py": "08813373e072137fb3d5f0018519951b86fdf096407a025e8d39d127c9b067f8",
+          "scripts/browser-tests/pixels.config.cjs": "39e805f77f272f42e334604d5bb633f0d78511d9c1871b39bc3f74b66c5caca2",
+          "scripts/browser-tests/playwright.config.cjs": "fb951bf6f1eca621cb69eab2d46517b1a57a3779714142879d8f4f93cc719fa9",
+          "scripts/browser-tests/package-lock.json": "8be62d9880021ca910c493d5540682379b6bc5f0b907707a7579dc4f74fbbd6a",
+          "scripts/browser-tests/desktop-performance.cjs": "51208a7b3b0904d29c9fee55f206401b0922eeea7c1b91ee15b7c81a7a548e59",
+          "scripts/browser-tests/browser-resources.cjs": "5aeab55a5dd67264a96baf34b264815fb80bcdf9c2ad086b22613ca675c1e5e1",
+          "scripts/browser-tests/browser-native-binary.cjs": "8194f82559f9b7f32b43d74c3d3c0df6bf00b48e34c23bb3e8ed3132f82db972",
+          "scripts/browser-tests/job-cpu.cjs": "4812d6387bcec43bc84855eef4f223000440fb2e7d15f1ca7a7fe31a85980b37",
+          "scripts/browser-tests/check-image-environment.cjs": "e19b4bf61bc94d045e2566f0353a04e267e45d404aae4fabfae63dcec87f460b",
+          "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+          ".github/workflows/public-shadow-pixels.yml": "5fccc9aa12b312215734b4b9db83b563f3a452234a4c21c24a862074b1d6fbdd",
+          "web/app.css": "2a60b91d0c6c04b8fa3d4fc50f948e326dc1408648ac0fda41ec37ffc77de9d6"
+        },
+        "project": "chromium",
+        "architecture": "amd64",
+        "environment": {
+          "platform": "linux",
+          "architecture": "x64",
+          "node": "v26.8.2",
+          "playwright": "1.64.1"
+        },
+        "scope": "public-synthetic-shadow-pixels",
+        "pixelBudget": 2,
+        "stage": "complete",
+        "failureKind": "none",
+        "failureOperation": "none",
+        "pendingCase": 0,
+        "networkRequests": 0,
+        "contextsOpened": 2,
+        "contextsClosed": 2,
+        "rows": [
+          {
+            "shape": "brand",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 142,
+            "pixelHeight": 154,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 21868,
+              "changedPixels": 3057,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 1,
+              "meanAbsChannelDeltaMicro": 56258
+            },
+            "negative": {
+              "pixelsCompared": 21868,
+              "changedPixels": 4486,
+              "maxChannelDelta": 32,
+              "overBudgetPixels": 2548,
+              "meanAbsChannelDeltaMicro": 540093
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 71,
+            "pixelHeight": 71,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 5041,
+              "changedPixels": 612,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 8,
+              "meanAbsChannelDeltaMicro": 51230
+            },
+            "negative": {
+              "pixelsCompared": 5041,
+              "changedPixels": 694,
+              "maxChannelDelta": 10,
+              "overBudgetPixels": 304,
+              "meanAbsChannelDeltaMicro": 222228
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 70,
+            "pixelHeight": 70,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 4900,
+              "changedPixels": 532,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 8,
+              "meanAbsChannelDeltaMicro": 41633
+            },
+            "negative": {
+              "pixelsCompared": 4900,
+              "changedPixels": 640,
+              "maxChannelDelta": 7,
+              "overBudgetPixels": 244,
+              "meanAbsChannelDeltaMicro": 164694
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 80,
+            "pixelHeight": 80,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1044,
+              "maxChannelDelta": 4,
+              "overBudgetPixels": 12,
+              "meanAbsChannelDeltaMicro": 75938
+            },
+            "negative": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1204,
+              "maxChannelDelta": 16,
+              "overBudgetPixels": 556,
+              "meanAbsChannelDeltaMicro": 416250
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 291,
+            "pixelHeight": 291,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 84681,
+              "changedPixels": 19448,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 1,
+              "meanAbsChannelDeltaMicro": 97820
+            },
+            "negative": {
+              "pixelsCompared": 84681,
+              "changedPixels": 16912,
+              "maxChannelDelta": 11,
+              "overBudgetPixels": 7657,
+              "meanAbsChannelDeltaMicro": 281834
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 280,
+            "pixelHeight": 280,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 78400,
+              "changedPixels": 17079,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 89748
+            },
+            "negative": {
+              "pixelsCompared": 78400,
+              "changedPixels": 14810,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 6335,
+              "meanAbsChannelDeltaMicro": 243619
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "brand",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 142,
+            "pixelHeight": 154,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 21868,
+              "changedPixels": 3032,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 58270
+            },
+            "negative": {
+              "pixelsCompared": 21868,
+              "changedPixels": 4485,
+              "maxChannelDelta": 24,
+              "overBudgetPixels": 2642,
+              "meanAbsChannelDeltaMicro": 501372
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 71,
+            "pixelHeight": 71,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 5041,
+              "changedPixels": 563,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 7,
+              "meanAbsChannelDeltaMicro": 41311
+            },
+            "negative": {
+              "pixelsCompared": 5041,
+              "changedPixels": 690,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 320,
+              "meanAbsChannelDeltaMicro": 164997
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 70,
+            "pixelHeight": 70,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 4900,
+              "changedPixels": 520,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 42245
+            },
+            "negative": {
+              "pixelsCompared": 4900,
+              "changedPixels": 632,
+              "maxChannelDelta": 7,
+              "overBudgetPixels": 248,
+              "meanAbsChannelDeltaMicro": 134898
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 80,
+            "pixelHeight": 80,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1028,
+              "maxChannelDelta": 5,
+              "overBudgetPixels": 16,
+              "meanAbsChannelDeltaMicro": 73281
+            },
+            "negative": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1196,
+              "maxChannelDelta": 14,
+              "overBudgetPixels": 604,
+              "meanAbsChannelDeltaMicro": 314375
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 291,
+            "pixelHeight": 291,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 84681,
+              "changedPixels": 16446,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 62892
+            },
+            "negative": {
+              "pixelsCompared": 84681,
+              "changedPixels": 16922,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 7933,
+              "meanAbsChannelDeltaMicro": 309417
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 280,
+            "pixelHeight": 280,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 78400,
+              "changedPixels": 14706,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 59997
+            },
+            "negative": {
+              "pixelsCompared": 78400,
+              "changedPixels": 14820,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 6580,
+              "meanAbsChannelDeltaMicro": 273715
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "brand",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 284,
+            "pixelHeight": 308,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 87472,
+              "changedPixels": 16619,
+              "maxChannelDelta": 4,
+              "overBudgetPixels": 10,
+              "meanAbsChannelDeltaMicro": 84939
+            },
+            "negative": {
+              "pixelsCompared": 87472,
+              "changedPixels": 17378,
+              "maxChannelDelta": 33,
+              "overBudgetPixels": 9917,
+              "meanAbsChannelDeltaMicro": 533717
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 142,
+            "pixelHeight": 142,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2266,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 8,
+              "meanAbsChannelDeltaMicro": 39315
+            },
+            "negative": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2920,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 1186,
+              "meanAbsChannelDeltaMicro": 211925
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 140,
+            "pixelHeight": 140,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2038,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 4,
+              "meanAbsChannelDeltaMicro": 36212
+            },
+            "negative": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2684,
+              "maxChannelDelta": 7,
+              "overBudgetPixels": 924,
+              "meanAbsChannelDeltaMicro": 157015
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 160,
+            "pixelHeight": 160,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 25600,
+              "changedPixels": 3930,
+              "maxChannelDelta": 6,
+              "overBudgetPixels": 35,
+              "meanAbsChannelDeltaMicro": 51260
+            },
+            "negative": {
+              "pixelsCompared": 25600,
+              "changedPixels": 4814,
+              "maxChannelDelta": 15,
+              "overBudgetPixels": 2191,
+              "meanAbsChannelDeltaMicro": 398564
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 582,
+            "pixelHeight": 582,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 338724,
+              "changedPixels": 79697,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 1,
+              "meanAbsChannelDeltaMicro": 104724
+            },
+            "negative": {
+              "pixelsCompared": 338724,
+              "changedPixels": 67913,
+              "maxChannelDelta": 11,
+              "overBudgetPixels": 30780,
+              "meanAbsChannelDeltaMicro": 283259
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 560,
+            "pixelHeight": 560,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 313600,
+              "changedPixels": 69889,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 1,
+              "meanAbsChannelDeltaMicro": 95894
+            },
+            "negative": {
+              "pixelsCompared": 313600,
+              "changedPixels": 59455,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 25451,
+              "meanAbsChannelDeltaMicro": 244731
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "brand",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 284,
+            "pixelHeight": 308,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 87472,
+              "changedPixels": 13868,
+              "maxChannelDelta": 4,
+              "overBudgetPixels": 6,
+              "meanAbsChannelDeltaMicro": 59047
+            },
+            "negative": {
+              "pixelsCompared": 87472,
+              "changedPixels": 17384,
+              "maxChannelDelta": 25,
+              "overBudgetPixels": 10235,
+              "meanAbsChannelDeltaMicro": 491852
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 142,
+            "pixelHeight": 142,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2108,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 12,
+              "meanAbsChannelDeltaMicro": 33971
+            },
+            "negative": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2906,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 1296,
+              "meanAbsChannelDeltaMicro": 163336
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 140,
+            "pixelHeight": 140,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 19600,
+              "changedPixels": 1889,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 31084
+            },
+            "negative": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2674,
+              "maxChannelDelta": 6,
+              "overBudgetPixels": 1008,
+              "meanAbsChannelDeltaMicro": 126684
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 160,
+            "pixelHeight": 160,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 25600,
+              "changedPixels": 3928,
+              "maxChannelDelta": 5,
+              "overBudgetPixels": 38,
+              "meanAbsChannelDeltaMicro": 53184
+            },
+            "negative": {
+              "pixelsCompared": 25600,
+              "changedPixels": 4811,
+              "maxChannelDelta": 13,
+              "overBudgetPixels": 2376,
+              "meanAbsChannelDeltaMicro": 306094
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 582,
+            "pixelHeight": 582,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 338724,
+              "changedPixels": 64658,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 61930
+            },
+            "negative": {
+              "pixelsCompared": 338724,
+              "changedPixels": 67892,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 31954,
+              "meanAbsChannelDeltaMicro": 310669
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 560,
+            "pixelHeight": 560,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 313600,
+              "changedPixels": 58286,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 59532
+            },
+            "negative": {
+              "pixelsCompared": 313600,
+              "changedPixels": 59436,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 26510,
+              "meanAbsChannelDeltaMicro": 274972
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          }
+        ],
+        "browserChecks": {
+          "before": true,
+          "after": true
+        },
+        "jobCpuChecks": {
+          "privateMembership": true,
+          "mountUnique": true,
+          "mountRoot": true,
+          "mountReadOnly": true,
+          "mountCgroupV2": true,
+          "rootDirectory": true,
+          "filesystemCgroupV2": true,
+          "controlsReadOnly": true,
+          "counterRegular": true,
+          "counterStable": true,
+          "counterRead": true,
+          "closeConfirmed": true
+        },
+        "cleanup": {
+          "contextClosed": true,
+          "browserStopped": true,
+          "jobClosed": true
+        },
+        "complete": true,
+        "appearancePassed": false,
+        "productOrControllerExecuted": false,
+        "privatePagesOrDataUsed": false,
+        "rawScreenshotsRetained": false,
+        "qualificationCredit": false,
+        "productionQualificationComplete": false
+      }
+    },
+    {
+      "artifactID": 13603438414,
+      "artifactName": "public-shadow-pixels-amd64-webkit",
+      "providerZIPDigest": "sha256:d04b90fa07df54c893ef3dc3bfe686465265f144da7c28715186cf552838797c",
+      "providerZIPDigestVerified": true,
+      "parsedReportSHA256": "1381cacb75f1508bbeb95e653eef70179801d558b5c3c384ecd79bb65869f1bd",
+      "sourceHashesVerified": 16,
+      "summary": {
+        "complete": true,
+        "appearancePassed": false,
+        "rows": 24,
+        "failureKind": "none",
+        "failureOperation": "none",
+        "pendingCase": 0,
+        "maximumChannelDelta": 7,
+        "rowsOverBudget": 19,
+        "repeatFailures": 0,
+        "visibleNegativeControls": 24
+      },
+      "report": {
+        "schemaVersion": 1,
+        "sourceCommit": "1ba63973adb9d62fae5abab0e1a0a1fb2814278e",
+        "sourceSHA256": {
+          "scripts/browser-tests/public-shadow-pixels.cjs": "8c7a14c25434830811bea90bdf0d0ba005be41e07101f5a08ce90f97deee7c7f",
+          "scripts/browser-tests/public-shadow-pixels.test.cjs": "bac3e9faf9a72b5095c3deec0eb745c844d797899b1fd333249c6160a9d4f78f",
+          "scripts/browser-tests/public-shadow-pixels.spec.cjs": "e350aca2bd10a5aa56f8a1b5622b20f1265218c99988b6f89cc2ea842941d22b",
+          "scripts/browser-tests/public-shadow-fixtures.json": "d0c668d73689745cdd727563ea9103bba266e60c37c6825d1116354fadad5de2",
+          "scripts/generate-public-shadow-fixtures.py": "08813373e072137fb3d5f0018519951b86fdf096407a025e8d39d127c9b067f8",
+          "scripts/browser-tests/pixels.config.cjs": "39e805f77f272f42e334604d5bb633f0d78511d9c1871b39bc3f74b66c5caca2",
+          "scripts/browser-tests/playwright.config.cjs": "fb951bf6f1eca621cb69eab2d46517b1a57a3779714142879d8f4f93cc719fa9",
+          "scripts/browser-tests/package-lock.json": "8be62d9880021ca910c493d5540682379b6bc5f0b907707a7579dc4f74fbbd6a",
+          "scripts/browser-tests/desktop-performance.cjs": "51208a7b3b0904d29c9fee55f206401b0922eeea7c1b91ee15b7c81a7a548e59",
+          "scripts/browser-tests/browser-resources.cjs": "5aeab55a5dd67264a96baf34b264815fb80bcdf9c2ad086b22613ca675c1e5e1",
+          "scripts/browser-tests/browser-native-binary.cjs": "8194f82559f9b7f32b43d74c3d3c0df6bf00b48e34c23bb3e8ed3132f82db972",
+          "scripts/browser-tests/job-cpu.cjs": "4812d6387bcec43bc84855eef4f223000440fb2e7d15f1ca7a7fe31a85980b37",
+          "scripts/browser-tests/check-image-environment.cjs": "e19b4bf61bc94d045e2566f0353a04e267e45d404aae4fabfae63dcec87f460b",
+          "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+          ".github/workflows/public-shadow-pixels.yml": "5fccc9aa12b312215734b4b9db83b563f3a452234a4c21c24a862074b1d6fbdd",
+          "web/app.css": "2a60b91d0c6c04b8fa3d4fc50f948e326dc1408648ac0fda41ec37ffc77de9d6"
+        },
+        "project": "webkit",
+        "architecture": "amd64",
+        "environment": {
+          "platform": "linux",
+          "architecture": "x64",
+          "node": "v26.8.2",
+          "playwright": "1.64.1"
+        },
+        "scope": "public-synthetic-shadow-pixels",
+        "pixelBudget": 2,
+        "stage": "complete",
+        "failureKind": "none",
+        "failureOperation": "none",
+        "pendingCase": 0,
+        "networkRequests": 0,
+        "contextsOpened": 2,
+        "contextsClosed": 2,
+        "rows": [
+          {
+            "shape": "brand",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 142,
+            "pixelHeight": 154,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 21868,
+              "changedPixels": 4187,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 1,
+              "meanAbsChannelDeltaMicro": 94373
+            },
+            "negative": {
+              "pixelsCompared": 21868,
+              "changedPixels": 4492,
+              "maxChannelDelta": 32,
+              "overBudgetPixels": 2645,
+              "meanAbsChannelDeltaMicro": 636535
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 71,
+            "pixelHeight": 71,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 5041,
+              "changedPixels": 636,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 8,
+              "meanAbsChannelDeltaMicro": 66703
+            },
+            "negative": {
+              "pixelsCompared": 5041,
+              "changedPixels": 694,
+              "maxChannelDelta": 11,
+              "overBudgetPixels": 382,
+              "meanAbsChannelDeltaMicro": 283575
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 70,
+            "pixelHeight": 70,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 4900,
+              "changedPixels": 544,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 8,
+              "meanAbsChannelDeltaMicro": 64082
+            },
+            "negative": {
+              "pixelsCompared": 4900,
+              "changedPixels": 640,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 308,
+              "meanAbsChannelDeltaMicro": 222653
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 80,
+            "pixelHeight": 80,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1080,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 16,
+              "meanAbsChannelDeltaMicro": 84063
+            },
+            "negative": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1204,
+              "maxChannelDelta": 17,
+              "overBudgetPixels": 672,
+              "meanAbsChannelDeltaMicro": 478750
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 291,
+            "pixelHeight": 291,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 84681,
+              "changedPixels": 15736,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 6,
+              "meanAbsChannelDeltaMicro": 67872
+            },
+            "negative": {
+              "pixelsCompared": 84681,
+              "changedPixels": 19083,
+              "maxChannelDelta": 11,
+              "overBudgetPixels": 8301,
+              "meanAbsChannelDeltaMicro": 396190
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 280,
+            "pixelHeight": 280,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 78400,
+              "changedPixels": 14222,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 4,
+              "meanAbsChannelDeltaMicro": 68179
+            },
+            "negative": {
+              "pixelsCompared": 78400,
+              "changedPixels": 16836,
+              "maxChannelDelta": 11,
+              "overBudgetPixels": 6915,
+              "meanAbsChannelDeltaMicro": 350421
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "brand",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 142,
+            "pixelHeight": 154,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 21868,
+              "changedPixels": 4463,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 1,
+              "meanAbsChannelDeltaMicro": 117523
+            },
+            "negative": {
+              "pixelsCompared": 21868,
+              "changedPixels": 4920,
+              "maxChannelDelta": 25,
+              "overBudgetPixels": 2571,
+              "meanAbsChannelDeltaMicro": 493918
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 71,
+            "pixelHeight": 71,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 5041,
+              "changedPixels": 728,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 5,
+              "meanAbsChannelDeltaMicro": 76324
+            },
+            "negative": {
+              "pixelsCompared": 5041,
+              "changedPixels": 690,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 292,
+              "meanAbsChannelDeltaMicro": 160583
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 70,
+            "pixelHeight": 70,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 4900,
+              "changedPixels": 644,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 69796
+            },
+            "negative": {
+              "pixelsCompared": 4900,
+              "changedPixels": 632,
+              "maxChannelDelta": 6,
+              "overBudgetPixels": 252,
+              "meanAbsChannelDeltaMicro": 126939
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 80,
+            "pixelHeight": 80,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1060,
+              "maxChannelDelta": 4,
+              "overBudgetPixels": 16,
+              "meanAbsChannelDeltaMicro": 78750
+            },
+            "negative": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1076,
+              "maxChannelDelta": 14,
+              "overBudgetPixels": 556,
+              "meanAbsChannelDeltaMicro": 296406
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 291,
+            "pixelHeight": 291,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 84681,
+              "changedPixels": 18187,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 106526
+            },
+            "negative": {
+              "pixelsCompared": 84681,
+              "changedPixels": 17263,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 7448,
+              "meanAbsChannelDeltaMicro": 301918
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 280,
+            "pixelHeight": 280,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 78400,
+              "changedPixels": 16157,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 1,
+              "meanAbsChannelDeltaMicro": 101148
+            },
+            "negative": {
+              "pixelsCompared": 78400,
+              "changedPixels": 15175,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 6144,
+              "meanAbsChannelDeltaMicro": 266486
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "brand",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 284,
+            "pixelHeight": 308,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 87472,
+              "changedPixels": 20419,
+              "maxChannelDelta": 6,
+              "overBudgetPixels": 215,
+              "meanAbsChannelDeltaMicro": 215589
+            },
+            "negative": {
+              "pixelsCompared": 87472,
+              "changedPixels": 17391,
+              "maxChannelDelta": 33,
+              "overBudgetPixels": 10242,
+              "meanAbsChannelDeltaMicro": 626320
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 142,
+            "pixelHeight": 142,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 20164,
+              "changedPixels": 3288,
+              "maxChannelDelta": 5,
+              "overBudgetPixels": 24,
+              "meanAbsChannelDeltaMicro": 154731
+            },
+            "negative": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2920,
+              "maxChannelDelta": 10,
+              "overBudgetPixels": 1526,
+              "meanAbsChannelDeltaMicro": 275813
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 140,
+            "pixelHeight": 140,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2976,
+              "maxChannelDelta": 4,
+              "overBudgetPixels": 21,
+              "meanAbsChannelDeltaMicro": 147436
+            },
+            "negative": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2684,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 1248,
+              "meanAbsChannelDeltaMicro": 215306
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 160,
+            "pixelHeight": 160,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 25600,
+              "changedPixels": 5098,
+              "maxChannelDelta": 7,
+              "overBudgetPixels": 58,
+              "meanAbsChannelDeltaMicro": 182607
+            },
+            "negative": {
+              "pixelsCompared": 25600,
+              "changedPixels": 4814,
+              "maxChannelDelta": 16,
+              "overBudgetPixels": 2615,
+              "meanAbsChannelDeltaMicro": 462705
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 582,
+            "pixelHeight": 582,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 338724,
+              "changedPixels": 83151,
+              "maxChannelDelta": 4,
+              "overBudgetPixels": 88,
+              "meanAbsChannelDeltaMicro": 209706
+            },
+            "negative": {
+              "pixelsCompared": 338724,
+              "changedPixels": 76614,
+              "maxChannelDelta": 11,
+              "overBudgetPixels": 33411,
+              "meanAbsChannelDeltaMicro": 397695
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 560,
+            "pixelHeight": 560,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 313600,
+              "changedPixels": 73294,
+              "maxChannelDelta": 4,
+              "overBudgetPixels": 87,
+              "meanAbsChannelDeltaMicro": 204411
+            },
+            "negative": {
+              "pixelsCompared": 313600,
+              "changedPixels": 67558,
+              "maxChannelDelta": 11,
+              "overBudgetPixels": 27822,
+              "meanAbsChannelDeltaMicro": 351861
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "brand",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 284,
+            "pixelHeight": 308,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 87472,
+              "changedPixels": 17067,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 5,
+              "meanAbsChannelDeltaMicro": 117986
+            },
+            "negative": {
+              "pixelsCompared": 87472,
+              "changedPixels": 19111,
+              "maxChannelDelta": 25,
+              "overBudgetPixels": 10022,
+              "meanAbsChannelDeltaMicro": 486333
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 142,
+            "pixelHeight": 142,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2852,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 4,
+              "meanAbsChannelDeltaMicro": 70968
+            },
+            "negative": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2906,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 1210,
+              "meanAbsChannelDeltaMicro": 158624
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 140,
+            "pixelHeight": 140,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2590,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 67105
+            },
+            "negative": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2674,
+              "maxChannelDelta": 6,
+              "overBudgetPixels": 948,
+              "meanAbsChannelDeltaMicro": 122959
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 160,
+            "pixelHeight": 160,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 25600,
+              "changedPixels": 4009,
+              "maxChannelDelta": 5,
+              "overBudgetPixels": 32,
+              "meanAbsChannelDeltaMicro": 71914
+            },
+            "negative": {
+              "pixelsCompared": 25600,
+              "changedPixels": 4277,
+              "maxChannelDelta": 12,
+              "overBudgetPixels": 2188,
+              "meanAbsChannelDeltaMicro": 286836
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 582,
+            "pixelHeight": 582,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 338724,
+              "changedPixels": 72362,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 103406
+            },
+            "negative": {
+              "pixelsCompared": 338724,
+              "changedPixels": 69498,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 29990,
+              "meanAbsChannelDeltaMicro": 303325
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 560,
+            "pixelHeight": 560,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 313600,
+              "changedPixels": 64491,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 98154
+            },
+            "negative": {
+              "pixelsCompared": 313600,
+              "changedPixels": 60979,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 24722,
+              "meanAbsChannelDeltaMicro": 268347
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          }
+        ],
+        "browserChecks": {
+          "before": true,
+          "after": true
+        },
+        "jobCpuChecks": {
+          "privateMembership": true,
+          "mountUnique": true,
+          "mountRoot": true,
+          "mountReadOnly": true,
+          "mountCgroupV2": true,
+          "rootDirectory": true,
+          "filesystemCgroupV2": true,
+          "controlsReadOnly": true,
+          "counterRegular": true,
+          "counterStable": true,
+          "counterRead": true,
+          "closeConfirmed": true
+        },
+        "cleanup": {
+          "contextClosed": true,
+          "browserStopped": true,
+          "jobClosed": true
+        },
+        "complete": true,
+        "appearancePassed": false,
+        "productOrControllerExecuted": false,
+        "privatePagesOrDataUsed": false,
+        "rawScreenshotsRetained": false,
+        "qualificationCredit": false,
+        "productionQualificationComplete": false
+      }
+    },
+    {
+      "artifactID": 13603194539,
+      "artifactName": "public-shadow-pixels-arm64-firefox",
+      "providerZIPDigest": "sha256:70e0a48ae2659662c6361d9e1458d813150b1ac8e5226d4f90f3a1a5c6c6140e",
+      "providerZIPDigestVerified": true,
+      "parsedReportSHA256": "8b1d87dee449dafb4dc3cbb856fa76bf9aae00c51faaedef35af00bf5af0d3fa",
+      "sourceHashesVerified": 16,
+      "summary": {
+        "complete": true,
+        "appearancePassed": false,
+        "rows": 24,
+        "failureKind": "none",
+        "failureOperation": "none",
+        "pendingCase": 0,
+        "maximumChannelDelta": 4,
+        "rowsOverBudget": 16,
+        "repeatFailures": 0,
+        "visibleNegativeControls": 24
+      },
+      "report": {
+        "schemaVersion": 1,
+        "sourceCommit": "1ba63973adb9d62fae5abab0e1a0a1fb2814278e",
+        "sourceSHA256": {
+          "scripts/browser-tests/public-shadow-pixels.cjs": "8c7a14c25434830811bea90bdf0d0ba005be41e07101f5a08ce90f97deee7c7f",
+          "scripts/browser-tests/public-shadow-pixels.test.cjs": "bac3e9faf9a72b5095c3deec0eb745c844d797899b1fd333249c6160a9d4f78f",
+          "scripts/browser-tests/public-shadow-pixels.spec.cjs": "e350aca2bd10a5aa56f8a1b5622b20f1265218c99988b6f89cc2ea842941d22b",
+          "scripts/browser-tests/public-shadow-fixtures.json": "d0c668d73689745cdd727563ea9103bba266e60c37c6825d1116354fadad5de2",
+          "scripts/generate-public-shadow-fixtures.py": "08813373e072137fb3d5f0018519951b86fdf096407a025e8d39d127c9b067f8",
+          "scripts/browser-tests/pixels.config.cjs": "39e805f77f272f42e334604d5bb633f0d78511d9c1871b39bc3f74b66c5caca2",
+          "scripts/browser-tests/playwright.config.cjs": "fb951bf6f1eca621cb69eab2d46517b1a57a3779714142879d8f4f93cc719fa9",
+          "scripts/browser-tests/package-lock.json": "8be62d9880021ca910c493d5540682379b6bc5f0b907707a7579dc4f74fbbd6a",
+          "scripts/browser-tests/desktop-performance.cjs": "51208a7b3b0904d29c9fee55f206401b0922eeea7c1b91ee15b7c81a7a548e59",
+          "scripts/browser-tests/browser-resources.cjs": "5aeab55a5dd67264a96baf34b264815fb80bcdf9c2ad086b22613ca675c1e5e1",
+          "scripts/browser-tests/browser-native-binary.cjs": "8194f82559f9b7f32b43d74c3d3c0df6bf00b48e34c23bb3e8ed3132f82db972",
+          "scripts/browser-tests/job-cpu.cjs": "4812d6387bcec43bc84855eef4f223000440fb2e7d15f1ca7a7fe31a85980b37",
+          "scripts/browser-tests/check-image-environment.cjs": "e19b4bf61bc94d045e2566f0353a04e267e45d404aae4fabfae63dcec87f460b",
+          "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+          ".github/workflows/public-shadow-pixels.yml": "5fccc9aa12b312215734b4b9db83b563f3a452234a4c21c24a862074b1d6fbdd",
+          "web/app.css": "2a60b91d0c6c04b8fa3d4fc50f948e326dc1408648ac0fda41ec37ffc77de9d6"
+        },
+        "project": "firefox",
+        "architecture": "arm64",
+        "environment": {
+          "platform": "linux",
+          "architecture": "arm64",
+          "node": "v26.8.2",
+          "playwright": "1.64.1"
+        },
+        "scope": "public-synthetic-shadow-pixels",
+        "pixelBudget": 2,
+        "stage": "complete",
+        "failureKind": "none",
+        "failureOperation": "none",
+        "pendingCase": 0,
+        "networkRequests": 0,
+        "contextsOpened": 2,
+        "contextsClosed": 2,
+        "rows": [
+          {
+            "shape": "brand",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 142,
+            "pixelHeight": 154,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 21868,
+              "changedPixels": 4088,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 3,
+              "meanAbsChannelDeltaMicro": 84084
+            },
+            "negative": {
+              "pixelsCompared": 21868,
+              "changedPixels": 4472,
+              "maxChannelDelta": 32,
+              "overBudgetPixels": 2644,
+              "meanAbsChannelDeltaMicro": 635209
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 71,
+            "pixelHeight": 71,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 5041,
+              "changedPixels": 718,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 71811
+            },
+            "negative": {
+              "pixelsCompared": 5041,
+              "changedPixels": 679,
+              "maxChannelDelta": 11,
+              "overBudgetPixels": 364,
+              "meanAbsChannelDeltaMicro": 269242
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 70,
+            "pixelHeight": 70,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 4900,
+              "changedPixels": 660,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 66786
+            },
+            "negative": {
+              "pixelsCompared": 4900,
+              "changedPixels": 616,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 300,
+              "meanAbsChannelDeltaMicro": 206837
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 80,
+            "pixelHeight": 80,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1129,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 94219
+            },
+            "negative": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1172,
+              "maxChannelDelta": 16,
+              "overBudgetPixels": 639,
+              "meanAbsChannelDeltaMicro": 449180
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 291,
+            "pixelHeight": 291,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 84681,
+              "changedPixels": 19706,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 6,
+              "meanAbsChannelDeltaMicro": 117264
+            },
+            "negative": {
+              "pixelsCompared": 84681,
+              "changedPixels": 19048,
+              "maxChannelDelta": 11,
+              "overBudgetPixels": 8306,
+              "meanAbsChannelDeltaMicro": 395490
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "dark",
+            "dpr": 1,
+            "pixelWidth": 280,
+            "pixelHeight": 280,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 78400,
+              "changedPixels": 17241,
+              "maxChannelDelta": 4,
+              "overBudgetPixels": 5,
+              "meanAbsChannelDeltaMicro": 108090
+            },
+            "negative": {
+              "pixelsCompared": 78400,
+              "changedPixels": 16806,
+              "maxChannelDelta": 11,
+              "overBudgetPixels": 6928,
+              "meanAbsChannelDeltaMicro": 349697
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "brand",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 142,
+            "pixelHeight": 154,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 21868,
+              "changedPixels": 3942,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 4,
+              "meanAbsChannelDeltaMicro": 83307
+            },
+            "negative": {
+              "pixelsCompared": 21868,
+              "changedPixels": 4919,
+              "maxChannelDelta": 25,
+              "overBudgetPixels": 2572,
+              "meanAbsChannelDeltaMicro": 493712
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 71,
+            "pixelHeight": 71,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 5041,
+              "changedPixels": 581,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 53710
+            },
+            "negative": {
+              "pixelsCompared": 5041,
+              "changedPixels": 676,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 292,
+              "meanAbsChannelDeltaMicro": 151607
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 70,
+            "pixelHeight": 70,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 4900,
+              "changedPixels": 510,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 4,
+              "meanAbsChannelDeltaMicro": 45561
+            },
+            "negative": {
+              "pixelsCompared": 4900,
+              "changedPixels": 616,
+              "maxChannelDelta": 7,
+              "overBudgetPixels": 216,
+              "meanAbsChannelDeltaMicro": 118673
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 80,
+            "pixelHeight": 80,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1067,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 3,
+              "meanAbsChannelDeltaMicro": 85977
+            },
+            "negative": {
+              "pixelsCompared": 6400,
+              "changedPixels": 1036,
+              "maxChannelDelta": 12,
+              "overBudgetPixels": 516,
+              "meanAbsChannelDeltaMicro": 274922
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 291,
+            "pixelHeight": 291,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 84681,
+              "changedPixels": 16778,
+              "maxChannelDelta": 4,
+              "overBudgetPixels": 9,
+              "meanAbsChannelDeltaMicro": 92958
+            },
+            "negative": {
+              "pixelsCompared": 84681,
+              "changedPixels": 17257,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 7452,
+              "meanAbsChannelDeltaMicro": 301859
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "light",
+            "dpr": 1,
+            "pixelWidth": 280,
+            "pixelHeight": 280,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 78400,
+              "changedPixels": 14995,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 10,
+              "meanAbsChannelDeltaMicro": 89665
+            },
+            "negative": {
+              "pixelsCompared": 78400,
+              "changedPixels": 15166,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 6168,
+              "meanAbsChannelDeltaMicro": 266741
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "brand",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 284,
+            "pixelHeight": 308,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 87472,
+              "changedPixels": 15840,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 88786
+            },
+            "negative": {
+              "pixelsCompared": 87472,
+              "changedPixels": 17401,
+              "maxChannelDelta": 33,
+              "overBudgetPixels": 10244,
+              "meanAbsChannelDeltaMicro": 626746
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 142,
+            "pixelHeight": 142,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2687,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 59586
+            },
+            "negative": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2908,
+              "maxChannelDelta": 10,
+              "overBudgetPixels": 1523,
+              "meanAbsChannelDeltaMicro": 275776
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 140,
+            "pixelHeight": 140,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2352,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 3,
+              "meanAbsChannelDeltaMicro": 51352
+            },
+            "negative": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2669,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 1263,
+              "meanAbsChannelDeltaMicro": 217372
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 160,
+            "pixelHeight": 160,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 25600,
+              "changedPixels": 4102,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 79248
+            },
+            "negative": {
+              "pixelsCompared": 25600,
+              "changedPixels": 4810,
+              "maxChannelDelta": 16,
+              "overBudgetPixels": 2599,
+              "meanAbsChannelDeltaMicro": 460498
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 582,
+            "pixelHeight": 582,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 338724,
+              "changedPixels": 78109,
+              "maxChannelDelta": 4,
+              "overBudgetPixels": 28,
+              "meanAbsChannelDeltaMicro": 114910
+            },
+            "negative": {
+              "pixelsCompared": 338724,
+              "changedPixels": 76628,
+              "maxChannelDelta": 11,
+              "overBudgetPixels": 33398,
+              "meanAbsChannelDeltaMicro": 397717
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "dark",
+            "dpr": 2,
+            "pixelWidth": 560,
+            "pixelHeight": 560,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 313600,
+              "changedPixels": 68442,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 21,
+              "meanAbsChannelDeltaMicro": 106017
+            },
+            "negative": {
+              "pixelsCompared": 313600,
+              "changedPixels": 67536,
+              "maxChannelDelta": 11,
+              "overBudgetPixels": 27815,
+              "meanAbsChannelDeltaMicro": 351927
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "brand",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 284,
+            "pixelHeight": 308,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 87472,
+              "changedPixels": 14284,
+              "maxChannelDelta": 4,
+              "overBudgetPixels": 10,
+              "meanAbsChannelDeltaMicro": 73692
+            },
+            "negative": {
+              "pixelsCompared": 87472,
+              "changedPixels": 19140,
+              "maxChannelDelta": 25,
+              "overBudgetPixels": 10011,
+              "meanAbsChannelDeltaMicro": 487293
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "online",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 142,
+            "pixelHeight": 142,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2420,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 4,
+              "meanAbsChannelDeltaMicro": 58285
+            },
+            "negative": {
+              "pixelsCompared": 20164,
+              "changedPixels": 2905,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 1232,
+              "meanAbsChannelDeltaMicro": 160112
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "topbar",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 140,
+            "pixelHeight": 140,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2188,
+              "maxChannelDelta": 2,
+              "overBudgetPixels": 0,
+              "meanAbsChannelDeltaMicro": 52232
+            },
+            "negative": {
+              "pixelsCompared": 19600,
+              "changedPixels": 2664,
+              "maxChannelDelta": 6,
+              "overBudgetPixels": 946,
+              "meanAbsChannelDeltaMicro": 124732
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "orbit",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 160,
+            "pixelHeight": 160,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 25600,
+              "changedPixels": 4368,
+              "maxChannelDelta": 4,
+              "overBudgetPixels": 11,
+              "meanAbsChannelDeltaMicro": 91768
+            },
+            "negative": {
+              "pixelsCompared": 25600,
+              "changedPixels": 4264,
+              "maxChannelDelta": 12,
+              "overBudgetPixels": 2180,
+              "meanAbsChannelDeltaMicro": 286719
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 582,
+            "pixelHeight": 582,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 338724,
+              "changedPixels": 67972,
+              "maxChannelDelta": 4,
+              "overBudgetPixels": 32,
+              "meanAbsChannelDeltaMicro": 92960
+            },
+            "negative": {
+              "pixelsCompared": 338724,
+              "changedPixels": 69514,
+              "maxChannelDelta": 9,
+              "overBudgetPixels": 29995,
+              "meanAbsChannelDeltaMicro": 303452
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          },
+          {
+            "shape": "core-narrow",
+            "theme": "light",
+            "dpr": 2,
+            "pixelWidth": 560,
+            "pixelHeight": 560,
+            "repeatMaxChannelDelta": 0,
+            "target": {
+              "pixelsCompared": 313600,
+              "changedPixels": 60643,
+              "maxChannelDelta": 3,
+              "overBudgetPixels": 22,
+              "meanAbsChannelDeltaMicro": 89969
+            },
+            "negative": {
+              "pixelsCompared": 313600,
+              "changedPixels": 61004,
+              "maxChannelDelta": 8,
+              "overBudgetPixels": 24749,
+              "meanAbsChannelDeltaMicro": 268473
+            },
+            "styleVerified": true,
+            "imageDecoded": true
+          }
+        ],
+        "browserChecks": {
+          "before": true,
+          "after": true
+        },
+        "jobCpuChecks": {
+          "privateMembership": true,
+          "mountUnique": true,
+          "mountRoot": true,
+          "mountReadOnly": true,
+          "mountCgroupV2": true,
+          "rootDirectory": true,
+          "filesystemCgroupV2": true,
+          "controlsReadOnly": true,
+          "counterRegular": true,
+          "counterStable": true,
+          "counterRead": true,
+          "closeConfirmed": true
+        },
+        "cleanup": {
+          "contextClosed": true,
+          "browserStopped": true,
+          "jobClosed": true
+        },
+        "complete": true,
+        "appearancePassed": false,
+        "productOrControllerExecuted": false,
+        "privatePagesOrDataUsed": false,
+        "rawScreenshotsRetained": false,
+        "qualificationCredit": false,
+        "productionQualificationComplete": false
+      }
+    }
+  ],
+  "normalCohortRunID": 42446310804,
+  "normalCohortReceiptPending": false,
+  "productionSourceChanged": false,
+  "originalPerformanceAndGlyphBudgetsChanged": false,
+  "rawLogsOrScreenshotsRead": false,
+  "spriteIntegratedIntoProduct": false,
+  "performanceImprovementClaimed": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0,
+  "limitations": [
+    "Across144cases each target has at least one comparison beyond the two-byte limit; individual passing and failing observations remain in the report.",
+    "Pixel-buffer processing occurred only inside the hosted wholly public fixture. No screenshot/image buffers, private pages, profiles or raw logs were downloaded.",
+    "Synthetic geometry/color/scale observations do not establish full application integration, installed desktop appearance, accessibility or latency/resource performance.",
+    "Painting the sprite above the fill may differ at antialiased edges. A separate behind-fill variant can test that hypothesis while retaining this failed variant and unchanged visual/performance limits."
+  ],
+  "normalCohortReceipt": "docs/qualification/1ba63973adb9-public-pixels-normal.json",
+  "normalCohortSummary": {
+    "jobsPassed": 10,
+    "browserCasesPassed": 318,
+    "normalCapsPassed": 150,
+    "geometryComparisons": 900,
+    "unitRaceModes": 6,
+    "mutationRecords": 56,
+    "mutationExecutions": 16192143,
+    "ZIPDigestsVerified": 26
+  },
+  "combinedUniqueNormalAndPixelZIPDigestsVerified": 32
+}

@@ -1,0 +1,470 @@
+{
+  "schemaVersion": 1,
+  "vendorVersion": "3.8.1.1",
+  "scope": "static-public-vendor-status-templates",
+  "setupSHA256": "bd5a7eba32177b1022eda42d233b6b7848ea38604a63b0205666b4060b89a375",
+  "cliSHA256": "6e0577742b6b71d7291ff41579614255efae11ab47b6be66b0ea9a15e10bf72f",
+  "coreSHA256": "29220ddb4cc0feee14bcd63b7b77c38c65d6e57a310dc410fe4fc048f4b90586",
+  "vendorCodeExecuted": false,
+  "cultures": {
+    "am-ET": {
+      "payloadSHA256": [
+        "b00db0736d6e9968a52b4b4b1c789032d3578f98ccf4e2653455d49229cb0592"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "\u12a0\u120d\u1270\u1308\u1293\u1298\u121d",
+        "Connecting": "\u1260\u1355\u122e\u134b\u12ed\u120d {0} \u130d\u1295\u1299\u1290\u1275 \u1260\u1218\u1218\u1235\u1228\u1275 \u120b\u12ed",
+        "Connected": "\u12a8\u1230\u122d\u1268\u1229 \u130b\u122d \u1260\u1355\u122e\u134b\u12ed\u120d {0} \u1270\u1308\u1293\u129d\u1277\u120d",
+        "Disconnecting": "\u12a8\u1230\u122d\u1268\u1229 \u1260\u1355\u122e\u134b\u12ed\u120d {0} \u1218\u124b\u1228\u1325 \u1260\u1202\u12f0\u1275 \u120b\u12ed",
+        "Disconnected": "\u1270\u124b\u122d\u1327\u120d"
+      },
+      "metadata": {
+        "externalAddress": "\u12cd\u132b\u12ca \u12a0\u12f5\u122b\u123b\u1366 {0}",
+        "networkLock": "\u1294\u1275\u12c8\u122d\u12ad \u1270\u1246\u120d\u134f\u120d (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "e765acc7ce49ca8a80d7f6d18f55f12f802756e6dbf6165a0eba78de460ac02f"
+      ],
+      "arm64PayloadsVerified": 3
+    },
+    "ar-SA": {
+      "payloadSHA256": [
+        "4ea9ddaa42014811a9fc51ff6c25c2cc596cc315e06b2f2be139a543a0c9b598"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "\u063a\u064a\u0631 \u0645\u062a\u0635\u0644",
+        "Connecting": "\u062c\u0627\u0631\u064d \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0627\u062a\u0635\u0627\u0644 \u0628\u0627\u0633\u062a\u062e\u062f\u0627\u0645 \u0627\u0644\u0645\u0644\u0641 \u0627\u0644\u0634\u062e\u0635\u064a {0}",
+        "Connected": "\u062a\u0645 \u0627\u0644\u0627\u062a\u0635\u0627\u0644 \u0628\u0627\u0644\u062e\u0627\u062f\u0645 \u0628\u0627\u0633\u062a\u062e\u062f\u0627\u0645 \u0627\u0644\u0645\u0644\u0641 \u0627\u0644\u0634\u062e\u0635\u064a {0}",
+        "Disconnecting": "\u062c\u0627\u0631\u064d \u0642\u0637\u0639 \u0627\u0644\u0627\u062a\u0635\u0627\u0644 \u0628\u0627\u0644\u062e\u0627\u062f\u0645 \u0628\u0627\u0633\u062a\u062e\u062f\u0627\u0645 \u0627\u0644\u0645\u0644\u0641 \u0627\u0644\u0634\u062e\u0635\u064a {0}",
+        "Disconnected": "\u062a\u0645 \u0642\u0637\u0639 \u0627\u0644\u0627\u062a\u0635\u0627\u0644"
+      },
+      "metadata": {
+        "externalAddress": "\u0627\u0644\u0639\u0646\u0648\u0627\u0646 \u0627\u0644\u062e\u0627\u0631\u062c\u064a: {0}",
+        "networkLock": "\u0627\u0644\u0634\u0628\u0643\u0629 \u0645\u062d\u062c\u0648\u0628\u0629 (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "292a9917a4fdd610fb263b7c7062a4b2a6c9c6dcfe81e247b663765eec3b6312"
+      ],
+      "arm64PayloadsVerified": 3
+    },
+    "bn-BD": {
+      "payloadSHA256": [
+        "08d8fb35fc43a3dd9cfe1ace9e5212b653dc1aededa6deb495a80943ee5d07e0"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "\u09b8\u0982\u09af\u09c1\u0995\u09cd\u09a4 \u09a8\u09af\u09bc",
+        "Connecting": "\u09aa\u09cd\u09b0\u09cb\u09ab\u09be\u0987\u09b2 {0} \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u0995\u09b0\u09c7 \u09b8\u0982\u09af\u09cb\u0997 \u09b8\u09cd\u09a5\u09be\u09aa\u09a8 \u0995\u09b0\u09be \u09b9\u099a\u09cd\u099b\u09c7",
+        "Connected": "\u09aa\u09cd\u09b0\u09cb\u09ab\u09be\u0987\u09b2 {0} \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u0995\u09b0\u09c7 \u09b8\u09be\u09b0\u09cd\u09ad\u09be\u09b0\u09c7\u09b0 \u09b8\u09be\u09a5\u09c7 \u09b8\u0982\u09af\u09c1\u0995\u09cd\u09a4 \u09b9\u09af\u09bc\u09c7\u099b\u09c7",
+        "Disconnecting": "\u09aa\u09cd\u09b0\u09cb\u09ab\u09be\u0987\u09b2 {0} \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u0995\u09b0\u09c7 \u09b8\u09be\u09b0\u09cd\u09ad\u09be\u09b0 \u09a5\u09c7\u0995\u09c7 \u09b8\u0982\u09af\u09cb\u0997 \u09ac\u09bf\u099a\u09cd\u099b\u09bf\u09a8\u09cd\u09a8 \u0995\u09b0\u09be \u09b9\u099a\u09cd\u099b\u09c7",
+        "Disconnected": "\u09b8\u0982\u09af\u09cb\u0997 \u09ac\u09bf\u099a\u09cd\u099b\u09bf\u09a8\u09cd\u09a8 \u09b9\u09af\u09bc\u09c7\u099b\u09c7"
+      },
+      "metadata": {
+        "externalAddress": "\u09ac\u09be\u09b9\u09cd\u09af\u09bf\u0995 \u09a0\u09bf\u0995\u09be\u09a8\u09be: {0}",
+        "networkLock": "\u09a8\u09c7\u099f\u0993\u09af\u09bc\u09be\u09b0\u09cd\u0995 \u09b2\u0995 \u0995\u09b0\u09be \u09b9\u09af\u09bc\u09c7\u099b\u09c7 (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "b26f1606f1d67a1428df3149fd3f972ba153b7e1fd55ed0cf7c31c55fbcb660c"
+      ],
+      "arm64PayloadsVerified": 3
+    },
+    "bn-IN": {
+      "payloadSHA256": [
+        "59593827364cd5b7d275a3d399378992c137637d836700ef4b468b0d2aed5573"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "\u09b8\u0982\u09af\u09c1\u0995\u09cd\u09a4 \u09a8\u09af\u09bc",
+        "Connecting": "\u09aa\u09cd\u09b0\u09cb\u09ab\u09be\u0987\u09b2 {0} \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u0995\u09b0\u09c7 \u09b8\u0982\u09af\u09cb\u0997 \u09b8\u09cd\u09a5\u09be\u09aa\u09a8 \u0995\u09b0\u09be \u09b9\u099a\u09cd\u099b\u09c7",
+        "Connected": "\u09aa\u09cd\u09b0\u09cb\u09ab\u09be\u0987\u09b2 {0} \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u0995\u09b0\u09c7 \u09b8\u09be\u09b0\u09cd\u09ad\u09be\u09b0\u09c7\u09b0 \u09b8\u09be\u09a5\u09c7 \u09b8\u0982\u09af\u09c1\u0995\u09cd\u09a4 \u09b9\u09af\u09bc\u09c7\u099b\u09c7",
+        "Disconnecting": "\u09aa\u09cd\u09b0\u09cb\u09ab\u09be\u0987\u09b2 {0} \u09ac\u09cd\u09af\u09ac\u09b9\u09be\u09b0 \u0995\u09b0\u09c7 \u09b8\u09be\u09b0\u09cd\u09ad\u09be\u09b0 \u09a5\u09c7\u0995\u09c7 \u09b8\u0982\u09af\u09cb\u0997 \u09ac\u09bf\u099a\u09cd\u099b\u09bf\u09a8\u09cd\u09a8 \u0995\u09b0\u09be \u09b9\u099a\u09cd\u099b\u09c7",
+        "Disconnected": "\u09b8\u0982\u09af\u09cb\u0997 \u09ac\u09bf\u099a\u09cd\u099b\u09bf\u09a8\u09cd\u09a8 \u09b9\u09af\u09bc\u09c7\u099b\u09c7"
+      },
+      "metadata": {
+        "externalAddress": "\u09ac\u09be\u09b9\u09cd\u09af\u09bf\u0995 \u09a0\u09bf\u0995\u09be\u09a8\u09be: {0}",
+        "networkLock": "\u09a8\u09c7\u099f\u0993\u09af\u09bc\u09be\u09b0\u09cd\u0995 \u09b2\u0995 \u0995\u09b0\u09be \u09b9\u09af\u09bc\u09c7\u099b\u09c7 (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "42aa37764fc400bf9810a7fcd6895f31b4687b86f4a11370cc17d4f297551c8e"
+      ],
+      "arm64PayloadsVerified": 3
+    },
+    "de-DE": {
+      "payloadSHA256": [
+        "778713e26d987ce2075ae1acadd84fbc19a57f642c1e6c92c1c220713c4078a0"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "Nicht verbunden",
+        "Connecting": "Verbindung wird mit Profil {0} hergestellt",
+        "Connected": "Mit dem Profil {0} mit dem Server verbunden",
+        "Disconnecting": "Trennen der Verbindung zum Server mit Profil {0}",
+        "Disconnected": "Getrennt"
+      },
+      "metadata": {
+        "externalAddress": "Externe Adresse: {0}",
+        "networkLock": "Netzwerk gesperrt (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "9dc24807206415f400cdbd894867c2bec837576ba2bfd9b7c95e87b08d4c8c9f"
+      ],
+      "arm64PayloadsVerified": 3
+    },
+    "en": {
+      "payloadSHA256": [
+        "ca198f64a0689327fe04a1108356b7e635bc83e657ae4e28346becd0483a6bb5"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "Not connected",
+        "Connecting": "Establishing connection using profile {0}",
+        "Connected": "Connected to server using profile {0}",
+        "Disconnecting": "Disconnecting from server using profile {0}",
+        "Disconnected": "Disconnected"
+      },
+      "metadata": {
+        "externalAddress": "External address: {0}",
+        "networkLock": "Network is locked (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "7e289b9fb359421193c5fdb11ac47bd2f04c8498f24a4394dd234b7c37f6a217"
+      ],
+      "arm64PayloadsVerified": 3
+    },
+    "es-ES": {
+      "payloadSHA256": [
+        "3cba8e27416ed70d277210d4d02330a8da88fa9d22e9025b4eae4b57ab5daee7"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "No conectado",
+        "Connecting": "Estableciendo conexi\u00f3n usando el perfil {0}",
+        "Connected": "Conectado al servidor usando el perfil {0}",
+        "Disconnecting": "Desconectando del servidor usando el perfil {0}",
+        "Disconnected": "Desconectado"
+      },
+      "metadata": {
+        "externalAddress": "Direcci\u00f3n externa: {0}",
+        "networkLock": "Red bloqueada (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "489fd508977a778d01ce5000d7a6c75e4dbe14abdbb23f41bb839906467f0e11"
+      ],
+      "arm64PayloadsVerified": 3
+    },
+    "fa-IR": {
+      "payloadSHA256": [
+        "8dfb3626cb3bdcea32d45b74d62a771f2e45d57b4a3b1eb9bb5994ded842347e"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "\u0645\u062a\u0635\u0644 \u0646\u06cc\u0633\u062a",
+        "Connecting": "\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0642\u0631\u0627\u0631\u06cc \u0627\u062a\u0635\u0627\u0644 \u0628\u0627 \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0627\u0632 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 {0}",
+        "Connected": "\u0628\u0627 \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0627\u0632 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 {0} \u0628\u0647 \u0633\u0631\u0648\u0631 \u0645\u062a\u0635\u0644 \u0634\u062f",
+        "Disconnecting": "\u062f\u0631 \u062d\u0627\u0644 \u0642\u0637\u0639 \u0627\u062a\u0635\u0627\u0644 \u0627\u0632 \u0633\u0631\u0648\u0631 \u0628\u0627 \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0627\u0632 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 {0}",
+        "Disconnected": "\u0642\u0637\u0639 \u0634\u062f"
+      },
+      "metadata": {
+        "externalAddress": "\u0622\u062f\u0631\u0633 \u062e\u0627\u0631\u062c\u06cc: {0}",
+        "networkLock": "\u0634\u0628\u06a9\u0647 \u0642\u0641\u0644 \u0634\u062f\u0647 \u0627\u0633\u062a (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "1ced715533235380e2c19310d8b0ba5f663e3a17473a6e9de60f3fb2ab0aef5f"
+      ],
+      "arm64PayloadsVerified": 3
+    },
+    "fr-FR": {
+      "payloadSHA256": [
+        "f1c5e125a249168c7cb907df4e28269a6c301bd798f31ba40e781e011806c52c"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "Non connect\u00e9",
+        "Connecting": "\u00c9tablissement de la connexion en utilisant le profil {0}",
+        "Connected": "Connect\u00e9 au serveur en utilisant le profil {0}",
+        "Disconnecting": "D\u00e9connexion du serveur en utilisant le profil {0}",
+        "Disconnected": "D\u00e9connect\u00e9"
+      },
+      "metadata": {
+        "externalAddress": "Adresse externe : {0}",
+        "networkLock": "R\u00e9seau verrouill\u00e9 (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "7a8f22fe86256fdd5c5efa31dd4c4c27d2bcf683b189d2bfbf18452276ce566a"
+      ],
+      "arm64PayloadsVerified": 3
+    },
+    "hi-IN": {
+      "payloadSHA256": [
+        "17e5a2db100c40e87c8d328d351f9ce9ee32a10e5fa94d1bc0f8022606a52aa4"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "\u0915\u0928\u0947\u0915\u094d\u091f \u0928\u0939\u0940\u0902 \u0939\u0948",
+        "Connecting": "\u092a\u094d\u0930\u094b\u092b\u093c\u093e\u0907\u0932 {0} \u0915\u093e \u0909\u092a\u092f\u094b\u0917 \u0915\u0930\u0915\u0947 \u0915\u0928\u0947\u0915\u094d\u0936\u0928 \u0938\u094d\u0925\u093e\u092a\u093f\u0924 \u0915\u093f\u092f\u093e \u091c\u093e \u0930\u0939\u093e \u0939\u0948",
+        "Connected": "\u092a\u094d\u0930\u094b\u092b\u093c\u093e\u0907\u0932 {0} \u0915\u093e \u0909\u092a\u092f\u094b\u0917 \u0915\u0930\u0915\u0947 \u0938\u0930\u094d\u0935\u0930 \u0938\u0947 \u0915\u0928\u0947\u0915\u094d\u091f \u0915\u093f\u092f\u093e \u0917\u092f\u093e",
+        "Disconnecting": "\u092a\u094d\u0930\u094b\u092b\u093c\u093e\u0907\u0932 {0} \u0915\u093e \u0909\u092a\u092f\u094b\u0917 \u0915\u0930\u0915\u0947 \u0938\u0930\u094d\u0935\u0930 \u0938\u0947 \u0915\u0928\u0947\u0915\u094d\u0936\u0928 \u0921\u093f\u0938\u094d\u0915\u0928\u0947\u0915\u094d\u091f \u0915\u093f\u092f\u093e \u091c\u093e \u0930\u0939\u093e \u0939\u0948",
+        "Disconnected": "\u0921\u093f\u0938\u094d\u0915\u0928\u0947\u0915\u094d\u091f \u0915\u093f\u092f\u093e \u0917\u092f\u093e"
+      },
+      "metadata": {
+        "externalAddress": "\u092c\u093e\u0939\u0930\u0940 \u092a\u0924\u093e: {0}",
+        "networkLock": "\u0928\u0947\u091f\u0935\u0930\u094d\u0915 \u0932\u0949\u0915 \u0939\u0948 (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "ce37e9b3557e07e1b040c0073a3d50d83ff8b446e613acc8d70e9ccebb58d58f"
+      ],
+      "arm64PayloadsVerified": 3
+    },
+    "id-ID": {
+      "payloadSHA256": [
+        "e8658f6e8b91e0a8ac6db4a2966fc4c79c2e28ada951133ac132fed1ee3ac3d0"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "Tidak terhubung",
+        "Connecting": "Membuat koneksi menggunakan profil {0}",
+        "Connected": "Terhubung ke server menggunakan profil {0}",
+        "Disconnecting": "Memutus koneksi dari server menggunakan profil {0}",
+        "Disconnected": "Terputus"
+      },
+      "metadata": {
+        "externalAddress": "Alamat eksternal: {0}",
+        "networkLock": "Jaringan dikunci (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "4a9a8c836c944d079cc7c899edcff099295c9a27b021a622838fb3c935902231"
+      ],
+      "arm64PayloadsVerified": 3
+    },
+    "ja-JP": {
+      "payloadSHA256": [
+        "5136c26f5eb0581dd836ffce2e2df4298dd6f3df28822de8d3efd405d4669bb2"
+      ],
+      "payloadsVerified": 2,
+      "templates": {
+        "NotConnected": "\u63a5\u7d9a\u3055\u308c\u3066\u3044\u307e\u305b\u3093",
+        "Connecting": "\u30d7\u30ed\u30d5\u30a1\u30a4\u30eb {0} \u3092\u4f7f\u7528\u3057\u3066\u63a5\u7d9a\u3092\u78ba\u7acb\u4e2d",
+        "Connected": "\u30d7\u30ed\u30d5\u30a1\u30a4\u30eb {0} \u3092\u4f7f\u7528\u3057\u3066\u30b5\u30fc\u30d0\u30fc\u306b\u63a5\u7d9a\u3057\u307e\u3057\u305f",
+        "Disconnecting": "\u30d7\u30ed\u30d5\u30a1\u30a4\u30eb {0} \u3092\u4f7f\u7528\u3057\u3066\u30b5\u30fc\u30d0\u30fc\u304b\u3089\u5207\u65ad\u4e2d",
+        "Disconnected": "\u5207\u65ad\u3055\u308c\u307e\u3057\u305f"
+      },
+      "metadata": {
+        "externalAddress": "\u5916\u90e8\u30a2\u30c9\u30ec\u30b9: {0}",
+        "networkLock": "\u30cd\u30c3\u30c8\u30ef\u30fc\u30af\u304c\u30ed\u30c3\u30af\u3055\u308c\u3066\u3044\u307e\u3059 (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "f622dd00ac78f2e3c3f08ddc38163db60c25c38d1e1d2ef4e7b87816f6beb29a"
+      ],
+      "arm64PayloadsVerified": 2
+    },
+    "ko-KR": {
+      "payloadSHA256": [
+        "1fef98c23492e0d22dc307fcbee1806f9d5d278687047c8ad6d6198ebd835a7e"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "\uc5f0\uacb0\ub418\uc9c0 \uc54a\uc74c",
+        "Connecting": "\ud504\ub85c\ud544 {0}\uc744(\ub97c) \uc0ac\uc6a9\ud558\uc5ec \uc5f0\uacb0\uc744 \uc124\uc815\ud558\ub294 \uc911",
+        "Connected": "\ud504\ub85c\ud544 {0}\uc744(\ub97c) \uc0ac\uc6a9\ud558\uc5ec \uc11c\ubc84\uc5d0 \uc5f0\uacb0\ub428",
+        "Disconnecting": "\ud504\ub85c\ud544 {0}\uc744(\ub97c) \uc0ac\uc6a9\ud558\uc5ec \uc11c\ubc84\uc5d0\uc11c \uc5f0\uacb0\uc744 \ud574\uc81c\ud558\ub294 \uc911",
+        "Disconnected": "\uc5f0\uacb0 \ud574\uc81c\ub428"
+      },
+      "metadata": {
+        "externalAddress": "\uc678\ubd80 \uc8fc\uc18c: {0}",
+        "networkLock": "\ub124\ud2b8\uc6cc\ud06c\uac00 \uc7a0\uaca8 \uc788\uc2b5\ub2c8\ub2e4 (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "4f4991cb270a95953debf51f5644f4ba0fa2df1eb72340b7cd4b1143508e8c94"
+      ],
+      "arm64PayloadsVerified": 3
+    },
+    "om-ET": {
+      "payloadSHA256": [
+        "cafdfb365e60cff405ddcfc89bf2962ffede44eed2fce5cac0d0af331670ce5b"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "Hin wal-qunnamne",
+        "Connecting": "Proofaayila {0} fayyadamuun wal-qunnamtii hundeessaa jira",
+        "Connected": "Proofaayila {0} fayyadamuun seerverii waliin wal qunnamsiifameera",
+        "Disconnecting": "Proofaayila {0} fayyadamuun seerverii irraa wal-qunnamtii addaan kutaa jira",
+        "Disconnected": "Addaan citeera"
+      },
+      "metadata": {
+        "externalAddress": "Teessoo alaa: {0}",
+        "networkLock": "Neetworkiin cufameera (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "6229b0ecc35ad784df3f59f5527ee6d4e7e2abbe997628f6d7ea83f161356d63"
+      ],
+      "arm64PayloadsVerified": 3
+    },
+    "pt-BR": {
+      "payloadSHA256": [
+        "8df5fbd25911838fce4eaa8c8cfca4635d073b6eec7ed76b68dc9ea3104f48fc"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "N\u00e3o conectado",
+        "Connecting": "Estabelecendo conex\u00e3o usando o perfil {0}",
+        "Connected": "Conectado ao servidor usando o perfil {0}",
+        "Disconnecting": "Desconectando do servidor usando o perfil {0}",
+        "Disconnected": "Desconectado"
+      },
+      "metadata": {
+        "externalAddress": "Endere\u00e7o externo: {0}",
+        "networkLock": "Rede bloqueada (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "c5b3fe8ffe19fda47335bf39ab6600a3f36def94fe062a1fc310de593e99df86"
+      ],
+      "arm64PayloadsVerified": 3
+    },
+    "ru-RU": {
+      "payloadSHA256": [
+        "42be497bb01cfee5e9324eb2bfc87ff74e63fc393637c1e396ef8ddc9516d0a6"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "\u041d\u0435\u0442 \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u044f",
+        "Connecting": "\u0423\u0441\u0442\u0430\u043d\u0430\u0432\u043b\u0438\u0432\u0430\u0435\u0442\u0441\u044f \u0441\u043e\u0435\u0434\u0438\u043d\u0435\u043d\u0438\u0435 \u0441 \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d\u0438\u0435\u043c \u043f\u0440\u043e\u0444\u0438\u043b\u044f {0}",
+        "Connected": "\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u043e \u043a \u0441\u0435\u0440\u0432\u0435\u0440\u0443 \u0441 \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d\u0438\u0435\u043c \u043f\u0440\u043e\u0444\u0438\u043b\u044f {0}",
+        "Disconnecting": "\u041e\u0442\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435 \u043e\u0442 \u0441\u0435\u0440\u0432\u0435\u0440\u0430 \u0441 \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d\u0438\u0435\u043c \u043f\u0440\u043e\u0444\u0438\u043b\u044f {0}",
+        "Disconnected": "\u041e\u0442\u043a\u043b\u044e\u0447\u0435\u043d\u043e"
+      },
+      "metadata": {
+        "externalAddress": "\u0412\u043d\u0435\u0448\u043d\u0438\u0439 \u0430\u0434\u0440\u0435\u0441: {0}",
+        "networkLock": "\u0421\u0435\u0442\u044c \u0437\u0430\u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u0430\u043d\u0430 (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "8e99828533a7c62d95ddb62c1fb1cf6a17c3073e35a1a24e0c9b9a9a3dcfa9c4"
+      ],
+      "arm64PayloadsVerified": 3
+    },
+    "sl-SI": {
+      "payloadSHA256": [
+        "3d7dbd105bf12ba42c27d936784d9106393cf9ddf40d3bffc5fc12ba9edbf770"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "Ni povezano",
+        "Connecting": "Vzpostavljanje povezave z uporabo profila {0}",
+        "Connected": "Povezano s stre\u017enikom z uporabo profila {0}",
+        "Disconnecting": "Prekinjanje povezave s stre\u017enikom z uporabo profila {0}",
+        "Disconnected": "Prekinjeno"
+      },
+      "metadata": {
+        "externalAddress": "Zunanji naslov: {0}",
+        "networkLock": "Omre\u017eje je zaklenjeno (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "37dd151f3308061b04b1e8ff9f614cb5927bd16c64d9b6023d80151c6059191b"
+      ],
+      "arm64PayloadsVerified": 3
+    },
+    "tr-TR": {
+      "payloadSHA256": [
+        "89fd402dbccf44a842a4acff21e1d3714c79e199b7e989ff688bf9e855640b37"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "Ba\u011fl\u0131 de\u011fil",
+        "Connecting": "Profil {0} kullan\u0131larak ba\u011flant\u0131 kuruluyor",
+        "Connected": "Profil {0} kullan\u0131larak sunucuya ba\u011flan\u0131ld\u0131",
+        "Disconnecting": "Profil {0} kullan\u0131larak sunucuyla ba\u011flant\u0131 kesiliyor",
+        "Disconnected": "Ba\u011flant\u0131s\u0131 kesildi"
+      },
+      "metadata": {
+        "externalAddress": "Harici adres: {0}",
+        "networkLock": "A\u011f kilitlendi (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "8a96aa9588f2f8ae13505ee163369e4ec3f0e2ae7a2adf29c0847e2ced2869e6"
+      ],
+      "arm64PayloadsVerified": 3
+    },
+    "ur-PK": {
+      "payloadSHA256": [
+        "2bddeb15436cedffbd2901b7bb1e161657075c504da57a741563a5cabdb6355a"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "\u06a9\u0646\u06cc\u06a9\u0679 \u0646\u06c1\u06cc\u06ba \u06c1\u06d2",
+        "Connecting": "\u067e\u0631\u0648\u0641\u0627\u0626\u0644 {0} \u0627\u0633\u062a\u0639\u0645\u0627\u0644 \u06a9\u0631\u062a\u06d2 \u06c1\u0648\u0626\u06d2 \u06a9\u0646\u06a9\u0634\u0646 \u0642\u0627\u0626\u0645 \u06a9\u06cc\u0627 \u062c\u0627 \u0631\u06c1\u0627 \u06c1\u06d2",
+        "Connected": "\u067e\u0631\u0648\u0641\u0627\u0626\u0644 {0} \u0627\u0633\u062a\u0639\u0645\u0627\u0644 \u06a9\u0631\u062a\u06d2 \u06c1\u0648\u0626\u06d2 \u0633\u0631\u0648\u0631 \u0633\u06d2 \u06a9\u0646\u06cc\u06a9\u0679 \u06c1\u0648 \u06af\u06cc\u0627",
+        "Disconnecting": "\u067e\u0631\u0648\u0641\u0627\u0626\u0644 {0} \u0627\u0633\u062a\u0639\u0645\u0627\u0644 \u06a9\u0631\u062a\u06d2 \u06c1\u0648\u0626\u06d2 \u0633\u0631\u0648\u0631 \u0633\u06d2 \u06a9\u0646\u06a9\u0634\u0646 \u0645\u0646\u0642\u0637\u0639 \u06a9\u06cc\u0627 \u062c\u0627 \u0631\u06c1\u0627 \u06c1\u06d2",
+        "Disconnected": "\u06a9\u0646\u06a9\u0634\u0646 \u0645\u0646\u0642\u0637\u0639 \u06c1\u0648 \u06af\u06cc\u0627"
+      },
+      "metadata": {
+        "externalAddress": "\u0628\u06cc\u0631\u0648\u0646\u06cc \u067e\u062a\u06c1: {0}",
+        "networkLock": "\u0646\u06cc\u0679 \u0648\u0631\u06a9 \u0644\u0627\u06a9 \u06c1\u06d2 (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "28812ca88fda6ddd5522228ec01d3838c06ab2a603d346a4ca6bf0e727119eab"
+      ],
+      "arm64PayloadsVerified": 3
+    },
+    "vi-VN": {
+      "payloadSHA256": [
+        "d1d0d28298c9694f7bf18405f6ca5179fde497aaefabbc8fc887305b6ee7fcad"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "Ch\u01b0a k\u1ebft n\u1ed1i",
+        "Connecting": "\u0110ang thi\u1ebft l\u1eadp k\u1ebft n\u1ed1i b\u1eb1ng h\u1ed3 s\u01a1 {0}",
+        "Connected": "\u0110\u00e3 k\u1ebft n\u1ed1i t\u1edbi m\u00e1y ch\u1ee7 b\u1eb1ng h\u1ed3 s\u01a1 {0}",
+        "Disconnecting": "\u0110ang ng\u1eaft k\u1ebft n\u1ed1i kh\u1ecfi m\u00e1y ch\u1ee7 b\u1eb1ng h\u1ed3 s\u01a1 {0}",
+        "Disconnected": "\u0110\u00e3 ng\u1eaft k\u1ebft n\u1ed1i"
+      },
+      "metadata": {
+        "externalAddress": "\u0110\u1ecba ch\u1ec9 b\u00ean ngo\u00e0i: {0}",
+        "networkLock": "M\u1ea1ng b\u1ecb kh\u00f3a (Kill Switch)"
+      },
+      "arm64PayloadSHA256": [
+        "9025c6b4d9586902cd475a2bf2680a2843fb19eb6e14571ee86e8333ec801315"
+      ],
+      "arm64PayloadsVerified": 3
+    },
+    "zh-CN": {
+      "payloadSHA256": [
+        "a0da1493fe596b5e2ea11e5bd851cc61b156cf829a7e0ccd8aaa280c52774bb6"
+      ],
+      "payloadsVerified": 3,
+      "templates": {
+        "NotConnected": "\u672a\u8fde\u63a5",
+        "Connecting": "\u6b63\u5728\u4f7f\u7528\u914d\u7f6e\u6587\u4ef6 {0} \u5efa\u7acb\u8fde\u63a5",
+        "Connected": "\u5df2\u4f7f\u7528\u914d\u7f6e\u6587\u4ef6 {0} \u8fde\u63a5\u5230\u670d\u52a1\u5668",
+        "Disconnecting": "\u6b63\u5728\u4f7f\u7528\u914d\u7f6e\u6587\u4ef6 {0} \u4ece\u670d\u52a1\u5668\u65ad\u5f00\u8fde\u63a5",
+        "Disconnected": "\u5df2\u65ad\u5f00\u8fde\u63a5"
+      },
+      "metadata": {
+        "externalAddress": "\u5916\u90e8\u5730\u5740\uff1a{0}",
+        "networkLock": "\u7f51\u7edc\u5df2\u9501\u5b9a\uff08Kill Switch\uff09"
+      },
+      "arm64PayloadSHA256": [
+        "7d4c7233f08e58d015ee2d17d280e4e879011feae70922fd12878ede82bdb2f0"
+      ],
+      "arm64PayloadsVerified": 3
+    }
+  },
+  "publicPackages": [
+    {
+      "architecture": "amd64",
+      "setupSHA256": "bd5a7eba32177b1022eda42d233b6b7848ea38604a63b0205666b4060b89a375",
+      "msiSHA256": "6f54b3fd45c2f5d99e7481d4f0456c829febb72fc640c4165d64ccfd077e07a8",
+      "cliSHA256": "6e0577742b6b71d7291ff41579614255efae11ab47b6be66b0ea9a15e10bf72f",
+      "coreSHA256": "29220ddb4cc0feee14bcd63b7b77c38c65d6e57a310dc410fe4fc048f4b90586"
+    },
+    {
+      "architecture": "arm64",
+      "setupSHA256": "74af4720a702eeff2d0586c0694f9527f604e2dd3f8ea568dca196dd69f6f06d",
+      "msiSHA256": "df7b34f6b4c650c83e998afe470927de71e26f0808ef11a5ba60bb53980ee96e",
+      "cliSHA256": "0c5cb070ab7d3a5243f1ae1dd139f563f0674dd959320c557d0154c830981d73",
+      "coreSHA256": "c07f473957f033d7e31978481a017e22f02d97108a36f5ce56b47d8b6e3a37fb"
+    }
+  ],
+  "allArchitectureStatusAndMetadataTemplatesEqual": true,
+  "verifiedSatellitePayloads": 124
+}

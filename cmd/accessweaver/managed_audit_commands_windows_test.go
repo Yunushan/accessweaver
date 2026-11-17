@@ -18,6 +18,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"reflect"
@@ -36,6 +37,7 @@ import (
 	"github.com/Yunushan/accessweaver/internal/fileidentity"
 	"github.com/Yunushan/accessweaver/internal/filelock"
 	"github.com/Yunushan/accessweaver/internal/managed"
+	"github.com/Yunushan/accessweaver/internal/nativepath"
 	"github.com/Yunushan/accessweaver/internal/profile"
 	"github.com/Yunushan/accessweaver/internal/wintrust"
 	"golang.org/x/sys/windows"
@@ -43,14 +45,14 @@ import (
 
 const ordinaryCommandWorkerArgument = "--accessweaver-audit-commands-native-worker-v1"
 
-var ordinaryCommandCaseNames = []string{
+var ordinaryCommandCaseNames = append(append([]string{
 	"signed-required-audit-admission", "initialize-import-retained-head",
 	"audited-private-http-desktop", "read-only-export-verify",
 	"current-recorded-export-key-boundary", "actual-output-alias-admission",
 	"full-journal-reservation-refusal", "approved-recorded-foreground-run",
 	"recorded-foreground-output-cancellation-drain",
 	"private-command-workspace-cleanup",
-}
+}, windowsAliasDetailCaseNames[:]...), windowsRunDetailCaseNames[:]...)
 
 func windowsCommandReadSource(w *windowsCommandWorker, path string) ([]byte, error) {
 	if strings.EqualFold(path, w.engine) {
@@ -245,7 +247,26 @@ func stageRequiredWindowsPolicy(f *ordinaryFixture) (*ordinaryPolicyFixture, err
 		clear(source)
 		return p, errOrdinary
 	}
-	enginePath := filepath.Join(f.root, "ciadpi.exe")
+	// The managed verifier checks the executable's adjacent subtree. Keep it
+	// separate from the ordinary user's deliberately writable child workspace.
+	engineRoot := filepath.Join(f.root, "approved-engine")
+	engineSD, err := windows.SecurityDescriptorFromString("O:BAD:P(A;OICI;FA;;;BA)(A;OICI;FA;;;SY)(A;OICI;FRFX;;;" + f.sid + ")")
+	if err != nil {
+		clear(source)
+		return p, errOrdinary
+	}
+	engineSA := windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: engineSD}
+	engineName, _ := windows.UTF16PtrFromString(engineRoot)
+	if windows.CreateDirectory(engineName, &engineSA) != nil {
+		clear(source)
+		return p, errOrdinary
+	}
+	runtime.KeepAlive(engineSD)
+	if f.record(engineRoot) != nil {
+		clear(source)
+		return p, errOrdinary
+	}
+	enginePath := filepath.Join(engineRoot, "ciadpi.exe")
 	if ordinaryStageFile(f, enginePath, source) != nil {
 		clear(source)
 		return p, errOrdinary
@@ -314,10 +335,26 @@ func stageRequiredWindowsPolicy(f *ordinaryFixture) (*ordinaryPolicyFixture, err
 	if err != nil {
 		return p, err
 	}
+	// Exercise the real signed-policy preview after the writable slot exists.
+	// This must read only; no engine launch or profile-store creation is allowed.
+	previewRoot := filepath.Join(slot, "preview-must-remain-absent")
+	previewContext, stopPreview := context.WithTimeout(context.Background(), 15*time.Second)
+	defer stopPreview()
+	plan, previewErr := engine.PreviewContext(previewContext, reviewed, previewRoot)
+	if previewErr != nil || !plan.Ready || !strings.EqualFold(plan.Binary, enginePath) {
+		return p, errOrdinary
+	}
+	if _, statErr := os.Lstat(previewRoot); !errors.Is(statErr, os.ErrNotExist) {
+		return p, errOrdinary
+	}
 	return p, nil
 }
 
 type windowsCommandWorker struct {
+	consoleProcess                                   windows.Handle
+	consolePID                                       uint32
+	consoleInJob                                     bool
+	releaseFailure                                   windowsRunReleaseStage
 	base, directory, state, profilePath, engine, sid string
 	start, head                                      audit.Checkpoint
 	p                                                profile.Profile
@@ -326,6 +363,10 @@ type windowsCommandWorker struct {
 	ctx                                              context.Context
 	cancel                                           context.CancelFunc
 	counter                                          uint32
+	desktopFailure                                   windowsDesktopStage
+	aliasFailure                                     windowsAliasFailure
+	aliasDetailExecuted, aliasDetailPassed           uint64
+	runDetailExecuted, runDetailPassed               uint64
 }
 
 func (w *windowsCommandWorker) manifest() *windowsCommandWorker {
@@ -1127,7 +1168,13 @@ func windowsHTTP(client *http.Client, method, address, token string, input any) 
 	}
 	return response.StatusCode, data, nil
 }
-func (w *windowsCommandWorker) desktop(full bool) error {
+func (w *windowsCommandWorker) desktop(full bool) (failure error) {
+	stage := windowsDesktopStream
+	defer func() {
+		if failure != nil {
+			w.desktopFailure = stage
+		}
+	}()
 	label := "desktop"
 	if full {
 		label = "full-desktop"
@@ -1139,7 +1186,10 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 	if full && s.seedCapacity() != nil {
 		return errOrdinary
 	}
-	os.Setenv("ACCESSWEAVER_NO_BROWSER", "1")
+	stage = windowsDesktopStartup
+	if os.Setenv("ACCESSWEAVER_NO_BROWSER", "1") != nil {
+		return errOrdinary
+	}
 	reader, writer, err := os.Pipe()
 	if err != nil {
 		return errOrdinary
@@ -1197,6 +1247,7 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 		_ = stop()
 		return errOrdinary
 	}
+	stage = windowsDesktopLaunchPath
 	parsed, err := url.Parse(launch)
 	if err != nil || parsed.Scheme != "file" || parsed.Host != "" {
 		_ = stop()
@@ -1208,6 +1259,7 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 		_ = stop()
 		return errOrdinary
 	}
+	stage = windowsDesktopLaunchFileACL
 	launchHandle, err := ordinaryOpen(path, windows.FILE_READ_ATTRIBUTES|windows.READ_CONTROL)
 	if err != nil {
 		_ = stop()
@@ -1220,6 +1272,7 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 		_ = stop()
 		return errOrdinary
 	}
+	stage = windowsDesktopLaunchDirectoryACL
 	directoryHandle, err := ordinaryOpen(filepath.Dir(path), windows.FILE_READ_ATTRIBUTES|windows.READ_CONTROL)
 	if err != nil {
 		_ = stop()
@@ -1232,6 +1285,7 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 		_ = stop()
 		return errOrdinary
 	}
+	stage = windowsDesktopLaunchContents
 	page, err := windowsCommandReadDefault(path)
 	if err != nil || len(page) > 8192 {
 		_ = stop()
@@ -1270,6 +1324,7 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 		}
 		return data, nil
 	}
+	stage = windowsDesktopHTTPAdmission
 	if _, err := call("GET", "/api/bootstrap", token, nil, 200); err != nil {
 		_ = stop()
 		return errOrdinary
@@ -1278,6 +1333,7 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 		_ = stop()
 		return errOrdinary
 	}
+	stage = windowsDesktopHTTPMutation
 	if full {
 		if _, err := call("PUT", "/api/v1/profiles/"+s.p.ID, token, s.p, 503); err != nil {
 			_ = stop()
@@ -1309,6 +1365,7 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 			return errOrdinary
 		}
 	}
+	stage = windowsDesktopHTTPDenials
 	for _, route := range []string{"/api/v1/start", "/api/v1/stop", "/api/v1/diagnose", "/api/v1/system/start", "/api/v1/support"} {
 		method := "POST"
 		if route == "/api/v1/support" {
@@ -1319,7 +1376,12 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 			return errOrdinary
 		}
 	}
-	if stop() != nil || s.recordProducts() != nil {
+	stage = windowsDesktopShutdown
+	if stop() != nil {
+		return errOrdinary
+	}
+	stage = windowsDesktopCleanup
+	if s.recordProducts() != nil {
 		return errOrdinary
 	}
 	if _, err := fileidentity.FromPath(path, false); !errors.Is(err, os.ErrNotExist) {
@@ -1328,6 +1390,7 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 	if _, err := fileidentity.FromPath(filepath.Dir(path), false); !errors.Is(err, os.ErrNotExist) {
 		return errOrdinary
 	}
+	stage = windowsDesktopJournal
 	events, _, head, err := s.readSegment()
 	expected := 8
 	if full {
@@ -1360,9 +1423,11 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 		}
 		s.head = observed[len(observed)-1]
 	}
+	stage = windowsDesktopExport
 	if !full && s.exportVerify(8) != nil {
 		return errOrdinary
 	}
+	stage = windowsDesktopReopen
 	reopened, err := audit.OpenLocalJournal(s.ctx, s.directory, s.start, s.head)
 	if err != nil {
 		return errOrdinary
@@ -1377,75 +1442,137 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 	return nil
 }
 
-func runWindowsCommandCases(nonce []byte) (executed, passed uint64) {
+func runWindowsCommandCases(nonce []byte) (executed, passed uint64, desktopFailure windowsDesktopStage, releaseFailure windowsRunReleaseStage) {
 	executable, err := os.Executable()
 	if err != nil || len(nonce) != 32 {
-		return 0, 0
+		return 0, 0, windowsDesktopNoFailure, 0
 	}
 	stage := filepath.Dir(executable)
 	input, err := os.Open(filepath.Join(stage, "reviewed-profile.json"))
 	if err != nil {
-		return 0, 0
+		return 0, 0, windowsDesktopNoFailure, 0
 	}
 	data, readErr := io.ReadAll(io.LimitReader(input, (1<<20)+1))
 	closeErr := input.Close()
 	if readErr != nil || closeErr != nil || len(data) > 1<<20 {
 		clear(data)
-		return 0, 0
+		return 0, 0, windowsDesktopNoFailure, 0
 	}
 	reviewed, err := profile.Decode(bytes.NewReader(data))
 	clear(data)
-	if err != nil || !strings.EqualFold(reviewed.Binary, filepath.Join(stage, "ciadpi.exe")) || len(reviewed.Args) != 0 {
-		return 0, 0
+	if err != nil || !strings.EqualFold(reviewed.Binary, filepath.Join(stage, "approved-engine", "ciadpi.exe")) || len(reviewed.Args) != 0 {
+		return 0, 0, windowsDesktopNoFailure, 0
 	}
 	var token windows.Token
 	if windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_QUERY, &token) != nil {
-		return 0, 0
+		return 0, 0, windowsDesktopNoFailure, 0
 	}
 	user, err := token.GetTokenUser()
 	if err != nil || user == nil || user.User.Sid == nil {
 		_ = token.Close()
-		return 0, 0
+		return 0, 0, windowsDesktopNoFailure, 0
 	}
 	sid := user.User.Sid.String()
 	if token.Close() != nil {
 		ordinaryCloseFailure = true
-		return 0, 0
+		return 0, 0, windowsDesktopNoFailure, 0
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 110*time.Second)
 	defer cancel()
 	root := &windowsCommandWorker{base: filepath.Join(stage, "child-slot", "work-"+hex.EncodeToString(nonce[:8])), sid: sid, engine: reviewed.Binary, p: reviewed, ctx: ctx}
-	if root.mkdirPrivate(root.base) != nil {
-		return 0, 0
-	}
 	operations := []func() error{
 		root.requiredAdmission, root.importRoundTrip, func() error { return root.desktop(false) },
 		root.historicalRoundTrip, root.currentExport, root.aliasAdmission, root.capacityRefusal,
 		root.runApprovedAndRefusals, root.runFailuresAndCancellation,
 	}
-	for index, operation := range operations {
-		if ctx.Err() != nil {
-			break
+	if len(operations)+1 != windowsAliasDetailCaseOffset {
+		return 0, 0, windowsDesktopNoFailure, 0
+	}
+	if root.mkdirPrivate(root.base) != nil {
+		return 0, 0, windowsDesktopNoFailure, 0
+	}
+	if stage := root.bindWindowsConsole(); stage != 0 {
+		root.releaseFailure = stage
+		executed |= 1 << 7
+		root.runAssertion("run-stream", false)
+	} else {
+		for index, operation := range operations {
+			if ctx.Err() != nil {
+				break
+			}
+			executed |= 1 << index
+			if operation() != nil {
+				break
+			}
+			passed |= 1 << index
 		}
-		executed |= 1 << index
-		if operation() != nil {
-			break
-		}
-		passed |= 1 << index
 	}
 	// No arbitrary enumeration is adopted for deletion. Unexpected operation
 	// outputs remain in their private directory and make exact cleanup fail.
 	// Preserve each operation's result and report cleanup as its own fixed case.
 	cleanupBit := uint64(1) << len(operations)
 	executed |= cleanupBit
-	if root.close() == nil {
+	cleanupErr := root.close()
+	consoleClosed := ordinaryClose(&root.consoleProcess)
+	if cleanupErr == nil && consoleClosed {
 		passed |= cleanupBit
 	}
-	return executed, passed
+	executed |= root.runDetailExecuted << windowsRunDetailCaseOffset
+	passed |= root.runDetailPassed << windowsRunDetailCaseOffset
+	executed |= root.aliasDetailExecuted << windowsAliasDetailCaseOffset
+	passed |= root.aliasDetailPassed << windowsAliasDetailCaseOffset
+	return executed, passed, windowsDesktopStage(encodeWindowsCommandFailure(root.desktopFailure, root.aliasFailure)), root.releaseFailure
 }
-func windowsInertReadyName(parent, pid uint32) string {
-	return "Local\\AccessWeaverOrdinaryReady-" + strconv.FormatUint(uint64(parent), 10) + "-" + strconv.FormatUint(uint64(pid), 10)
+
+func windowsInertReadyName(stage string, worker, child uint32) string {
+	digest := sha256.Sum256([]byte(strings.ToLower(filepath.Clean(stage))))
+	return "\\\\.\\pipe\\AccessWeaverOrdinaryReady-" + hex.EncodeToString(digest[:16]) + "-" +
+		strconv.FormatUint(uint64(worker), 10) + "-" + strconv.FormatUint(uint64(child), 10)
 }
+
+func windowsReadyPipeDescriptor(handle windows.Handle, sid string) bool {
+	sd, err := windows.GetSecurityInfo(handle, windows.SE_KERNEL_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	if err != nil || !ordinaryDescriptor(sd, sid, true) {
+		return false
+	}
+	owner, _, err := sd.Owner()
+	if err != nil || owner.String() != sid {
+		return false
+	}
+	acl, _, err := sd.DACL()
+	if err != nil {
+		return false
+	}
+	header := (*struct {
+		Revision, Reserved     byte
+		Size, Count, Reserved2 uint16
+	})(unsafe.Pointer(acl))
+	if header.Count != 2 {
+		return false
+	}
+	seen := map[string]bool{}
+	for index := uint16(0); index < header.Count; index++ {
+		var raw unsafe.Pointer
+		ok, _, _ := ordinaryAdvapi.NewProc("GetAce").Call(uintptr(unsafe.Pointer(acl)), uintptr(index), uintptr(unsafe.Pointer(&raw)))
+		if ok == 0 || raw == nil {
+			return false
+		}
+		ace := (*windows.ACCESS_ALLOWED_ACE)(raw)
+		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Header.AceFlags != 0 ||
+			(ace.Mask != windows.GENERIC_ALL && ace.Mask != 0x001f01ff) {
+			return false
+		}
+		principal := (*windows.SID)(unsafe.Add(raw, 8))
+		value := principal.String()
+		if seen[value] || (value != sid && value != "S-1-5-18") {
+			return false
+		}
+		seen[value] = true
+	}
+	runtime.KeepAlive(sd)
+	return seen[sid] && seen["S-1-5-18"]
+}
+
 func ordinaryInertWindowsEngine() bool {
 	if !strings.EqualFold(filepath.Base(os.Args[0]), "ciadpi.exe") {
 		return false
@@ -1453,80 +1580,230 @@ func ordinaryInertWindowsEngine() bool {
 	if len(os.Args) != 3 || os.Args[1] != "--ip" || os.Args[2] != "127.0.0.1" {
 		os.Exit(98)
 	}
-	// Consume BREAK through Notify: Windows' runtime default handler does not
-	// treat signal.Ignore as a delivered SIGINT. Readiness is signaled only after
-	// this subscription exists, so the real manager owns the cancellation kill.
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil || user == nil || user.User.Sid == nil {
-		os.Exit(98)
+		os.Exit(99)
 	}
 	sid := user.User.Sid.String()
+	executable, err := os.Executable()
+	if err != nil {
+		os.Exit(100)
+	}
 	sd, err := windows.SecurityDescriptorFromString("O:" + sid + "D:P(A;;GA;;;" + sid + ")(A;;GA;;;SY)")
 	if err != nil {
-		os.Exit(98)
+		os.Exit(100)
 	}
 	sa := windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
-	name, _ := windows.UTF16PtrFromString(windowsInertReadyName(uint32(os.Getppid()), uint32(os.Getpid())))
-	handle, _, lastErr := ordinaryKernel.NewProc("CreateEventW").Call(uintptr(unsafe.Pointer(&sa)), 1, 1, uintptr(unsafe.Pointer(name)))
+	stage := filepath.Dir(filepath.Dir(executable))
+	name, _ := windows.UTF16PtrFromString(windowsInertReadyName(stage, uint32(os.Getppid()), uint32(os.Getpid())))
+	// This is a metadata-only readiness endpoint, with no asynchronous data
+	// transfer or pending OVERLAPPED memory. First-instance and local-only flags
+	// prevent adopting a preexisting server or accepting remote clients.
+	ready, err := windows.CreateNamedPipe(name, windows.PIPE_ACCESS_DUPLEX|windows.FILE_FLAG_FIRST_PIPE_INSTANCE,
+		windows.PIPE_TYPE_MESSAGE|windows.PIPE_READMODE_MESSAGE|windows.PIPE_NOWAIT|windows.PIPE_REJECT_REMOTE_CLIENTS,
+		1, 1, 1, 0, &sa)
 	runtime.KeepAlive(sd)
-	if handle == 0 {
-		os.Exit(98)
+	if err != nil {
+		os.Exit(windowsInertReadyFailureExit(err))
 	}
-	ready := windows.Handle(handle)
-	if errors.Is(lastErr, windows.ERROR_ALREADY_EXISTS) {
+	if !windowsReadyPipeDescriptor(ready, sid) {
 		_ = ordinaryClose(&ready)
-		os.Exit(98)
+		os.Exit(100)
+	}
+	// Listening follows signal subscription. An early client may already have
+	// connected (and closed); either state still proves the source is ready.
+	connectErr := windows.ConnectNamedPipe(ready, nil)
+	if connectErr != nil && !errors.Is(connectErr, windows.ERROR_PIPE_LISTENING) &&
+		!errors.Is(connectErr, windows.ERROR_PIPE_CONNECTED) && !errors.Is(connectErr, windows.ERROR_NO_DATA) {
+		_ = ordinaryClose(&ready)
+		os.Exit(windowsInertReadyFailureExit(connectErr))
 	}
 	time.Sleep(3 * time.Second)
 	signal.Stop(interrupts)
 	if !ordinaryClose(&ready) {
-		os.Exit(98)
+		os.Exit(103)
 	}
 	os.Exit(0)
 	return true
 }
+
+func windowsOwnedReadyPipe(w *windowsCommandWorker, childPID uint32) (ready, retry bool) {
+	process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, childPID)
+	if err != nil {
+		return false, false
+	}
+	defer func() {
+		if !ordinaryClose(&process) {
+			ready, retry = false, false
+		}
+	}()
+	var image [32768]uint16
+	length := uint32(len(image))
+	if windows.QueryFullProcessImageName(process, 0, &image[0], &length) != nil ||
+		length == 0 || length >= uint32(len(image)) || !strings.EqualFold(windows.UTF16ToString(image[:length]), w.engine) {
+		return false, false
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return false, false
+	}
+	name, _ := windows.UTF16PtrFromString(windowsInertReadyName(filepath.Dir(executable), uint32(os.Getpid()), childPID))
+	pipe, err := windows.CreateFile(name, windows.GENERIC_READ|windows.READ_CONTROL, 0, nil, windows.OPEN_EXISTING, 0, 0)
+	if err != nil {
+		return false, errors.Is(err, windows.ERROR_FILE_NOT_FOUND) || errors.Is(err, windows.ERROR_PIPE_BUSY) ||
+			errors.Is(err, windows.ERROR_PIPE_NOT_CONNECTED) || errors.Is(err, windows.ERROR_NO_DATA)
+	}
+	defer func() {
+		if !ordinaryClose(&pipe) {
+			ready, retry = false, false
+		}
+	}()
+	var serverPID uint32
+	if windows.GetNamedPipeServerProcessId(pipe, &serverPID) != nil || serverPID != childPID ||
+		!windowsReadyPipeDescriptor(pipe, w.sid) {
+		return false, false
+	}
+	return true, false
+}
+
+func windowsCurrentJobMembers() ([]uint32, uint32, error) {
+	var list struct {
+		Assigned, Count uint32
+		IDs             [8]uintptr
+	}
+	if windows.QueryInformationJobObject(0, windows.JobObjectBasicProcessIdList, uintptr(unsafe.Pointer(&list)), uint32(unsafe.Sizeof(list)), nil) != nil ||
+		list.Count > 8 || list.Assigned != list.Count {
+		return nil, 0, errOrdinary
+	}
+	ids := make([]uint32, 0, list.Count)
+	for _, pid := range list.IDs[:list.Count] {
+		if pid == 0 || uint64(pid) > uint64(^uint32(0)) {
+			return nil, 0, errOrdinary
+		}
+		ids = append(ids, uint32(pid))
+	}
+	return ids, list.Assigned, nil
+}
+
+func (w *windowsCommandWorker) bindWindowsConsole() windowsRunReleaseStage {
+	// The privileged parent assigns only the suspended worker to its anonymous
+	// KILL_ON_JOB_CLOSE job, checks Active/Total == 1, then resumes it. Bind the
+	// initial console helper before any product operation; never adopt a later
+	// or arbitrary peer by its name.
+	var clients [4]uint32
+	count, _, _ := ordinaryKernel.NewProc("GetConsoleProcessList").Call(uintptr(unsafe.Pointer(&clients[0])), uintptr(len(clients)))
+	if count != 1 || clients[0] != uint32(os.Getpid()) {
+		return 36
+	}
+	ids, assigned, err := windowsCurrentJobMembers()
+	if err != nil || assigned < 1 || assigned > 2 {
+		return 40
+	}
+	var peer uint32
+	foundWorker := false
+	for _, pid := range ids {
+		if pid == uint32(os.Getpid()) {
+			if foundWorker {
+				return 37
+			}
+			foundWorker = true
+		} else {
+			if peer != 0 {
+				return 37
+			}
+			peer = pid
+		}
+	}
+	if !foundWorker {
+		return 37
+	}
+	if peer == 0 {
+		if !windowsJobMembersValid(uint32(os.Getpid()), 0, 0, false, assigned, ids) {
+			return 40
+		}
+		return 0
+	}
+	process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, peer)
+	if err != nil {
+		return 38
+	}
+	w.consoleProcess, w.consolePID, w.consoleInJob = process, peer, true
+	var image [32768]uint16
+	length := uint32(len(image))
+	system, systemErr := nativepath.SystemDirectory()
+	if windows.QueryFullProcessImageName(process, 0, &image[0], &length) != nil || systemErr != nil ||
+		length == 0 || length >= uint32(len(image)) || !strings.EqualFold(windows.UTF16ToString(image[:length]), filepath.Join(system, "conhost.exe")) {
+		return 39
+	}
+	var workerCreated, peerCreated, exited, kernel, user windows.Filetime
+	if windows.GetProcessTimes(windows.CurrentProcess(), &workerCreated, &exited, &kernel, &user) != nil ||
+		windows.GetProcessTimes(process, &peerCreated, &exited, &kernel, &user) != nil ||
+		uint64(peerCreated.HighDateTime)<<32|uint64(peerCreated.LowDateTime) < uint64(workerCreated.HighDateTime)<<32|uint64(workerCreated.LowDateTime) {
+		return 37
+	}
+	file, err := ordinaryOpen(filepath.Join(system, "conhost.exe"), windows.FILE_READ_ATTRIBUTES|windows.READ_CONTROL)
+	if err != nil {
+		return 39
+	}
+	protected := wintrust.CheckHandle(syscall.Handle(file), uint32(windows.SE_FILE_OBJECT), ordinaryAncestorMutation) == nil
+	closed := ordinaryClose(&file)
+	if !protected || !closed {
+		return 39
+	}
+	if !windowsJobMembersValid(uint32(os.Getpid()), peer, 0, true, assigned, ids) || !w.windowsConsoleStillBound() {
+		return 40
+	}
+	return 0
+}
+
+func (w *windowsCommandWorker) windowsConsoleStillBound() bool {
+	root := w.manifest()
+	if !root.consoleInJob {
+		return root.consoleProcess == 0 && root.consolePID == 0
+	}
+	state, err := windows.WaitForSingleObject(root.consoleProcess, 0)
+	if err != nil || state != uint32(windows.WAIT_TIMEOUT) {
+		return false
+	}
+	var image [32768]uint16
+	length := uint32(len(image))
+	system, systemErr := nativepath.SystemDirectory()
+	return windows.QueryFullProcessImageName(root.consoleProcess, 0, &image[0], &length) == nil &&
+		systemErr == nil && length != 0 && length < uint32(len(image)) &&
+		strings.EqualFold(windows.UTF16ToString(image[:length]), filepath.Join(system, "conhost.exe"))
+}
+
 func windowsRunWaitReady(w *windowsCommandWorker) bool {
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		var processes struct {
-			Assigned, Count uint32
-			IDs             [4]uintptr
-		}
-		if windows.QueryInformationJobObject(0, windows.JobObjectBasicProcessIdList, uintptr(unsafe.Pointer(&processes)), uint32(unsafe.Sizeof(processes)), nil) != nil || processes.Count > 4 {
+		ids, assigned, err := windowsCurrentJobMembers()
+		root := w.manifest()
+		if err != nil || !w.windowsConsoleStillBound() {
 			return false
 		}
-		if processes.Count == 2 {
-			var childPID uint32
-			for _, pid := range processes.IDs[:processes.Count] {
-				if uint32(pid) != uint32(os.Getpid()) {
-					childPID = uint32(pid)
+		var childPID uint32
+		for _, pid := range ids {
+			if pid != uint32(os.Getpid()) && (!root.consoleInJob || pid != root.consolePID) {
+				if childPID != 0 {
+					return false
 				}
+				childPID = pid
+			}
+		}
+		if childPID != 0 {
+			if !windowsJobMembersValid(uint32(os.Getpid()), root.consolePID, childPID, root.consoleInJob, assigned, ids) {
+				return false
 			}
 			if childPID == 0 {
 				return false
 			}
-			process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, childPID)
-			if err != nil {
-				return false
+			ready, retry := windowsOwnedReadyPipe(w, childPID)
+			if ready {
+				return true
 			}
-			var image [32768]uint16
-			length := uint32(len(image))
-			imageErr := windows.QueryFullProcessImageName(process, 0, &image[0], &length)
-			closed := ordinaryClose(&process)
-			if imageErr != nil || !closed || length == 0 || length >= uint32(len(image)) || !strings.EqualFold(windows.UTF16ToString(image[:length]), w.engine) {
-				return false
-			}
-			name, _ := windows.UTF16PtrFromString(windowsInertReadyName(uint32(os.Getpid()), childPID))
-			event, err := windows.OpenEvent(windows.SYNCHRONIZE|windows.READ_CONTROL, false, name)
-			if err == nil {
-				sd, securityErr := windows.GetSecurityInfo(event, windows.SE_KERNEL_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
-				status, waitErr := windows.WaitForSingleObject(event, 0)
-				closed := ordinaryClose(&event)
-				return securityErr == nil && ordinaryDescriptor(sd, w.sid, true) && waitErr == nil && status == windows.WAIT_OBJECT_0 && closed
-			}
-			if !errors.Is(err, windows.ERROR_FILE_NOT_FOUND) {
+			if !retry {
 				return false
 			}
 		}
@@ -1534,6 +1811,7 @@ func windowsRunWaitReady(w *windowsCommandWorker) bool {
 	}
 	return false
 }
+
 func TestDisposableWindowsAuditCommands(t *testing.T) {
 	if _, present := os.LookupEnv("ACCESSWEAVER_DISPOSABLE_WINDOWS_AUDIT_COMMANDS_TEST"); !present {
 		t.Skip("explicit disposable hosted Windows command fixture only")
@@ -1656,106 +1934,258 @@ func windowsRunPreservedInputs(w *windowsCommandWorker) (map[string][]byte, erro
 // disk-derived terminal checkpoint must never be reused as retained authority.
 // Opening existing lock-bearing files does not recreate or truncate anything.
 func windowsRunReleased(w *windowsCommandWorker) error {
-	entries, err := os.ReadDir(filepath.Join(w.state, "profiles"))
-	if err != nil || len(entries) != 0 {
+	fail := func(stage windowsRunReleaseStage) error {
+		root := w.manifest()
+		if root.releaseFailure == 0 {
+			root.releaseFailure = stage
+		}
 		return errOrdinary
+	}
+	entries, err := os.ReadDir(filepath.Join(w.state, "profiles"))
+	if err != nil {
+		return fail(1)
+	}
+	if len(entries) != 0 {
+		return fail(2)
 	}
 	if _, err := os.Lstat(filepath.Join(w.state, "presets-initialized")); !os.IsNotExist(err) {
-		return errOrdinary
+		return fail(3)
 	}
 	if _, err := os.Lstat(filepath.Join(w.state, "generated")); !os.IsNotExist(err) {
-		return errOrdinary
+		return fail(4)
 	}
-	for _, path := range []string{filepath.Join(w.state, ".controller.lock"), filepath.Join(w.directory, "events.journal")} {
+	for index, path := range []string{filepath.Join(w.state, ".controller.lock"), filepath.Join(w.directory, "events.journal")} {
+		base := windowsRunReleaseStage(5 + index*6)
 		if w.record(path) != nil {
-			return errOrdinary
+			return fail(base)
 		}
 		name, err := windows.UTF16PtrFromString(path)
 		if err != nil {
-			return errOrdinary
+			return fail(base + 1)
 		}
 		handle, err := windows.CreateFile(name, windows.GENERIC_READ|windows.GENERIC_WRITE,
 			windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING,
 			windows.FILE_ATTRIBUTE_NORMAL|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
 		if err != nil {
-			return errOrdinary
+			return fail(base + 2)
 		}
 		var overlap windows.Overlapped
 		lockErr := windows.LockFileEx(handle, windows.LOCKFILE_FAIL_IMMEDIATELY|windows.LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &overlap)
-		closeErr := windows.CloseHandle(handle) // Final close releases the lock.
-		if lockErr != nil || closeErr != nil || w.record(path) != nil {
-			return errOrdinary
+		closeErr := windows.CloseHandle(handle)
+		if lockErr != nil {
+			return fail(base + 3)
+		}
+		if closeErr != nil {
+			return fail(base + 4)
+		}
+		if w.record(path) != nil {
+			return fail(base + 5)
 		}
 	}
-	// The real command may create this coordination object in some paths.
 	profileLock := filepath.Join(w.state, ".profiles.lock")
 	if _, err := os.Lstat(profileLock); err == nil {
 		if w.record(profileLock) != nil {
-			return errOrdinary
+			return fail(17)
 		}
 	} else if !os.IsNotExist(err) {
-		return errOrdinary
+		return fail(18)
 	}
 	var accounting ordinaryAccounting
 	if windows.QueryInformationJobObject(0, windows.JobObjectBasicAccountingInformation,
-		uintptr(unsafe.Pointer(&accounting)), uint32(unsafe.Sizeof(accounting)), nil) != nil ||
-		accounting.Active != 1 {
-		return errOrdinary
+		uintptr(unsafe.Pointer(&accounting)), uint32(unsafe.Sizeof(accounting)), nil) != nil {
+		return fail(19)
+	}
+	root := w.manifest()
+	ids, assigned, err := windowsCurrentJobMembers()
+	if err != nil || !w.windowsConsoleStillBound() || accounting.Active != assigned ||
+		!windowsJobMembersValid(uint32(os.Getpid()), root.consolePID, 0, root.consoleInJob, assigned, ids) {
+		return fail(windowsRunJobMismatch(w, accounting.Active))
 	}
 	return nil
 }
 
+// Diagnostic only: no mismatched accounting or foreign process is accepted.
+// Query only this disposable worker's assigned job; names/PIDs stay in memory.
+func windowsRunJobMismatch(w *windowsCommandWorker, active uint32) windowsRunReleaseStage {
+	if active == 0 {
+		return 21
+	}
+	if active > 8 {
+		return 22
+	}
+	var list struct {
+		Assigned, Count uint32
+		IDs             [8]uintptr
+	}
+	if windows.QueryInformationJobObject(0, windows.JobObjectBasicProcessIdList,
+		uintptr(unsafe.Pointer(&list)), uint32(unsafe.Sizeof(list)), nil) != nil {
+		return 23
+	}
+	if list.Count > 8 || list.Count != list.Assigned {
+		return 24
+	}
+	worker, err := os.Executable()
+	if err != nil {
+		return 31
+	}
+	foundWorker := false
+	stage := windowsRunReleaseStage(32)
+	for _, pid := range list.IDs[:list.Count] {
+		if pid == uintptr(os.Getpid()) {
+			foundWorker = true
+			continue
+		}
+		if pid == 0 || uint64(pid) > uint64(^uint32(0)) {
+			return 24
+		}
+		process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, uint32(pid))
+		if err != nil {
+			return 31
+		}
+		state, waitErr := windows.WaitForSingleObject(process, 0)
+		var image [32768]uint16
+		length := uint32(len(image))
+		imageErr := windows.QueryFullProcessImageName(process, 0, &image[0], &length)
+		closed := ordinaryClose(&process)
+		if waitErr != nil || imageErr != nil || !closed || length == 0 || length >= uint32(len(image)) ||
+			(state != uint32(windows.WAIT_TIMEOUT) && state != windows.WAIT_OBJECT_0) {
+			return 31
+		}
+		path := windows.UTF16ToString(image[:length])
+		live := state == uint32(windows.WAIT_TIMEOUT)
+		switch {
+		case strings.EqualFold(path, w.engine):
+			if live {
+				stage = 26
+			} else {
+				stage = 27
+			}
+		case strings.EqualFold(path, worker):
+			if live {
+				stage = 28
+			} else {
+				stage = 30
+			}
+		default:
+			if live {
+				system, err := nativepath.SystemDirectory()
+				if err != nil {
+					return 31
+				}
+				// Path categories are diagnostic only, never a trust grant.
+				for index, relative := range []string{"conhost.exe", "WindowsPowerShell" + string(filepath.Separator) + "v1.0" + string(filepath.Separator) + "powershell.exe", "cmd.exe"} {
+					if strings.EqualFold(path, filepath.Join(system, relative)) {
+						return windowsRunReleaseStage(33 + index)
+					}
+				}
+				return 29
+			}
+			return 30
+		}
+	}
+	if !foundWorker {
+		return 25
+	}
+	return stage
+}
+
+func (w *windowsCommandWorker) runAssertion(label string, valid bool) bool {
+	mask, known := windowsRunDetailBit(label)
+	if !known {
+		return false
+	}
+	root := w.manifest()
+	root.runDetailExecuted |= mask
+	if valid {
+		root.runDetailPassed |= mask
+	} else {
+		root.runDetailPassed &^= mask
+	}
+	return valid
+}
+
 func (w *windowsCommandWorker) runApprovedAndRefusals() error {
 	child, err := w.newStream("run-approved")
-	if err != nil {
+	if !w.runAssertion("run-stream", err == nil) {
 		return errOrdinary
 	}
 	before, err := windowsRunPreservedInputs(child)
-	if err != nil {
+	if !w.runAssertion("run-input-snapshot", err == nil) {
 		return errOrdinary
 	}
 	command := windowsRunArguments(child, child.profilePath)
 	observed, notice, err := child.command(command, nil, nil)
-	if err != nil || string(notice) != windowsRunLaunchNotice ||
-		windowsRunObserved(child, observed, "intent", "accepted", "completed") != nil ||
-		!windowsRunPrivateMetadata(child, notice) || !child.preserved(before) ||
-		windowsRunReleased(child) != nil {
+	// Classify only source-known errors; retain no paths, output or error text.
+	w.runAssertion("run-error-preview-absent", !errors.Is(err, errAuditRunPreview))
+	w.runAssertion("run-error-admission-absent", !errors.Is(err, errAuditRunAdmission))
+	w.runAssertion("run-error-recorder-absent", !errors.Is(err, audit.ErrRecorderUnavailable))
+	w.runAssertion("run-error-uncertain-absent", !errors.Is(err, audit.ErrRecordedUncertain))
+	w.runAssertion("run-error-context-absent", !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled))
+	var engineExit *exec.ExitError
+	exited := errors.As(err, &engineExit)
+	w.runAssertion("run-error-engine-exit-absent", !exited)
+	w.runAssertion("run-error-output-absent", !errors.Is(err, errAuditRunOutput))
+	w.runAssertion("run-error-profile-absent", !errors.Is(err, errAuditRunProfile))
+	w.runAssertion("run-error-input-absent", err == nil || err.Error() != "audit input must be an unchanged bounded regular file")
+	w.runAssertion("run-error-journal-absent", !errors.Is(err, audit.ErrJournalBusy) &&
+		!errors.Is(err, audit.ErrJournalStorage) && !errors.Is(err, audit.ErrJournalUnavailable) &&
+		!errors.Is(err, audit.ErrJournalUncertain) && !errors.Is(err, audit.ErrJournalFull))
+	for index, label := range []string{"run-error-inert-args-absent", "run-error-inert-token-absent",
+		"run-error-inert-security-absent", "run-error-inert-event-absent",
+		"run-error-inert-existing-absent", "run-error-inert-close-absent"} {
+		w.runAssertion(label, !exited || engineExit.ExitCode() != 98+index)
+	}
+
+	for index, label := range []string{"run-error-ready-access-absent", "run-error-ready-handle-absent",
+		"run-error-ready-parameter-absent", "run-error-ready-security-absent",
+		"run-error-ready-owner-absent", "run-error-ready-privilege-absent", "run-error-ready-path-absent"} {
+		w.runAssertion(label, !exited || engineExit.ExitCode() != 104+index)
+	}
+	if !w.runAssertion("run-command-return", err == nil) ||
+		!w.runAssertion("run-launch-notice", string(notice) == windowsRunLaunchNotice) ||
+		!w.runAssertion("run-observed-journal", windowsRunObserved(child, observed, "intent", "accepted", "completed") == nil) ||
+		!w.runAssertion("run-notice-private", windowsRunPrivateMetadata(child, notice)) ||
+		!w.runAssertion("run-preserved-inputs", child.preserved(before)) ||
+		!w.runAssertion("run-released-resources", windowsRunReleased(child) == nil) {
 		return errOrdinary
 	}
 	// The retained file still contains genesis. The in-memory head above came
 	// from stdout, but is deliberately not retained until after this retry.
 	stale := child.sources()
 	retry, retryNotice, err := child.command(command, nil, nil)
-	if err == nil || len(retry) != 0 || len(retryNotice) != 0 || !child.preserved(stale) ||
-		windowsRunReleased(child) != nil {
+	if !w.runAssertion("run-stale-head-refusal", err != nil && len(retry) == 0 && len(retryNotice) == 0 &&
+		child.preserved(stale) && windowsRunReleased(child) == nil) {
 		return errOrdinary
 	}
-	if child.writeHead() != nil || child.exportVerify(3) != nil {
+	if !w.runAssertion("run-retained-head-export", child.writeHead() == nil && child.exportVerify(3) == nil) {
 		return errOrdinary
 	}
 	input, err := windowsCommandReadDefault(child.profilePath)
 	if err != nil {
+		w.runAssertion("run-unapproved-profile", false)
 		return errOrdinary
 	}
 	unapproved, err := profile.Decode(bytes.NewReader(input))
 	if err != nil {
+		w.runAssertion("run-unapproved-profile", false)
 		return errOrdinary
 	}
 	unapproved.Routing.IncludeDomains = []string{"unapproved-native-fixture.invalid"}
 	unapprovedBytes, err := json.Marshal(unapproved)
 	if err != nil {
+		w.runAssertion("run-unapproved-profile", false)
 		return errOrdinary
 	}
 	unapprovedPath := filepath.Join(child.base, "unapproved-run-profile.json")
-	if child.ownFile(unapprovedPath, unapprovedBytes) != nil {
+	if !w.runAssertion("run-unapproved-profile", child.ownFile(unapprovedPath, unapprovedBytes) == nil) {
 		return errOrdinary
 	}
 	preserved := child.sources()
 	preserved[unapprovedPath] = bytes.Clone(unapprovedBytes)
 	preserved[child.engine] = bytes.Clone(before[child.engine])
 	refused, refusedNotice, err := child.command(windowsRunArguments(child, unapprovedPath), nil, nil)
-	if !errors.Is(err, errAuditRunPreview) || len(refused) != 0 || len(refusedNotice) != 0 ||
-		!child.preserved(preserved) || windowsRunReleased(child) != nil {
+	if !w.runAssertion("run-unapproved-refusal", errors.Is(err, errAuditRunPreview) && len(refused) == 0 && len(refusedNotice) == 0 &&
+		child.preserved(preserved) && windowsRunReleased(child) == nil) {
 		return errOrdinary
 	}
 	return nil
@@ -2026,7 +2456,7 @@ func windowsAliasPreserveBase(w *windowsCommandWorker, path string) {
 	}
 }
 
-func windowsAliasNew(w *windowsCommandWorker, source, variant string, readonly bool) (*windowsAliasDestination, error) {
+func windowsAliasNew(w *windowsCommandWorker, source, variant string) (*windowsAliasDestination, error) {
 	destination := &windowsAliasDestination{worker: w, source: source, path: source, variant: variant}
 	handle, err := ordinaryOpen(source, windows.FILE_READ_ATTRIBUTES|windows.READ_CONTROL)
 	if err != nil {
@@ -2038,10 +2468,10 @@ func windowsAliasNew(w *windowsCommandWorker, source, variant string, readonly b
 		return destination, errOrdinary
 	}
 	destination.object = original
-	access := uint32(windows.GENERIC_READ | windows.FILE_APPEND_DATA)
-	if readonly {
-		access = windows.GENERIC_READ
-	}
+	// Bound inputs deny write sharing. A read-only destination on the
+	// same stream lets the command reach its identity check without
+	// conflicting with the input open. Named streams share independently.
+	access := uint32(windows.GENERIC_READ)
 	disposition := uint32(windows.OPEN_EXISTING)
 	switch variant {
 	case "direct":
@@ -2062,6 +2492,7 @@ func windowsAliasNew(w *windowsCommandWorker, source, variant string, readonly b
 	case "ads":
 		// CREATE_NEW refuses a preexisting unknown stream, without truncation.
 		destination.path = source + ":accessweaver-native-output"
+		access |= windows.FILE_APPEND_DATA
 		disposition = windows.CREATE_NEW
 	default:
 		return destination, errOrdinary
@@ -2185,7 +2616,52 @@ func windowsAliasInvoke(w *windowsCommandWorker, action string, stdout, stderr *
 	return out, notice, err, <-stopped
 }
 
-func windowsAliasAttempt(w *windowsCommandWorker, action, source, variant string, role int, readonly bool) (failure error) {
+func (w *windowsCommandWorker) aliasPhase(variant, phase string) {
+	w.manifest().aliasFailure = makeWindowsAliasFailure(variant, phase)
+}
+
+func (w *windowsCommandWorker) aliasDetails(action, source, role string) (func(bool), error) {
+	mask, ok := windowsAliasDetailBits(action, source, role)
+	if !ok {
+		return nil, errOrdinary
+	}
+	root := w.manifest()
+	root.aliasDetailExecuted |= mask
+	root.aliasDetailPassed &^= mask
+	return func(passed bool) {
+		if passed {
+			root.aliasDetailPassed |= mask
+		}
+	}, nil
+}
+
+func windowsAliasSource(w *windowsCommandWorker, source string) string {
+	for _, item := range []struct{ path, kind string }{
+		{filepath.Join(w.base, "genesis.json"), "genesis"},
+		{filepath.Join(w.base, "head.json"), "head"},
+		{filepath.Join(w.directory, ".actor-key"), "key"},
+		{filepath.Join(w.directory, "events.journal"), "journal"},
+		{w.profilePath, "profile"},
+		{w.engine, "executable"},
+	} {
+		if strings.EqualFold(source, item.path) {
+			return item.kind
+		}
+	}
+	return ""
+}
+
+func windowsAliasAttempt(w *windowsCommandWorker, action, source, variant string, role int) (failure error) {
+	if role < 0 || role > 1 {
+		return errOrdinary
+	}
+	finish, detailErr := w.aliasDetails(action, windowsAliasSource(w, source), []string{"stdout", "stderr"}[role])
+	if detailErr != nil {
+		return detailErr
+	}
+	defer func() { finish(failure == nil) }()
+
+	w.aliasPhase(variant, "source-snapshot")
 	before := w.sources()
 	if before == nil {
 		return errOrdinary
@@ -2198,9 +2674,13 @@ func windowsAliasAttempt(w *windowsCommandWorker, action, source, variant string
 	if err != nil || sourceState.Kind != fileidentity.Regular {
 		return errOrdinary
 	}
-	destination, err := windowsAliasNew(w, source, variant, readonly)
+	w.aliasPhase(variant, "destination-open")
+	destination, err := windowsAliasNew(w, source, variant)
 	defer func() {
 		if destination.close() != nil {
+			if failure == nil {
+				w.aliasPhase(variant, "destination-cleanup")
+			}
 			failure = errOrdinary
 		}
 	}()
@@ -2213,6 +2693,7 @@ func windowsAliasAttempt(w *windowsCommandWorker, action, source, variant string
 	} else {
 		stderr = destination.file
 	}
+	w.aliasPhase(variant, "invoke")
 	out, notice, commandErr, watchdog := windowsAliasInvoke(w, action, stdout, stderr)
 	expected := errAuditOutputAlias
 	switch action {
@@ -2223,16 +2704,30 @@ func windowsAliasAttempt(w *windowsCommandWorker, action, source, variant string
 	case "run":
 		expected = errAuditRunOutput
 	}
-	if watchdog || !errors.Is(commandErr, expected) || len(out) != 0 || len(notice) != 0 ||
-		!w.preserved(before) || w.recordProducts() != nil {
+	if watchdog {
+		w.aliasPhase(variant, "watchdog")
 		return errOrdinary
 	}
+	if phase := windowsAliasRefusalPhase(commandErr, expected, out, notice); phase != "" {
+		w.aliasPhase(variant, phase)
+		return errOrdinary
+	}
+	w.aliasPhase(variant, "input-preservation")
+	if !w.preserved(before) {
+		return errOrdinary
+	}
+	w.aliasPhase(variant, "product-inventory")
+	if w.recordProducts() != nil {
+		return errOrdinary
+	}
+	w.aliasPhase(variant, "source-readback")
 	current, err := windowsCommandReadSource(w, source)
 	afterState, stateErr := fileidentity.FromPath(source, false)
 	if err != nil || stateErr != nil || !bytes.Equal(original, current) ||
 		afterState.Kind != sourceState.Kind || afterState.ID != sourceState.ID {
 		return errOrdinary
 	}
+	w.aliasPhase(variant, "profile-inventory")
 	entries, err := os.ReadDir(filepath.Join(w.state, "profiles"))
 	if err != nil || len(entries) != 0 {
 		return errOrdinary
@@ -2240,7 +2735,13 @@ func windowsAliasAttempt(w *windowsCommandWorker, action, source, variant string
 	return nil
 }
 
-func (w *windowsCommandWorker) aliasAdmission() error {
+func (w *windowsCommandWorker) aliasAdmission() (failure error) {
+	w.aliasPhase("none", "prepare")
+	defer func() {
+		if failure == nil {
+			w.manifest().aliasFailure = 0
+		}
+	}()
 	child, err := w.newStream("aliases")
 	if err != nil {
 		return errOrdinary
@@ -2260,8 +2761,11 @@ func (w *windowsCommandWorker) aliasAdmission() error {
 		for _, source := range sources {
 			for _, variant := range []string{"direct", "case", "hardlink", "ads"} {
 				for role := 0; role < roles; role++ {
-					if time.Now().After(deadline) || child.ctx.Err() != nil ||
-						windowsAliasAttempt(child, action, source, variant, role, false) != nil {
+					if time.Now().After(deadline) || child.ctx.Err() != nil {
+						child.aliasPhase(variant, "budget")
+						return errOrdinary
+					}
+					if windowsAliasAttempt(child, action, source, variant, role) != nil {
 						return errOrdinary
 					}
 				}
@@ -2271,39 +2775,75 @@ func (w *windowsCommandWorker) aliasAdmission() error {
 	// The approved executable is administrator-owned/read-only to this child.
 	// Its actual resolved identity is protected by run's second admission pass.
 	for role := 0; role < 2; role++ {
-		if windowsAliasAttempt(child, "run", child.engine, "direct", role, true) != nil {
+		if windowsAliasAttempt(child, "run", child.engine, "direct", role) != nil {
 			return errOrdinary
 		}
 	}
 	for _, action := range []string{"ui", "export-recorded", "run"} {
-		root := child.manifest()
-		root.counter++
-		path := filepath.Join(child.base, "pairwise-output-"+strconv.FormatUint(uint64(root.counter), 10)+".bin")
-		if child.ownFile(path, nil) != nil {
+		if windowsAliasPairwiseAttempt(child, action) != nil {
 			return errOrdinary
 		}
-		destination, err := windowsAliasNew(child, path, "direct", false)
-		if err != nil {
-			if destination != nil {
-				_ = destination.close()
-			}
-			return errOrdinary
+
+	}
+	return nil
+}
+
+func windowsAliasPairwiseAttempt(child *windowsCommandWorker, action string) (failure error) {
+	finish, detailErr := child.aliasDetails(action, "pairwise", "pairwise")
+	if detailErr != nil {
+		return detailErr
+	}
+	defer func() { finish(failure == nil) }()
+	child.aliasPhase("pairwise", "prepare")
+	root := child.manifest()
+	root.counter++
+	path := filepath.Join(child.base, "pairwise-output-"+strconv.FormatUint(uint64(root.counter), 10)+".bin")
+	if child.ownFile(path, nil) != nil {
+		return errOrdinary
+	}
+	child.aliasPhase("pairwise", "destination-open")
+	destination, err := windowsAliasNew(child, path, "direct")
+	if err != nil {
+		if destination != nil {
+			_ = destination.close()
 		}
-		before := child.sources()
-		out, notice, commandErr, watchdog := windowsAliasInvoke(child, action, destination.file, destination.file)
-		closeErr := destination.close()
-		content, readErr := windowsCommandReadDefault(path)
-		expected := errAuditOutputAlias
-		if action == "export-recorded" {
-			expected = audit.ErrExportDestination
-		} else if action == "run" {
-			expected = errAuditRunOutput
-		}
-		if watchdog || closeErr != nil || readErr != nil || len(content) != 0 ||
-			!errors.Is(commandErr, expected) || len(out) != 0 || len(notice) != 0 ||
-			!child.preserved(before) || child.recordProducts() != nil {
-			return errOrdinary
-		}
+		return errOrdinary
+	}
+	child.aliasPhase("pairwise", "source-snapshot")
+	before := child.sources()
+	child.aliasPhase("pairwise", "invoke")
+	out, notice, commandErr, watchdog := windowsAliasInvoke(child, action, destination.file, destination.file)
+	closeErr := destination.close()
+	content, readErr := windowsCommandReadDefault(path)
+	expected := errAuditOutputAlias
+	if action == "export-recorded" {
+		expected = audit.ErrExportDestination
+	} else if action == "run" {
+		expected = errAuditRunOutput
+	}
+	if watchdog {
+		child.aliasPhase("pairwise", "watchdog")
+		return errOrdinary
+	}
+	if phase := windowsAliasRefusalPhase(commandErr, expected, out, notice); phase != "" {
+		child.aliasPhase("pairwise", phase)
+		return errOrdinary
+	}
+	if closeErr != nil {
+		child.aliasPhase("pairwise", "destination-cleanup")
+		return errOrdinary
+	}
+	if readErr != nil || len(content) != 0 {
+		child.aliasPhase("pairwise", "source-readback")
+		return errOrdinary
+	}
+	child.aliasPhase("pairwise", "input-preservation")
+	if !child.preserved(before) {
+		return errOrdinary
+	}
+	child.aliasPhase("pairwise", "product-inventory")
+	if child.recordProducts() != nil {
+		return errOrdinary
 	}
 	return nil
 }

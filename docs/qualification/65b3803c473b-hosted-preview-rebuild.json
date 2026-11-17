@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "scope": "hosted-unsigned-preview-rebuild",
+  "run": 44037513465,
+  "sourceCommit": "65b3803c473bd3b09b2f1e229077860501786cde",
+  "artifact": 14312424183,
+  "archiveSHA256": "67d52a84065b0f110f0948f88e6e79dfd32127fb667e01fcde3339fdc29905f1",
+  "referenceJob": 133917348115,
+  "rebuildJob": 133920601097,
+  "verifiedSubjects": 12,
+  "unsignedArchives": 10,
+  "referenceChecksumsSHA256": "9f0b2e5120173f9bf8e6b840bef66389764524ca9398c977789bb5f11407be40",
+  "fileSHA256": {
+    "BUILD-MANIFEST.json": "2714150565799e74c99aba689bf512481fc485ee819656f4e5c8b134a4781465",
+    "SHA256SUMS.txt": "9f0b2e5120173f9bf8e6b840bef66389764524ca9398c977789bb5f11407be40",
+    "accessweaver-preview-65b3803c473b-darwin-amd64.tar.gz": "d00990f2b59c8da28143945511207b2358d6fe3d84285e59fa577180e0731b72",
+    "accessweaver-preview-65b3803c473b-darwin-arm64.tar.gz": "cacf3d1dd2606475bdc96aa49dd77a32cae9aa0e68775db3ca64bbdbb6fd2ba4",
+    "accessweaver-preview-65b3803c473b-freebsd-amd64.tar.gz": "b169f770619b52034b02b8552598b672e9ef08751197e2e3b64e1ded16441421",
+    "accessweaver-preview-65b3803c473b-freebsd-arm64.tar.gz": "0393fdf75c21de8785a82ece72c21a9f51841d6e31d370f1c857f4f7eca0b9d7",
+    "accessweaver-preview-65b3803c473b-linux-amd64.tar.gz": "f4bc7b0a930fcacd842ede804f545a7966ad303cbb8816fd3d16b9e9a8b9e055",
+    "accessweaver-preview-65b3803c473b-linux-arm64.tar.gz": "ce605cf5316a5f5bc452f1297b081cc00b22d8395c1609268a16d788a8b99560",
+    "accessweaver-preview-65b3803c473b-openbsd-amd64.tar.gz": "44ba069ef276ebaede75ce17b4531b14327e0e2f3272bc3f3f1d5de3b808c4db",
+    "accessweaver-preview-65b3803c473b-openbsd-arm64.tar.gz": "bc0ec5cbee655f3d2496370b7da34fa74c33a3f60fa513bb9e5f5251d3779ebb",
+    "accessweaver-preview-65b3803c473b-windows-amd64.zip": "cf4c68845e0485971c820ac13b4142b79e96d361b8d415978fec609b5784383f",
+    "accessweaver-preview-65b3803c473b-windows-arm64.zip": "f4e98a3217625168402c9d783adb06658bc6de10f6a37924435694c530eb9648"
+  },
+  "publisherSignatureVerified": false,
+  "productionQualificationComplete": false,
+  "freshCheckoutAndCachesVerified": true,
+  "referenceAuthenticatedByHostedVerifier": true,
+  "allComparedFilesByteIdentical": true,
+  "sourceSHA256": {
+    ".github/workflows/release.yml": "73d34c6319f4e3cd672b505dc9ce13660fbe608be85ff2972bc9fbdff839a8ed",
+    "scripts/package-hosted-release.sh": "7904a0aff796e1edf4bc2a8695d9aa27d57bbcd4a01a1e06aaa32ccaa2e76a4e",
+    "scripts/package-release.sh": "467a7a8f0d3d225148e65cf2342c809cf52f50a3740400b3096e0ec890865b35",
+    "scripts/verify_release.py": "4338d95d41b2e7c3ab394a0403c1e81ac57f76e524e06f776c58b4a1b2976744",
+    "scripts/verify_release_rebuild.py": "97c9f081120517e8211480d9992e7d5070757921e0b99501008d4669a9b27c26",
+    "scripts/verify_release_provenance.py": "615133a0ac1739d9327b8a6412b2be213185b27f488d138900425834e7edd2ac"
+  }
+}

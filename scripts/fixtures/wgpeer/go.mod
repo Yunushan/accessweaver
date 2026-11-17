@@ -6,7 +6,7 @@ require golang.zx2c4.com/wireguard v0.0.0-20261024220952-b3bc704ef0ee
 
 require (
 	github.com/google/btree v1.1.2 // indirect
-	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/crypto v0.58.1-0.20261009181718-2f1f834330b2 // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/time v0.7.0 // indirect

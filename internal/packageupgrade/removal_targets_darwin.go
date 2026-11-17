@@ -194,7 +194,7 @@ func (r *removalIntentStore) verifyTargetAtNamespace(ctx context.Context, expect
 		return errors.New("removal target root changed before traversal")
 	}
 	if expected.Kind == "receipts" {
-		if e = verifyRemovalTargetNamespace(root, "receipts", r.plan); e != nil {
+		if e = verifyRemovalTargetNamespace(root, "receipts", removalPlan{Roots: []removalPlanRoot{expected}}); e != nil {
 			return e
 		}
 	}
@@ -231,7 +231,7 @@ func (r *removalIntentStore) verifyTargetAtNamespace(ctx context.Context, expect
 		return verifyRemovalTargetNamespace(parent.file, expected.Kind, namespace)
 	}
 	if expected.Kind == "receipts" {
-		return verifyRemovalTargetNamespace(root, "receipts", r.plan)
+		return verifyRemovalTargetNamespace(root, "receipts", removalPlan{Roots: []removalPlanRoot{expected}})
 	}
 	return nil
 }
@@ -249,7 +249,7 @@ func verifyRemovalTargetNamespace(dir *os.File, kind string, plan removalPlan) e
 			expected[root.Key] = true
 		}
 	}
-	if (len(expected) == 0 && kind == "receipts") || kind != "core" && kind != "incoming" && kind != "receipts" {
+	if kind != "core" && kind != "incoming" && kind != "receipts" {
 		return errors.New("invalid complete removal namespace")
 	}
 	limit := len(expected)

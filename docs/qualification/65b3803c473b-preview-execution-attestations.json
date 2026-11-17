@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "scope": "hosted-preview-packaged-execution-attestations",
+  "sourceCommit": "65b3803c473bd3b09b2f1e229077860501786cde",
+  "workflowRunId": 44037513465,
+  "targetReports": [
+    {
+      "target": "linux/amd64",
+      "job": 133920601275,
+      "artifact": 14313581407,
+      "artifactArchiveSHA256": "8977cd3d5d3bb3c267ff73a7a8d73b55ee3c60b518aa5545f493520b9e7ee729",
+      "binarySHA256": "6115addd3e65090e0777c6dde6347d66a8ebb5670e1fc4deab02bb1ad5111303",
+      "archiveSHA256": "f4bc7b0a930fcacd842ede804f545a7966ad303cbb8816fd3d16b9e9a8b9e055",
+      "packageAttestationBundleSHA256": "6ef92b7c75513f8af1c261e559f289947f274c5b0f191735248035f62e3e88bb",
+      "qualificationBundleSHA256": "693fc66789030008450fe8cd8629c6601a513ef3433de8fa7021fefadce5ebce",
+      "signedExecutionEvidenceVerified": true
+    },
+    {
+      "target": "linux/arm64",
+      "job": 133920601305,
+      "artifact": 14313406980,
+      "artifactArchiveSHA256": "2f8b49a16b9c0aafae0ad44420f1e51fc7f6c5e5b5b5b583b0ac40776c8a6aa1",
+      "binarySHA256": "1ee911e9928d84d7804c724984c76847339790efd97f14b2e1a3ce035ff35910",
+      "archiveSHA256": "ce605cf5316a5f5bc452f1297b081cc00b22d8395c1609268a16d788a8b99560",
+      "packageAttestationBundleSHA256": "6ef92b7c75513f8af1c261e559f289947f274c5b0f191735248035f62e3e88bb",
+      "qualificationBundleSHA256": "30ffc52fefa2977857501f0d5ef54fb5619cf2e987728a9e731cf606d74f536c",
+      "signedExecutionEvidenceVerified": true
+    },
+    {
+      "target": "darwin/amd64",
+      "job": 133920601236,
+      "artifact": 14313241889,
+      "artifactArchiveSHA256": "dc4ca72e1a85e75ea687e0e28cdeeca9b7a5736474ef6398315dfe420bc4c1e4",
+      "binarySHA256": "be9d4f077672ee0aab531b8fbec8684806ec453e987f0fcdab63e68653e09d55",
+      "archiveSHA256": "d00990f2b59c8da28143945511207b2358d6fe3d84285e59fa577180e0731b72",
+      "packageAttestationBundleSHA256": "6ef92b7c75513f8af1c261e559f289947f274c5b0f191735248035f62e3e88bb",
+      "qualificationBundleSHA256": "99efec1509812fead9b67da9cb4aa7560b41afa14ab8e4fbe4a9b3593b809054",
+      "signedExecutionEvidenceVerified": true
+    },
+    {
+      "target": "darwin/arm64",
+      "job": 133920601263,
+      "artifact": 14312468027,
+      "artifactArchiveSHA256": "33206a5a47c081b30c33832129f24a40f02d7adc00b56541ab52c0c639081063",
+      "binarySHA256": "b27aa3364385ed72420695f218442947a7fc7fce2740ad4908c4998e3a08cf8f",
+      "archiveSHA256": "cacf3d1dd2606475bdc96aa49dd77a32cae9aa0e68775db3ca64bbdbb6fd2ba4",
+      "packageAttestationBundleSHA256": "6ef92b7c75513f8af1c261e559f289947f274c5b0f191735248035f62e3e88bb",
+      "qualificationBundleSHA256": "44a6d8f6ad5313c6e8bc19c0b3f2387d6d71f2c389ae26ddcd50cd64ebf9f9e3",
+      "signedExecutionEvidenceVerified": true
+    },
+    {
+      "target": "freebsd/amd64",
+      "job": 133920601100,
+      "artifact": 14313366571,
+      "artifactArchiveSHA256": "dba4595d3b1c850a53909a05ec2578ca2d531724091835d77cab20ea19fcb68c",
+      "binarySHA256": "10c75bb1612785f5cfe3583beb56314b008cf55a9a54347eb2a7d47ff4846e41",
+      "archiveSHA256": "b169f770619b52034b02b8552598b672e9ef08751197e2e3b64e1ded16441421",
+      "packageAttestationBundleSHA256": "6ef92b7c75513f8af1c261e559f289947f274c5b0f191735248035f62e3e88bb",
+      "qualificationBundleSHA256": "d72ee5c89443307e4e09a4ec949a651d9b7a6d7a4395dbe039621424d1d4a81b",
+      "signedExecutionEvidenceVerified": true
+    },
+    {
+      "target": "freebsd/arm64",
+      "job": 133920601196,
+      "artifact": 14312659210,
+      "artifactArchiveSHA256": "04c0a202a9035bdcf1b7f940ef15f2338f5b96473f62ddfc46fd555773f49e60",
+      "binarySHA256": "7e7ccfb62e4f42c0c841ba99ef14904c30949eb171d91a6c798be6cb16ec450a",
+      "archiveSHA256": "0393fdf75c21de8785a82ece72c21a9f51841d6e31d370f1c857f4f7eca0b9d7",
+      "packageAttestationBundleSHA256": "6ef92b7c75513f8af1c261e559f289947f274c5b0f191735248035f62e3e88bb",
+      "qualificationBundleSHA256": "9bdc7c94d635a616fa145cbc3f7e442200b1c12851f3bed1ecf63adc1f197494",
+      "signedExecutionEvidenceVerified": true
+    },
+    {
+      "target": "openbsd/amd64",
+      "job": 133920601125,
+      "artifact": 14314016263,
+      "artifactArchiveSHA256": "cb71ec4c5cedf469124fba2dfcdafabb2e3d21dde3fa0a7f5debde2d22ae0d00",
+      "binarySHA256": "67a1c0b53763db29290ac0df49ca11ca991eb72f541bab97e314ce49b234005c",
+      "archiveSHA256": "44ba069ef276ebaede75ce17b4531b14327e0e2f3272bc3f3f1d5de3b808c4db",
+      "packageAttestationBundleSHA256": "6ef92b7c75513f8af1c261e559f289947f274c5b0f191735248035f62e3e88bb",
+      "qualificationBundleSHA256": "2a66d34c78a3a5785fdf998c7f79f44547bc290e5e4713ed8add8c156ae31389",
+      "signedExecutionEvidenceVerified": true
+    },
+    {
+      "target": "openbsd/arm64",
+      "job": 133920601193,
+      "artifact": 14314254014,
+      "artifactArchiveSHA256": "fd0835a5db6e7c600a2d3766e28575966e2e93c5859a21c55d8d1bacebd7e74c",
+      "binarySHA256": "7afc93136ed0d1b830d9a0775595c0d52e41aea807b39516b7dfe29000cfdd3d",
+      "archiveSHA256": "bc0ec5cbee655f3d2496370b7da34fa74c33a3f60fa513bb9e5f5251d3779ebb",
+      "packageAttestationBundleSHA256": "6ef92b7c75513f8af1c261e559f289947f274c5b0f191735248035f62e3e88bb",
+      "qualificationBundleSHA256": "c0f9360fec227476a9da79ba178974f43b4e4b4b6eaeec9834d3d99817229c69",
+      "signedExecutionEvidenceVerified": true
+    }
+  ],
+  "windows": [
+    {
+      "target": "windows/amd64",
+      "job": 133920601258,
+      "failedStep": "Packaged Windows read-only discovery"
+    },
+    {
+      "target": "windows/arm64",
+      "job": 133920601271,
+      "failedStep": "Packaged Windows read-only discovery"
+    }
+  ],
+  "allTenTargetsVerified": false,
+  "publisherSignatureVerified": false,
+  "productionQualificationComplete": false,
+  "sourceSHA256": {
+    ".github/workflows/release.yml": "73d34c6319f4e3cd672b505dc9ce13660fbe608be85ff2972bc9fbdff839a8ed",
+    "scripts/publish_prerelease.py": "de3bf755aca65b2527c65393e2933ef0df7dc5384c6ad80c5bd88547502dd9ed",
+    "scripts/verify_release_provenance.py": "615133a0ac1739d9327b8a6412b2be213185b27f488d138900425834e7edd2ac",
+    "scripts/check-packaged-evidence.cjs": "a7313ddf3daaa8969103a3b5afcbeb1f895ba003f2747b645bccbe9a360017d3",
+    "scripts/stage_packaged_native.py": "d24afb21bcff96f8aedc7bdc66abadf2a8b8566627354c10853a4ec5bbaad2dd"
+  },
+  "workflowConclusion": "failure",
+  "publicationVerification": "skipped"
+}

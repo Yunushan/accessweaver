@@ -454,15 +454,17 @@ def main():
     output = repo / "build/openbsd-native-checks"
     output.mkdir(mode=0o700, parents=True, exist_ok=True)
     common.owned_directory(output)
-    report = {"schemaVersion": 1, "sourceCommit": source, "target": "openbsd/" + target["arch"], "hostSDK": sdk,
-              "packages": [], "guestExecutionPassed": False, "packagedCandidateExecuted": False,
+    report = {"schemaVersion": 2 if args.packaged_candidate is not None else 1,
+              "sourceCommit": source, "target": "openbsd/" + target["arch"], "hostSDK": sdk,
+              "packages": [], "publicTestObservations": [], "guestExecutionPassed": False, "packagedCandidateExecuted": False,
               "hardwareQualificationComplete": False, "platformQualificationComplete": False,
               "productionQualificationComplete": False, "readinessGatesPromoted": 0}
     installer_vm = runtime_vm = None
     stopped, failed, phase = True, True, "source-build"
     unconfirmed_start = False
     try:
-        manifest, payload = common.build_payload(repo, capsule, source, target, args.packaged_candidate)
+        report["buildObservations"] = {}
+        manifest, payload = common.build_payload(repo, capsule, source, target, args.packaged_candidate, report["buildObservations"])
         if args.packaged_candidate is not None:
             report["packagedCandidate"] = manifest["packagedCandidate"]
         report["crossCompiledPackages"] = len(manifest["packages"])
@@ -535,8 +537,11 @@ def main():
         report["allTransportedExecutableHashesVerified"] = True
         phase = "guest-cli"
         cli = json.loads(common.run(ssh, data=f"{shlex.quote(guest + '/' + manifest['cli']['file'])} version --json\n".encode()).stdout)
-        report["packagedCandidateExecuted"] = validate_cli(cli, manifest, source, target["arch"], sdk["GOVERSION"], args.packaged_candidate is not None)
-        report.update(executedCLI=cli, cliSHA256=manifest["cli"]["sha256"])
+        archived = validate_cli(cli, manifest, source, target["arch"], sdk["GOVERSION"], args.packaged_candidate is not None)
+        if archived:
+            common.verify_packaged_update_build(ssh, guest, guest + "/" + manifest["cli"]["file"], manifest["packagedCandidate"])
+            report["updateBuildVerified"] = True
+        report.update(executedCLI=cli, cliSHA256=manifest["cli"]["sha256"], packagedCandidateExecuted=archived)
         if args.packaged_candidate is not None:
             phase = "packaged-backup-roundtrip"
             report["packagedBackupChecks"] = common.packaged_backup_checks(ssh, guest, guest + "/" + manifest["cli"]["file"])
@@ -547,6 +552,8 @@ def main():
             result = common.run(ssh, data=script.encode(), timeout=180, check=False)
             log = output / f"{target['label']}-unit-{index:02d}.log"
             log.write_bytes(result.stdout)
+            diagnostic = common.observe_output(result.stdout, manifest["testCatalogs"][package["package"]], result.returncode)
+            report["publicTestObservations"].append({"packageID": index, **diagnostic})
             report["packages"].append({**package, "returnCode": result.returncode, "elapsedSeconds": round(time.monotonic() - started, 3),
                                       "passedTestInstances": len(re.findall(rb"--- PASS:", result.stdout)),
                                       "skippedTestInstances": len(re.findall(rb"--- SKIP:", result.stdout)), "logSHA256": common.digest(log)})
@@ -557,6 +564,8 @@ def main():
         failed = False
     except Exception as error:
         report.update(failurePhase=phase, failureType=type(error).__name__)
+        if phase == "source-build":
+            report.setdefault("buildObservations", {}).update(common.build_failure_observations(error))
         print("OpenBSD qualification incomplete: " + phase + "/" + type(error).__name__, file=sys.stderr)
     finally:
         # A failed constructor may leave process ownership uncertain. Preserve

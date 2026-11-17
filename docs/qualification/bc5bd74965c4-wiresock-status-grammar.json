@@ -1,0 +1,300 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "native-wiresock-refusal-and-pinned-public-status-compatibility",
+  "sourceCommit": "bc5bd74965c497560f4c999ce0bc6af85b757d39",
+  "repository": "Yunushan/accessweaver",
+  "sourceRef": "refs/heads/codex/dns-adapter-coverage",
+  "workflow": ".github/workflows/windows-native-wiresock.yml",
+  "runID": 43889587081,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/43889587081",
+  "verifiedProviderZIPDigests": 2,
+  "verifiedNativeSourceInputsPerReport": 10,
+  "nativeResults": [
+    {
+      "sourceCommit": "bc5bd74965c497560f4c999ce0bc6af85b757d39",
+      "runID": 43889587081,
+      "architecture": "amd64",
+      "artifact": 14238691551,
+      "artifactSHA256": "4bd4e286de8f41d10c6960ae6636ae23b54538ca230361617d4c0fc70e088cde",
+      "verifiedSourceInputs": 10,
+      "sourceSHA256": {
+        "scripts/fixtures/wgpeer/main.go": "35764367c601c9d66334b44da87da07f5219403c930644fa59351042393692b2",
+        "internal/workflow/windows.ps1": "41db30f7c3d37b3bacdff07058fd09f31e32c96a72df7bf58ceecea25de966cc",
+        "scripts/fixtures/wgpeer/cmd/probe/main.go": "bcee9cc657b7acfb5edd93b34477642ddd140bc8ade6f569d44a3dc237681d37",
+        "scripts/test-windows-wiresock-evidence.ps1": "e80700088b010f197b7082ddcda7d89615402cc622b19e6c6cd769f728f248ca",
+        "scripts/fixtures/wgpeer/go.sum": "403b242c0a86f4174e9bf6af8dac1627e51e93f4e99cc5f2e1a4a05f1d86237f",
+        "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+        ".github/workflows/windows-native-wiresock.yml": "d9efcb5b054747d550bd12d8519615b8ebb8bcb41166ad27caae01143cbb02b4",
+        "scripts/fixtures/wgpeer/go.mod": "fe90be45df5c186983b038382b4fdd0b91cd42172768f82f299361b2de17b646",
+        "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+        "scripts/test-windows-native-wiresock.ps1": "c0161c6a0ee6073f1ff80f2b91e6742ad0baf181c22af16837ca926342c076cc"
+      },
+      "stage": "install",
+      "checks": {
+        "cleanVendorBaseline": true,
+        "fixtureBuilt": true,
+        "peerSelfTest": true,
+        "peerReady": true,
+        "installCompleted": false,
+        "restartRequested": false,
+        "selectedTCP4": false,
+        "selectedUDP4": false,
+        "selectedTCP6": false,
+        "selectedUDP6": false,
+        "unselectedTCP4Unreachable": false,
+        "unselectedUDP4Unreachable": false,
+        "unselectedTCP6Unreachable": false,
+        "unselectedUDP6Unreachable": false,
+        "peerStatsReadable": false,
+        "peerInitiationReceived": false,
+        "peerHandshake": false,
+        "peerReceivedBytes": false,
+        "peerSentBytes": false,
+        "disconnectCompleted": false,
+        "disconnectedTCP4Unreachable": false,
+        "disconnectedUDP4Unreachable": false,
+        "disconnectedTCP6Unreachable": false,
+        "disconnectedUDP6Unreachable": false,
+        "managedRemovalCompleted": false,
+        "vendorRemovalCompleted": true,
+        "peerExited": true,
+        "fixtureRemoved": true
+      },
+      "workflowOutcomes": {
+        "install": "connection-unconfirmed",
+        "disconnect": "not-run",
+        "remove": "succeeded",
+        "vendor-uninstall": "succeeded"
+      },
+      "connectionRecovery": {
+        "observed": true,
+        "recordedRollback": "incomplete",
+        "externalEffects": "pending",
+        "ownership": "absent",
+        "profileList": "managed-profile-observed",
+        "statusBeforeRetry": "unrecognized",
+        "rollbackFailure": "disconnect-refused",
+        "journalReferenceValid": true,
+        "retryOutcome": "recovery-idle-unconfirmed",
+        "profileListAfterRetry": "managed-profile-observed"
+      },
+      "vendorCLI": {
+        "profileList": "profile-observed",
+        "directStatus": "unrecognized",
+        "profileExport": "read",
+        "keyPairRetained": true,
+        "endpointRetained": true,
+        "prefixesRetained": true,
+        "selectedAppRetained": true
+      },
+      "productionQualificationComplete": false
+    },
+    {
+      "sourceCommit": "bc5bd74965c497560f4c999ce0bc6af85b757d39",
+      "runID": 43889587081,
+      "architecture": "arm64",
+      "artifact": 14237784188,
+      "artifactSHA256": "267ebb03b71e5d448f1a4f663839ce999104588c05fc86ca18795ab5ca01a9dd",
+      "verifiedSourceInputs": 10,
+      "sourceSHA256": {
+        "scripts/fixtures/wgpeer/main.go": "35764367c601c9d66334b44da87da07f5219403c930644fa59351042393692b2",
+        "internal/workflow/windows.ps1": "41db30f7c3d37b3bacdff07058fd09f31e32c96a72df7bf58ceecea25de966cc",
+        "scripts/fixtures/wgpeer/cmd/probe/main.go": "bcee9cc657b7acfb5edd93b34477642ddd140bc8ade6f569d44a3dc237681d37",
+        "scripts/test-windows-wiresock-evidence.ps1": "e80700088b010f197b7082ddcda7d89615402cc622b19e6c6cd769f728f248ca",
+        "scripts/fixtures/wgpeer/go.sum": "403b242c0a86f4174e9bf6af8dac1627e51e93f4e99cc5f2e1a4a05f1d86237f",
+        "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+        ".github/workflows/windows-native-wiresock.yml": "d9efcb5b054747d550bd12d8519615b8ebb8bcb41166ad27caae01143cbb02b4",
+        "scripts/fixtures/wgpeer/go.mod": "fe90be45df5c186983b038382b4fdd0b91cd42172768f82f299361b2de17b646",
+        "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+        "scripts/test-windows-native-wiresock.ps1": "c0161c6a0ee6073f1ff80f2b91e6742ad0baf181c22af16837ca926342c076cc"
+      },
+      "stage": "install",
+      "checks": {
+        "cleanVendorBaseline": true,
+        "fixtureBuilt": true,
+        "peerSelfTest": true,
+        "peerReady": true,
+        "installCompleted": false,
+        "restartRequested": false,
+        "selectedTCP4": false,
+        "selectedUDP4": false,
+        "selectedTCP6": false,
+        "selectedUDP6": false,
+        "unselectedTCP4Unreachable": false,
+        "unselectedUDP4Unreachable": false,
+        "unselectedTCP6Unreachable": false,
+        "unselectedUDP6Unreachable": false,
+        "peerStatsReadable": false,
+        "peerInitiationReceived": false,
+        "peerHandshake": false,
+        "peerReceivedBytes": false,
+        "peerSentBytes": false,
+        "disconnectCompleted": false,
+        "disconnectedTCP4Unreachable": false,
+        "disconnectedUDP4Unreachable": false,
+        "disconnectedTCP6Unreachable": false,
+        "disconnectedUDP6Unreachable": false,
+        "managedRemovalCompleted": false,
+        "vendorRemovalCompleted": true,
+        "peerExited": true,
+        "fixtureRemoved": true
+      },
+      "workflowOutcomes": {
+        "install": "connection-unconfirmed",
+        "disconnect": "not-run",
+        "remove": "succeeded",
+        "vendor-uninstall": "succeeded"
+      },
+      "connectionRecovery": {
+        "observed": true,
+        "recordedRollback": "incomplete",
+        "externalEffects": "pending",
+        "ownership": "absent",
+        "profileList": "managed-profile-observed",
+        "statusBeforeRetry": "unrecognized",
+        "rollbackFailure": "disconnect-refused",
+        "journalReferenceValid": true,
+        "retryOutcome": "recovery-idle-unconfirmed",
+        "profileListAfterRetry": "managed-profile-observed"
+      },
+      "vendorCLI": {
+        "profileList": "profile-observed",
+        "directStatus": "unrecognized",
+        "profileExport": "read",
+        "keyPairRetained": true,
+        "endpointRetained": true,
+        "prefixesRetained": true,
+        "selectedAppRetained": true
+      },
+      "productionQualificationComplete": false
+    }
+  ],
+  "publicVendorInspection": {
+    "vendorVersion": "3.8.1.1",
+    "packages": [
+      {
+        "architecture": "amd64",
+        "setupSHA256": "bd5a7eba32177b1022eda42d233b6b7848ea38604a63b0205666b4060b89a375",
+        "msiSHA256": "6f54b3fd45c2f5d99e7481d4f0456c829febb72fc640c4165d64ccfd077e07a8",
+        "cliSHA256": "6e0577742b6b71d7291ff41579614255efae11ab47b6be66b0ea9a15e10bf72f",
+        "coreSHA256": "29220ddb4cc0feee14bcd63b7b77c38c65d6e57a310dc410fe4fc048f4b90586"
+      },
+      {
+        "architecture": "arm64",
+        "setupSHA256": "74af4720a702eeff2d0586c0694f9527f604e2dd3f8ea568dca196dd69f6f06d",
+        "msiSHA256": "df7b34f6b4c650c83e998afe470927de71e26f0808ef11a5ba60bb53980ee96e",
+        "cliSHA256": "0c5cb070ab7d3a5243f1ae1dd139f563f0674dd959320c557d0154c830981d73",
+        "coreSHA256": "c07f473957f033d7e31978481a017e22f02d97108a36f5ce56b47d8b6e3a37fb"
+      }
+    ],
+    "cultures": 21,
+    "verifiedSatellitePayloads": 124,
+    "duplicateResourcePayloadsAgree": true,
+    "allArchitectureStatusAndMetadataTemplatesEqual": true,
+    "programStaticDecompilationSHA256": "5a2a95c3d23da1535b543d56e8b89e74bbf5a56cc0be5ec95e8106d96f6efa5b",
+    "programStaticDecompilationMatchesAcrossArchitectures": true,
+    "staticMetadataTool": "ILSpyCmd 9.1.0.7988",
+    "MSIManifestSHA512Verified": true,
+    "MSIDatabaseOpenedReadOnly": true,
+    "vendorCodeExecuted": false,
+    "fullDecompiledSourceRetained": false,
+    "fixture": "scripts/fixtures/wiresock-status-3.8.1.1.json",
+    "fixtureSHA256": "1b14b2cfb36242074e7023a3b733e2b133079195354415760505218019774eee",
+    "CLIReference": "https://wiresock.net/documentation/wiresock-secure-connect/wiresock-connect-cli.html",
+    "pinnedReleaseReference": "https://wiresock.net/documentation/wiresock-secure-connect/releases/"
+  },
+  "baselineCompatibilityReproduction": {
+    "baselineCommit": "7bc67588e1743c5ada48c7b7a8287d3f2ce8b6d9",
+    "cultures": 21,
+    "vendorStatusTemplates": 105,
+    "recognized": 1,
+    "unrecognized": 104,
+    "nativeSourceParserEqualsBaseline": true,
+    "vendorCodeExecuted": false
+  },
+  "correction": {
+    "testedSourceSHA256": {
+      "internal/workflow/windows.ps1": "8feeb7f7c25f64279c8b26043c3c2aa02e520643b29a7b9f4f7d16e4e4dc7371",
+      "scripts/test-windows-native-wiresock.ps1": "e107d8d27f14cfb61b49328ddb1309b93073607f682124a10e58801d7b39003b",
+      "scripts/test-windows-wiresock-status.ps1": "6cb4f70f8b3eb73a7222dec44c3a6b17b28d5d2423e441b29a0800a86aa3d03d",
+      "scripts/test-windows-workflow.ps1": "1085ca0176e27e35caf75f1df18c77445daf4f57a13ef011a28a81ee3d36c803",
+      "scripts/fixtures/wiresock-status-3.8.1.1.json": "1b14b2cfb36242074e7023a3b733e2b133079195354415760505218019774eee"
+    },
+    "requiresCompleteOutput": true,
+    "maximumOutputCharacters": 8192,
+    "requiresExactlyOneStatus": true,
+    "unknownNonemptyLinesRefused": true,
+    "mismatchedRequestedProfileRefused": true,
+    "unboundConnectedCannotConfirmRequestedProfile": true,
+    "onlyKnownCanonicalStateRetained": true,
+    "additionalOSQueries": 0,
+    "otherProductCodeChanged": false,
+    "changedConnectionCallBindsRequestedProfile": true
+  },
+  "localValidation": {
+    "scope": "final-tested-wireSock-status-sources",
+    "sourceSHA256": {
+      "internal/workflow/windows.ps1": "8feeb7f7c25f64279c8b26043c3c2aa02e520643b29a7b9f4f7d16e4e4dc7371",
+      "scripts/test-windows-native-wiresock.ps1": "e107d8d27f14cfb61b49328ddb1309b93073607f682124a10e58801d7b39003b",
+      "scripts/test-windows-wiresock-status.ps1": "6cb4f70f8b3eb73a7222dec44c3a6b17b28d5d2423e441b29a0800a86aa3d03d",
+      "scripts/test-windows-workflow.ps1": "1085ca0176e27e35caf75f1df18c77445daf4f57a13ef011a28a81ee3d36c803",
+      "scripts/fixtures/wiresock-status-3.8.1.1.json": "1b14b2cfb36242074e7023a3b733e2b133079195354415760505218019774eee"
+    },
+    "sourceUnchangedDuringTests": true,
+    "results": [
+      {
+        "scope": "pure-pinned-vendor-wiresock-status",
+        "powerShellMajor": 5,
+        "cultures": 21,
+        "checks": 1317,
+        "passed": true,
+        "vendorCodeExecuted": false,
+        "hostSettingsQueriedOrChanged": false
+      },
+      {
+        "scope": "source-selected-wiresock-connection-rollback",
+        "powerShellMajor": 5,
+        "assertions": 8,
+        "vendorCodeExecuted": false,
+        "hostSettingsQueriedOrChanged": false,
+        "passed": true
+      },
+      {
+        "scope": "pure-pinned-vendor-wiresock-status",
+        "powerShellMajor": 7,
+        "cultures": 21,
+        "checks": 1317,
+        "passed": true,
+        "vendorCodeExecuted": false,
+        "hostSettingsQueriedOrChanged": false
+      },
+      {
+        "scope": "source-selected-wiresock-connection-rollback",
+        "powerShellMajor": 7,
+        "assertions": 8,
+        "vendorCodeExecuted": false,
+        "hostSettingsQueriedOrChanged": false,
+        "passed": true
+      }
+    ],
+    "fullWorkflowScriptStockPolicyBlocked": true,
+    "fullGoWorkflowRerun": false,
+    "linuxStatusQueryTimedOut": true,
+    "nativeTrafficQualified": false
+  },
+  "interpretation": [
+    "Both native targets import a profile but fail connection confirmation. Direct/recovery status is unrecognized, rollback remains incomplete, and retry retains the managed profile.",
+    "Independent static inspection of both exact public setup pins proves that CLI GetStatus prints localized sentences rather than enum labels. The baseline parser rejects 104 of 105 real templates.",
+    "The correction recognizes verified neutral and 21-culture wording, requires complete bounded output and one state, accounts for other lines only through verified metadata grammar, and binds connection confirmation to the exact requested managed profile.",
+    "An unbound state query can identify a connected independent profile, so idle recovery refuses rather than treating that profile as idle. No profile name, address or other vendor text is returned by the projector.",
+    "Source-selected pure tests pass 1317 assertions in each Windows PowerShell version; the connection/rollback integration passes eight assertion groups in each version, including all 21 localized successful connection cases.",
+    "The full workflow script was refused by the stock host policy; it was not overridden. Broader Go tests were not rerun because the Linux status query timed out. No native process was restarted solely because observation expired.",
+    "Static compatibility is established, but these observations do not isolate the native failure cause or prove that fresh routing/traffic, cleanup or lifecycle qualification now passes."
+  ],
+  "rawJobLogsFetched": false,
+  "nativeFailureCauseIsolated": false,
+  "nativeWireSockFailureResolved": false,
+  "nativeTrafficQualified": false,
+  "productionQualificationComplete": false,
+  "readinessGatesPromoted": []
+}

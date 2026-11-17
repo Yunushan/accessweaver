@@ -98,16 +98,22 @@ def component(ref,name,kind="library",version=None):
     return result
 
 
+def go_module_environment(**settings):
+    """Resolve release inputs using the repository module and explicit flags."""
+    return dict(os.environ, GOENV="off", GOWORK="off", GOFLAGS="", **settings)
+
+
 def generate(binary,module_root,main,identity,notices,go="go"):
     binary=binary.resolve();module_root=module_root.resolve();notices=notices.resolve()
     data=read_file(binary)
-    info=json.loads(command([go,"version","-m","-json",str(binary)]))
+    env=go_module_environment()
+    info=json.loads(command([go,"version","-m","-json",str(binary)],env=env))
     settings={v["Key"]:v["Value"] for v in info["Settings"]}
     require(settings.get("CGO_ENABLED")=="0","SBOM requires the qualified CGO_ENABLED=0 build")
     for key,value in [("GOOS",identity["platform"]),("GOARCH",identity["arch"])]:require(settings.get(key)==value,"Binary target differs from build identity")
     require(info["GoVersion"]==identity["goVersion"],"Binary compiler differs from build identity")
-    require(command([go,"env","GOVERSION"]).strip()==info["GoVersion"],"SBOM source analysis must use the binary's compiler version")
-    env=dict(os.environ,GOOS=settings["GOOS"],GOARCH=settings["GOARCH"],CGO_ENABLED="0",GOFLAGS="")
+    require(command([go,"env","GOVERSION"],env=env).strip()==info["GoVersion"],"SBOM source analysis must use the binary's compiler version")
+    env.update(GOOS=settings["GOOS"],GOARCH=settings["GOARCH"],CGO_ENABLED="0")
     for key in ("GOEXPERIMENT","GOAMD64","GOARM64"):
         if key in settings:env[key]=settings[key]
     args=[go,"list","-mod=readonly","-deps","-json"]
@@ -135,7 +141,7 @@ def generate(binary,module_root,main,identity,notices,go="go"):
     refs={path:(root_ref if path==root_path else "module:"+path) for path in modules}
     refs["std"]=stdlib_ref
     edges={ref:set() for ref in refs.values()}
-    go_root=Path(command([go,"env","GOROOT"]).strip())
+    go_root=Path(command([go,"env","GOROOT"],env=env).strip())
     stdlib_version=info["GoVersion"].removeprefix("go")
     stdlib=component(stdlib_ref,"stdlib","library",stdlib_version)
     stdlib["description"]="Go standard library and runtime"
@@ -195,11 +201,33 @@ def generate(binary,module_root,main,identity,notices,go="go"):
     return document
 
 
+def license_evidence(component):
+    values = prop_map(component)
+    key = "accessweaver:license-evidence"
+    if key not in values and component.get("type") == "file" and not component.get("licenses"):
+        return []
+    raw = values.get(key)
+    require(isinstance(raw, str), "Missing component license evidence")
+    records = json.loads(raw)
+    require(isinstance(records, list) and records, "Missing component license evidence")
+    for record in records:
+        require(isinstance(record, dict) and record.keys() == {"path", "sha256"}
+                and isinstance(record["path"], str) and re.fullmatch(r"licenses/[A-Za-z0-9._-]+", record["path"])
+                and record["path"] not in ("licenses/.", "licenses/..")
+                and isinstance(record["sha256"], str) and re.fullmatch(r"[a-f0-9]{64}", record["sha256"]),
+                "Invalid license evidence")
+    return records
+
+
 def validate(document,binary,identity=None):
+    return validate_digest(document,sha(binary),identity)
+
+
+def validate_digest(document,artifact_sha256,identity=None):
     require(document.get("bomFormat")=="CycloneDX" and document.get("specVersion")=="1.6","Expected CycloneDX 1.6")
     root=document["metadata"]["component"]
     require(root.get("type")=="application","Expected an application SBOM root")
-    require(root.get("hashes")==[{"alg":"SHA-256","content":sha(binary)}],"SBOM does not match artifact bytes")
+    require(root.get("hashes")==[{"alg":"SHA-256","content":artifact_sha256}],"SBOM does not match artifact bytes")
     values=prop_map(root)
     if identity:
         require(root["version"]==identity["version"],"SBOM version mismatch")
@@ -208,12 +236,7 @@ def validate(document,binary,identity=None):
     refs=[c["bom-ref"] for c in all_components]
     require(len(refs)==len(set(refs)),"Duplicated SBOM component reference")
     for c in all_components:
-        values=prop_map(c)
-        if c.get("type")!="file" or c.get("licenses"):
-            records=json.loads(values.get("accessweaver:license-evidence","[]"))
-            require(isinstance(records,list) and records,"Missing component license evidence")
-            for record in records:
-                require(re.fullmatch(r"licenses/[A-Za-z0-9._-]+",record["path"]) and re.fullmatch(r"[a-f0-9]{64}",record["sha256"]),"Invalid license evidence")
+        license_evidence(c)
     known=set(refs);graph={}
     for edge in document.get("dependencies",[]):
         require(edge["ref"] in known and edge["ref"] not in graph,"Invalid dependency node")
@@ -241,7 +264,11 @@ def fixture_identity(binary,module_root,go):
             "builtAt":datetime.datetime.fromtimestamp(epoch,datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
 
 
-def installer(binary,payload,compiler,compiler_version,compiler_license,notices):
+WINDOWS_BUILD_INFO_PROPERTY = "accessweaver:windows-build-info-sha256"
+WINDOWS_PAYLOAD_FINGERPRINT_PROPERTY = "accessweaver:windows-staged-payload-sha256"
+
+
+def installer(binary,payload,compiler,compiler_version,compiler_license,notices,*,build_info_sha256=None,payload_fingerprint=None):
     require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+",compiler_version),"Expected the measured Inno Setup compiler version")
     result=copy.deepcopy(payload)
     application=result["metadata"]["component"]
@@ -261,6 +288,12 @@ def installer(binary,payload,compiler,compiler_version,compiler_license,notices)
     root["hashes"]=[{"alg":"SHA-256","content":sha(contents)}]
     root["properties"]=[copy.deepcopy(p) for p in application["properties"] if p["name"]!="accessweaver:inventory-scope"]
     root["properties"].extend(properties({"inventory-scope":"staged Go application and Inno Setup compiler-identified runtime; native compression/helper closure remains incomplete"}))
+    if build_info_sha256 is not None:
+        require(re.fullmatch(r"[a-f0-9]{64}",build_info_sha256),"Invalid Windows build metadata SHA-256")
+        root["properties"].append({"name":WINDOWS_BUILD_INFO_PROPERTY,"value":build_info_sha256})
+    if payload_fingerprint is not None:
+        require(re.fullmatch(r"[a-f0-9]{64}",payload_fingerprint),"Invalid Windows staged payload SHA-256")
+        root["properties"].append({"name":WINDOWS_PAYLOAD_FINGERPRINT_PROPERTY,"value":payload_fingerprint})
     result["metadata"]["component"]=root
     result["serialNumber"]="urn:uuid:"+str(uuid.uuid5(uuid.NAMESPACE_URL,"accessweaver-installer:"+sha(contents)))
     result["dependencies"].extend([{"ref":"application","dependsOn":["payload-application","inno-setup"]},{"ref":"inno-setup","dependsOn":[]}])
@@ -315,14 +348,20 @@ def main():
     parser.add_argument("--compiler",type=Path)
     parser.add_argument("--compiler-version")
     parser.add_argument("--compiler-license",type=Path)
+    parser.add_argument("--windows-build-info-sha256")
+    parser.add_argument("--windows-staged-payload-sha256")
     parser.add_argument("--notices",type=Path,required=True)
     parser.add_argument("--out",type=Path,required=True)
     parser.add_argument("--go",default="go")
     args=parser.parse_args()
     if args.payload_sbom:
         require(args.compiler and args.compiler_version and args.compiler_license,"Installer SBOM requires compiler and notice evidence")
-        document=installer(args.binary,json.loads(read_file(args.payload_sbom,16<<20)),args.compiler,args.compiler_version,args.compiler_license,args.notices)
+        document=installer(args.binary,json.loads(read_file(args.payload_sbom,16<<20)),args.compiler,args.compiler_version,args.compiler_license,args.notices,
+                           build_info_sha256=args.windows_build_info_sha256,
+                           payload_fingerprint=args.windows_staged_payload_sha256)
     else:
+        require(args.windows_build_info_sha256 is None and args.windows_staged_payload_sha256 is None,
+                "Windows build and staged payload digests require an installer SBOM")
         require(args.module_root and args.main,"Binary SBOM requires source module/main package")
         require(args.identity or args.fixture,"A build identity is required")
         identity=fixture_identity(args.binary,args.module_root,args.go) if args.fixture else json.loads(read_file(args.identity,1<<20))

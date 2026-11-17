@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "scope": "authenticated-preview-discovery-replay",
+  "archiveSourceCommit": "65b3803c473bd3b09b2f1e229077860501786cde",
+  "archiveSourceRef": "refs/heads/codex/dns-adapter-coverage",
+  "archiveWorkflowRunId": 44037513465,
+  "validatorSourceCommit": "011be258ea82e5ad3c623576a16a3d2e3c60867c",
+  "replayWorkflowRunId": 44053033249,
+  "deadlineMilliseconds": 45000,
+  "targets": [
+    {
+      "target": "windows/amd64",
+      "jobId": 133935309322,
+      "artifactId": 14314618400,
+      "artifactSHA256": "b322ba13ebfc9425c0515eb01e634208e9cbf9f96c43093e0bd3769b4185955a",
+      "discoveryReportSHA256": "f9bfb350879a592041a43202829684c214994dc1e6f3d070b6a72816753c474f",
+      "probeElapsedMilliseconds": 4859,
+      "installerRecovery": "clear",
+      "originalArchiveExecuted": true,
+      "readOnlyActionVerified": true,
+      "fullDiscoveryShapeVerified": true,
+      "ownedProcessStopped": true,
+      "ownedCapsuleRemoved": true,
+      "serviceInspectionSucceeded": true,
+      "taskInspectionSucceeded": true,
+      "settingsChanged": false,
+      "exactReplayBindingVerified": true
+    },
+    {
+      "target": "windows/arm64",
+      "jobId": 133935309723,
+      "artifactId": 14316235853,
+      "artifactSHA256": "a35c99c3aea526b3f048dde6629a3c9bea484e2d5ac68ea6c3a2df40459e9b3a",
+      "discoveryReportSHA256": "231debc7ad1166843cacf2c3bd64bd2c71a225e84249e2d278b8af65fb974553",
+      "probeElapsedMilliseconds": 7898,
+      "installerRecovery": "clear",
+      "originalArchiveExecuted": true,
+      "readOnlyActionVerified": true,
+      "fullDiscoveryShapeVerified": true,
+      "ownedProcessStopped": true,
+      "ownedCapsuleRemoved": true,
+      "serviceInspectionSucceeded": true,
+      "taskInspectionSucceeded": true,
+      "settingsChanged": false,
+      "exactReplayBindingVerified": true
+    }
+  ],
+  "productionQualificationComplete": false
+}

@@ -27,6 +27,29 @@ func makeServer(t *testing.T) *Server {
 	return s
 }
 
+func TestRuntimeStatusOmitsLogsOnlyWhenRequested(t *testing.T) {
+	s := makeServer(t)
+	for _, test := range []struct {
+		path string
+		log  string
+	}{
+		{"/api/v1/runtime", "[]"},
+		{"/api/v1/runtime?logs=0", "null"},
+	} {
+		w := request(t, s, http.MethodGet, test.path, nil, s.Token, "127.0.0.1:54321")
+		var response struct {
+			State string          `json:"state"`
+			Log   json.RawMessage `json:"log"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || w.Code != http.StatusOK {
+			t.Fatalf("%s: %d %v", test.path, w.Code, err)
+		}
+		if response.State != "stopped" || string(response.Log) != test.log {
+			t.Fatalf("%s: unexpected runtime response: %+v", test.path, response)
+		}
+	}
+}
+
 func TestBootstrapUsesRuntimeBuildIdentity(t *testing.T) {
 	s := makeServer(t)
 	previous := buildinfo.Version

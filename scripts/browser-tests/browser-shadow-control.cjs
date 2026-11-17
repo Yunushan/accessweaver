@@ -1,0 +1,116 @@
+// One-property rendering control on a complete owned application fixture.
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path'),{spawn,execFileSync}=require('node:child_process'),{createHash}=require('node:crypto'),{performance}=require('node:perf_hooks');
+const P=require('./desktop-performance.cjs'),T=require('./browser-timing.cjs'),C=require('./browser-control.cjs'),{BrowserResources}=require('./browser-resources.cjs'),{JobCpu,emptyChecks,checkNames,failureStage}=require('./job-cpu.cjs');
+const variants=['original','without-core-and-modal-shadow','without-other-decorative-shadows','without-box-shadow'];
+const stages=['environment','controller','browser','startup','profiles','editor','close','complete'];
+const cleanupNames=['contextClosed','browserStopped','controllerStopped','fixtureRemoved'];
+const styleFields=['installed','attached','hrefMatches','sheetReady','bodyAbsentAtMarker','readyAtMs','failed'];
+const controlStylesheetPath='/__accessweaver-owned-shadow.css';
+const controlPattern=/^http:\/\/127\.0\.0\.1:[0-9]+\/__accessweaver-owned-shadow\.css$/;
+const sources=['scripts/browser-tests/browser-shadow-control.cjs','scripts/browser-tests/browser-shadow-control.test.cjs','scripts/browser-tests/browser-shadow-control.spec.cjs','scripts/browser-tests/shadow.config.cjs','scripts/browser-tests/playwright.config.cjs','scripts/browser-tests/browser-control.cjs','scripts/browser-tests/desktop-performance.cjs','scripts/browser-tests/browser-timing.cjs','scripts/browser-tests/browser-resources.cjs','scripts/browser-tests/browser-memory.cjs','scripts/browser-tests/job-cpu.cjs','scripts/browser-tests/browser-native-binary.cjs','scripts/browser-tests/check-image-environment.cjs','scripts/browser-tests/performance-budgets.json','scripts/browser-tests/package-lock.json','scripts/check-native-environment.cjs','.github/workflows/browser-shadow.yml','internal/api/server.go','internal/profile/store.go','web/app.js','web/app.css','web/index.html','web/locales.js','web/system.js','go.mod','go.sum'];
+const styles={original:'/* owned box-shadow control: original */','without-core-and-modal-shadow':'.core-symbol,.modal-card{box-shadow:none!important}','without-other-decorative-shadows':'.brand-mark,.online-dot,.topbar-secure-dot,.btn-primary,.orbit-node,#toast,.sidebar{box-shadow:none!important}','without-box-shadow':'*,*::before,*::after{box-shadow:none!important}'};
+function matchesShadowFixture(css) {
+  const declared = new Set();
+  for (const [, selectors, declarations] of css.matchAll(/([^{}]+)\{([^{}]*?)\}/g)) {
+    if (!/(?:^|;)\s*box-shadow\s*:/.test(declarations)) continue;
+    for (const selector of selectors.split(',')) declared.add(selector.trim().replace(/:hover$/, ''));
+  }
+  if (declared.size === 0) return false;
+
+  const decorativeGroups = ['without-core-and-modal-shadow', 'without-other-decorative-shadows'];
+  const selected = ['.nav-item.active', '.profile-active'];
+  const expected = selected.concat(...decorativeGroups.map(variant => styles[variant].split('{')[0].split(',')));
+  assert.deepEqual([...declared].sort(), expected.sort(), 'Unexpected shadow fixture stylesheet');
+  return true;
+}
+const controlMarkerPath='/__accessweaver-owned-shadow-ready.js';
+const markerPattern=/^http:\/\/127\.0\.0\.1:[0-9]+\/__accessweaver-owned-shadow-ready\.js$/;
+const documentPattern=/^http:\/\/127\.0\.0\.1:[0-9]+\/$/;
+const documentBoundary='<link rel="stylesheet" href="app.css">';
+const headInsertion=`<link id="accessweaver-owned-shadow-control" rel="stylesheet" href="${controlStylesheetPath}"><script src="${controlMarkerPath}"></script>\n`;
+const securityHeaders={'x-content-type-options':'nosniff','x-frame-options':'DENY','referrer-policy':'no-referrer','cross-origin-resource-policy':'same-origin','content-security-policy':"default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"};
+function securityHeadersMatch(headers){return !!headers&&Object.entries(securityHeaders).every(([name,value])=>headers[name]===value)}
+function instrumentDocument(body){assert.ok(typeof body==='string'&&Buffer.byteLength(body)>0&&Buffer.byteLength(body)<=1048576);assert.equal(body.split(documentBoundary).length,2,'One original stylesheet boundary required');assert.ok(body.indexOf('<meta charset="utf-8">')>=0&&!body.includes('accessweaver-owned-shadow-control')&&body.indexOf('<meta charset="utf-8">')<body.indexOf(documentBoundary)&&body.indexOf(documentBoundary)<body.indexOf('<body>'),'Fixed parser insertion order required');return body.replace(documentBoundary,headInsertion+documentBoundary)}
+async function prepareDocumentResponse(response,originalDocument){
+ assert.equal(response.status(),200);const headers=response.headers();assert.ok(securityHeadersMatch(headers),'Original document security policy required');const body=await response.body();assert.ok(Buffer.isBuffer(body)&&body.length>0&&body.length<=1048576);assert.equal(createHash('sha256').update(body).digest('hex'),createHash('sha256').update(originalDocument).digest('hex'),'Original source document required');const modified=instrumentDocument(originalDocument);return {headers:{...headers,'content-length':String(Buffer.byteLength(modified))},body:modified};
+}
+// This external classic script is parser-created after the fixture stylesheet
+// and before the original app stylesheet/scripts/body. No inline script/style
+// or response-policy waiver is involved. It owns no timer or event handler.
+const markerTemplate=String.raw`(()=>{
+ const href=STYLESHEET_PATH,expectedRules=EXPECTED_RULES,expectedSelector=EXPECTED_SELECTOR;
+ const canonical=value=>value.split(',').map(s=>s.trim()).map(s=>s==='*::before'?'::before':s==='*::after'?'::after':s).join(',');
+ let node=null,sheetReady=false,bodyAbsentAtMarker=false,readyAtMs=null,failed=false;
+ try{node=document.getElementById('accessweaver-owned-shadow-control');const sheet=node?.sheet,rules=sheet?.cssRules;
+  sheetReady=!!node&&node.getAttribute('rel')==='stylesheet'&&node.getAttribute('href')===href&&sheet?.ownerNode===node&&sheet.disabled===false&&rules.length===expectedRules&&(expectedRules===0||canonical(rules[0].selectorText)===canonical(expectedSelector)&&rules[0].style.getPropertyValue('box-shadow')==='none'&&rules[0].style.getPropertyPriority('box-shadow')==='important');
+  bodyAbsentAtMarker=document.body===null;const at=performance.now();if(typeof at==='number'&&Number.isFinite(at)&&at>=0&&at<=Number.MAX_SAFE_INTEGER)readyAtMs=at;else failed=true;
+ }catch{failed=true}
+ const capture=()=>{let attached=false,hrefMatches=false;try{attached=node!==null&&node.parentNode===document.head;hrefMatches=node!==null&&node.getAttribute('href')===href}catch{failed=true}return {installed:node!==null,attached,hrefMatches,sheetReady,bodyAbsentAtMarker,readyAtMs,failed}};
+ Object.defineProperty(globalThis,'__accessweaverShadowControl',{configurable:false,value:Object.freeze({capture})});
+})();`;
+function markerSource(variant){assert.ok(variants.includes(variant),'Fixed shadow variant required');return markerTemplate.replace('STYLESHEET_PATH',JSON.stringify(controlStylesheetPath)).replace('EXPECTED_RULES',variant==='original'?'0':'1').replace('EXPECTED_SELECTOR',JSON.stringify(variant==='original'?'':styles[variant].split('{')[0]))}
+function shadowProjection({variant,phase}){
+ if(!['original','without-core-and-modal-shadow','without-other-decorative-shadows','without-box-shadow'].includes(variant)||!['startup','editor'].includes(phase))return [];
+ const selectors=phase==='startup'?['.core-symbol','.brand-mark','.btn-primary','.online-dot','.topbar-secure-dot','.orbit-node','.nav-item.active']:['#editor-modal .modal-card'];
+ return selectors.map(selector=>{const decorative=selector!=='.nav-item.active',coreOrModal=selector==='.core-symbol'||selector==='#editor-modal .modal-card',none=variant==='without-box-shadow'||decorative&&(variant==='without-core-and-modal-shadow'?coreOrModal:variant==='without-other-decorative-shadows'&&!coreOrModal),node=document.querySelector(selector);return !!node&&(getComputedStyle(node).boxShadow==='none')===none});
+}
+function allowed(env=process.env,platform=process.platform){return platform==='linux'&&env.GITHUB_ACTIONS==='true'&&env.CI==='true'&&env.ACCESSWEAVER_BROWSER_SHADOW==='1'&&env.ACCESSWEAVER_JOB_CPU_ACCOUNTING==='required'}
+function empty(){return {stage:'environment',failureKind:'none',profilesRendered:0,controlStylesheetRequests:0,controlMarkerRequests:0,documentRequests:0,documentSourceMatched:false,documentSecurityHeadersPreserved:false,timing:T.empty(),styleState:null,shadowChecks:{startup:[false,false,false,false,false,false,false],editor:[false]},browserChecks:{beforeStartup:false,afterEditor:false},jobCpuChecks:emptyChecks(),jobCpuFailureStage:0,browserFailureStage:0,cleanup:Object.fromEntries(cleanupNames.map(k=>[k,false]))}}
+function keys(v,names){assert.ok(v&&typeof v==='object');assert.deepEqual(Object.keys(v).sort(),[...names].sort())}
+const numeric=n=>typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=Number.MAX_SAFE_INTEGER;
+const sha=n=>typeof n==='string'&&/^[a-f0-9]{64}$/.test(n);
+function validate(v){
+ keys(v,['stage','failureKind','profilesRendered','controlStylesheetRequests','controlMarkerRequests','documentRequests','documentSourceMatched','documentSecurityHeadersPreserved','timing','styleState','shadowChecks','browserChecks','jobCpuChecks','jobCpuFailureStage','browserFailureStage','cleanup']);assert.ok(stages.includes(v.stage)&&P.failureKinds.includes(v.failureKind)&&Number.isInteger(v.profilesRendered)&&v.profilesRendered>=0&&v.profilesRendered<=256);T.validate(v.timing);
+ for(const k of ['controlStylesheetRequests','controlMarkerRequests','documentRequests'])assert.ok(Number.isInteger(v[k])&&v[k]>=0&&v[k]<=2);for(const k of ['documentSourceMatched','documentSecurityHeadersPreserved'])assert.ok(typeof v[k]==='boolean');
+ if(v.styleState!==null){const s=v.styleState;keys(s,styleFields);for(const k of styleFields.filter(k=>k!=='readyAtMs'))assert.ok(typeof s[k]==='boolean');assert.ok(s.readyAtMs===null||numeric(s.readyAtMs));if(!s.installed)assert.ok(!s.attached&&!s.hrefMatches&&!s.sheetReady)}
+ keys(v.shadowChecks,['startup','editor']);for(const [phase,rows] of Object.entries(v.shadowChecks))assert.ok(Array.isArray(rows)&&rows.length===(phase==='startup'?7:1)&&rows.every(n=>typeof n==='boolean'));
+ for(const [k,names] of [['browserChecks',['beforeStartup','afterEditor']],['jobCpuChecks',checkNames],['cleanup',cleanupNames]]){keys(v[k],names);assert.ok(Object.values(v[k]).every(n=>typeof n==='boolean'))}
+ for(const k of ['jobCpuFailureStage','browserFailureStage'])assert.ok(Number.isInteger(v[k])&&v[k]>=0&&v[k]<=9);
+}
+function complete(v){
+ validate(v);const s=v.styleState;return v.stage==='complete'&&v.failureKind==='none'&&v.profilesRendered===256&&v.controlStylesheetRequests===1&&v.controlMarkerRequests===1&&v.documentRequests===1&&v.documentSourceMatched&&v.documentSecurityHeadersPreserved&&T.startupComplete(v.timing.startup)&&v.timing.startupJobCpu!==null&&Object.values(v.timing.dashboard).every(numeric)&&v.timing.editor.length===10&&s!==null&&s.installed&&s.attached&&s.hrefMatches&&s.sheetReady&&s.bodyAbsentAtMarker&&s.readyAtMs!==null&&s.readyAtMs<=v.timing.startup.domContentLoadedMs&&s.readyAtMs<=v.timing.startup.readyObservation.firstReadyMs&&!s.failed&&Object.values(v.shadowChecks).every(rows=>rows.every(Boolean))&&Object.values(v.browserChecks).every(Boolean)&&Object.values(v.jobCpuChecks).every(Boolean)&&!v.jobCpuFailureStage&&!v.browserFailureStage&&Object.values(v.cleanup).every(Boolean);
+}
+async function hash(file,cap){const fd=await fs.open(file,'r');try{const a=await fd.stat();assert.ok(a.isFile()&&a.size>0&&a.size<=cap);const h=createHash('sha256'),buffer=Buffer.alloc(65536);let size=0;for(;;){const n=await fd.read(buffer,0,Math.min(buffer.length,cap-size+1),null);if(!n.bytesRead)break;size+=n.bytesRead;assert.ok(size<=cap);h.update(buffer.subarray(0,n.bytesRead))}const b=await fd.stat();assert.ok(size===a.size&&a.dev===b.dev&&a.ino===b.ino&&a.size===b.size&&a.mtimeMs===b.mtimeMs);return h.digest('hex')}finally{await fd.close()}}
+async function writeReport(repo,source,binarySHA256,project,architecture,variant,value,environment){
+ validate(value);assert.ok(/^[a-f0-9]{40}$/.test(source)&&(binarySHA256===null||sha(binarySHA256))&&['chromium','firefox','webkit'].includes(project)&&['amd64','arm64'].includes(architecture)&&variants.includes(variant));keys(environment,['platform','architecture','node','playwright']);assert.deepEqual(environment,{platform:'linux',architecture:architecture==='amd64'?'x64':'arm64',node:'v26.8.2',playwright:require('./package-lock.json').packages[''].devDependencies['@playwright/test']});
+ const snapshot=JSON.parse(JSON.stringify(value)),sourceSHA256={};for(const file of sources)sourceSHA256[file]=await hash(path.join(repo,file),1<<20);if(binarySHA256!==null)assert.equal(await hash(path.join(repo,'build/browser-tests/accessweaver'),128<<20),binarySHA256);
+ const done=binarySHA256!==null&&complete(snapshot),report={schemaVersion:4,sourceCommit:source,sourceSHA256,binarySHA256,project,architecture,variant,environment:{...environment},scope:'owned-box-shadow-control',driver:'playwright-test',mode:'diagnostic-only',overrideSHA256:createHash('sha256').update(styles[variant]).digest('hex'),documentSHA256:createHash('sha256').update(instrumentDocument(await fs.readFile(path.join(repo,'web/index.html'),'utf8'))).digest('hex'),markerSHA256:createHash('sha256').update(markerSource(variant)).digest('hex'),applicationScriptIntercepted:false,applicationStylesheetIntercepted:false,apiIntercepted:false,controlStylesheetIntercepted:true,controlStylesheetTimingUsed:false,controlMarkerIntercepted:true,controlMarkerNetworkTimingUsed:false,applicationDocumentModified:true,orderingProof:'parser-stylesheet-marker-before-body',...snapshot,complete:done,qualificationCredit:false,workingDaySoakQualified:false,nativeInstalledQualified:false,productionQualificationComplete:false};
+ const raw=JSON.stringify(report)+'\n';assert.ok(Buffer.byteLength(raw)<=32768);const parent=path.join(repo,'build/browser-shadow');await fs.mkdir(parent,{recursive:true,mode:0o700});const info=await fs.lstat(parent),real=await fs.realpath(parent);assert.ok(info.isDirectory()&&!info.isSymbolicLink()&&path.dirname(real)===await fs.realpath(path.join(repo,'build')));const fd=await fs.open(path.join(real,'status.json'),'wx',0o600);try{await fd.writeFile(raw,'utf8')}finally{await fd.close()}return done;
+}
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function run({variant=process.env.SHADOW_VARIANT,referenceBrowser,launchOptions={},headless=true,channel,contextOptions={},viewport={width:1280,height:900}}={}){
+ assert.ok(allowed(),'Explicit hosted Linux shadow diagnostic required');assert.ok(referenceBrowser&&referenceBrowser.isConnected(),'Test-runner browser fixture required');assert.ok(variants.includes(variant),'Fixed shadow variant required');assert.equal(headless,true);assert.ok(!channel);assert.deepEqual(viewport,{width:1280,height:900});
+ const repo=path.resolve(__dirname,'../..'),source=process.env.GITHUB_SHA,project=process.env.BROWSER,arch=process.env.ACCESSWEAVER_EXPECT_GOARCH,v=empty();assert.ok(/^[a-f0-9]{40}$/.test(source)&&['chromium','firefox','webkit'].includes(project)&&['amd64','arm64'].includes(arch));assert.equal(process.getuid(),1001);assert.equal(execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim(),source);assert.equal(execFileSync('git',['status','--porcelain=v1'],{cwd:repo,encoding:'utf8'}).trim(),'');
+ const binary=path.join(repo,'build/browser-tests/accessweaver'),parent=path.join(repo,'build/browser-shadow-state');let binarySHA256=null,home,child,server,browserChild,context,job,observer;let output='',startFailed=false;
+ try{
+  const stylesheet = await fs.readFile(path.join(repo, 'web/app.css'), 'utf8');
+  assert.ok(matchesShadowFixture(stylesheet), 'Use a revision with the original shadow surfaces for this diagnostic');
+  v.stage='controller';binarySHA256=await hash(binary,128<<20);const build=JSON.parse(execFileSync(binary,['version','--json'],{encoding:'utf8',timeout:10000,maxBuffer:16384}));assert.ok(build.commit===source&&build.sourceState==='clean'&&build.platform==='linux'&&build.arch===arch&&build.goVersion==='go1.27.4');
+  await fs.mkdir(parent,{recursive:true,mode:0o700});home=await fs.mkdtemp(path.join(parent,'case-'));await fs.mkdir(path.join(home,'cache'),{mode:0o700});await P.seedPerformanceProfiles(home);
+  child=spawn(binary,['ui'],{stdio:['ignore','pipe','pipe'],env:{...process.env,ACCESSWEAVER_HOME:path.join(home,'state'),ACCESSWEAVER_NO_BROWSER:'1',XDG_CACHE_HOME:path.join(home,'cache'),LOCALAPPDATA:path.join(home,'cache')}});child.once('error',()=>{startFailed=true});for(const stream of [child.stdout,child.stderr])stream?.on('data',data=>{output=(output+data.toString()).slice(-65536)});
+  const deadline=performance.now()+15000;let launcher;while(!(launcher=output.match(/Open this private launch file in your browser: (file:[^\r\n]+)/)?.[1])){assert.ok(!startFailed&&child.exitCode===null&&child.signalCode===null&&performance.now()<deadline,'Owned controller startup failed');await pause(25)}
+  v.stage='browser';const playwright=require('@playwright/test');server=await playwright[project].launchServer({...launchOptions,headless,channel,host:'127.0.0.1',timeout:30000});browserChild=server.process();const browser=await playwright[project].connect(server.wsEndpoint(),{timeout:30000});context=await browser.newContext({...contextOptions,viewport});
+  const originalDocument=await fs.readFile(path.join(repo,'web/index.html'),'utf8');instrumentDocument(originalDocument);
+  await context.route(controlPattern,async route=>{assert.equal(route.request().method(),'GET');v.controlStylesheetRequests++;assert.equal(v.controlStylesheetRequests,1);await route.fulfill({status:200,contentType:'text/css',body:styles[variant]})});
+  await context.route(markerPattern,async route=>{assert.equal(route.request().method(),'GET');v.controlMarkerRequests++;assert.equal(v.controlMarkerRequests,1);await route.fulfill({status:200,contentType:'application/javascript',body:markerSource(variant)})});
+  await context.route(documentPattern,async route=>{assert.equal(route.request().method(),'GET');v.documentRequests++;assert.equal(v.documentRequests,1);const response=await route.fetch({timeout:10000,maxRedirects:0});const prepared=await prepareDocumentResponse(response,originalDocument);v.documentSourceMatched=true;await route.fulfill({response,...prepared});v.documentSecurityHeadersPreserved=true});const page=await context.newPage();
+  await page.addInitScript({content:'('+T.installStartupClock.toString()+')('+P.dashboardReady.toString()+',256)'});
+  const pageBytes=Number(execFileSync('/usr/bin/getconf',['PAGESIZE'],{encoding:'utf8',timeout:2000,maxBuffer:128}).trim());assert.ok(Number.isSafeInteger(pageBytes)&&pageBytes>0);job=await JobCpu.open({children:[child,browserChild],checks:v.jobCpuChecks});observer=new BrowserResources(browserChild,pageBytes,P.parseStat);await observer.snapshot();v.browserChecks.beforeStartup=true;
+  v.stage='startup';const before=await job.sample(),started=performance.now();await page.goto(launcher);const navigated=performance.now();await page.waitForFunction(P.dashboardReady,256,{timeout:10000});const ready=performance.now();await P.paint(page);const painted=performance.now();v.timing.dashboard={navigationMs:navigated-started,applicationMs:ready-navigated,paintMs:painted-ready};v.timing.startupJobCpu=T.startupCpuInterval(before,await job.sample());v.timing.startup=await page.evaluate(T.captureStartup);v.styleState=await page.evaluate(()=>globalThis.__accessweaverShadowControl.capture());v.shadowChecks.startup=await page.evaluate(shadowProjection,{variant,phase:'startup'});
+  v.stage='profiles';await page.locator('.nav-item[data-view="profiles"]').click();await P.paint(page);v.profilesRendered=await page.locator('#all-profiles .profile-card').count();assert.equal(v.profilesRendered,256);
+  v.stage='editor';for(let i=0;i<10;i++){const start=performance.now();await page.locator('#new-profile').click();const acted=performance.now();await page.locator('#editor-modal').waitFor({state:'visible'});const visible=performance.now();await P.paint(page);const done=performance.now();v.timing.editor.push({actionMs:acted-start,visibilityMs:visible-acted,paintMs:done-visible,totalMs:done-start});if(i===9)v.shadowChecks.editor=await page.evaluate(shadowProjection,{variant,phase:'editor'});await page.locator('#close-editor').click();await page.locator('#editor-modal').waitFor({state:'hidden'})}
+  v.styleState=await page.evaluate(()=>globalThis.__accessweaverShadowControl.capture());await observer.snapshot();v.browserChecks.afterEditor=true;await job.sample();v.stage='close';
+ }catch(error){v.failureKind=P.classifyFailure(error);if(error?.jobCpuStage)v.jobCpuFailureStage=failureStage(error);v.browserFailureStage=observer?.failureStage||0}
+ finally{
+  if(job)try{await job.close()}catch(error){v.failureKind=P.classifyFailure(error);v.jobCpuFailureStage=failureStage(error)}
+  try{if(context){await context.close();v.cleanup.contextClosed=true}}catch(error){v.failureKind=P.classifyFailure(error)}
+  try{if(server)await server.close()}catch(error){v.failureKind=P.classifyFailure(error)}
+  try{v.cleanup.browserStopped=await C.stopChild(browserChild)}catch(error){v.failureKind=P.classifyFailure(error)}
+  try{v.cleanup.controllerStopped=await C.stopChild(child)}catch(error){v.failureKind=P.classifyFailure(error)}
+  try{if(home){assert.ok(v.cleanup.controllerStopped);const info=await fs.lstat(home),real=await fs.realpath(home),base=await fs.realpath(parent);assert.ok(info.isDirectory()&&!info.isSymbolicLink()&&path.dirname(real)===base&&path.basename(real).startsWith('case-'));await fs.rm(real,{recursive:true,force:true})}v.cleanup.fixtureRemoved=true}catch(error){v.failureKind=P.classifyFailure(error)}
+ }
+ if(v.failureKind==='none'&&Object.values(v.cleanup).every(Boolean))v.stage='complete';
+ const done=await writeReport(repo,source,binarySHA256,project,arch,variant,v,{platform:process.platform,architecture:process.arch,node:process.version,playwright:require('@playwright/test/package.json').version});assert.ok(done,'Shadow control observation incomplete');
+}
+module.exports={allowed,empty,validate,complete,markerSource,markerTemplate,instrumentDocument,prepareDocumentResponse,headInsertion,documentBoundary,securityHeaders,securityHeadersMatch,shadowProjection,styles,variants,styleFields,controlStylesheetPath,controlMarkerPath,controlPattern,markerPattern,documentPattern,stages,cleanupNames,sources,matchesShadowFixture,writeReport,run};

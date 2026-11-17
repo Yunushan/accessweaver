@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "scope": "synthetic-sni-diagnostic-acceptance-equivalence",
+  "baselineCommit": "cb984fd58ea27eb91b45b00af9db294acc0c6431",
+  "cases": 9536,
+  "decoded": 2006,
+  "refused": 7530,
+  "passed": true,
+  "nativeDataUsed": false,
+  "nativeNetworkUsed": false,
+  "productionQualificationComplete": false,
+  "candidateSourceSHA256": {
+    "scripts/dns-wire-evidence.cjs": "65e27753c9d45ab72c43f93e6bd89065308b7d9d5967a8a16a265f025d574122",
+    "scripts/dns-wire-evidence.test.cjs": "e225c6e3c363e18a5a7806781d1016f2d45995aae022a4a445ed50794687ddb4",
+    "scripts/native-doh-netevent-wire.ps1": "78cb1126160a67f7f7f4b4b66d2061a33517436a6e0e2ea02aa7ec9429654c69",
+    "scripts/test-native-doh-netevent-contracts.ps1": "58eddbf83ca0255146ed38bb2d08f6e753dd9beb1ed4a458248910cbb6695fd3"
+  },
+  "pureDecoderCases": 44,
+  "hostedProjectionCasesPrepared": 35,
+  "method": {
+    "factory": "scripts/dns-wire-evidence.test.cjs",
+    "providerFamilies": 4,
+    "byteOrders": 2,
+    "additionalSNIValuesPerCombination": 5,
+    "everyProperPrefix": true,
+    "bitMutationsPerCombination": 512,
+    "mutationOffset": "(n*97+13)%capture.length",
+    "mutationBit": "1<<(n%8)",
+    "comparison": "same decoded/refused outcome; identical complete public evidence for every decoded case",
+    "finiteEvidenceOnly": true
+  },
+  "acceptanceBroadened": false,
+  "nativeQualificationPerformed": false,
+  "formalGatesPromoted": 0
+}

@@ -1,17 +1,136 @@
+import contextlib
 import hashlib
+import io
+import json
 import os
+import signal
 from pathlib import Path
 import stat
+import subprocess
+import sys
 import tarfile
 import tempfile
 import time
 import unittest
 import zipfile
+from unittest.mock import patch
 
-from release_archive import epoch_from_timestamp, timestamp, write_archive
+from release_archive import (epoch_from_timestamp, publish_release_directory, stage_release_documents,
+                             timestamp, tracked_release_documents, validate_release_binaries, write_archive)
+import verify_release as release
 
 
 class ArchiveTests(unittest.TestCase):
+    def test_document_inventory_excludes_ignored_and_untracked_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            subprocess.run(["git", "init", "-q", root], check=True)
+            (root / "docs").mkdir()
+            (root / "docs/.gitignore").write_text("*.local.json\n", encoding="utf-8")
+            manual = root / "docs/guide.md"
+            manual.write_text("Tracked manual", encoding="utf-8")
+            (root / "docs/notes.local.json").write_text("private fixture", encoding="utf-8")
+            (root / "docs/draft.md").write_text("untracked fixture", encoding="utf-8")
+            subprocess.run(["git", "add", "docs/.gitignore", "docs/guide.md"], cwd=root, check=True)
+            self.assertEqual(tracked_release_documents(root), [Path("docs/.gitignore"), Path("docs/guide.md")])
+            stage = root / "stage"
+            stage_release_documents(root, stage)
+            self.assertEqual(sorted(p.relative_to(stage).as_posix() for p in stage.rglob("*") if p.is_file()),
+                             ["docs/.gitignore", "docs/guide.md"])
+            self.assertEqual((stage / "docs/guide.md").read_bytes(), manual.read_bytes())
+            with self.assertRaises(FileExistsError):
+                stage_release_documents(root, stage)
+            manual.unlink()
+            with self.assertRaisesRegex(ValueError, "Tracked release documentation"):
+                tracked_release_documents(root)
+
+    @unittest.skipUnless(release.HOST_PLATFORM.startswith(("linux", "win32", "darwin", "freebsd", "openbsd")),
+                         "requires supported directory publication")
+    def test_release_directory_publication_preserves_existing_output(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            staged, destination = root / "staged", root / "preview"
+            names = {"BUILD-MANIFEST.json", "SHA256SUMS.txt", "candidate.zip"}
+
+            def stage():
+                staged.mkdir()
+                for name in names:
+                    (staged / name).write_bytes(name.encode())
+
+            stage()
+            publish_release_directory(staged, destination, names)
+            self.assertFalse(staged.exists())
+            self.assertEqual({path.name for path in destination.iterdir()}, names)
+
+            stage()
+            publish_release_directory(staged, destination, names)
+            self.assertTrue(staged.is_dir())
+            (staged / "candidate.zip").write_bytes(b"different")
+            with self.assertRaisesRegex(ValueError, "different bytes"):
+                publish_release_directory(staged, destination, names)
+            self.assertEqual((destination / "candidate.zip").read_bytes(), b"candidate.zip")
+            (destination / "unexpected").touch()
+            with self.assertRaisesRegex(ValueError, "different inventory"):
+                publish_release_directory(staged, destination, names)
+            self.assertTrue((destination / "unexpected").is_file())
+            empty = root / "empty"
+            empty.mkdir()
+            with self.assertRaisesRegex(ValueError, "different inventory"):
+                publish_release_directory(staged, empty, names)
+            self.assertEqual(list(empty.iterdir()), [])
+
+    def test_release_requires_exact_nonempty_target_inventory(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            names = [f"accessweaver-{system}-{arch}" + (".exe" if system == "windows" else "")
+                     for system, arch in sorted(release.TARGETS)]
+            for name in names + ["BUILD-INFO.json"]:
+                (root / name).write_bytes(b"inert fixture")
+            self.assertEqual([path.name for path in validate_release_binaries(root)], sorted(names))
+            windows = root / "accessweaver-windows-amd64.exe"
+            windows.rename(windows.with_suffix(""))
+            with self.assertRaisesRegex(ValueError, "exactly the ten"):
+                validate_release_binaries(root)
+            windows.with_suffix("").rename(windows)
+            windows.write_bytes(b"")
+            with self.assertRaisesRegex(ValueError, "bounded regular release file"):
+                validate_release_binaries(root)
+
+    @unittest.skipUnless(sys.platform.startswith(("linux", "darwin", "freebsd", "openbsd")),
+                         "requires POSIX process termination and directory publication")
+    def test_process_kill_on_each_side_of_release_publication(self):
+        script = """
+import os
+from pathlib import Path
+import signal
+import sys
+from release_archive import publish_release_directory
+
+root = Path(sys.argv[1])
+stage = root / "private"
+stage.mkdir()
+(stage / "candidate.zip").write_bytes(b"complete")
+if sys.argv[2] == "before":
+    os.kill(os.getpid(), signal.SIGKILL)
+(stage / "SHA256SUMS.txt").write_bytes(b"checksums")
+publish_release_directory(stage, root / "published", {"candidate.zip", "SHA256SUMS.txt"})
+os.kill(os.getpid(), signal.SIGKILL)
+"""
+        for when in ("before", "after"):
+            with self.subTest(when=when), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                result = subprocess.run([sys.executable, "-c", script, str(root), when],
+                                        cwd=Path(__file__).resolve().parent, capture_output=True, timeout=15)
+                self.assertEqual(result.returncode, -signal.SIGKILL, result.stderr)
+                if when == "before":
+                    self.assertFalse((root / "published").exists())
+                    self.assertTrue((root / "private" / "candidate.zip").is_file())
+                else:
+                    self.assertEqual({path.name for path in (root / "published").iterdir()},
+                                     {"candidate.zip", "SHA256SUMS.txt"})
+                    self.assertEqual((root / "published" / "candidate.zip").read_bytes(), b"complete")
+                    self.assertFalse((root / "private").exists())
+
     def test_epoch_validation_and_roundtrip(self):
         for epoch in ("0", "1", "1760000001", "4294967295"):
             self.assertEqual(epoch_from_timestamp(timestamp(epoch)), int(epoch))
@@ -101,6 +220,352 @@ class ArchiveTests(unittest.TestCase):
             else:
                 os.environ["TZ"] = previous
             time.tzset()
+
+
+class ArchiveMemberValidationTests(unittest.TestCase):
+    def write_members(self, path, names):
+        if path.suffix == ".zip":
+            with zipfile.ZipFile(path, "w") as archive:
+                for name in names:
+                    archive.writestr(name, b"x")
+        else:
+            with tarfile.open(path, "w:gz") as archive:
+                for name in names:
+                    member = tarfile.TarInfo(name)
+                    member.size = 1
+                    archive.addfile(member, io.BytesIO(b"x"))
+
+    def test_archive_rejects_path_aliases_and_file_directory_conflicts(self):
+        cases = [
+            (["root//file"], "Unsafe archive entry"),
+            (["root/./file"], "Unsafe archive entry"),
+            (["root/docs/NUL.txt"], "Unsafe archive entry"),
+            (["root/docs/AUX"], "Unsafe archive entry"),
+            (["root/docs/stream:payload"], "Unsafe archive entry"),
+            (["root/docs/file."], "Unsafe archive entry"),
+            (["root/docs/readme", "root/docs/README"], "Conflicting archive entry"),
+            (["root/docs", "root/docs/file"], "Conflicting archive directory"),
+            (["root/docs/file", "root/docs"], "Conflicting archive entry"),
+            (["root/docs/one", "root/DOCS/two"], "Conflicting archive directory"),
+        ]
+        with tempfile.TemporaryDirectory() as folder:
+            for extension in (".zip", ".tar.gz"):
+                path = Path(folder) / ("candidate" + extension)
+                for names, error in cases:
+                    with self.subTest(extension=extension, names=names):
+                        self.write_members(path, names)
+                        with self.assertRaisesRegex(ValueError, error):
+                            release.inspect_archive(path, "root", "accessweaver")
+
+    def test_archive_rejects_nonregular_zip_member_and_member_overflow(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "candidate.zip"
+            with zipfile.ZipFile(path, "w") as archive:
+                member = zipfile.ZipInfo("root/device")
+                member.create_system = 3
+                member.external_attr = (stat.S_IFIFO | 0o600) << 16
+                archive.writestr(member, b"")
+            with self.assertRaisesRegex(ValueError, "Unsafe archive entry"):
+                release.inspect_archive(path, "root", "accessweaver")
+            for extension in (".zip", ".tar.gz"):
+                path = Path(folder) / ("candidate" + extension)
+                self.write_members(path, ["root/first", "root/second"])
+                with patch.object(release, "MAX_ARCHIVE_MEMBERS", 1), self.assertRaisesRegex(ValueError, "member count"):
+                    release.inspect_archive(path, "root", "accessweaver")
+
+
+    def test_archive_rejects_duplicate_build_sbom_and_license_fields(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            payload = root / "payload"
+            payload.write_bytes(b"fixture")
+            required = ("accessweaver", "LICENSE", "THIRD_PARTY.md", "SECURITY.md",
+                        "licenses/Go-runtime-LICENSE", "licenses/SplitWire-Turkey-MIT.txt")
+            members = [(payload, "root/" + name) for name in required]
+            info, bom = root / "info.json", root / "bom.json"
+            members += [(info, "root/BUILD-INFO.json"), (bom, "root/SBOM.cdx.json")]
+            notice_document = {"metadata": {"component": {"properties": [{
+                "name": "accessweaver:license-evidence",
+                "value": '[{"path":"licenses/Go-runtime-LICENSE","path":"licenses/Go-runtime-LICENSE"}]',
+            }]}}}
+            cases = (
+                ('{"commit":"first","commit":"second"}', '{"metadata":{"component":{}}}'),
+                ('{}', '{"metadata":{"component":{"type":"library","type":"application"}}}'),
+                ('{}', json.dumps(notice_document)),
+            )
+            for extension in (".zip", ".tar.gz"):
+                for build_json, sbom_json in cases:
+                    with self.subTest(extension=extension, build_json=build_json, sbom_json=sbom_json):
+                        info.write_text(build_json, encoding="utf-8")
+                        bom.write_text(sbom_json, encoding="utf-8")
+                        archive = root / ("release" + extension)
+                        write_archive(archive, members, 1760000001, executable="root/accessweaver")
+                        with patch.object(release, "validate_sbom"), self.assertRaisesRegex(
+                            ValueError, "Duplicate release metadata field",
+                        ):
+                            release.inspect_archive(archive, "root", "accessweaver")
+
+    def test_archive_timestamps_are_checked_against_the_epoch(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "source"
+            source.write_bytes(b"content")
+            members = [(source, "root/" + name) for name in (
+                "accessweaver", "LICENSE", "THIRD_PARTY.md", "SECURITY.md",
+                "licenses/Go-runtime-LICENSE", "licenses/SplitWire-Turkey-MIT.txt")]
+            info = root / "build.json"
+            info.write_text("{}", encoding="utf-8")
+            bom = root / "sbom.json"
+            bom.write_text('{"metadata":{"component":{}}}', encoding="utf-8")
+            members += [(info, "root/BUILD-INFO.json"), (bom, "root/SBOM.cdx.json")]
+            for epoch in (0, 1760000001, 4294967295):
+                for extension in (".zip", ".tar.gz"):
+                    with self.subTest(epoch=epoch, extension=extension):
+                        path = root / ("candidate" + extension)
+                        write_archive(path, members, epoch, executable="root/accessweaver")
+                        with patch.object(release, "validate_sbom"):
+                            self.assertEqual(release.inspect_archive(path, "root", "accessweaver", epoch=epoch),
+                                             ({}, b"content"))
+                        if extension == ".zip":
+                            # ZIP clamps builds before 1980 and rounds down to even seconds.
+                            with self.assertRaisesRegex(ValueError, "Archive member timestamp"):
+                                release.inspect_archive(path, "root", "accessweaver", epoch=315532804)
+                        else:
+                            data = bytearray(path.read_bytes())
+                            changed = epoch ^ 4
+                            data[4:8] = changed.to_bytes(4, "little")
+                            path.write_bytes(data)
+                            with self.assertRaisesRegex(ValueError, "Gzip timestamp"):
+                                release.inspect_archive(path, "root", "accessweaver", epoch=epoch)
+                            with self.assertRaisesRegex(ValueError, "Archive member timestamp"):
+                                release.inspect_archive(path, "root", "accessweaver", epoch=changed)
+
+
+class ReleaseVerificationTests(unittest.TestCase):
+    def fixture(self, directory):
+        manifest = dict(unsigned=True, sourceState="clean", sourceCommit="a" * 40,
+                        targetExecutionTested=False, version="1.0.0-alpha", builtAt=timestamp("1760000001"),
+                        goVersion="go version go1.27.4 linux/amd64", releaseLabel="preview",
+                        packaging={"archiveEpoch": 1760000001}, artifacts=[])
+        # Put the host first to detect execution before later validation.
+        targets = [("windows", "amd64")] + sorted(release.TARGETS - {("windows", "amd64")})
+        checksums = {}
+        for system, arch in targets:
+            name = f"accessweaver-preview-{system}-{arch}" + (".zip" if system == "windows" else ".tar.gz")
+            data = name.encode()
+            (directory / name).write_bytes(data)
+            checksums[name] = hashlib.sha256(data).hexdigest()
+            manifest["artifacts"].append(dict(goos=system, goarch=arch, file=name, sha256=checksums[name], bytes=len(data)))
+        data = json.dumps(manifest).encode()
+        (directory / "BUILD-MANIFEST.json").write_bytes(data)
+        checksums["BUILD-MANIFEST.json"] = hashlib.sha256(data).hexdigest()
+        (directory / "SHA256SUMS.txt").write_text("".join(f"{h}  {n}\n" for n, h in checksums.items()), encoding="utf-8")
+        return manifest
+
+    def test_manifest_rejects_duplicate_fields_even_with_a_matching_checksum(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            path = root / "BUILD-MANIFEST.json"
+            original = path.read_bytes()
+            duplicated = original.replace(b'"archiveEpoch": ', b'"archiveEpoch": 0, "archiveEpoch": ', 1)
+            path.write_bytes(duplicated)
+            checksums = root / "SHA256SUMS.txt"
+            checksums.write_text(
+                checksums.read_text(encoding="utf-8").replace(
+                    hashlib.sha256(original).hexdigest(), hashlib.sha256(duplicated).hexdigest(),
+                ), encoding="utf-8",
+            )
+            with patch.object(release, "inspect_archive") as inspect, self.assertRaisesRegex(
+                ValueError, "Duplicate release metadata field",
+            ):
+                release.verify(root)
+            inspect.assert_not_called()
+
+    def test_manifest_rejects_mismatched_archive_names_and_build_times(self):
+        for field, value, message in (
+            ("releaseLabel", "candidate", "Archive name"),
+            ("releaseLabel", "../preview", "Invalid manifest release label"),
+            ("builtAt", "2025-10-09T08:53:20Z", "Manifest build timestamp"),
+            ("packaging", {}, "Manifest build timestamp"),
+            ("packaging", {"archiveEpoch": True}, "Manifest build timestamp"),
+            ("packaging", {"archiveEpoch": -1}, "Manifest build timestamp"),
+            ("packaging", {"archiveEpoch": 4294967296}, "Manifest build timestamp"),
+        ):
+            with self.subTest(field=field, value=value), tempfile.TemporaryDirectory() as folder:
+                directory = Path(folder)
+                manifest = self.fixture(directory)
+                manifest[field] = value
+                (directory / "BUILD-MANIFEST.json").write_text(json.dumps(manifest), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, message):
+                    release.verify(directory)
+
+    def test_selected_target_checks_manifest_checksum_and_embedded_identity(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            manifest = self.fixture(directory)
+            target = ("windows", "amd64")
+            item = manifest["artifacts"][0]
+            for other in manifest["artifacts"][1:]:
+                (directory / other["file"]).unlink()
+            info = dict(version=manifest["version"], commit=manifest["sourceCommit"],
+                        sourceState="clean", builtAt=manifest["builtAt"], goVersion="go1.27.4",
+                        platform="windows", arch="amd64")
+            with patch.object(release, "inspect_archive", return_value=(info, b"fixture")) as inspect:
+                release.verify(directory, selected_target=target)
+                inspect.assert_called_once()
+                info["arch"] = "arm64"
+                with self.assertRaisesRegex(ValueError, "Inconsistent arch"):
+                    release.verify(directory, selected_target=target)
+                (directory / item["file"]).write_bytes(b"x" * item["bytes"])
+                with self.assertRaisesRegex(ValueError, "Checksum mismatch"):
+                    release.verify(directory, selected_target=target)
+
+    def test_native_execution_occurs_only_after_every_archive_passes(self):
+        for fault in ("none", "checksum", "sdk"):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as folder:
+                directory = Path(folder)
+                manifest = self.fixture(directory)
+                if fault == "checksum":
+                    path = directory / manifest["artifacts"][-1]["file"]
+                    path.write_bytes(b"x" * path.stat().st_size)
+
+                def inspect(path, _root, _binary_name, *, epoch):
+                    self.assertEqual(epoch, manifest["packaging"]["archiveEpoch"])
+                    self.assertNotEqual(path.parent, directory)
+                    item = next(row for row in manifest["artifacts"] if row["file"] == path.name)
+                    info = dict(version=manifest["version"], commit=manifest["sourceCommit"],
+                                sourceState=manifest["sourceState"], builtAt=manifest["builtAt"],
+                                platform=item["goos"], arch=item["goarch"], goVersion="go1.27.4")
+                    if fault == "sdk" and item == manifest["artifacts"][-1]:
+                        info["goVersion"] = "go1.27.3"
+                    return info, path.read_bytes()
+
+                with (
+                    patch.object(release.sys, "platform", "win32"),
+                    patch.object(release.platform, "machine", return_value="AMD64"),
+                    patch.object(release, "inspect_archive", side_effect=inspect) as inspect_archive,
+                    patch.object(release, "execute_metadata") as execute,
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    if fault != "none":
+                        message = "Checksum mismatch" if fault == "checksum" else "Inconsistent goVersion"
+                        with self.assertRaisesRegex(ValueError, message):
+                            release.verify(directory, execute_native=True)
+                        execute.assert_not_called()
+                    else:
+                        release.verify(directory, execute_native=True)
+                        self.assertEqual(inspect_archive.call_count, 10)
+                        execute.assert_called_once()
+                        self.assertEqual(execute.call_args.args[:2],
+                                         (manifest["artifacts"][0]["file"].encode(), "accessweaver.exe"))
+
+    def test_static_metadata_inspects_all_targets_before_native_execution(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            manifest = self.fixture(directory)
+            artifacts = {item["file"]: item for item in manifest["artifacts"]}
+
+            def inspect(path, _root, _name, *, epoch):
+                item = artifacts[path.name]
+                return dict(version=manifest["version"], commit=manifest["sourceCommit"],
+                            sourceState=manifest["sourceState"], builtAt=manifest["builtAt"],
+                            platform=item["goos"], arch=item["goarch"], goVersion="go1.27.4"), path.read_bytes()
+
+            def read_metadata(args):
+                self.assertEqual(args[:4], ["go", "version", "-m", "-json"])
+                item = artifacts[Path(args[-1]).read_text()]
+                arch = item["goarch"]
+                if item is manifest["artifacts"][-1]:
+                    arch = "386"
+                project = "github.com/Yunushan/accessweaver"
+                settings = {"GOOS": item["goos"], "GOARCH": arch, "CGO_ENABLED": "0",
+                            "-compiler": "gc", "-trimpath": "true",
+                            "vcs": "git", "vcs.revision": manifest["sourceCommit"], "vcs.modified": "false"}
+                return json.dumps({"GoVersion": "go1.27.4", "Path": project + "/cmd/accessweaver",
+                                   "Main": {"Path": project},
+                                   "Settings": [{"Key": key, "Value": value} for key, value in settings.items()]})
+
+            with (
+                patch.object(release, "inspect_archive", side_effect=inspect),
+                patch.object(release, "go_metadata_command", side_effect=read_metadata) as metadata,
+                patch.object(release, "execute_metadata") as execute,
+                self.assertRaisesRegex(ValueError, "Packaged binary target"),
+            ):
+                release.verify(directory, execute_native=True, check_go_metadata=True)
+            self.assertEqual(metadata.call_count, 10)
+            execute.assert_not_called()
+
+    def test_static_metadata_binds_git_revision_and_modification_state(self):
+        project = "github.com/Yunushan/accessweaver"
+        base_settings = {"GOOS": "windows", "GOARCH": "amd64", "CGO_ENABLED": "0",
+                         "-compiler": "gc", "-trimpath": "true"}
+        commit = "a" * 40
+        base_info = {"platform": "windows", "arch": "amd64", "goVersion": "go1.27.4", "commit": commit}
+        git_settings = {"vcs": "git", "vcs.revision": commit, "vcs.modified": "false"}
+        no_git = {**base_info, "commit": "unknown", "sourceState": "unknown"}
+        for info, vcs, error in (
+            ({**base_info, "sourceState": "clean"}, git_settings, None),
+            ({**base_info, "sourceState": "modified"}, {**git_settings, "vcs.modified": "true"}, None),
+            ({**base_info, "sourceState": "modified"}, git_settings, "modification state differs"),
+            ({**base_info, "sourceState": "clean"}, {**git_settings, "vcs.revision": "b" * 40}, "revision"),
+            ({**base_info, "sourceState": "clean"}, {}, "revision"),
+            (no_git, {}, None),
+            (no_git, git_settings, "Unexpected version control metadata"),
+        ):
+            settings = {**base_settings, **vcs}
+            metadata = {"GoVersion": "go1.27.4", "Path": project + "/cmd/accessweaver", "Main": {"Path": project},
+                        "Settings": [{"Key": key, "Value": value} for key, value in settings.items()]}
+            with self.subTest(info=info, vcs=vcs), patch.object(
+                release, "go_metadata_command", return_value=json.dumps(metadata),
+            ):
+                if error:
+                    with self.assertRaisesRegex(ValueError, error):
+                        release.verify_go_metadata(b"inert", "accessweaver.exe", info)
+                else:
+                    release.verify_go_metadata(b"inert", "accessweaver.exe", info)
+
+    def test_native_version_comparison_must_match_packaged_build(self):
+        info = {"version": "1.2.3-alpha", "commit": "a" * 40, "goVersion": "go1.27.4"}
+        expected = {"version": "v1.2.3-alpha", "currentVersion": "1.2.3-alpha", "updateAvailable": False,
+                    "build": info}
+        for label, comparison, failure in (
+            ("match", json.dumps(expected).encode(), None),
+            ("wrong-version", json.dumps({**expected, "currentVersion": "0.9.0"}).encode(), "Update comparison differs"),
+            ("other-build", json.dumps({**expected, "build": {**info, "commit": "b" * 40}}).encode(),
+             "Update comparison differs"),
+            ("update", json.dumps({**expected, "updateAvailable": True}).encode(), "Update comparison differs"),
+            ("numeric-false", json.dumps({**expected, "updateAvailable": 0}).encode(), "Update comparison differs"),
+            ("duplicate", b'{"version":"v1.2.3-alpha","version":"v1.2.3-alpha"}', "Duplicate release metadata"),
+            ("oversized", b" " * 4097, "Native metadata response exceeds"),
+        ):
+            with self.subTest(label=label):
+                def run(command, *, stdout, **_):
+                    data = json.dumps(info).encode() if command[1:] == ["version", "--json"] else comparison
+                    stdout.write(data)
+
+                with patch.object(release.subprocess, "run", side_effect=run) as probe:
+                    if failure:
+                        with self.assertRaisesRegex(ValueError, failure):
+                            release.execute_metadata(b"inert", "accessweaver.exe", info, require_update_build=True)
+                    else:
+                        release.execute_metadata(b"inert", "accessweaver.exe", info, require_update_build=True)
+                    self.assertEqual(probe.call_count, 2)
+                    self.assertEqual(probe.call_args.args[0][1:], ["system", "check-version", "--build-identity", "v1.2.3-alpha"])
+
+    def test_unexpected_release_file_is_refused_before_archive_inspection(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            self.fixture(directory)
+            (directory / "unexpected.exe").write_bytes(b"not part of the release")
+            with (
+                patch.object(release, "inspect_archive") as inspect,
+                patch.object(release, "execute_metadata") as execute,
+                self.assertRaisesRegex(ValueError, "Unexpected release input"),
+            ):
+                release.verify(directory, execute_native=True)
+            inspect.assert_not_called()
+            execute.assert_not_called()
 
 
 if __name__ == "__main__":

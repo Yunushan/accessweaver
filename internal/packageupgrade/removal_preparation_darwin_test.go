@@ -208,6 +208,31 @@ func exerciseOwnedRemovalPreparation(t *testing.T, privateBase string) {
 			if e := f.intent.Close(); e != nil {
 				t.Fatal(e)
 			}
+			beforeOrdinary := ownedRemovalTargetSnapshot(t, f.base)
+			for _, initialize := range []bool{false, true} {
+				parent, e := os.Open(f.base)
+				if e != nil {
+					t.Fatal(e)
+				}
+				ordinary, e := beginDeploymentMode(parent, 0, nil, initialize)
+				if ordinary != nil {
+					ordinary.Close()
+				}
+				if e == nil || e.Error() != "a reserved removal must be resolved before changing the deployment" {
+					t.Fatal("ordinary writer did not respect reserved removal", e)
+				}
+			}
+			desktopParent, e := os.Open(f.base)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if e = checkStandaloneDesktopDeploymentAt(desktopParent, fence.Target.Identity.Version); e == nil ||
+				e.Error() != "a reserved removal must be resolved before changing the deployment" {
+				t.Fatal("standalone desktop package ignored reserved removal", e)
+			}
+			if !bytes.Equal(beforeOrdinary, ownedRemovalTargetSnapshot(t, f.base)) {
+				t.Fatal("ordinary mutation admission changed the reserved removal")
+			}
 			ctx := context.Background()
 			identity, seal := fence.Target.Identity, fence.DesktopRecordSHA256
 			refusal := false

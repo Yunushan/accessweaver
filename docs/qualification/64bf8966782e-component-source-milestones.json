@@ -1,0 +1,85 @@
+{
+  "sourceCommit": "64bf8966782e1be6e1192351bfd1efb33267b397",
+  "runID": 42602951150,
+  "rows": [
+    {
+      "name": "windows-component-source-arm64",
+      "digest": "sha256:aed5a6af888898ad4074c78732c8a6041165a29824e768c6dc7cf781801c1489",
+      "outcome": "failed",
+      "suitePassed": false,
+      "cases": [
+        {
+          "passed": true,
+          "name": "zapret selects only its expected executable in the preferred folder"
+        },
+        {
+          "passed": true,
+          "name": "zapret refuses a preferred folder containing only the other executable"
+        },
+        {
+          "passed": true,
+          "name": "zapret2 selects only its expected executable in the preferred folder"
+        },
+        {
+          "passed": true,
+          "name": "zapret2 refuses a preferred folder containing only the other executable"
+        }
+      ],
+      "milestones": {
+        "arguments": true,
+        "archive": true,
+        "child": true,
+        "main": true,
+        "vendor": true,
+        "staging": false,
+        "dns": false,
+        "service": true
+      }
+    },
+    {
+      "name": "windows-component-source-amd64",
+      "digest": "sha256:c963d3a4c3072917affe29dc6390b921ef78579000b9bf1fdce48ed02ffb449a",
+      "outcome": "failed",
+      "suitePassed": false,
+      "cases": [
+        {
+          "passed": true,
+          "name": "zapret selects only its expected executable in the preferred folder"
+        },
+        {
+          "passed": true,
+          "name": "zapret refuses a preferred folder containing only the other executable"
+        },
+        {
+          "passed": true,
+          "name": "zapret2 selects only its expected executable in the preferred folder"
+        },
+        {
+          "passed": true,
+          "name": "zapret2 refuses a preferred folder containing only the other executable"
+        }
+      ],
+      "milestones": {
+        "child": true,
+        "arguments": true,
+        "archive": true,
+        "staging": false,
+        "service": true,
+        "vendor": true,
+        "dns": false,
+        "main": true
+      }
+    }
+  ],
+  "rawLogsRead": false,
+  "schemaVersion": 1,
+  "scope": "component-source-milestone-attempt",
+  "sealedDoNotRepoll": true,
+  "sourceSHA256": {
+    "internal/workflow/windows.ps1": "712356b8caf0adf37246edd9926fb69495e76e79f3458bc8487cfe580ef5fd45",
+    "scripts/test-windows-workflow.ps1": "ac463a8a45f21f8ed6710684ad2101b1abc1dddddd036ec4dd95ad184d092809",
+    ".github/workflows/windows-component-discovery.yml": "a9c42b66e87e6bf275566ddf8559ff8548f549ef347d889723aadc1502826148"
+  },
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0
+}

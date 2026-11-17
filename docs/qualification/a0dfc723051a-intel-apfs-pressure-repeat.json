@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "scope": "disposable-intel-macos-managed-policy-apfs-exhaustion",
+  "target": "darwin/amd64",
+  "failedPR": {
+    "pullRequest": 2,
+    "headCommit": "4296e45911c1048ce1ce2d9bd114c0036fea13dd",
+    "testedMergeCommit": "9835815e24963e88e6dbe68811203dc95b2745fc",
+    "runId": 44048997811,
+    "jobId": 133921762278,
+    "artifactId": 14315408788,
+    "sha256": "ee267dcadb9341984d7125040857c87eecdaedc6d8e44195f99c1f9ff0f2d0d6",
+    "reportPresent": false,
+    "attached": true,
+    "detached": true,
+    "ownedImageRemoved": true
+  },
+  "focusedHostedRepeat": {
+    "runId": 44059081116,
+    "jobId": 133955913301,
+    "sha": "a0dfc723051ab0d680d198eb779be535e6886ab5",
+    "artifactId": 14316919384,
+    "sha256": "bc095779549ad22e66dca65c212ac90c6678d2602483ef24e88087a5f8acf594",
+    "nativeENOSPCCasesVerified": 8,
+    "cleanupVerified": true,
+    "controlledUnmountedDetachVerified": true,
+    "nativePressure": {
+      "exitCode": 0,
+      "lastPhase": "write-report",
+      "lastCase": {
+        "operation": "recover",
+        "record": "acceptance.json"
+      }
+    },
+    "productionQualificationComplete": false,
+    "outcome": "passed"
+  },
+  "reproducedOriginalFailure": false,
+  "originalFailureCauseVerified": false,
+  "productionQualificationComplete": false,
+  "exactPRRetry": {
+    "runId": 44048997811,
+    "attempt": 2,
+    "jobId": 133971714920,
+    "headCommit": "4296e45911c1048ce1ce2d9bd114c0036fea13dd",
+    "testedMergeCommit": "9835815e24963e88e6dbe68811203dc95b2745fc",
+    "artifactId": 14319408680,
+    "artifactSHA256": "570fa824f629ac2060cc62a0246462d46870804358d43359406d9abc02ff64bb",
+    "nativeENOSPCCasesVerified": 8,
+    "ownedCleanupVerified": true,
+    "controlledUnmountedDetachVerified": true,
+    "productionQualificationComplete": false
+  }
+}

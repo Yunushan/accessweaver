@@ -4,7 +4,7 @@
 param()
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path -Parent $PSScriptRoot
-foreach($file in @('test-windows-vendor-preflight.ps1','test-windows-integration.ps1','build-windows-installer.ps1','test-windows-installer.ps1','test-windows-installer-contracts.ps1','windows-installer-common.ps1','build-windows-fixtures.ps1','test-windows-apps.ps1','test-windows-wiresock.ps1','test-windows-reboot.ps1','test-windows-storage.ps1','test-windows-uiaccess.ps1','vmware-test-bootstrap.ps1','vmware-reboot-resume.ps1')){$tokens=$null;$issues=$null;[void][Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $file),[ref]$tokens,[ref]$issues);if($issues.Count){throw ($issues|Out-String)}}
+foreach($file in @('test-windows-vendor-preflight.ps1','test-windows-integration.ps1','dns-acceptance-state.ps1','test-dns-acceptance-state.ps1','build-windows-installer.ps1','test-windows-installer.ps1','test-windows-installer-contracts.ps1','windows-installer-common.ps1','build-windows-fixtures.ps1','test-windows-apps.ps1','test-windows-wiresock.ps1','test-windows-reboot.ps1','test-windows-storage.ps1','test-windows-uiaccess.ps1','vmware-test-bootstrap.ps1','vmware-reboot-resume.ps1')){$tokens=$null;$issues=$null;[void][Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $file),[ref]$tokens,[ref]$issues);if($issues.Count){throw ($issues|Out-String)}}
 $tokens=$null;$parseErrors=$null
 $ast=[System.Management.Automation.Language.Parser]::ParseFile((Join-Path $projectRoot 'internal\workflow\windows.ps1'),[ref]$tokens,[ref]$parseErrors)
 if($parseErrors.Count){throw ($parseErrors|Out-String)}
@@ -16,7 +16,7 @@ $root=$testRoot;$script:undo=[Collections.Generic.List[object]]::new();$script:e
 function Assert([bool]$condition,[string]$message){if(-not $condition){throw $message};Write-Output ('PASS '+$message)}
 # The OS identity comes from IsWow64Process2 in Go, outside the reviewed request.
 # These fixtures only read inert MSI databases; signature/network/launch are mocked.
-$previousPrerequisiteInput=$inputData;$previousPrerequisiteRequest=$r
+$previousPrerequisiteInput=$inputData;$previousPrerequisiteRequest=$r;$previousPrerequisiteProgramFiles=$env:ProgramFiles
 $prerequisiteFunctions=@{}
 foreach($name in @('Read-RemoteJSON','Download','Get-AuthenticodeSignature','Native','Event')){$prerequisiteFunctions[$name]=(Get-Command $name).ScriptBlock}
 $prerequisiteRoot=Join-Path $testRoot 'prerequisites';[void](New-Item -ItemType Directory -Path $prerequisiteRoot)
@@ -37,12 +37,18 @@ foreach($platform in @('x64','Arm64','Intel')) {
 try {
     $script:prerequisiteCalls=[Collections.Generic.List[object]]::new()
     $script:prerequisiteSignature='Valid'
-    function Get-AuthenticodeSignature {param($LiteralPath);$script:prerequisiteCalls.Add(@{kind='signature';path=$LiteralPath});return @{Status=$script:prerequisiteSignature}}
+    $script:prerequisiteSignerSubject='CN=Other fixture publisher'
+    function Get-AuthenticodeSignature {
+        param($LiteralPath)
+        $script:prerequisiteCalls.Add(@{kind='signature';path=$LiteralPath})
+        return @{Status=$script:prerequisiteSignature;SignerCertificate=@{Subject=$script:prerequisiteSignerSubject}}
+    }
     function Read-RemoteJSON {param($Headers,$Uri);$script:prerequisiteCalls.Add(@{kind='release';url=$Uri});return @{assets=$script:prerequisiteAssets}}
-    function Download {param($url,$hash,$destination,[switch]$Signed);$script:prerequisiteCalls.Add(@{kind='download';url=$url;hash=$hash});Copy-Item -LiteralPath $script:prerequisiteDownloadFixture -Destination $destination -Force}
+    function Download {param($url,$hash,$destination,[switch]$Signed,[string]$Publisher);$script:prerequisiteCalls.Add(@{kind='download';url=$url;hash=$hash});Copy-Item -LiteralPath $script:prerequisiteDownloadFixture -Destination $destination -Force}
     function Native {param($Program,$Arguments,$SuccessCodes);$script:prerequisiteCalls.Add(@{kind='launch';program=$Program;arguments=$Arguments;codes=$SuccessCodes});return @{exitCode=0}}
     function Event {param($text)}
     [void](New-Item -ItemType Directory -Force -Path (Join-Path $root 'downloads'))
+    $env:ProgramFiles=Join-Path $prerequisiteRoot 'program-files'
     foreach($architecture in @('amd64','arm64')) {
         $inputData=[pscustomobject]@{nativeArchitecture=$architecture}
         $platform=if($architecture -eq 'amd64'){'x64'}else{'Arm64'}
@@ -60,7 +66,7 @@ try {
         $r=[pscustomobject]@{bundlePath=$bundle};$script:prerequisiteCalls.Clear()
         Install-Prerequisite 'ndisapi'
         $launch=@($script:prerequisiteCalls | Where-Object {$_.kind -eq 'launch'})
-        Assert ($launch.Count -eq 1 -and $launch[0].arguments[1].EndsWith('.'+$platform+'.msi',[StringComparison]::OrdinalIgnoreCase) -and $launch[0].program -eq 'msiexec.exe' -and ($launch[0].codes -join ',') -eq '0,3010,1641') ($architecture+' bundle selects only its platform and preserves reboot exit codes')
+        Assert ($launch.Count -eq 1 -and $launch[0].arguments[1].EndsWith('.'+$platform+'.msi',[StringComparison]::OrdinalIgnoreCase) -and $launch[0].program -ceq (Join-Path $env:SystemRoot 'System32\msiexec.exe') -and ($launch[0].codes -join ',') -eq '0,3010,1641') ($architecture+' bundle selects only its platform, uses system MSI and preserves reboot exit codes')
         Assert (@($script:prerequisiteCalls | Where-Object {$_.kind -in @('release','download')}).Count -eq 0) ($architecture+' compatible bundle avoids remote retrieval')
         # A correct filename cannot override an incompatible MSI template.
         $selected=Join-Path $bundle ('Windows.Packet.Filter.3.6.2.1.'+$platform+'.msi')
@@ -99,16 +105,121 @@ try {
     }
     $inputData=[pscustomobject]@{}
     Assert ((Prerequisite-Plan 'vcredist').pattern -eq 'VC_redist.x64.exe') 'Visual C runtime selection remains separate from kernel driver architecture'
+    $runtimeBundle=Join-Path $prerequisiteRoot 'runtime'
+    [void](New-Item -ItemType Directory -Path $runtimeBundle)
+    $runtimeFixture=Join-Path $runtimeBundle 'VC_redist.x64.exe'
+    [IO.File]::WriteAllBytes($runtimeFixture,[byte[]]@(0))
+    $r=[pscustomobject]@{bundlePath=$runtimeBundle}
+    $script:prerequisiteCalls.Clear()
+    $rejected=$false
+    try {Install-Prerequisite 'vcredist'}catch{$rejected=$_.Exception.Message -ceq 'Visual C++ runtime publisher signature could not be verified'}
+    Assert ($rejected -and @($script:prerequisiteCalls | Where-Object {$_.kind -eq 'launch'}).Count -eq 0) 'Bundled Visual C runtime rejects a valid signature from another publisher category'
+    $failedRuntimeSignatures=@($script:prerequisiteCalls | Where-Object {$_.kind -eq 'signature'})
+    Assert ($failedRuntimeSignatures.Count -eq 1 -and (Under $failedRuntimeSignatures[0].path (Join-Path $root 'downloads')) -and -not (Test-Path -LiteralPath $failedRuntimeSignatures[0].path)) 'Bundled prerequisite retires its protected copy after signature refusal'
+    $script:prerequisiteSignerSubject='CN=Microsoft fixture'
+    $script:prerequisiteCalls.Clear()
+    Install-Prerequisite 'vcredist'
+    $runtimeLaunches=@($script:prerequisiteCalls | Where-Object {$_.kind -eq 'launch'})
+    $runtimeSignatures=@($script:prerequisiteCalls | Where-Object {$_.kind -eq 'signature'})
+    Assert ($runtimeLaunches.Count -eq 1 -and $runtimeSignatures.Count -eq 1 -and $runtimeLaunches[0].program -ceq $runtimeSignatures[0].path) 'Bundled Visual C runtime accepts the expected publisher category before mocked launch'
+    $runtimeStage=$runtimeLaunches[0].program
+    Assert ((Under $runtimeStage (Join-Path $root 'downloads')) -and -not (Test-Path -LiteralPath $runtimeStage) -and (Test-Path -LiteralPath $runtimeFixture)) 'Bundled prerequisite launches only its verified protected copy and retires it'
+
+    $implicitRoot=Join-Path $env:ProgramFiles 'SplitWire-Turkey\Prerequisites'
+    [void](New-Item -ItemType Directory -Path $implicitRoot -Force)
+    Copy-Item -LiteralPath $runtimeFixture -Destination $implicitRoot
+    $r=[pscustomobject]@{bundlePath=$null}
+    $inputData=[pscustomobject]@{managedPolicy=$true;allowDownloads=$false}
+    $script:prerequisiteCalls.Clear()
+    $previousDownload=(Get-Command Download).ScriptBlock
+    try {
+        function Download { Require-DownloadPermission;throw 'Fixture reached an unauthorized download' }
+        $rejected=$false
+        try {Install-Prerequisite 'vcredist'}catch{$rejected=$_.Exception.Message -ceq 'Administrator policy disables remote component and release requests'}
+        Assert ($rejected -and $script:prerequisiteCalls.Count -eq 0) 'Managed prerequisite ignores implicit unapproved local bundles'
+    } finally {Set-Item Function:Download $previousDownload}
+    $inputData=[pscustomobject]@{managedPolicy=$false}
+    Install-Prerequisite 'vcredist'
+    Assert (@($script:prerequisiteCalls | Where-Object {$_.kind -eq 'launch'}).Count -eq 1) 'Unmanaged prerequisite can still use the implicit local bundle'
     $rejected=$false;try{Prerequisite-Plan 'unknown'|Out-Null}catch{$rejected=$_.Exception.Message -eq 'Unknown prerequisite component'}
     Assert $rejected 'Unknown prerequisite names cannot fall back to Visual C runtime installation'
 } finally {
     foreach($name in $prerequisiteFunctions.Keys){if($null -eq $prerequisiteFunctions[$name]){Remove-Item ('Function:'+$name)}else{Set-Item ('Function:'+$name) $prerequisiteFunctions[$name]}}
-    $inputData=$previousPrerequisiteInput;$r=$previousPrerequisiteRequest
+    $inputData=$previousPrerequisiteInput;$r=$previousPrerequisiteRequest;$env:ProgramFiles=$previousPrerequisiteProgramFiles
+}
+
+# Model prerequisite outcomes with no registry access or service changes.
+$previousRebootRequired=$script:rebootRequired
+$previousStandalonePrerequisiteRequest=$r
+try {
+    & {
+        function Get-ItemProperty { return @{Installed=[int]$script:fixtureRuntimeRegistered} }
+        function Get-DriverServiceControllers {
+            [CmdletBinding()]param()
+            [pscustomobject]@{ServiceName='UnrelatedFixtureDriver';Status='Running'}
+            if($script:fixtureFilterRegistered){[pscustomobject]@{ServiceName='NDISRD';Status='Stopped'}}
+        }
+        function Install-Prerequisite([string]$component) {
+            $script:prerequisiteRebootCalls.Add($component)
+            if($component -eq $script:prerequisiteNeedsReboot){$script:rebootRequired=$true;return}
+            if($component -eq $script:fixtureMissingRegistration){return}
+            if($component -eq 'vcredist'){$script:fixtureRuntimeRegistered=$true}
+            if($component -eq 'ndisapi'){$script:fixtureFilterRegistered=$true}
+        }
+        function Ensure-Asset { throw 'Fixture reached ProxiFyre asset resolution' }
+        foreach($case in @(
+            @{prerequisite='vcredist';calls='vcredist';message='Restart Windows after Visual C++ runtime installation, then retry ProxiFyre setup';label='Visual C runtime reboot defers packet filter and ProxiFyre setup'}
+            @{prerequisite='ndisapi';calls='vcredist,ndisapi';message='Restart Windows after Windows Packet Filter installation, then retry ProxiFyre setup';label='Packet filter reboot defers ProxiFyre setup'}
+        )){
+            $script:rebootRequired=$false
+            $script:prerequisiteNeedsReboot=$case.prerequisite
+            $script:fixtureMissingRegistration=''
+            $script:fixtureRuntimeRegistered=$false
+            $script:fixtureFilterRegistered=$false
+            $script:prerequisiteRebootCalls=[Collections.Generic.List[string]]::new()
+            $refused=$false
+            try {Setup-ProxiFyre '127.0.0.1:1080'}catch{$refused=$_.Exception.Message -ceq $case.message}
+            Assert ($refused -and $script:rebootRequired -and ($script:prerequisiteRebootCalls -join ',') -ceq $case.calls) $case.label
+        }
+        foreach($case in @(
+            @{missing='vcredist';calls='vcredist';message='Visual C++ runtime installation did not register the required runtime';label='ProxiFyre refuses a successful runtime install without registration'}
+            @{missing='ndisapi';calls='vcredist,ndisapi';message='Windows Packet Filter installation did not register the required driver';label='ProxiFyre refuses a successful packet filter install without registration'}
+            @{missing='';calls='vcredist,ndisapi';message='Fixture reached ProxiFyre asset resolution';label='ProxiFyre continues when both prerequisite registrations are visible'}
+        )){
+            $script:rebootRequired=$false
+            $script:prerequisiteNeedsReboot=''
+            $script:fixtureMissingRegistration=$case.missing
+            $script:fixtureRuntimeRegistered=$false
+            $script:fixtureFilterRegistered=$false
+            $script:prerequisiteRebootCalls=[Collections.Generic.List[string]]::new()
+            $expected=$false
+            try {Setup-ProxiFyre '127.0.0.1:1080'}catch{$expected=$_.Exception.Message -ceq $case.message}
+            Assert ($expected -and -not $script:rebootRequired -and ($script:prerequisiteRebootCalls -join ',') -ceq $case.calls) $case.label
+        }
+        $r=[pscustomobject]@{engine='ndisapi';dns='unchanged'}
+        $script:rebootRequired=$false
+        $script:prerequisiteNeedsReboot='ndisapi'
+        $script:fixtureFilterRegistered=$false
+        $pending=Install-Method
+        Assert ($pending.rebootRequired -and $pending.prerequisite -ceq 'ndisapi' -and -not $pending.ContainsKey('installed')) 'Standalone prerequisite reports pending reboot without claiming installation'
+        $script:rebootRequired=$false
+        $script:prerequisiteNeedsReboot=''
+        $script:fixtureMissingRegistration='ndisapi'
+        $refused=$false
+        try {Install-Method | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Windows Packet Filter installation did not register the required driver'}
+        Assert $refused 'Standalone prerequisite refuses installer success without registration'
+        $script:fixtureMissingRegistration=''
+        $completed=Install-Method
+        Assert ($completed.installed -ceq 'ndisapi' -and $script:fixtureFilterRegistered) 'Standalone prerequisite reports installation after registration'
+    }
+} finally {
+    $script:rebootRequired=$previousRebootRequired
+    $r=$previousStandalonePrerequisiteRequest
 }
 
 # Native component metadata fixtures are deliberately non-executable. No DLL
 # is loaded; download, expansion, staging and event hooks stay within this fixture.
-$previousComponentInput=$inputData;$previousComponentRequest=$r;$previousComponentRoot=$root;$previousAssetNames=$assetNames
+$previousComponentInput=$inputData;$previousComponentRequest=$r;$previousComponentRoot=$root;$previousAssetNames=$assetNames;$previousComponentProgramFiles=$env:ProgramFiles
 $componentFunctions=@{}
 foreach($name in @('Read-RemoteJSON','Download','Expand-Safe','Protect-Dir','Copy-Checked','Copy-Tree','Event')){$componentFunctions[$name]=(Get-Command $name).ScriptBlock}
 function Write-InertPE([string]$path,[uint16]$machine) {
@@ -118,7 +229,7 @@ function Write-InertPE([string]$path,[uint16]$machine) {
     [IO.File]::WriteAllBytes($path,$bytes)
 }
 try {
-    $assetNames=@{proxifyre='ProxiFyre.exe';wgcf='wgcf.exe';dnscrypt='dnscrypt-proxy.exe'}
+    $assetNames=@{proxifyre='ProxiFyre.exe';wgcf='wgcf.exe';dnscrypt='dnscrypt-proxy.exe';zapret='winws.exe';zapret2='winws2.exe'}
     $script:componentCalls=[Collections.Generic.List[object]]::new();$script:componentTamperStaging=$false
     function Read-RemoteJSON {param($Headers,$Uri);$script:componentCalls.Add(@{kind='release';url=$Uri});return @{assets=$script:componentAssets}}
     function Protect-Dir {param($path);[void](New-Item -ItemType Directory -Force -Path $path)}
@@ -128,6 +239,7 @@ try {
     function Expand-Safe {param($archive,$destination);Write-InertPE (Join-Path $destination ('payload\'+$assetNames[$script:componentEngine])) $script:componentDownloadMachine}
     function Event {param($text);$script:componentCalls.Add(@{kind='event';text=$text})}
     $componentBase=Join-Path $testRoot 'native-components';[void](New-Item -ItemType Directory -Path $componentBase)
+    $env:ProgramFiles=Join-Path $componentBase 'empty-program-files'
     foreach($machine in @(0x8664,0xaa64,0x014c)) {
         $path=Join-Path $componentBase ('machine-'+$machine+'.exe');Write-InertPE $path $machine
         Assert ((Get-PEMachine $path) -eq $machine) 'Bounded PE inspection reads the COFF machine without executing a fixture'
@@ -179,10 +291,262 @@ try {
         try {Ensure-Asset $engine|Out-Null}catch{$rejected=$_.Exception.Message -like 'Native Windows architecture is unavailable*'}
         Assert ($rejected -and $null -eq (Find-Source $engine) -and $script:componentCalls.Count -eq 0) ($engine+' unknown host identity refuses native component retrieval and readiness')
     }
+    # Inert names only: discovery must never return another engine's file and
+    # staging must not rename it into the requested executable.
+    foreach($fixture in @(@('zapret','zapret-winws','winws.exe','winws2.exe'),@('zapret2','zapret-winws2','winws2.exe','winws.exe'))){
+        $engine=$fixture[0];$bundle=Join-Path $componentBase ('preferred-'+$engine);$folder=Join-Path $bundle $fixture[1]
+        [void](New-Item -ItemType Directory -Force -Path $folder)
+        $expected=Join-Path $folder $fixture[2];[IO.File]::WriteAllText($expected,'correct inert file');[IO.File]::WriteAllText((Join-Path $folder $fixture[3]),'wrong inert file')
+        $root=Join-Path $componentBase ('isolated-'+$engine);$r=[pscustomobject]@{bundlePath=$bundle}
+        Assert ((Find-Source $engine) -ceq $expected) ($engine+' selects only its expected executable in the preferred folder')
+        $wrongBundle=Join-Path $componentBase ('wrong-only-'+$engine);$wrongFolder=Join-Path $wrongBundle $fixture[1]
+        [void](New-Item -ItemType Directory -Force -Path $wrongFolder);[IO.File]::WriteAllText((Join-Path $wrongFolder $fixture[3]),'wrong inert file')
+        $r=[pscustomobject]@{bundlePath=$wrongBundle}
+        Assert ($null -eq (Find-Source $engine)) ($engine+' refuses a preferred folder containing only the other executable')
+    }
 } finally {
     foreach($name in $componentFunctions.Keys){Set-Item ('Function:'+$name) $componentFunctions[$name]}
     Remove-Item Function:Write-InertPE
-    $inputData=$previousComponentInput;$r=$previousComponentRequest;$root=$previousComponentRoot;$assetNames=$previousAssetNames
+    $inputData=$previousComponentInput;$r=$previousComponentRequest;$root=$previousComponentRoot;$assetNames=$previousAssetNames;$env:ProgramFiles=$previousComponentProgramFiles
+}
+
+# Isolated scan boundaries: inert files and closed mocks only. A plausible
+# partial summary must never be saved or reach installation as a success.
+$previousScanInput=$inputData;$previousScanRequest=$r;$previousScanRoot=$root;$previousScanAssetNames=$assetNames
+$oldOrdinaryBashEnv=$env:BASH_ENV
+$previousScanProgramFiles=$env:ProgramFiles
+$previousScanUndo=$script:undo
+$scanFunctions=@{};foreach($name in @('Ensure-Asset','Native','Publish-WorkflowFile','Install-Method','Protect-Dir','Assert-TrustedTree')){$scanFunctions[$name]=(Get-Command $name).ScriptBlock}
+try {
+    $root=Join-Path $testRoot 'scan-completion';$scanBundle=Join-Path $root 'bundle'
+    [void](New-Item -ItemType Directory -Force -Path $scanBundle)
+    [IO.File]::WriteAllText((Join-Path $scanBundle 'blockcheck2.sh'),'inert')
+    [IO.File]::WriteAllText((Join-Path $scanBundle 'bash.exe'),'inert')
+    [void][IO.Directory]::CreateDirectory((Join-Path $root 'logs'))
+    $scanReport=Join-Path $root 'logs\zapret2-blockcheck.txt'
+    $script:scanBinary=Join-Path $scanBundle 'winws2.exe';[IO.File]::WriteAllText($script:scanBinary,'inert')
+    [void][IO.Directory]::CreateDirectory((Join-Path $scanBundle 'lua'))
+    $library=Join-Path $scanBundle 'lua\zapret-lib.lua'
+    $antidpi=Join-Path $scanBundle 'lua\zapret-antidpi.lua'
+    [IO.File]::WriteAllText($library,'inert library')
+    [IO.File]::WriteAllText($antidpi,'inert antidpi')
+    $luaHashes=@((Get-WorkflowFileHash $library),(Get-WorkflowFileHash $antidpi))
+    $inputData=[pscustomobject]@{ispHook=$null;controller='fixture-controller'}
+    $assetNames=@{zapret2='winws2.exe'}
+    function Ensure-Asset {param($engine);if($engine -cne 'zapret2'){throw 'Unexpected fixture engine'};return $script:scanBinary}
+    function Protect-Dir([string]$path){
+        if((Split-Path -Parent $path) -ine (Join-Path $root 'temp')){throw 'Unexpected strategy scan workspace'}
+        $script:stagedScanBundle=$path
+        [void](New-Item -ItemType Directory -Path $path -Force)
+    }
+    function Assert-TrustedTree([string]$path){if($path -cne $script:stagedScanBundle){throw 'Unexpected scan cleanup target'}}
+    function Publish-WorkflowFile {
+        param([string]$path,[byte[]]$bytes,[switch]$Recorded)
+        if($path -cne $scanReport -or $Recorded){throw 'Expected only the fixed diagnostic scan report publication'}
+        & $scanFunctions['Publish-WorkflowFile'] $path $bytes
+        $script:scanWrites++
+    }
+    function Install-Method([string]$ScannedEngineSHA256,[string[]]$ScannedLuaSHA256){
+        $arguments=@($r.args)
+        if($ScannedEngineSHA256 -cne (Get-WorkflowFileHash $script:scanBinary) -or
+           ($ScannedLuaSHA256 -join ',') -cne ($luaHashes -join ',') -or $arguments[-1] -cne '--lua-desync=fixture'){
+            throw 'The scan engine and Lua digests and selected strategy did not reach installation'
+        }
+        $script:scanInstalls++
+        return @{fixture=$true}
+    }
+    function Native {
+        param($program,$arguments,$codes,[switch]$Secret,[int]$Timeout,$WorkingDirectory,$ChildEnvironment)
+        if($program -ceq 'fixture-controller'){
+            $script:scanSelectionArgs=@($arguments)
+            if(-not $Secret -or ($codes -join ',') -cne '0,1'){throw 'Expected closed scan selection exit codes and private output'}
+            $valid='{"protocol":"https","common":true,"args":["--lua-desync=fixture"]}'
+            switch -CaseSensitive ($script:scanMode){
+                'parser-missing' {return @{stdout=$valid;exitCode=0}}
+                'parser-no-strategy' {return @{stdout='';stderr='PRIVATE_PARSER_PATH';exitCode=1;outputComplete=$true}}
+                'parser-invalid-json' {return @{stdout='{PRIVATE_PARSER_PATH';exitCode=0;outputComplete=$true}}
+                'parser-array' {return @{stdout=('['+$valid+']');exitCode=0;outputComplete=$true}}
+                'parser-no-common' {return @{stdout=$valid.Replace('true','false');exitCode=0;outputComplete=$true}}
+                'parser-invalid-protocol' {return @{stdout=$valid.Replace('https','unknown');exitCode=0;outputComplete=$true}}
+                'parser-invalid-args' {return @{stdout='{"protocol":"https","common":true,"args":[1]}';exitCode=0;outputComplete=$true}}
+                'parser-control-args' {return @{stdout='{"protocol":"https","common":true,"args":["--lua-desync=fixture\u000a"]}';exitCode=0;outputComplete=$true}}
+                'parser-lua-init' {return @{stdout=$valid.Replace('["','["--lua-i=@temporary.lua","');exitCode=0;outputComplete=$true}}
+                'complete' {return @{stdout=$valid.Replace('true','false');exitCode=0;outputComplete=$true}}
+            }
+            return @{stdout=$valid;exitCode=0;outputComplete=($script:scanMode -cne 'parser-incomplete')}
+        }
+        $system=Join-Path $env:SystemRoot 'System32'
+        $script:scanLaunches++
+        $working=if($r.bundlePath -or $script:scanMode -ceq 'complete-discovered'){$script:stagedScanBundle}else{$scanBundle}
+        if($program -cne (Join-Path $working 'bash.exe') -or $WorkingDirectory -cne $working -or $Timeout -ne 4200 -or
+           $ChildEnvironment.Count -ne 12 -or $ChildEnvironment.WINWS2 -cne (ConvertTo-ScanCygwinPath (Join-Path $working 'winws2.exe')) -or
+           $ChildEnvironment.PATH -cne ($working+';'+$system) -or
+           $env:BASH_ENV -cne 'ordinary-fixture-startup' -or $ChildEnvironment.ContainsKey('BASH_ENV') -or $ChildEnvironment.SCANLEVEL -cne 'quick' -or
+           $ChildEnvironment.BATCH -cne '1' -or $ChildEnvironment.DOMAINS -cne $(if($r.targets){$r.targets -join ' '}else{'discord.com discord.gg'}) -or
+           -not (Under $ChildEnvironment.HOME $script:stagedScanBundle) -or $ChildEnvironment.TEMP -cne $ChildEnvironment.HOME -or
+           $ChildEnvironment.TMP -cne $ChildEnvironment.HOME){
+            throw 'Unexpected ordinary scan execution environment'
+        }
+        if($script:scanMode -ceq 'scan-engine-changed'){
+            [IO.File]::WriteAllText((Join-Path $working 'winws2.exe'),'changed executable')
+        }
+        if($script:scanMode -ceq 'scan-lua-changed'){
+            [IO.File]::WriteAllText((Join-Path $working 'lua\zapret-antidpi.lua'),'changed Lua library')
+        }
+        if($script:scanMode -ceq 'scan-missing'){return @{stdout='* SUMMARY fixture'}}
+        if($script:scanMode -ceq 'scan-empty'){return @{stdout='';outputComplete=$true}}
+        if($script:scanMode -ceq 'scan-invalid-completion'){return @{stdout='* SUMMARY fixture';outputComplete='true'}}
+        return @{stdout='* SUMMARY fixture';outputComplete=($script:scanMode -cne 'scan-incomplete')}
+    }
+    $env:BASH_ENV='ordinary-fixture-startup'
+    $modes=@('scan-incomplete','scan-missing','scan-empty','scan-invalid-completion','scan-engine-changed','scan-lua-changed','parser-incomplete','parser-missing','parser-no-strategy','parser-invalid-json',
+        'parser-array','parser-no-common','parser-invalid-protocol','parser-invalid-args','parser-control-args','parser-lua-init','complete','complete-default','complete-multi','complete-implicit')
+    foreach($mode in $modes){
+        $script:scanMode=$mode;$script:scanWrites=0;$script:scanInstalls=0;$script:scanLaunches=0;$script:scanSelectionArgs=@()
+        $script:undo=[Collections.Generic.List[object]]::new()
+        [IO.File]::WriteAllText($scanReport,'previous complete report')
+        $targets=@();if($mode -in @('complete-multi','parser-no-common')){$targets=@('example.com','example.net')}elseif($mode -ne 'complete-default'){$targets=@('example.com')}
+        $bundle=if($mode -eq 'complete-implicit'){$null}else{$scanBundle}
+        $r=[pscustomobject]@{engine='zapret2';bundlePath=$bundle;scan='quick';targets=@($targets);dns='unchanged'}
+        $oldPath=$env:PATH;$rejected=$false;$message=''
+        try {[void](Auto-Install)}catch{$rejected=$true;$message=$_.Exception.Message}
+        if($mode -like 'complete*'){
+            Assert (-not $rejected -and $script:scanWrites -eq 1 -and $script:scanInstalls -eq 1) ('Complete '+$mode+' scan reaches only the mocked installer')
+            $requireCommon=(@($script:scanSelectionArgs | Where-Object {$_ -ceq '--require-common'}).Count -eq 1)
+            if($mode -in @('complete','complete-implicit')){Assert (-not $requireCommon) ('Single-target '+$mode+' scan does not require a common section')}
+            else{Assert $requireCommon ('Multi-target '+$mode+' scan requires a common section')}
+        }elseif($mode -like 'scan-*'){
+            Assert ($rejected -and $script:scanWrites -eq 0 -and $script:scanInstalls -eq 0) ('Scan rejects '+$mode+' before saving or installation')
+            if($mode -ceq 'scan-engine-changed'){
+                Assert ($message -ceq 'Windows blockcheck engine executable changed during the scan') 'Changed scan engine has a specific refusal'
+            }
+            if($mode -ceq 'scan-lua-changed'){
+                Assert ($message -ceq 'Zapret2 Lua libraries differ from the completed strategy scan') 'Changed scan Lua library has a specific refusal'
+            }
+        }else{
+            Assert ($rejected -and $script:scanWrites -eq 1 -and $script:scanInstalls -eq 0 -and
+                -not $r.PSObject.Properties['args'] -and -not $r.PSObject.Properties['mode']) ('Scan rejects '+$mode+' before installation')
+            if($mode -eq 'parser-no-strategy'){
+                Assert ($message -ceq 'No usable strategy was selected. Review the scan report before installing manually.') 'No strategy provides a fixed operator message'
+            }elseif($mode -notin @('parser-incomplete','parser-missing')){
+                Assert ($message -ceq 'Scan strategy selection returned an invalid result') 'Invalid selection metadata is refused with a fixed message'
+            }
+        }
+        $expectedReport=if($mode -like 'scan-*'){'previous complete report'}else{'* SUMMARY fixture'}
+        Assert ($script:undo.Count -eq 0 -and @(Rollback).Count -eq 0 -and
+            [IO.File]::ReadAllText($scanReport) -ceq $expectedReport) ('Scan report survives rollback for '+$mode)
+        Assert ($env:PATH -ceq $oldPath) 'Scan preserves the process PATH after success or refusal'
+        Assert ($script:stagedScanBundle -and -not (Test-Path -LiteralPath $script:stagedScanBundle)) 'Ordinary scan removes its private workspace after success or refusal'
+    }
+    $externalProgramFiles=Join-Path $testRoot 'scan-program-files'
+    $discoveredBundle=Join-Path $externalProgramFiles 'SplitWire-Turkey\res\zapret'
+    [void][IO.Directory]::CreateDirectory($discoveredBundle)
+    Copy-Tree $scanBundle $discoveredBundle -Disposable
+    [IO.File]::Delete((Join-Path $scanBundle 'blockcheck2.sh'))
+    try {
+        $env:ProgramFiles=$externalProgramFiles
+        $script:scanMode='complete-discovered';$script:scanWrites=0;$script:scanLaunches=0
+        $r=[pscustomobject]@{engine='zapret2';bundlePath=$null;scan='quick';targets=@('example.com')}
+        $discovered=Scan-Strategies
+        Assert ($discovered.scanLevel -ceq 'quick' -and $script:scanWrites -eq 1 -and $script:scanLaunches -eq 1 -and
+            -not (Test-Path -LiteralPath $script:stagedScanBundle) -and
+            (Test-Path -LiteralPath (Join-Path $discoveredBundle 'blockcheck2.sh') -PathType Leaf)) 'Discovered external tools run together from fresh staging and preserve their source'
+    } finally {
+        $env:ProgramFiles=$previousScanProgramFiles
+        [IO.File]::WriteAllText((Join-Path $scanBundle 'blockcheck2.sh'),'inert')
+    }
+    $ordinaryRequest=$r
+    try {
+        $r=[pscustomobject]@{bundlePath=$scanBundle}
+        $rejected=$false
+        try {[void](& $scanFunctions['Ensure-Asset'] 'zapret2' ('0'*64))}
+        catch {$rejected=$_.Exception.Message -ceq 'The selected engine executable differs from the completed strategy scan'}
+        Assert ($rejected -and -not (Test-Path -LiteralPath (Join-Path $root 'components'))) 'A changed engine is refused before component staging'
+        $engineHash=Get-WorkflowFileHash $script:scanBinary
+        [IO.File]::WriteAllText($library,'replacement library')
+        try {
+            $rejected=$false
+            try {[void](& $scanFunctions['Ensure-Asset'] 'zapret2' $engineHash $luaHashes)}
+            catch {$rejected=$_.Exception.Message -ceq 'Zapret2 Lua libraries differ from the completed strategy scan'}
+            Assert ($rejected -and -not (Test-Path -LiteralPath (Join-Path $root 'components'))) 'A changed source Lua library is refused before component staging'
+        } finally {[IO.File]::WriteAllText($library,'inert library')}
+        & {
+            $r=[pscustomobject]@{engine='zapret2';args=@('--lua-desync=fixture');mode='service';dns='unchanged'}
+            function Get-Service {}
+            function Save-Hostlist {}
+            function Install-EngineService($engine,$binary,$arguments) {
+                if($engine -cne 'zapret2' -or $binary -cne $script:scanBinary){throw 'Unexpected staged engine'}
+                $script:scanServiceArgs=$arguments
+            }
+            $script:scanServiceArgs=$null
+            & $scanFunctions['Install-Method'] -ScannedEngineSHA256 $engineHash -ScannedLuaSHA256 $luaHashes
+            Assert ($script:scanServiceArgs[0] -ceq ('--lua-init=@'+$library) -and
+                $script:scanServiceArgs[1] -ceq ('--lua-init=@'+$antidpi)) 'Service uses both validated Lua libraries in upstream order'
+            $script:scanServiceArgs=$null
+            [IO.File]::WriteAllText($antidpi,'replacement staged library')
+            try {
+                $rejected=$false
+                try {& $scanFunctions['Install-Method'] -ScannedEngineSHA256 $engineHash -ScannedLuaSHA256 $luaHashes}
+                catch {$rejected=$_.Exception.Message -ceq 'Zapret2 Lua libraries differ from the completed strategy scan'}
+                Assert ($rejected -and -not $script:scanServiceArgs) 'A changed staged Lua library is refused before service creation'
+            } finally {[IO.File]::WriteAllText($antidpi,'inert antidpi')}
+            $r.args=@('--lua-init=@operator.lua','--lua-desync=fixture')
+            & $scanFunctions['Install-Method']
+            Assert (@($script:scanServiceArgs | Where-Object {$_ -like '--lua-init=*'}).Count -eq 1 -and
+                $script:scanServiceArgs -ccontains '--lua-init=@operator.lua') 'Manual install preserves an explicitly supplied Lua initializer'
+        }
+    } finally {$r=$ordinaryRequest}
+    $alternative=Join-Path $scanBundle 'alternative'
+    [void][IO.Directory]::CreateDirectory($alternative)
+    foreach($case in @(
+        @{duplicate='blockcheck2.sh';message='Windows blockcheck bundle contains multiple matching scripts'},
+        @{duplicate='bash.exe';message='Windows blockcheck bundle contains multiple Bash runtimes'}
+    )){
+        $file=Join-Path $alternative $case.duplicate
+        [IO.File]::WriteAllText($file,'inert alternative')
+        try {
+            $r.bundlePath=$scanBundle
+            $script:scanLaunches=0;$script:scanWrites=0;$refused=$false
+            try {[void](Scan-Strategies)}catch{$refused=$_.Exception.Message -ceq $case.message}
+            Assert ($refused -and $script:scanLaunches -eq 0 -and $script:scanWrites -eq 0 -and
+                -not (Test-Path -LiteralPath $script:stagedScanBundle)) ('Selected scan bundle refuses ambiguous '+$case.duplicate)
+        } finally {[IO.File]::Delete($file)}
+    }
+    $missing=Join-Path $testRoot 'absent-scan-bundle'
+    $r.bundlePath=$missing
+    $refused=$false
+    try {[void](Scan-Strategies)}catch{$refused=$_.Exception.Message -ceq 'The selected Windows blockcheck bundle directory is unavailable'}
+    Assert ($refused -and $script:scanLaunches -eq 0) 'An unavailable explicit scan bundle cannot use a cached fallback'
+    $inputData=[pscustomobject]@{managedPolicy=$true;ispHook=$null}
+    $r=[pscustomobject]@{engine='zapret2';bundlePath=$null;scan='quick';targets=@('example.com')}
+    $script:scanWrites=0
+    $refused=$false
+    try {Scan-Strategies | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Managed strategy scans require an approved Windows blockcheck bundle'}
+    Assert ($refused -and $script:scanWrites -eq 0) 'Managed strategy scan refuses an absent approved bundle before saving'
+    $r.bundlePath=$scanBundle
+    function Native {
+        param($program,$arguments,[int]$Timeout,$WorkingDirectory,$ChildEnvironment)
+        if($program -cne (Join-Path $script:stagedScanBundle 'bash.exe') -or $arguments[-1] -notlike '*/blockcheck2.sh'){throw 'Unexpected staged scan executable or script'}
+        if($env:BASH_ENV -cne 'fixture-startup' -or $ChildEnvironment.ContainsKey('BASH_ENV')){throw 'Managed scan did not isolate the child startup environment'}
+        $system=Join-Path $env:SystemRoot 'System32'
+        if($WorkingDirectory -cne $script:stagedScanBundle -or $ChildEnvironment.PATH -cne ($script:stagedScanBundle+';'+$system)){throw 'Managed scan used an unexpected working directory or search path'}
+        if(-not (Under $ChildEnvironment.HOME $script:stagedScanBundle) -or $ChildEnvironment.TEMP -cne $ChildEnvironment.HOME){throw 'Managed scan did not keep state in the staged bundle'}
+$workingEngine=Join-Path $script:stagedScanBundle 'winws2.exe'
+        if($ChildEnvironment.Count -ne 12 -or $ChildEnvironment.WINWS2 -cne (ConvertTo-ScanCygwinPath $workingEngine) -or $ChildEnvironment.SCANLEVEL -cne 'quick' -or $ChildEnvironment.DOMAINS -cne 'example.com'){throw 'Managed scan child inputs changed'}
+        return @{stdout='* SUMMARY fixture';outputComplete=$true}
+    }
+    $oldBashEnv=$env:BASH_ENV
+    try {
+        $env:BASH_ENV='fixture-startup'
+        $stagedScan=Scan-Strategies
+        if($env:BASH_ENV -cne 'fixture-startup'){throw 'Managed scan did not restore the Bash startup setting'}
+    } finally {$env:BASH_ENV=$oldBashEnv}
+    Assert ($stagedScan.scanLevel -ceq 'quick' -and $script:scanWrites -eq 1 -and (Under $script:stagedScanBundle (Join-Path $root 'temp')) -and -not (Test-Path -LiteralPath $script:stagedScanBundle)) 'Managed strategy scan runs from the staged approved bundle'
+} finally {
+    $env:BASH_ENV=$oldOrdinaryBashEnv
+    $script:undo=$previousScanUndo
+    foreach($name in $scanFunctions.Keys){Set-Item ('Function:'+$name) $scanFunctions[$name]}
+    $inputData=$previousScanInput;$r=$previousScanRequest;$root=$previousScanRoot;$assetNames=$previousScanAssetNames
 }
 
 # Failed real-vendor probes may export only bounded, sanitized error details.
@@ -290,11 +654,3016 @@ try {
         Assert ([Net.ServicePointManager]::SecurityProtocol -eq $expected) ('Process-local TLS setup preserves the contract for '+$action)
     }
 } finally {[Net.ServicePointManager]::SecurityProtocol=$previousTLS;$r=$previousRequest}
+# Inert version directories verify application selection without launching Discord.
+$previousLocalAppData=$env:LOCALAPPDATA
+try {
+    $env:LOCALAPPDATA=Join-Path $testRoot 'discord-selection-fixture'
+    $appBase=Join-Path $env:LOCALAPPDATA 'Discord'
+    foreach($name in @('app-1.0.9','app-1.0.10','app-unknown')){
+        $directory=Join-Path $appBase $name;[void](New-Item -ItemType Directory -Path $directory -Force)
+        [IO.File]::WriteAllText((Join-Path $directory 'Discord.exe'),'inert fixture')
+    }
+    (Get-Item -LiteralPath (Join-Path $appBase 'app-1.0.9')).LastWriteTimeUtc=[DateTime]::UtcNow
+    (Get-Item -LiteralPath (Join-Path $appBase 'app-1.0.10')).LastWriteTimeUtc=[DateTime]::UtcNow.AddHours(-1)
+    (Get-Item -LiteralPath (Join-Path $appBase 'app-unknown')).LastWriteTimeUtc=[DateTime]::UtcNow.AddHours(1)
+    $found=@(Discord-Directories 'discord')
+    Assert ($found.Count -eq 3 -and $found[0] -ceq (Join-Path $appBase 'app-1.0.10') -and $found[1] -ceq (Join-Path $appBase 'app-1.0.9')) 'Discord discovery selects the highest version before modification time'
+    Assert ($found[2] -ceq (Join-Path $appBase 'app-unknown')) 'Discord discovery retains nonstandard directory fallback after valid versions'
+    Assert ((Find-App 'discord') -ceq (Join-Path $appBase 'app-1.0.10\Discord.exe')) 'Discord application lookup uses the highest discovered version'
+    $badImage=Join-Path $appBase 'app-9.0.0\Discord.exe'
+    [void](New-Item -ItemType Directory -Path $badImage -Force)
+    $refused=$false
+    try{Find-App 'discord'}catch{$refused=$_.Exception.Message -ceq 'Discord executable path is not a file'}
+    Assert $refused 'Discord discovery refuses a directory at the client executable path'
+    [IO.Directory]::Delete($badImage)
+    [IO.Directory]::Delete((Split-Path -Parent $badImage))
+
+    $outside=Join-Path $env:LOCALAPPDATA 'unrelated'
+    [void](New-Item -ItemType Directory -Path (Join-Path $outside 'app-1.0.0') -Force)
+    $outsideImage=Join-Path $outside 'app-1.0.0\DiscordPTB.exe'
+    [IO.File]::WriteAllText($outsideImage,'must stay untouched')
+    foreach($linkCase in @(
+        @{variant='discord';path=(Join-Path $appBase 'app-9.0.0');target=(Join-Path $outside 'app-1.0.0')},
+        @{variant='discord-ptb';path=(Join-Path $env:LOCALAPPDATA 'DiscordPTB');target=$outside}
+    )){
+        [void](New-Item -ItemType Junction -Path $linkCase.path -Target $linkCase.target -ErrorAction Stop)
+        try {
+            $refused=$false
+            try{Find-App $linkCase.variant}catch{$refused=$_.Exception.Message -ceq 'Reparse points are not supported in installation paths'}
+            Assert ($refused -and [IO.File]::ReadAllText($outsideImage) -ceq 'must stay untouched') ('Discord discovery refuses a junction for '+$linkCase.variant)
+        } finally {[IO.Directory]::Delete($linkCase.path)}
+    }
+    $ptbPath=Join-Path $env:LOCALAPPDATA 'DiscordPTB'
+    [IO.File]::WriteAllText($ptbPath,'file occupying the installation root')
+    $refused=$false
+    try{Find-App 'discord-ptb'}catch{$refused=$_.Exception.Message -ceq 'Discord installation root is not a directory'}
+    Assert $refused 'Discord discovery refuses a file at the client root'
+    [IO.File]::Delete($ptbPath)
+    & {
+        function Get-ChildItem {
+            [CmdletBinding()]param($LiteralPath,[switch]$Directory,$Filter,[switch]$Force)
+            if($LiteralPath -cne $appBase -or -not $Directory -or -not $Force -or $Filter -cne 'app-*'){throw 'Unexpected Discord inventory request'}
+            Write-Error 'fixture inventory denied'
+        }
+        $refused=$false
+        try{Find-App 'discord'}catch{$refused=$_.Exception.Message -ceq 'fixture inventory denied'}
+        Assert $refused 'Discord discovery propagates a failed version inventory'
+    }
+} finally {$env:LOCALAPPDATA=$previousLocalAppData}
+# Exercise registered custom paths with inert files and an in-memory registry view.
+& {
+    $registrationKey='30120f3b-3e88-5c75-afec-3de1a3155a97'
+    $machineKey='HKLM:\SOFTWARE\'+$registrationKey
+    $alternateKey='HKLM:\SOFTWARE\WOW6432Node\'+$registrationKey
+    $splitCordLocations=@{}
+    $splitCordFirst=Join-Path $testRoot 'SplitCord fixture one'
+    $splitCordSecond=Join-Path $testRoot 'SplitCord fixture two'
+    foreach($directory in @($splitCordFirst,$splitCordSecond)){
+        [void](New-Item -ItemType Directory -Path $directory)
+        [IO.File]::WriteAllText((Join-Path $directory 'SplitCord-Turkey.exe'),'inert fixture')
+    }
+    function Test-Path {
+        param([string]$LiteralPath,[string]$PathType,[string]$ErrorAction)
+        if($LiteralPath -in @($machineKey,$alternateKey)){return $splitCordLocations.ContainsKey($LiteralPath)}
+        $arguments=@{LiteralPath=$LiteralPath}
+        if($PathType){$arguments.PathType=$PathType}
+        if($ErrorAction){$arguments.ErrorAction=$ErrorAction}
+        Microsoft.PowerShell.Management\Test-Path @arguments
+    }
+    function Get-ItemProperty {
+        param([string]$LiteralPath,[string]$ErrorAction)
+        if($LiteralPath -in @($machineKey,$alternateKey)){return @{InstallLocation=$splitCordLocations[$LiteralPath]}}
+        Microsoft.PowerShell.Management\Get-ItemProperty -LiteralPath $LiteralPath -ErrorAction $ErrorAction
+    }
+    $splitCordLocations[$machineKey]='\\server\share'
+    $splitCordLocations[$alternateKey]=$splitCordFirst
+    Assert ((Find-App 'splitcord') -ieq (Join-Path $splitCordFirst 'SplitCord-Turkey.exe')) 'SplitCord discovery uses the registered custom path from the alternate machine view'
+    $splitCordLocations[$machineKey]=$splitCordFirst
+    Assert ((Find-App 'splitcord') -ieq (Join-Path $splitCordFirst 'SplitCord-Turkey.exe')) 'SplitCord discovery deduplicates matching machine registrations'
+    $splitCordLocations[$machineKey]=$splitCordSecond
+    $ambiguous=$false
+    try {Find-App 'splitcord' | Out-Null}catch{$ambiguous=$_.Exception.Message -ceq 'Multiple registered SplitCord installations matched'}
+    Assert $ambiguous 'SplitCord discovery refuses two different registered installations'
+
+    $savedLocal=$env:LOCALAPPDATA
+    $savedProgram=$env:ProgramFiles
+    $savedProgramX86=${env:ProgramFiles(x86)}
+    try {
+        $env:LOCALAPPDATA=Join-Path $testRoot 'SplitCord fallback user'
+        $env:ProgramFiles=Join-Path $testRoot 'SplitCord fallback machine'
+        ${env:ProgramFiles(x86)}=$env:ProgramFiles
+        $userDirectory=Join-Path $env:LOCALAPPDATA 'Programs/SplitCord-Turkey'
+        $machineDirectory=Join-Path $env:ProgramFiles 'SplitCord-Turkey'
+        foreach($directory in @($userDirectory,$machineDirectory)){
+            [void][IO.Directory]::CreateDirectory($directory)
+        }
+        $userApp=Join-Path $userDirectory 'SplitCord-Turkey.exe'
+        $machineApp=Join-Path $machineDirectory 'SplitCord-Turkey.exe'
+        [IO.File]::WriteAllText($machineApp,'inert machine copy')
+        $splitCordLocations[$machineKey]=Join-Path $testRoot 'stale registration'
+        $splitCordLocations.Remove($alternateKey)
+        Assert ((Find-App 'splitcord') -ieq $machineApp) 'SplitCord discovery uses one fallback executable when vendor registration is stale'
+        [IO.File]::WriteAllText($userApp,'inert user copy')
+        $ambiguous=$false
+        try {Find-App 'splitcord' | Out-Null}catch{
+            $ambiguous=$_.Exception.Message -ceq 'Multiple SplitCord executables matched in the default installation directories'
+        }
+        Assert $ambiguous 'SplitCord discovery refuses different executables across default folders'
+        $splitCordLocations[$machineKey]=$splitCordFirst
+        Assert ((Find-App 'splitcord') -ieq (Join-Path $splitCordFirst 'SplitCord-Turkey.exe')) 'SplitCord vendor registration takes precedence over fallback copies'
+        $registeredApp=Join-Path $splitCordFirst 'SplitCord-Turkey.exe'
+        [IO.File]::Delete($registeredApp)
+        [void][IO.Directory]::CreateDirectory($registeredApp)
+        $refused=$false
+        try{Find-App 'splitcord'}catch{$refused=$_.Exception.Message -ceq 'Registered SplitCord executable path is not a file'}
+        Assert $refused 'SplitCord discovery refuses a directory in place of a registered executable'
+        [IO.Directory]::Delete($registeredApp)
+        $splitCordLocations.Clear()
+        [IO.File]::Delete($userApp)
+        $nested=Join-Path $machineDirectory 'old-layout\client'
+        [void][IO.Directory]::CreateDirectory($nested)
+        $nestedApp=Join-Path $nested 'SplitCord-Turkey.exe'
+        [IO.File]::Move($machineApp,$nestedApp)
+        Assert ((Find-App 'splitcord') -ieq $nestedApp) 'SplitCord fallback discovers an executable in a nested legacy layout'
+        $junction=Join-Path $userDirectory 'redirected'
+        New-Item -ItemType Junction -Path $junction -Target $nested -ErrorAction Stop | Out-Null
+        try {
+            $refused=$false
+            try{Find-App 'splitcord'}catch{$refused=$_.Exception.Message -ceq 'SplitCord installation inventory contains a reparse point'}
+            Assert $refused 'SplitCord fallback refuses a redirected descendant before accepting discovery'
+        }finally{[IO.Directory]::Delete($junction)}
+        [void][IO.Directory]::CreateDirectory($userApp)
+        $refused=$false
+        try{Find-App 'splitcord'}catch{$refused=$_.Exception.Message -ceq 'SplitCord executable path is not a file'}
+        Assert $refused 'SplitCord fallback refuses a directory in place of a client executable'
+        [IO.Directory]::Delete($userApp)
+        [IO.Directory]::Delete($userDirectory)
+        [IO.File]::WriteAllText($userDirectory,'inert malformed installation root')
+        $refused=$false
+        try{Find-App 'splitcord'}catch{$refused=$_.Exception.Message -ceq 'SplitCord installation root is not a directory'}
+        Assert $refused 'SplitCord fallback refuses a file in place of an installation root'
+        [IO.File]::Delete($userDirectory)
+    }finally{
+        $env:LOCALAPPDATA=$savedLocal
+        $env:ProgramFiles=$savedProgram
+        ${env:ProgramFiles(x86)}=$savedProgramX86
+    }
+}
+# Custom installer admission is exercised without discovery or network access.
+$previousWireSockCLI=(Get-Command WireSock-CLI).ScriptBlock;$previousWireSockRequest=$r
+try {
+    function WireSock-CLI {$script:wireSockDiscoveryCount++;return 'C:\fixture\wiresock.exe'}
+    $script:wireSockDiscoveryCount=0;$r=[pscustomobject]@{downloadUrl='https://example.invalid/setup.exe';sha256=''}
+    $rejected=$false;try{Install-WireSock}catch{$rejected=$true}
+    Assert ($rejected -and $script:wireSockDiscoveryCount -eq 0) 'Custom WireSock installer without a hash is rejected before discovery'
+    $script:wireSockDiscoveryCount=0;$r=[pscustomobject]@{downloadUrl='https://example.invalid/setup.exe';sha256=('a'*64)}
+    $result=Install-WireSock
+    Assert ($result -ceq 'C:\fixture\wiresock.exe' -and $script:wireSockDiscoveryCount -eq 1) 'Hashed custom WireSock request reaches mocked discovery'
+    $script:wireSockDiscoveryCount=0;$r=[pscustomobject]@{downloadUrl='';sha256=''}
+    $result=Install-WireSock
+    Assert ($result -ceq 'C:\fixture\wiresock.exe' -and $script:wireSockDiscoveryCount -eq 1) 'Default WireSock request reaches mocked discovery'
+} finally {Set-Item Function:WireSock-CLI $previousWireSockCLI;$r=$previousWireSockRequest}
+$wireX64=WireSock-InstallerPlan 'amd64'
+$wireARM64=WireSock-InstallerPlan 'arm64'
+Assert ($wireX64.pattern -ceq 'wiresock-secure-connect-x64-*.exe' -and $wireARM64.pattern -ceq 'wiresock-secure-connect-arm64-*.exe' -and $wireX64.url -match 'platform=windows_x64' -and $wireARM64.url -match 'platform=windows_arm64' -and $wireX64.sha256 -cne $wireARM64.sha256) 'WireSock selects separate installer plans for native AMD64 and ARM64'
+$refused=$false
+try {WireSock-InstallerPlan 'unknown' | Out-Null}catch{$refused=$_.Exception.Message -like 'Native Windows architecture is unavailable*'}
+Assert $refused 'WireSock refuses an installer plan for an unknown architecture'
+# Exercise the bundled WireSock path using an inert file and mocked launch.
+$previousWireSockRequest=$r
+$previousWireSockRebootRequired=$script:rebootRequired
+$previousWireSockInput=$inputData
+$wireSockFixtureFunctions=@{}
+foreach($name in @('WireSock-CLI','Get-AuthenticodeSignature','Native')){
+    $wireSockFixtureFunctions[$name]=(Get-Command $name).ScriptBlock
+}
+try {
+    $wireSockBundle=Join-Path $testRoot 'wiresock-bundle'
+    [void](New-Item -ItemType Directory -Path $wireSockBundle)
+    $inputData=[pscustomobject]@{nativeArchitecture='arm64'}
+    $wireSockInstaller=Join-Path $wireSockBundle 'wiresock-secure-connect-arm64-fixture.exe'
+    $otherArchitectureInstaller=Join-Path $wireSockBundle 'wiresock-secure-connect-x64-fixture.exe'
+    [IO.File]::WriteAllBytes($otherArchitectureInstaller,[byte[]]@(1))
+    [IO.File]::WriteAllBytes($wireSockInstaller,[byte[]]@(0))
+    $r=[pscustomobject]@{bundlePath=$wireSockBundle}
+    $script:fixtureWireSockInstalled=$false
+    $script:fixtureWireSockLaunch=$null
+    $script:fixtureWireSockSignedPath=$null
+    $script:fixtureWireSockSubject='CN=Other fixture publisher'
+    $script:fixtureWireSockReboot=$false
+    $script:fixtureWireSockLookups=0
+    $script:rebootRequired=$false
+    function WireSock-CLI {
+        $script:fixtureWireSockLookups++
+        if($script:fixtureWireSockInstalled){return 'C:\fixture\wiresock.exe'}
+    }
+    function Get-AuthenticodeSignature {
+        param($LiteralPath)
+        $script:fixtureWireSockSignedPath=$LiteralPath
+        return @{Status='Valid';SignerCertificate=@{Subject=$script:fixtureWireSockSubject}}
+    }
+    function Native {
+        param($program,$arguments,$codes)
+        if(-not (Test-Path -LiteralPath $program -PathType Leaf)){throw 'Missing staged installer at mocked launch'}
+        $bytes=[IO.File]::ReadAllBytes($program)
+        if($bytes.Length -ne 1 -or $bytes[0] -ne 0){throw 'WireSock selected an installer for the wrong architecture'}
+        $script:fixtureWireSockLaunch=$program
+        $script:fixtureWireSockInstalled=$true
+        if($script:fixtureWireSockReboot){
+            $script:rebootRequired=$true
+            return @{exitCode=3010}
+        }
+        return @{exitCode=0}
+    }
+    $rejected=$false
+    try {Install-WireSock | Out-Null}catch{$rejected=$_.Exception.Message -ceq 'WireSock installer publisher signature could not be verified'}
+    Assert ($rejected -and -not $script:fixtureWireSockLaunch -and (Under $script:fixtureWireSockSignedPath (Join-Path $root 'downloads')) -and -not (Test-Path -LiteralPath $script:fixtureWireSockSignedPath)) 'Bundled WireSock rejects an unrelated publisher and retires the staged copy'
+    $script:fixtureWireSockSubject='CN=WireSock fixture'
+    $wireSockResult=Install-WireSock
+    Assert ($wireSockResult -ceq 'C:\fixture\wiresock.exe' -and $script:fixtureWireSockLaunch -ceq $script:fixtureWireSockSignedPath -and (Under $script:fixtureWireSockLaunch (Join-Path $root 'downloads')) -and -not (Test-Path -LiteralPath $script:fixtureWireSockLaunch) -and (Test-Path -LiteralPath $wireSockInstaller)) 'Bundled WireSock launches only the verified staged installer and retires it'
+    $script:fixtureWireSockInstalled=$false
+    $script:fixtureWireSockReboot=$true
+    $script:fixtureWireSockLookups=0
+    $script:fixtureWireSockLaunch=$null
+    $refused=$false
+    try {Install-WireSock | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Restart Windows after WireSock installation, then retry setup'}
+    Assert ($refused -and $script:rebootRequired -and $script:fixtureWireSockLookups -eq 1 -and $script:fixtureWireSockLaunch -and -not (Test-Path -LiteralPath $script:fixtureWireSockLaunch)) 'WireSock defers connection after an installer restart request'
+} finally {
+    $script:rebootRequired=$previousWireSockRebootRequired
+    $inputData=$previousWireSockInput
+    foreach($name in $wireSockFixtureFunctions.Keys){
+        if($null -eq $wireSockFixtureFunctions[$name]){Remove-Item ('Function:'+$name)}
+        else{Set-Item ('Function:'+$name) $wireSockFixtureFunctions[$name]}
+    }
+    $r=$previousWireSockRequest
+}
+# Check both service records before allowing a mocked vendor service start.
+$previousWireSockEffects=$script:externalEffectsPending
+try {
+    & {
+        function Get-Service {
+            param($Name,$ErrorAction)
+            return $script:wireSockServiceFixtures[$Name]
+        }
+        function Start-Service {
+            param($InputObject,$ErrorAction)
+            if(-not $script:externalEffectsPending){throw 'Fixture start did not record the vendor effect'}
+            $script:wireSockServiceStarts.Add($InputObject.ServiceName)
+            $InputObject.Status='Running'
+        }
+        $script:wireSockServiceStarts=[Collections.Generic.List[string]]::new()
+        $script:externalEffectsPending=$false
+        $app=[pscustomobject]@{ServiceName='WireSockAppService';Status='Stopped'}
+        $connect=[pscustomobject]@{ServiceName='WireSockConnectService';Status='StartPending'}
+        foreach($service in @($app,$connect)){
+            $service | Add-Member ScriptMethod Refresh {}
+            $service | Add-Member ScriptMethod WaitForStatus {
+                param($status,$timeout)
+                if($this.Status -ne $status -or $timeout.TotalSeconds -ne 20){throw 'Unexpected fixture service wait'}
+            }
+        }
+        $script:wireSockServiceFixtures=@{WireSockAppService=$app}
+        $refused=$false
+        try {Start-WireSockServices}catch{$refused=$_.Exception.Message -like 'Vendor service missing: WireSockConnectService*'}
+        Assert ($refused -and $script:wireSockServiceStarts.Count -eq 0 -and -not $script:externalEffectsPending) 'WireSock checks for both services before starting either'
+        $script:wireSockServiceFixtures['WireSockConnectService']=$connect
+        $refused=$false
+        try {Start-WireSockServices}catch{$refused=$_.Exception.Message -ceq 'Vendor service is not ready for setup: WireSockConnectService'}
+        Assert ($refused -and $script:wireSockServiceStarts.Count -eq 0 -and -not $script:externalEffectsPending) 'WireSock refuses transitional service state before starting either service'
+        $app.Status='Running'
+        $connect.Status='Stopped'
+        Start-WireSockServices
+        Assert (($script:wireSockServiceStarts -join ',') -ceq 'WireSockConnectService' -and $script:externalEffectsPending) 'WireSock starts only a stopped vendor service and records the external effect'
+    }
+} finally {$script:externalEffectsPending=$previousWireSockEffects}
+# Fixed inert files exercise ownership input validation without vendor execution.
+$previousOwnedRoot=$root;$previousOwnedRequest=$r;$previousOwnedProgramFiles=$env:ProgramFiles
+try {
+    & {
+        $root=Join-Path $testRoot 'wiresock-ownership'
+        $env:ProgramFiles=Join-Path $root 'programs'
+        $profileDirectory=Join-Path $root 'profiles'
+        [void][IO.Directory]::CreateDirectory($profileDirectory)
+        $recordPath=Join-Path $profileDirectory 'wiresock-owned.json'
+        $paths=@(Get-WireSockCLIPaths)
+        foreach($path in @($paths[0],$paths[2])){
+            [void][IO.Directory]::CreateDirectory((Split-Path -Parent $path))
+            [IO.File]::WriteAllBytes($path,[byte[]]@(0))
+        }
+        $profile='AccessWeaver-'+('a'*32)
+        @{cli=$paths[0];profile=$profile} | ConvertTo-Json -Compress | Set-Content -LiteralPath $recordPath -Encoding ASCII
+        $accepted=Read-OwnedWireSockProfile $recordPath
+        Assert (-not $accepted.legacy -and $accepted.cli -ceq $paths[0] -and $accepted.profile -ceq $profile) 'WireSock accepts the existing modern ownership record format'
+        @{cli=$paths[2];profile='default';legacy=$true} | ConvertTo-Json -Compress | Set-Content -LiteralPath $recordPath -Encoding ASCII
+        $accepted=Read-OwnedWireSockProfile $recordPath
+        Assert ($accepted.legacy -and $accepted.cli -ceq $paths[2]) 'WireSock accepts its recorded legacy CLI alongside a modern installation'
+        function Native {throw 'An invalid record reached a vendor command'}
+        function Stop-Service {throw 'An invalid record reached a service change'}
+        function New-ScheduledTaskAction {throw 'An invalid record reached task construction'}
+        function Unregister-ScheduledTask {throw 'An invalid record reached task removal'}
+        $r=[pscustomobject]@{enabled=$true}
+        foreach($record in @(
+            @{cli=(Join-Path $root 'outside.exe');profile=$profile},
+            @{cli=$paths[0];profile='other-profile'},
+            @{cli=$paths[2];profile=$profile;legacy='true'}
+        )){
+            $record | ConvertTo-Json -Compress | Set-Content -LiteralPath $recordPath -Encoding ASCII
+            foreach($operation in @({Disconnect-WireSock},{Remove-Method 'wiresock'},{Refresh-Task})){
+                $refused=$false
+                try {& $operation}catch{$refused=$_.Exception.Message -ceq 'WireSock ownership record is invalid or its vendor CLI is unavailable'}
+                if(-not $refused){throw 'WireSock operation did not reject the invalid ownership record'}
+            }
+        }
+        Assert (Test-Path -LiteralPath $recordPath -PathType Leaf) 'WireSock rejects invalid records before commands or task changes'
+        @{cli=$paths[0];profile=$profile} | ConvertTo-Json -Compress | Set-Content -LiteralPath $recordPath -Encoding ASCII
+        $script:fixtureRefreshCalls=[Collections.Generic.List[string]]::new()
+        $script:fixtureRefreshPresent=$true
+        $script:fixtureRefreshRetained=$true
+        function Get-RefreshTaskInspection {return @{present=$script:fixtureRefreshPresent}}
+        function Disable-ScheduledTask {param($TaskName,$TaskPath,$ErrorAction);$script:fixtureRefreshCalls.Add('disable')}
+        function Stop-ScheduledTask {param($TaskName,$TaskPath,$ErrorAction);$script:fixtureRefreshCalls.Add('stop')}
+        function Unregister-ScheduledTask {
+            param($TaskName,$TaskPath,$ErrorAction,$Confirm)
+            if($TaskName -cne 'AccessWeaver-WireSock-Refresh' -or $TaskPath -cne '\' -or $ErrorAction -cne 'Stop'){throw 'Unexpected task removal target'}
+            $script:fixtureRefreshCalls.Add('unregister')
+            $script:fixtureRefreshPresent=$script:fixtureRefreshRetained
+        }
+        $vendorFailure=''
+        $disconnectStatus=@{outputComplete=$true;stdout='Connected'}
+        $disconnectFailure='Tool failed: wiresock-connect-cli.exe (exit 1)'
+        $script:fixtureVendorProfiles=@($profile)
+        $script:fixtureDeleteLeavesProfile=$false
+        $script:fixtureListIncomplete=$false
+        $script:fixtureListIncompleteAfterDelete=$false
+        function Native {
+            param($program,$arguments,[switch]$Secret,[int]$Timeout)
+            if(-not $Secret){throw 'Expected private WireSock command'}
+            $script:fixtureRefreshCalls.Add($arguments[0])
+            if($arguments[0] -ceq $vendorFailure){
+                if($vendorFailure -ceq 'disconnect'){throw $disconnectFailure}
+                throw 'Private synthetic vendor detail'
+            }
+            if($arguments[0] -ceq 'status'){
+                if($Timeout -ne 15){throw 'Expected bounded WireSock status query'}
+                return $disconnectStatus
+            }
+            if($arguments[0] -ceq 'list'){
+                if($Timeout -ne 15){throw 'Expected bounded WireSock inventory query'}
+                return @{exitCode=0;outputComplete=(-not $script:fixtureListIncomplete);stdout=($script:fixtureVendorProfiles -join "`n")}
+            }
+            if($arguments[0] -ceq 'delete'){
+                if($arguments.Count -ne 2 -or $arguments[1] -cne $profile){throw 'Unexpected profile deletion target'}
+                if(-not $script:fixtureDeleteLeavesProfile){$script:fixtureVendorProfiles=@()}
+                if($script:fixtureListIncompleteAfterDelete){$script:fixtureListIncomplete=$true}
+            }
+            return @{exitCode=0}
+        }
+        $effectsBeforeCleanup=$script:externalEffectsPending
+        try {
+            $refused=$false
+            try {Disconnect-WireSock}catch{$refused=$_.Exception.Message -ceq 'WireSock reconnect task removal could not be verified'}
+            Assert ($refused -and ($script:fixtureRefreshCalls -join ',') -ceq 'disable,stop,unregister' -and (Test-Path -LiteralPath $recordPath)) 'WireSock disconnect refuses while scheduled reconnect removal is unconfirmed'
+            $script:fixtureRefreshCalls.Clear()
+            $script:fixtureRefreshRetained=$false
+            Disconnect-WireSock
+            Assert (($script:fixtureRefreshCalls -join ',') -ceq 'disable,stop,unregister,disconnect' -and (Test-Path -LiteralPath $recordPath)) 'WireSock disconnect retires scheduled reconnect and retains its profile'
+            $script:fixtureRefreshCalls.Clear()
+            $script:fixtureRefreshPresent=$true
+            $script:fixtureRefreshRetained=$true
+            $refused=$false
+            try {Remove-Method 'wiresock'}catch{$refused=$_.Exception.Message -ceq 'WireSock reconnect task removal could not be verified'}
+            Assert ($refused -and ($script:fixtureRefreshCalls -join ',') -ceq 'disable,stop,unregister' -and (Test-Path -LiteralPath $recordPath)) 'WireSock retains the profile when reconnect task removal is unconfirmed'
+            $script:fixtureRefreshRetained=$false
+            $recordHash=(Get-FileHash -LiteralPath $recordPath -Algorithm SHA256).Hash
+            foreach($case in @(
+                @{verb='disconnect';calls='list,disconnect,status';message='WireSock disconnect command failed; the managed profile was retained'},
+                @{verb='delete';calls='list,disconnect,delete';message='WireSock profile deletion command failed; the ownership record was retained'}
+            )){
+                $script:fixtureRefreshPresent=$true
+                $script:fixtureRefreshCalls.Clear()
+                $vendorFailure=$case.verb
+                $refused=$false
+                try {Remove-Method 'wiresock'}catch{$refused=$_.Exception.Message -ceq $case.message}
+                if(-not $refused -or ($script:fixtureRefreshCalls -join ',') -cne ('disable,stop,unregister,'+$case.calls) -or
+                    (Get-FileHash -LiteralPath $recordPath -Algorithm SHA256).Hash -cne $recordHash){
+                    throw 'WireSock removal failure did not preserve its fixed outcome and ownership record'
+                }
+            }
+            Assert $true 'WireSock distinguishes disconnect and deletion failures and retains ownership'
+            $script:fixtureRefreshPresent=$false
+            $vendorFailure='disconnect'
+            $disconnectStatus=@{outputComplete=$false;stdout='Disconnected'}
+            $script:fixtureRefreshCalls.Clear()
+            $refused=$false
+            try {Remove-Method 'wiresock'}catch{$refused=$_.Exception.Message -ceq 'WireSock disconnect command failed; the managed profile was retained'}
+            Assert ($refused -and ($script:fixtureRefreshCalls -join ',') -ceq 'list,disconnect,status' -and
+                (Test-Path -LiteralPath $recordPath)) 'WireSock retains ownership when idle status output is incomplete'
+            $disconnectStatus=@{outputComplete=$true;stdout='Status: NotConnected'}
+            $disconnectFailure='Timed out: wiresock-connect-cli.exe'
+            $script:fixtureRefreshCalls.Clear()
+            $refused=$false
+            try {Remove-Method 'wiresock'}catch{$refused=$_.Exception.Message -ceq 'WireSock disconnect command failed; the managed profile was retained'}
+            Assert ($refused -and ($script:fixtureRefreshCalls -join ',') -ceq 'list,disconnect' -and
+                (Test-Path -LiteralPath $recordPath)) 'WireSock retains ownership after an unconfirmed disconnect process exit'
+            $disconnectFailure='Tool failed: wiresock-connect-cli.exe (exit 1)'
+            $script:fixtureRefreshCalls.Clear()
+            Remove-Method 'wiresock'
+            Assert (($script:fixtureRefreshCalls -join ',') -ceq 'list,disconnect,status,delete,list' -and
+                -not (Test-Path -LiteralPath $recordPath)) 'WireSock can remove its profile after a failed disconnect and confirmed idle status'
+            @{cli=$paths[0];profile=$profile} | ConvertTo-Json -Compress | Set-Content -LiteralPath $recordPath -Encoding ASCII
+            $script:fixtureRefreshPresent=$true
+            $script:fixtureVendorProfiles=@($profile)
+            $vendorFailure=''
+            $script:fixtureRefreshCalls.Clear()
+            Remove-Method 'wiresock'
+            Assert (($script:fixtureRefreshCalls -join ',') -ceq 'disable,stop,unregister,list,disconnect,delete,list' -and -not (Test-Path -LiteralPath $recordPath)) 'WireSock retires the reconnect task before disconnecting or deleting the profile'
+            foreach($mode in @('competing','remaining','partial-before','partial-after')){
+                @{cli=$paths[0];profile=$profile} | ConvertTo-Json -Compress | Set-Content -LiteralPath $recordPath -Encoding ASCII
+                $savedHash=(Get-FileHash -LiteralPath $recordPath -Algorithm SHA256).Hash
+                $script:fixtureVendorProfiles=@($profile)
+                $script:fixtureDeleteLeavesProfile=$mode -ceq 'remaining'
+                $script:fixtureListIncomplete=$mode -ceq 'partial-before'
+                $script:fixtureListIncompleteAfterDelete=$mode -ceq 'partial-after'
+                if($mode -ceq 'competing'){$script:fixtureVendorProfiles+=@('AccessWeaver-'+('b'*32))}
+                $script:fixtureRefreshCalls.Clear()
+                $expectedMessage=switch($mode){
+                    'competing' {'WireSock removal could not confirm the only managed vendor profile; the ownership record was retained'}
+                    'partial-before' {'WireSock profile inventory could not be verified before removal; the ownership record was retained'}
+                    default {'WireSock profile deletion could not be verified; the ownership record was retained'}
+                }
+                $expectedCalls=if($mode -cin @('competing','partial-before')){'list'}else{'list,disconnect,delete,list'}
+                $refused=$false
+                try{Remove-Method 'wiresock'}catch{$refused=$_.Exception.Message -ceq $expectedMessage}
+                Assert ($refused -and ($script:fixtureRefreshCalls -join ',') -ceq $expectedCalls -and
+                    (Get-FileHash -LiteralPath $recordPath -Algorithm SHA256).Hash -ceq $savedHash) ('WireSock preserves ownership for '+$mode+' vendor inventory')
+            }
+            $script:fixtureListIncomplete=$false;$script:fixtureListIncompleteAfterDelete=$false
+            $script:fixtureRefreshCalls.Clear()
+            Remove-Method 'wiresock'
+            Assert (($script:fixtureRefreshCalls -join ',') -ceq 'list' -and -not (Test-Path -LiteralPath $recordPath)) 'WireSock retry retires ownership for an already deleted vendor profile without disconnecting'
+        } finally {$script:externalEffectsPending=$effectsBeforeCleanup}
+    }
+} finally {
+    $root=$previousOwnedRoot;$r=$previousOwnedRequest;$env:ProgramFiles=$previousOwnedProgramFiles
+}
+# The vendor disconnect command is global, so import-only rollback must
+# never send it. Model failures at both sides of the journal phase change.
+& {
+    $profileName='AccessWeaver-'+('b'*32)
+    $script:fixtureWireSockRollbackCalls=[Collections.Generic.List[string]]::new()
+    $previousUndo=$script:undo
+    try {
+        $script:undo=[Collections.Generic.List[object]]::new()
+        $failDisconnect=$false
+        $idleStatus='Disconnected'
+        $script:fixtureRollbackProfileDeleted=$false
+        $leaveVendorProfile=$false
+        function Native {
+            param($program,$arguments,[switch]$Secret,[int]$Timeout)
+            if(-not $Secret -or ($arguments[0] -eq 'delete' -and $arguments[1] -cne $profileName)){
+                throw 'Unexpected vendor cleanup command'
+            }
+            $script:fixtureWireSockRollbackCalls.Add($arguments[0])
+            if($arguments[0] -ceq 'disconnect' -and $failDisconnect){throw 'Tool failed: wiresock-connect-cli.exe (exit 1)'}
+            if($arguments[0] -ceq 'status'){
+                if($Timeout -ne 15){throw 'Expected bounded WireSock status query'}
+                return @{outputComplete=$true;stdout=$idleStatus}
+            }
+            if($arguments[0] -ceq 'list'){
+                return @{stdout=$(if(-not $script:fixtureRollbackProfileDeleted){$profileName}else{''});outputComplete=$true}
+            }
+            if($arguments[0] -ceq 'delete' -and -not $leaveVendorProfile){$script:fixtureRollbackProfileDeleted=$true}
+            return @{exitCode=0}
+        }
+        $entry=@{kind='wiresock';cli='C:\fixture\wiresock-connect-cli.exe';profile=$profileName;importOnly=$true}
+        $script:undo.Add($entry)
+        Assert (@(Rollback).Count -eq 0 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'list,delete,list') 'WireSock import-only recovery leaves the active connection alone'
+        $entry.importOnly=$false
+        $script:fixtureRollbackProfileDeleted=$false
+        $script:fixtureWireSockRollbackCalls.Clear()
+        Assert (@(Rollback).Count -eq 0 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'list,disconnect,delete,list') 'WireSock recovery after a connection attempt retains both cleanup steps'
+        $failDisconnect=$true
+        $script:fixtureRollbackProfileDeleted=$false
+        $script:fixtureWireSockRollbackCalls.Clear()
+        Assert (@(Rollback).Count -eq 0 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'list,disconnect,status,delete,list') 'WireSock recovery can delete its recorded profile after confirmed idle status'
+        $idleStatus='Disconnecting'
+        $script:fixtureRollbackProfileDeleted=$false
+        $script:fixtureWireSockRollbackCalls.Clear()
+        Assert (@(Rollback).Count -eq 1 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'list,disconnect,status') 'WireSock recovery refuses deletion while the vendor is still disconnecting'
+        $failDisconnect=$false
+        $leaveVendorProfile=$true
+        $root=Join-Path $testRoot 'wiresock-rollback-ownership'
+        $directory=Join-Path $root 'profiles'
+        [void][IO.Directory]::CreateDirectory($directory)
+        $ownedPath=Join-Path $directory 'wiresock-owned.json'
+        [IO.File]::WriteAllText($ownedPath,'inert owner')
+        $script:undo.Add(@{kind='file';path=$ownedPath;expectedHash=(Get-WorkflowFileHash $ownedPath)})
+        $script:fixtureWireSockRollbackCalls.Clear()
+        Assert (@(Rollback).Count -eq 1 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'list,disconnect,delete,list' -and
+            [IO.File]::Exists($ownedPath)) 'WireSock rollback retains its owner when vendor deletion is unverified'
+        $script:fixtureRollbackProfileDeleted=$true
+        $script:fixtureWireSockRollbackCalls.Clear()
+        Assert (@(Rollback).Count -eq 0 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'list' -and
+            -not [IO.File]::Exists($ownedPath)) 'WireSock rollback resumes after vendor deletion and retires its recorded ownership file'
+        $script:undo.RemoveAt(1)
+        $script:fixtureRollbackProfileDeleted=$false
+        $script:fixtureWireSockRollbackCalls.Clear()
+        $idleStatus='Connected'
+        Assert (@(Rollback -OwnerlessWireSockProfile $profileName).Count -eq 1 -and
+            ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'list,status') 'WireSock ownerless rollback rechecks idle status at deletion'
+        $idleStatus='Disconnected'
+        $leaveVendorProfile=$false
+        $script:fixtureWireSockRollbackCalls.Clear()
+        Assert (@(Rollback -OwnerlessWireSockProfile $profileName).Count -eq 0 -and
+            ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'list,status,delete,list') 'WireSock ownerless rollback verifies named deletion without disconnecting'
+    } finally {$script:undo=$previousUndo}
+}
+# Drive the actual connection function and recover its generated undo entry.
+& {
+    $previousUndo=$script:undo
+    try {
+        $root=Join-Path $testRoot 'wiresock-phase-failures'
+        $profiles=Join-Path $root 'profiles'
+        [void][IO.Directory]::CreateDirectory($profiles)
+        $originalConfig=Join-Path $root 'fixture.conf'
+        [IO.File]::WriteAllText($originalConfig,'inert profile')
+        $fixtureCli='C:\fixture\wiresock-connect-cli.exe'
+        $calls=[Collections.Generic.List[string]]::new()
+        $fixtureInventory=@{stdout='';outputComplete=$true}
+        function Install-WireSock {return $fixtureCli}
+        function Start-WireSockServices {}
+        function Copy-Checked {
+            param($Source,$Destination)
+            [IO.File]::Copy($Source,$Destination,$false)
+            if($mode -ceq 'copy'){throw 'Fixture copy failure'}
+        }
+        function Write-Atomic {
+            param($Path,$Text)
+            if((Split-Path -Leaf $Path) -cne 'wiresock-owned.json' -or ($Text | ConvertFrom-Json).profile -cne $script:undo[0].profile){throw 'Unexpected ownership record'}
+            $calls.Add('record')
+        }
+        function Event {}
+        function Save-Journal {
+            if($script:undo.Count -ne 1){throw 'Unexpected WireSock journal entry count'}
+            $phase=$script:undo[0].importOnly
+            if($phase -isnot [bool]){throw 'Unexpected WireSock journal phase'}
+            if($phase){$calls.Add('save-import')}
+            else{
+                $calls.Add('save-connect')
+                if($mode -ceq 'journal'){throw 'Fixture journal failure'}
+            }
+        }
+        function Native {
+            param($program,$arguments,[switch]$Secret,[int]$Timeout)
+            if($program -cne $fixtureCli -or -not $Secret){throw 'Unexpected vendor command'}
+            $command=$arguments[0]
+            if($command -ceq 'list'){
+                if($Timeout -ne 15){throw 'Expected bounded profile inventory query'}
+                $calls.Add($command)
+                if($mode -ceq 'inventory-error'){throw 'Private inventory failure'}
+                return $fixtureInventory
+            }
+            $entry=$script:undo[0]
+            switch($command){
+                'import' {
+                    if(-not $entry.importOnly -or [IO.Path]::GetFileNameWithoutExtension($arguments[1]) -cne $entry.profile){
+                        throw 'Import did not use the journaled profile'
+                    }
+                    if(-not [IO.File]::Exists($arguments[1])){throw 'Missing staged import configuration'}
+                    $calls.Add($command)
+                    $fixtureInventory.stdout=$entry.profile
+                    if($mode -ceq 'import'){throw 'Fixture import failure'}
+                }
+                'connect' {
+                    if($entry.importOnly -or $arguments[1] -cne $entry.profile){throw 'Connect did not use the journaled profile'}
+                    $calls.Add($command)
+                    if($mode -ceq 'connect'){throw 'Fixture connect failure'}
+                }
+                'status' {
+                    if($Timeout -ne 15){throw 'Expected bounded status query'}
+                    $calls.Add($command)
+                    if($fixtureStatus.bindProfile){
+                        return @{stdout=$fixtureStatus.stdout.Replace(('AccessWeaver-'+('a'*32)),$entry.profile);outputComplete=$fixtureStatus.outputComplete}
+                    }
+                    return $fixtureStatus
+                }
+                'disconnect' {$calls.Add($command)}
+                'delete' {
+                    if($arguments[1] -cne $entry.profile -or $entry.profile -cnotmatch '^AccessWeaver-[a-f0-9]{32}$'){
+                        throw 'Rollback targeted a different profile'
+                    }
+                    $calls.Add($command)
+                    $fixtureInventory.stdout=''
+                }
+                default {throw 'Unexpected vendor command'}
+            }
+            return @{exitCode=0}
+        }
+        foreach($case in @(
+            @{mode='copy';calls='list';label='WireSock retires failed import staging before any vendor command'},
+            @{mode='import';calls='list,save-import,import,list,delete,list';label='WireSock import failure rolls back only the generated profile'},
+            @{mode='journal';calls='list,save-import,import,save-connect,list,delete,list';label='WireSock journal failure before connect preserves the active tunnel'},
+            @{mode='connect';calls='list,save-import,import,save-connect,connect,list,disconnect,delete,list';label='WireSock connect failure uses the persisted connection recovery phase'}
+        )){
+            $mode=$case.mode
+            $calls.Clear()
+            $script:undo=[Collections.Generic.List[object]]::new()
+            $failed=$false
+            try {Connect-WireSock (Join-Path $root 'fixture.conf') | Out-Null}catch{
+                $failed=$_.Exception.Message -ceq ('Fixture '+$mode+' failure')
+            }
+            if(@(Get-ChildItem -LiteralPath $profiles -Filter '*.conf').Count){throw 'Import configuration remains after failure'}
+            $errors=@(Rollback)
+            Assert ($failed -and $errors.Count -eq 0 -and ($calls -join ',') -ceq $case.calls) $case.label
+        }
+        $inventoryFailure='WireSock profile inventory could not be verified; retry before importing a profile'
+        $leftoverFailure='A managed WireSock profile remains in the vendor inventory; recover the earlier workflow before retrying setup'
+        foreach($case in @(
+            @{mode='inventory-error';output='';complete=$true;message=$inventoryFailure},
+            @{mode='inventory';output='';complete=$false;message=$inventoryFailure},
+            @{mode='inventory';output=('x'*8193);complete=$true;message=$inventoryFailure},
+            @{mode='inventory';output=('1. AccessWeaver-'+('e'*32));complete=$true;message=$leftoverFailure}
+        )){
+            $mode=$case.mode
+            $fixtureInventory=@{stdout=$case.output;outputComplete=$case.complete}
+            $calls.Clear()
+            $script:undo=[Collections.Generic.List[object]]::new()
+            $refused=$false
+            try {Connect-WireSock $originalConfig | Out-Null}catch{$refused=$_.Exception.Message -ceq $case.message}
+            if(-not $refused -or ($calls -join ',') -cne 'list' -or $script:undo.Count -ne 0){
+                throw 'Unsafe WireSock inventory reached profile import'
+            }
+        }
+        Assert $true 'WireSock refuses a remaining managed profile or unverified inventory before import'
+        $fixtureInventory=@{stdout="1. Independent profile" ;outputComplete=$true}
+        $mode='complete'
+        $checks=@(
+            @{stdout="Connection status: Connected`r`nExternal address: 198.51.100.7";complete=$true;want='Connected'},
+            @{stdout='NotConnected';complete=$true;want='NotConnected'},
+            @{stdout='Connection is Connected to an unverified profile';complete=$true;want='Unknown'},
+            @{stdout="Status: Connected`nStatus: Disconnected";complete=$true;want='Unknown'},
+            @{stdout='Connected';complete=$false;want='Unknown'},
+            @{stdout=('x'*8193);complete=$true;want='Unknown'}
+        )
+        # The actual CLI emits localized sentences, not enum labels. Bind each
+        # successful connection to the exact generated import identity.
+        $vendor=ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'fixtures/wiresock-status-3.8.1.1.json')))
+        foreach($culture in $vendor.cultures.PSObject.Properties){
+            $checks+=@{stdout=$culture.Value.templates.Connected.Replace('{0}',('AccessWeaver-'+('a'*32)));
+                complete=$true;want='Connected';connect=$true;bindProfile=$true}
+        }
+        $checks+=@{stdout=('Connected to server using profile AccessWeaver-'+('e'*32));
+            complete=$true;want='Connected';connect=$false}
+        foreach($check in $checks){
+            $fixtureStatus=@{stdout=$check.stdout;outputComplete=$check.complete}
+            if((Get-WireSockReportedState $fixtureStatus) -cne $check.want){throw 'Unexpected WireSock status projection'}
+        }
+        Assert $true 'WireSock records only a fixed vendor status and discards private output'
+        foreach($check in $checks){
+            $calls.Clear()
+            $fixtureInventory.stdout='1. Independent profile'
+            $script:undo=[Collections.Generic.List[object]]::new()
+            $fixtureStatus=@{stdout=$check.stdout;outputComplete=$check.complete;bindProfile=($check.bindProfile -eq $true)}
+            if($check.connect -eq $true){
+                $status=Connect-WireSock $originalConfig
+                if($status -cne 'Connected' -or ($calls -join ',') -cne 'list,save-import,import,save-connect,connect,status,record'){
+                    throw 'Confirmed connection did not publish its ownership record'
+                }
+            }else {
+                $refused=$false
+                try {Connect-WireSock $originalConfig | Out-Null}catch{
+                    $refused=$_.Exception.Message -ceq 'WireSock connection was not confirmed by vendor status'
+                }
+                $errors=@(Rollback)
+                if(-not $refused -or $errors.Count -ne 0 -or
+                    ($calls -join ',') -cne 'list,save-import,import,save-connect,connect,status,list,disconnect,delete,list'){
+                    throw 'Unconfirmed connection did not use the persisted recovery phase'
+                }
+            }
+        }
+        Assert $true 'WireSock requires confirmed vendor status before publishing ownership'
+        Assert (@(Get-ChildItem -LiteralPath $profiles -Filter '*.conf').Count -eq 0 -and [IO.File]::ReadAllText($originalConfig) -ceq 'inert profile') 'WireSock retires import copies after completion and preserves the generated profile'
+    } finally {$script:undo=$previousUndo}
+}
+& (Join-Path $PSScriptRoot 'test-windows-wiresock-status.ps1')
+# A recovery replay can reach the vendor's global disconnect. Verify the
+# entire journal is refused before a save or rollback when its profile is stale.
+& {
+    $previousUndo=$script:undo
+    try {
+        $root=Join-Path $testRoot 'wiresock-recovery-preflight'
+        $profiles=Join-Path $root 'profiles'
+        [void][IO.Directory]::CreateDirectory($profiles)
+        $ownerPath=Join-Path $profiles 'wiresock-owned.json'
+        [IO.File]::WriteAllText($ownerPath,'synthetic marker')
+        $r=@{journalId=('workflow-'+('a'*32)+'.json')}
+        $oldProfile='AccessWeaver-'+('b'*32)
+        $newProfile='AccessWeaver-'+('c'*32)
+        $cli='C:\fixture\wiresock-connect-cli.exe'
+        $entry=[pscustomobject]@{kind='wiresock';cli=$cli;profile=$oldProfile;importOnly=$false}
+        $script:undo=[Collections.Generic.List[object]]::new()
+        $calls=[Collections.Generic.List[string]]::new()
+        function Read-WorkflowRecoveryJournal {return @{undo=@($entry)}}
+        function WireSock-CLI {return $cli}
+        function Read-OwnedWireSockProfile {return @{cli=$cli;profile=$currentProfile;legacy=$false}}
+        function Get-ManagedWireSockProfiles {$calls.Add('list');return $vendorProfiles}
+        function Native {
+            param($program,$arguments,[switch]$Secret,[int]$Timeout)
+            if($program -cne $cli -or ($arguments -join ',') -cne 'status' -or -not $Secret -or $Timeout -ne 15){
+                throw 'Unexpected WireSock recovery command'
+            }
+            $calls.Add('status')
+            return @{stdout=$vendorState;outputComplete=$true}
+        }
+        function Save-Journal {$calls.Add('save')}
+        function Rollback([string]$OwnerlessWireSockProfile){
+            if($OwnerlessWireSockProfile){$calls.Add('rollback-ownerless')}else{$calls.Add('rollback')}
+        }
+        function Event {}
+        $currentProfile=$newProfile
+        $vendorProfiles=@($oldProfile)
+        $refused=$false
+        try {Recover-Operation}catch{$refused=$_.Exception.Message -ceq 'WireSock recovery journal differs from the current managed profile'}
+        Assert ($refused -and $calls.Count -eq 0 -and $script:undo.Count -eq 0) 'WireSock recovery refuses a journal for a different current owner'
+        [IO.File]::Delete($ownerPath)
+        foreach($inventory in @(@{profiles=@($newProfile)},@{profiles=@($oldProfile,$newProfile)})){
+            $vendorProfiles=$inventory.profiles
+            $calls.Clear()
+            $refused=$false
+            try {Recover-Operation}catch{$refused=$_.Exception.Message -ceq 'WireSock recovery cannot confirm the journaled profile is the only managed vendor profile'}
+            if(-not $refused -or ($calls -join ',') -cne 'list' -or $script:undo.Count -ne 0){
+                throw 'Unsafe WireSock replay reached recovery'
+            }
+        }
+        Assert $true 'WireSock recovery refuses competing vendor profiles before global disconnect'
+        $vendorProfiles=@()
+        $calls.Clear()
+        Recover-Operation
+        Assert (($calls -join ',') -ceq 'list,save,rollback-ownerless' -and $script:undo[0].importOnly -eq $false) 'WireSock recovery admits an absent vendor profile without a global disconnect'
+        $script:undo.Clear()
+        $vendorProfiles=@($oldProfile)
+        $calls.Clear()
+        $vendorState='Connected'
+        $refused=$false
+        try {Recover-Operation}catch{$refused=$_.Exception.Message -ceq 'WireSock recovery cannot confirm the vendor is idle without an ownership record'}
+        Assert ($refused -and ($calls -join ',') -ceq 'list,status' -and $script:undo.Count -eq 0) 'WireSock recovery without an owner refuses a connected vendor'
+        $calls.Clear()
+        $vendorState='Disconnected'
+        Recover-Operation
+        Assert (($calls -join ',') -ceq 'list,status,save,rollback-ownerless' -and $script:undo.Count -eq 1 -and
+            $script:undo[0].importOnly -eq $false) 'WireSock recovery without an owner selects named deletion after confirmed idle status'
+        $entry.importOnly=$false
+        [IO.File]::WriteAllText($ownerPath,'synthetic marker')
+        $currentProfile=$oldProfile
+        $calls.Clear()
+        Recover-Operation
+        Assert (($calls -join ',') -ceq 'list,save,rollback' -and $script:undo.Count -eq 1 -and
+            $script:undo[0].importOnly -eq $false) 'WireSock recovery accepts its unique journaled vendor profile'
+        $entry.importOnly=$true
+        $vendorProfiles=@($newProfile)
+        $calls.Clear()
+        Recover-Operation
+        Assert (($calls -join ',') -ceq 'save,rollback') 'WireSock import-only replay skips the global disconnect preflight'
+    } finally {$script:undo=$previousUndo}
+}
+# Exercise the updates dispatch helper with fixed public-shape release metadata.
+& {
+    $controllerBuild=@{version='1.8.0';commit=('1'*40);sourceState='clean';builtAt='unknown';goVersion='go1.27.4';platform='windows';arch='amd64'}
+    $inputData=@{controller='C:\fixture\accessweaver.exe';nativeArchitecture='amd64';controllerBuild=$controllerBuild}
+    $comparisonBuild=$controllerBuild
+    $calls=[Collections.Generic.List[string]]::new()
+    $published='2026-01-02T00:00:00Z'
+    function New-ReleaseAssets([string]$tag,[string]$arch){
+        foreach($name in @('BUILD-MANIFEST.json','SHA256SUMS.txt','BUILD-PROVENANCE.sigstore.json',('accessweaver-'+$tag+'-windows-'+$arch+'.zip'))){
+            @{name=$name;state='uploaded';digest=('sha256:'+('a'*64))}
+        }
+    }
+    $metadata=@(
+        @{draft=$true;prerelease=$false;tag_name='v99.0.0'},
+        @{draft=$false;prerelease=$true;tag_name='v88.0.0';assets=@(New-ReleaseAssets 'v88.0.0' 'amd64')},
+        @{draft=$false;prerelease=$false;tag_name='v89.0.0-rc.1';assets=@(New-ReleaseAssets 'v89.0.0-rc.1' 'amd64')},
+        @{draft=$false;prerelease=$false;tag_name='v87.0.0+build-1';assets=@(New-ReleaseAssets 'v87.0.0+build-1' 'amd64')},
+        @{draft=$false;prerelease=$false;tag_name='86.0.0';assets=@(New-ReleaseAssets '86.0.0' 'amd64')},
+        @{draft='false';prerelease=$false;tag_name='v77.0.0'},
+        @{draft=$false;prerelease=$false;tag_name=('1'*257)},
+        @{draft=$false;prerelease=$false;tag_name=('v8.0.0'+[char]0)},
+        @{draft=$false;prerelease=$true;tag_name='v2.0.0-rc.1';assets=@(New-ReleaseAssets 'v2.0.0-rc.1' 'amd64')},
+        @{draft=$false;prerelease=$false;tag_name='v1.9.0';html_url='https://outside.invalid/ignored';published_at=$published;assets=@(New-ReleaseAssets 'v1.9.0' 'amd64')}
+    )
+    function Read-RemoteJSON {
+        param($Uri,$Headers)
+        if($Uri -cne 'https://api.github.com/repos/Yunushan/accessweaver/releases?per_page=30' -or $Headers['User-Agent'] -cne 'AccessWeaver'){throw 'Unexpected update metadata request'}
+        return ,$metadata
+    }
+    function Native {
+        param($Program,$Arguments,[switch]$Secret)
+        if($Program -cne $inputData.controller -or -not $Secret){throw 'Unexpected update comparison process'}
+        $calls.Add(($Arguments -join ','))
+        $result=ConvertFrom-Json -InputObject $comparison
+        $result | Add-Member -NotePropertyName build -NotePropertyValue $comparisonBuild
+        return @{stdout=(ConvertTo-Json -InputObject $result -Depth 3 -Compress);outputComplete=$outputComplete}
+    }
+    $metadata[-1].assets[-1].digest='sha256:'+('b'*64)
+    $metadata[-1].assets+=@{name='private-fixture.txt';state='uploaded';digest=('sha256:'+('c'*64))}
+    $outputComplete=$true
+    $comparison='{"version":"v1.9.0","currentVersion":"1.8.0","updateAvailable":true}'
+    $result=Check-AccessWeaverUpdates
+    Assert ($calls.Count -eq 1 -and $calls[0] -ceq 'system,check-version,--build-identity,--follow-channel,v2.0.0-rc.1,v1.9.0' -and
+        $result.url -ceq 'https://github.com/Yunushan/accessweaver/releases/tag/v1.9.0' -and
+        $result.updateAvailable -eq $true -and $result.publishedAt -ceq $published -and
+        $result.build.commit -ceq $controllerBuild.commit -and $result.build.sourceState -ceq 'clean') 'Update discovery filters release metadata and returns the official tag link'
+    Assert ($result.githubAssetSHA256.Count -eq 4 -and
+        $result.githubAssetSHA256['accessweaver-v1.9.0-windows-amd64.zip'] -ceq ('b'*64) -and
+        $result.githubAssetSHA256['BUILD-MANIFEST.json'] -ceq ('a'*64) -and
+        $result.githubAssetSHA256['SHA256SUMS.txt'] -ceq ('a'*64) -and
+        $result.githubAssetSHA256['BUILD-PROVENANCE.sigstore.json'] -ceq ('a'*64)) 'Update discovery returns only the selected GitHub asset digests'
+    $metadata=@($metadata | Where-Object {$_.tag_name -ceq 'v2.0.0-rc.1'})
+    $comparison='{"version":"","currentVersion":"1.8.0","updateAvailable":false}'
+    $result=Check-AccessWeaverUpdates
+    Assert ($calls.Count -eq 2 -and $result.currentVersion -ceq '1.8.0' -and $result.updateAvailable -eq $false -and
+        $null -eq $result.url -and $null -eq $result.publishedAt -and $null -eq $result.githubAssetSHA256) 'Update discovery preserves a no-compatible-release result'
+    $comparison='{"version":"v3.0.0","currentVersion":"1.8.0","updateAvailable":true}'
+    $refused=$false
+    try{Check-AccessWeaverUpdates | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Selected AccessWeaver release was not in the reviewed metadata'}
+    Assert ($refused -and $calls.Count -eq 3) 'Update discovery refuses a selected tag absent from admitted metadata'
+    foreach($bad in @(@{value=$metadata[0]},@{value=@($metadata[0])*31})){
+        $metadata=$bad.value
+        $refused=$false
+        try{Check-AccessWeaverUpdates | Out-Null}catch{$refused=$_.Exception.Message -ceq 'AccessWeaver release metadata did not contain a valid release list'}
+        if(-not $refused){throw 'Unexpected release metadata shape outcome'}
+    }
+    Assert ($calls.Count -eq 3) 'Update discovery rejects invalid list shapes before comparison'
+    $eligible=@{draft=$false;prerelease=$false;tag_name='v1.9.0';assets=@(New-ReleaseAssets 'v1.9.0' 'amd64')}
+    $metadata=@($eligible,$eligible.Clone())
+    $refused=$false
+    try{Check-AccessWeaverUpdates | Out-Null}catch{$refused=$_.Exception.Message -ceq 'AccessWeaver release metadata contains a duplicate eligible tag'}
+    Assert ($refused -and $calls.Count -eq 3) 'Update discovery refuses duplicate eligible tags before comparing versions'
+    $metadata=@(@{draft=$false;prerelease=$false;tag_name='v1.9.0+build.3';assets=@(New-ReleaseAssets 'v1.9.0+build.3' 'amd64')})
+    $refused=$false
+    try{Check-AccessWeaverUpdates | Out-Null}catch{$refused=$_.Exception.Message -ceq 'No published AccessWeaver releases include a Windows archive and verification files for this architecture'}
+    Assert ($refused -and $calls.Count -eq 3) 'Update discovery refuses build metadata in portable release tags'
+    $calls.Clear()
+    $inputData.nativeArchitecture='arm64'
+    $wrongArch=@(New-ReleaseAssets 'v9.0.0' 'amd64')
+    $incomplete=@(New-ReleaseAssets 'v8.0.0' 'arm64' | Where-Object {$_.name -cne 'BUILD-PROVENANCE.sigstore.json'})
+    $duplicate=@(New-ReleaseAssets 'v7.0.0' 'arm64')
+    $duplicate+=@($duplicate[0])
+    $badDigest=@(New-ReleaseAssets 'v6.0.0' 'arm64')
+    $badDigest[0].digest='sha256:short'
+    $pending=@(New-ReleaseAssets 'v5.0.0' 'arm64')
+    $pending[0].state='starter'
+    $metadata=@(
+        @{draft=$false;prerelease=$false;tag_name='v9.0.0';assets=$wrongArch},
+        @{draft=$false;prerelease=$false;tag_name='v8.0.0';assets=$incomplete},
+        @{draft=$false;prerelease=$false;tag_name='v7.0.0';assets=$duplicate},
+        @{draft=$false;prerelease=$false;tag_name='v6.0.0';assets=$badDigest},
+        @{draft=$false;prerelease=$false;tag_name='v5.0.0';assets=$pending},
+        @{draft=$false;prerelease=$false;tag_name='v4.0.0';assets=@(New-ReleaseAssets 'v4.0.0' 'arm64')}
+    )
+    $comparison='{"version":"v4.0.0","currentVersion":"1.8.0","updateAvailable":true}'
+    $result=Check-AccessWeaverUpdates
+    Assert ($result.version -ceq 'v4.0.0' -and $calls.Count -eq 1 -and $calls[0] -ceq 'system,check-version,--build-identity,--follow-channel,v4.0.0') 'Update discovery requires architecture-specific uploaded assets with digests'
+    $calls.Clear()
+    $inputData.nativeArchitecture=''
+    $refused=$false
+    try{Check-AccessWeaverUpdates | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Native Windows architecture is unavailable or unsupported for release discovery'}
+    Assert ($refused -and $calls.Count -eq 0) 'Update discovery refuses unsupported native architecture'
+    $inputData.nativeArchitecture='arm64'
+    $outputComplete=$false
+    $refused=$false
+    try{Check-AccessWeaverUpdates | Out-Null}catch{$refused=$_.Exception.Message -ceq 'AccessWeaver release comparison returned an invalid result'}
+    $outputComplete=$true
+    $comparison='{"version":"v4.0.0","currentVersion":"1.8.0","updateAvailable":"true"}'
+    $badType=$false
+    try{Check-AccessWeaverUpdates | Out-Null}catch{$badType=$_.Exception.Message -ceq 'AccessWeaver release comparison returned an invalid result'}
+    Assert ($refused -and $badType -and $calls.Count -eq 2) 'Update discovery rejects incomplete and invalid comparison results'
+    $comparison='{"version":"v4.0.0","currentVersion":"1.8.0","updateAvailable":true}'
+    foreach($field in @('version','commit','sourceState','builtAt','goVersion','platform','arch')){
+        $comparisonBuild=$controllerBuild.Clone()
+        $comparisonBuild[$field]='unexpected-build-field'
+        $refused=$false
+        try{Check-AccessWeaverUpdates | Out-Null}catch{$refused=$_.Exception.Message -ceq 'AccessWeaver release comparison returned an invalid result'}
+        if(-not $refused){throw 'Update discovery accepted mismatched controller identity'}
+    }
+    $comparisonBuild=$null
+    $refused=$false
+    try{Check-AccessWeaverUpdates | Out-Null}catch{$refused=$_.Exception.Message -ceq 'AccessWeaver release comparison returned an invalid result'}
+    Assert $refused 'Update discovery requires the launching controller build identity'
+}
+# Publisher-category checks use synthetic signature records only.
+$signatureDiscord=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Discord fixture'}}
+$signatureMicrosoft=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Microsoft fixture'}}
+$signatureWireSock=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=NT Kernel fixture'}}
+Assert ((Test-InstallerPublisher 'discord' $signatureDiscord) -and -not (Test-InstallerPublisher 'discord' $signatureMicrosoft) -and -not (Test-InstallerPublisher 'discord' $signatureWireSock)) 'Discord installer rejects other publisher categories'
+Assert ((Test-InstallerPublisher 'microsoft' $signatureMicrosoft) -and -not (Test-InstallerPublisher 'microsoft' $signatureDiscord) -and -not (Test-InstallerPublisher 'microsoft' $signatureWireSock)) 'Microsoft installer rejects other publisher categories'
+Assert ((Test-InstallerPublisher 'wiresock' $signatureWireSock) -and -not (Test-InstallerPublisher 'wiresock' $signatureDiscord) -and -not (Test-InstallerPublisher 'wiresock' $signatureMicrosoft) -and -not (Test-InstallerPublisher '' $signatureWireSock)) 'WireSock installer requires its own publisher category'
+$x64Pin=(WireSock-InstallerPlan 'amd64').sha256
+$armPin=(WireSock-InstallerPlan 'arm64').sha256
+$unknownSigner=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Unmatched fixture'}}
+$invalidSigner=[pscustomobject]@{Status='NotTrusted';SignerCertificate=$unknownSigner.SignerCertificate}
+Assert ((Test-InstallerPublisher 'wiresock' $unknownSigner $x64Pin 'amd64') -and (Test-InstallerPublisher 'wiresock' $unknownSigner $armPin 'arm64')) 'WireSock recognizes its exact native installer pin with a Windows-valid signature'
+Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64') -and -not (Test-InstallerPublisher 'wiresock' $unknownSigner ('a'*64) 'amd64') -and -not (Test-InstallerPublisher 'wiresock' $unknownSigner $armPin 'amd64') -and -not (Test-InstallerPublisher 'wiresock' $unknownSigner $x64Pin '') -and -not (Test-InstallerPublisher 'discord' $unknownSigner $x64Pin 'amd64')) 'WireSock pin recognition refuses invalid signatures and unrelated pins and categories'
+# Model only an HKLM registration and a trusted installer cache. Nothing is executed.
+& {
+    $cacheRoot=Join-Path $testRoot 'wiresock-uninstall-fixture'
+    $program=Join-Path $cacheRoot 'Package Cache\fixture.exe'
+    $registration='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\fixture'
+    $inputData=[pscustomobject]@{nativeArchitecture='amd64'}
+    $calls=[Collections.Generic.List[string]]::new()
+    $previousProgramData=$env:ProgramData
+    $previousRebootRequired=$script:rebootRequired
+    $script:rebootRequired=$false
+    $verifyRemoval=$false
+    $requestRestart=$false
+    $remainingCLI=$false
+    $remainingService=$false
+    $serviceQueryFails=$false
+    $registryReadbackMode=''
+    $uninstallState=@{started=$false}
+    $ownershipRetirementFails=$false
+    $ownedPath=Join-Path $root 'profiles\wiresock-owned.json'
+    $fallbackCLI=Join-Path $env:ProgramFiles 'WireSock Secure Connect\bin\wiresock-client.exe'
+    try {
+        $env:ProgramData=$cacheRoot
+        function WireSock-CLI {}
+        function Get-Service {
+            param($ErrorAction)
+            if($serviceQueryFails){throw 'Private fixture service error'}
+            if($remainingService -and -not $calls.Contains('wait')){[pscustomobject]@{ServiceName='WireSockConnectService'}}
+            [pscustomobject]@{ServiceName='UnrelatedFixtureService'}
+        }
+        function Test-Path {
+            param($LiteralPath)
+            if($LiteralPath -ceq $ownedPath){return $verifyRemoval -and -not $calls.Contains('retire-ownership')}
+            if($LiteralPath -ceq $fallbackCLI){return $remainingCLI -and -not $calls.Contains('wait')}
+            if($verifyRemoval -and $LiteralPath -ceq $registration){
+                $calls.Add('check-registration')
+                return -not $calls.Contains('wait') -and -not $hiddenRecord
+            }
+            if($verifyRemoval -and $hiddenRecord -and $LiteralPath -ceq $hiddenRecord.PSPath){
+                $calls.Add('check-hidden-registration')
+                return -not $calls.Contains('wait')
+            }
+            return $LiteralPath -ceq 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
+        }
+        $fixtureBundleRecord=@{PSPath=$registration;DisplayName='WireSock Secure Connect';UninstallString=('"'+$program+'" /uninstall')}
+        $hiddenRecord=$null
+        $entries=@(@{PSPath=$registration})
+        $replacement=@{PSPath=($registration+'-new');DisplayName='WireSock Secure Connect'}
+        function Get-ChildItem {
+            param($LiteralPath,$ErrorAction)
+            if($ErrorAction -cne 'Stop'){throw 'Expected strict registry inspection'}
+            if(-not $uninstallState.started){return $entries}
+            if($registryReadbackMode -ceq 'unreadable'){throw 'Private fixture registry error'}
+            if($registryReadbackMode -ceq 'replacement' -and -not $calls.Contains('wait')){return $replacement}
+        }
+        function Get-ItemProperty {
+            param($LiteralPath,$ErrorAction)
+            if($ErrorAction -cne 'Stop'){throw 'Expected strict registry property inspection'}
+            if($LiteralPath -ceq $replacement.PSPath){return $replacement}
+            if($hiddenRecord -and $LiteralPath -ceq $hiddenRecord.PSPath){return $hiddenRecord}
+            return $fixtureBundleRecord
+        }
+        function Get-AuthenticodeSignature {param($LiteralPath);return $fixtureSignature}
+        function Get-FileHash {param($LiteralPath,$Algorithm);return @{Hash=$fixtureDigest}}
+        function No-Reparse {param($Path);if($Path -cne $program){throw 'Unexpected cached executable'}}
+        function Remove-WireSockRefreshTask {$calls.Add('task')}
+        function Remove-Method {$calls.Add('profile')}
+        function Start-Sleep {param($Milliseconds);$calls.Add('wait')}
+        function Remove-Item {
+            if($ownershipRetirementFails){throw 'Private fixture ownership error'}
+            if($verifyRemoval){$calls.Add('retire-ownership')}
+        }
+        function Event {
+            param($Text)
+            if($verifyRemoval -and $Text -like 'Vendor uninstall*'){$calls.Add($Text)}
+        }
+        function Invoke-FixtureUninstall {
+            $uninstallState.started=$false
+            Uninstall-WireSockProduct
+        }
+        function Native {
+            param($Program,$Arguments,$Codes,$Timeout)
+            if($Program -cne $expectedProgram -or ($Arguments -join ',') -cne $expectedArguments){throw 'Unexpected uninstall invocation'}
+            $uninstallState.started=$true
+            $calls.Add('uninstall')
+            $script:rebootRequired=$requestRestart
+        }
+        $expectedProgram=$program
+        $expectedArguments="/uninstall,/quiet,/norestart"
+        $fixtureSignature=$unknownSigner
+        $fixtureDigest=$x64Pin
+        $result=Invoke-FixtureUninstall
+        Assert ($result.product -ceq 'WireSock Secure Connect' -and ($calls -join ',') -ceq 'task,profile,uninstall') 'WireSock uninstall accepts a signed cached copy of its exact native installer'
+        $fixtureDigest=$armPin
+        $refused=$false
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstaller publisher signature could not be verified'}
+        $wrongPinRefused=$refused
+        $fixtureDigest=$x64Pin;$fixtureSignature=$invalidSigner
+        $refused=$false
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstaller publisher signature could not be verified'}
+        Assert ($wrongPinRefused -and $refused -and ($calls -join ',') -ceq 'task,profile,uninstall') 'WireSock uninstall refuses a different native pin or invalid signature before cleanup'
+        $calls.Clear()
+        $entries+=@(@{PSPath=$registration+'-second'})
+        $refused=$false
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -like 'Multiple registered WireSock products matched*'}
+        Assert ($refused -and $calls.Count -eq 0) 'WireSock uninstall refuses ambiguous registrations before cleanup'
+        $entries=@(@{PSPath=$registration})
+        $productCode='{b7678321-14b3-4439-a4ef-789452416058}'
+        $otherCode='{c7678321-14b3-4439-a4ef-789452416058}'
+        $hiddenRecord=@{
+            PSPath=$registration+'-hidden'
+            DisplayName='WireSock Secure Connect'
+            WindowsInstaller=1
+            SystemComponent=1
+            PSChildName=$productCode
+            UninstallString=('MsiExec.exe /I'+$productCode)
+        }
+        $entries=@(@{PSPath=$hiddenRecord.PSPath},@{PSPath=$registration})
+        $fixtureBundleRecord.BundleProviderKey='fixture-provider'
+        $fixtureBundleRecord.BundleCachePath=$program+'-other.exe'
+        $fixtureSignature=$unknownSigner
+        $refused=$false
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered vendor uninstaller is outside protected installation storage'}
+        $cacheMismatchRefused=$refused
+        $fixtureBundleRecord.BundleCachePath=$program
+        $hiddenRecord.UninstallString='MsiExec.exe /I'+$otherCode
+        $refused=$false
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered WireSock MSI uninstall command does not match its product code'}
+        Assert ($cacheMismatchRefused -and $refused -and $calls.Count -eq 0) 'WireSock paired uninstall refuses mismatched cache or MSI identity before cleanup'
+        $previousCulture=[Threading.Thread]::CurrentThread.CurrentCulture
+        try {
+            [Threading.Thread]::CurrentThread.CurrentCulture=[Globalization.CultureInfo]::GetCultureInfo('tr-TR')
+            $localizedRecord=@{PSChildName=$productCode;UninstallString=('MSIEXEC.EXE /I'+$productCode)}
+            $parsed=Get-WireSockMsiProductCode $localizedRecord (Join-Path $env:SystemRoot 'System32\msiexec.exe') -BundleOwnsUninstall
+            Assert ($parsed -ceq $productCode) 'WireSock parses MSI command identity independently of Windows culture'
+        } finally {[Threading.Thread]::CurrentThread.CurrentCulture=$previousCulture}
+        $hiddenRecord.UninstallString=$null
+        $hiddenRecord.PSChildName='not-a-product-code'
+        $refused=$false
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered WireSock MSI uninstall command does not match its product code'}
+        Assert ($refused -and $calls.Count -eq 0) 'WireSock paired uninstall requires a valid hidden MSI product key without a command'
+        $hiddenRecord.PSChildName=$productCode
+        $amd64EnginePin=(WireSock-InstallerPlan 'amd64').cachedEngineSHA256
+        $arm64EnginePin=(WireSock-InstallerPlan 'arm64').cachedEngineSHA256
+        foreach($case in @(
+            @{digest=$arm64EnginePin;signature=$unknownSigner},
+            @{digest=$amd64EnginePin;signature=$invalidSigner},
+            @{digest=('a'*64);signature=$unknownSigner}
+        )){
+            $fixtureDigest=$case.digest
+            $fixtureSignature=$case.signature
+            $refused=$false
+            try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstaller publisher signature could not be verified'}
+            if(-not $refused -or $calls.Count){throw 'Unverified cached engine reached uninstall cleanup'}
+        }
+        $fixtureDigest=$amd64EnginePin
+        $fixtureSignature=$unknownSigner
+        $pairedEntries=$entries
+        $entries=@(@{PSPath=$registration})
+        $refused=$false
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstaller publisher signature could not be verified'}
+        Assert ($refused -and $calls.Count -eq 0) 'WireSock cached engine requires a validated pair and a valid native signature and pin'
+        $entries=$pairedEntries
+        $verifyRemoval=$true
+        $result=Invoke-FixtureUninstall
+        Assert (-not $result.rebootRequired -and ($calls -join ',') -ceq 'task,profile,uninstall,check-hidden-registration,check-registration,wait,check-hidden-registration,check-registration,retire-ownership,Vendor uninstall completed: WireSock Secure Connect') 'WireSock paired uninstall runs the bundle and waits for the hidden MSI'
+        Assert $true 'WireSock paired uninstall accepts a hidden MSI without an uninstall command'
+        Assert $true 'WireSock paired uninstall accepts its exact release-derived cached engine'
+        $fixtureDigest=$x64Pin
+        $verifyRemoval=$false
+        $calls.Clear()
+        $entries=@(@{PSPath=$registration})
+        $hiddenRecord=$null
+        $fixtureBundleRecord.WindowsInstaller=1
+        $fixtureBundleRecord.PSChildName=$productCode
+        $expectedProgram=Join-Path $env:SystemRoot 'System32\msiexec.exe'
+        $expectedArguments='/x,'+$productCode+',/qn,/norestart'
+        $fixtureBundleRecord.UninstallString='MsiExec.exe /I'+$productCode
+        $result=Invoke-FixtureUninstall
+        Assert ($result.product -ceq 'WireSock Secure Connect' -and ($calls -join ',') -ceq 'task,profile,uninstall') 'WireSock MSI uninstall targets its registered product code'
+        $calls.Clear()
+        foreach($command in @(
+            '',
+            ('MsiExec.exe /I'+$otherCode),
+            ('"C:\other.exe" msiexec /I'+$productCode),
+            ('MsiExec.exe /I'+$productCode+' /I'+$otherCode)
+        )){
+            $fixtureBundleRecord.UninstallString=$command
+            $refused=$false
+            try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered WireSock MSI uninstall command does not match its product code'}
+            if(-not $refused){throw 'Unexpected MSI uninstall preflight outcome'}
+        }
+        Assert ($calls.Count -eq 0) 'WireSock MSI uninstall refuses mismatched or compound commands before cleanup'
+        $fixtureBundleRecord.UninstallString='MsiExec.exe /I'+$productCode
+        $verifyRemoval=$true
+        $result=Invoke-FixtureUninstall
+        Assert (-not $result.rebootRequired -and ($calls -join ',') -ceq 'task,profile,uninstall,check-registration,wait,check-registration,retire-ownership,Vendor uninstall completed: WireSock Secure Connect') 'WireSock uninstall waits for the registered package to disappear'
+        $calls.Clear()
+        $verifyRemoval=$false
+        foreach($mode in @('service','cli')){
+            $calls.Clear()
+            $remainingCLI=$mode -ceq 'cli'
+            $remainingService=$mode -ceq 'service'
+            $result=Invoke-FixtureUninstall
+            if($result.rebootRequired -or ($calls -join ',') -cne 'task,profile,uninstall,wait'){
+                throw 'Vendor uninstall did not wait for the remaining resource'
+            }
+        }
+        Assert $true 'WireSock uninstall waits for remaining vendor services and secondary CLI paths'
+        $remainingCLI=$false
+        $remainingService=$false
+        $registryReadbackMode='replacement'
+        $calls.Clear()
+        $result=Invoke-FixtureUninstall
+        Assert (-not $result.rebootRequired -and ($calls -join ',') -ceq 'task,profile,uninstall,wait') 'WireSock uninstall waits for a replacement vendor registration'
+        $registryReadbackMode='unreadable'
+        $calls.Clear()
+        $refused=$false
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstall registrations could not be verified'}
+        Assert ($refused -and -not $calls.Contains('retire-ownership')) 'WireSock uninstall refuses completion when registry readback fails'
+        $registryReadbackMode=''
+        $serviceQueryFails=$true
+        $calls.Clear()
+        $refused=$false
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor service removal could not be verified'}
+        Assert ($refused -and -not $calls.Contains('retire-ownership')) 'WireSock uninstall refuses completion when service removal cannot be verified'
+        $serviceQueryFails=$false
+        $verifyRemoval=$true
+        $ownershipRetirementFails=$true
+        $calls.Clear()
+        $refused=$false
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstall completed but the managed ownership record could not be retired'}
+        Assert ($refused -and -not $calls.Contains('Vendor uninstall completed: WireSock Secure Connect')) 'WireSock uninstall reports an ownership record that could not be retired'
+        $ownershipRetirementFails=$false
+        $calls.Clear()
+        $requestRestart=$true
+        $result=Invoke-FixtureUninstall
+        Assert ($result.rebootRequired -and ($calls -join ',') -ceq 'task,profile,uninstall,Vendor uninstall requires a Windows restart: WireSock Secure Connect') 'WireSock uninstall reports restart without claiming verified removal'
+    } finally {
+        $env:ProgramData=$previousProgramData
+        $script:rebootRequired=$previousRebootRequired
+    }
+}
+# Read the actual SplitCord service verification against controlled SCM responses.
+& {
+    $app=Join-Path $testRoot 'splitcord-service-fixture\SplitCord-Turkey.exe'
+    $binary=Join-Path (Split-Path -Parent $app) 'resources\service-installer\SplitCordService.exe'
+    [void][IO.Directory]::CreateDirectory((Split-Path -Parent $binary))
+    [IO.File]::WriteAllText($binary,'inert service fixture')
+    function Invoke-ManagedServiceControl {
+        param($Operation,$Name,[int[]]$Codes)
+        if($Operation -cne 'query' -or $Name -cne 'SplitCordDpiService' -or ($Codes -join ',') -cne '0,1060,1072'){
+            throw 'Expected a read-only, fixed service query'
+        }
+        $script:externalEffectsPending=$true
+        if($queryFails){throw 'Fixture SCM query refused'}
+        return $serviceState
+    }
+    function Read-ManagedServiceRegistration {
+        param($Name)
+        if($Name -cne 'SplitCordDpiService'){throw 'Unexpected SplitCord registration query'}
+        if($removeImageDuringRead){[IO.File]::Delete($binary)}
+        $counters.service++
+        $pidValue=$serviceProcessID
+        if($processFault -ceq 'service-restarted' -and $counters.service -eq 2){$pidValue=[uint32]4322}
+        return [pscustomobject]@{PathName=$serviceCommand;State=$serviceStatus;ProcessId=$pidValue}
+    }
+    function Get-CimInstance {
+        param($ClassName,$Filter,$Property,$ErrorAction)
+        if($ClassName -cne 'Win32_Process' -or $Filter -cne 'ProcessId=4321' -or
+            ($Property -join ',') -cne 'ProcessId,ExecutablePath,CreationDate' -or $ErrorAction -cne 'Stop'){
+            throw 'Unexpected SplitCord process query'
+        }
+        $counters.process++
+        if($processFault -ceq 'gone' -or ($processFault -ceq 'exited' -and $counters.process -eq 2)){return}
+        $path=if($processFault -ceq 'other-image'){'C:\Fixture\other.exe'}elseif($processFault -cne 'unreadable'){$binary}
+        $creation=if($processFault -ceq 'reused-pid' -and $counters.process -eq 2){$started.AddSeconds(1)}else{$started}
+        [pscustomobject]@{ProcessId=[uint32]4321;ExecutablePath=$path;CreationDate=$creation}
+    }
+    $queryFails=$false
+    $removeImageDuringRead=$false
+    $processFault=''
+    $serviceProcessID=[uint32]4321
+    $started=[datetime]'2026-01-01T00:00:00Z'
+    $counters=@{service=0;process=0}
+    $serviceState=0;$serviceCommand='"'+$binary+'"';$serviceStatus='Running'
+    Wait-SplitCordService $app 0
+    if($counters.service -ne 2 -or $counters.process -ne 2){throw 'SplitCord did not confirm the running process'}
+    Wait-SplitCordService $app 0 -AllowAbsentOrStopped
+    foreach($processFault in @('gone','exited','other-image','unreadable','service-restarted','reused-pid','invalid-pid')){
+        $counters.service=0;$counters.process=0
+        $serviceProcessID=if($processFault -ceq 'invalid-pid'){[uint32]0}else{[uint32]4321}
+        $refused=$false
+        try{Wait-SplitCordService $app 0}catch{$refused=$_.Exception.Message -ceq 'SplitCord service did not reach Running'}
+        if(-not $refused){throw 'SplitCord accepted a missing, unrelated or replaced service process'}
+    }
+    $processFault=''
+    $serviceProcessID=[uint32]4321
+    $counters.process=0
+    $serviceStatus='Stopped'
+    Wait-SplitCordService $app 0 -AllowAbsentOrStopped
+    $serviceState=1060
+    Wait-SplitCordService $app 0 -AllowAbsentOrStopped
+    if($counters.process -ne 0){throw 'SplitCord queried a process for a stopped or absent service'}
+    foreach($case in @(
+        @{app='';state=0;command=$serviceCommand;status='Running'},
+        @{app=$app;state=0;command=($serviceCommand+' --foreign');status='Stopped'},
+        @{app=$app;state=0;command=$serviceCommand;status='Stop Pending'},
+        @{app=$app;state=1072;command=$null;status=$null}
+    )){
+        $serviceState=$case.state;$serviceCommand=$case.command;$serviceStatus=$case.status
+        $refused=$false
+        try{Wait-SplitCordService $case.app 0 -AllowAbsentOrStopped}catch{$refused=$_.Exception.Message -like 'SplitCord service *'}
+        if(-not $refused){throw 'SplitCord accepted maintenance of an orphaned, replaced or transitional service'}
+    }
+    foreach($case in @(
+        @{state=0;command='"'+$binary+'" --different';status='Running';error='SplitCord service registration differs from the installed application'},
+        @{state=0;command='"'+$binary+'"';status='Stopped';error='SplitCord service did not reach Running'},
+        @{state=1060;command=$null;status=$null;error='SplitCord service did not reach Running'}
+    )){
+        $serviceState=$case.state;$serviceCommand=$case.command;$serviceStatus=$case.status
+        $refused=$false
+        try{Wait-SplitCordService $app 0}catch{$refused=$_.Exception.Message -ceq $case.error}
+        if(-not $refused){throw 'SplitCord accepted an unready or different service'}
+    }
+    foreach($serviceState in @(0,1072)){
+        $refused=$false
+        try{Wait-SplitCordService '' 0}catch{$refused=$_.Exception.Message -ceq 'SplitCord service removal could not be verified'}
+        if(-not $refused){throw 'SplitCord accepted a service still registered or pending deletion'}
+    }
+    $serviceState=1060
+    Wait-SplitCordService '' 0
+    $queryFails=$true
+    $refused=$false
+    try{Wait-SplitCordService '' 0}catch{$refused=$_.Exception.Message -ceq 'Fixture SCM query refused'}
+    if($script:externalEffectsPending){throw 'Read-only service checks changed the external effects flag'}
+    Assert $refused 'SplitCord service lifecycle requires the expected running registration and verified removal'
+    $queryFails=$false;$serviceState=0;$serviceCommand='"'+$binary+'"'
+    $serviceStatus='Running'
+    $removeImageDuringRead=$true
+    $refused=$false
+    try{Wait-SplitCordService $app 0}catch{
+        $refused=$_.Exception.Message -ceq 'SplitCord service executable is missing'
+    }
+    Assert $refused 'SplitCord install refuses a running registration after the service image disappears'
+    $removeImageDuringRead=$false
+    [IO.File]::Delete($binary)
+    $serviceStatus='Stopped'
+    Wait-SplitCordService $app 0 -AllowAbsentOrStopped -AllowMissingStoppedImage
+    $serviceStatus='Running'
+    $refused=$false
+    try{Wait-SplitCordService $app 0 -AllowAbsentOrStopped -AllowMissingStoppedImage}catch{
+        $refused=$_.Exception.Message -ceq 'SplitCord service executable is missing'
+    }
+    Assert $refused 'SplitCord removal retry accepts an absent service image only when its bound service is stopped'
+}
+# Synthetic process records verify session-scoped launch observation without launching an app.
+$fixtureApp='C:\fixture\SplitCord.exe'
+$otherSession=[pscustomobject]@{ProcessName='SplitCord';Path=$null;SessionId=9;HasExited=$false}
+$sameSession=[pscustomobject]@{ProcessName='SplitCord';Path=$fixtureApp;SessionId=7;HasExited=$false}
+$otherPath=[pscustomobject]@{ProcessName='SplitCord';Path='C:\fixture\Other\SplitCord.exe';SessionId=7;HasExited=$false}
+$otherName=[pscustomobject]@{ProcessName='unrelated'}
+Assert ($false -ceq (Test-AppProcessInSession $fixtureApp 7 @($otherSession,$otherPath,$otherName))) 'App launch ignores unrelated names, paths and sessions'
+Assert ($true -ceq (Test-AppProcessInSession $fixtureApp 7 @($otherSession,$sameSession))) 'App launch accepts the matching executable in the current session'
+$exitedApp=[pscustomobject]@{ProcessName='SplitCord';HasExited=$true}
+Assert ($false -ceq (Test-AppProcessInSession $fixtureApp 7 @($exitedApp))) 'Confirmed exited process does not prevent app launch'
+$unreadableApp=[pscustomobject]@{ProcessName='SplitCord';HasExited=$false;SessionId=7;Path=$null}
+$unknownSession=[pscustomobject]@{ProcessName='SplitCord';HasExited=$false;SessionId=$null;Path=$fixtureApp}
+$unknownExit=[pscustomobject]@{ProcessName='SplitCord';HasExited='false';SessionId=7;Path=$fixtureApp}
+foreach($unknown in @($unreadableApp,$unknownSession,$unknownExit)){
+    Assert ($null -eq (Test-AppProcessInSession $fixtureApp 7 @($exitedApp,$unknown))) 'App launch distinguishes unreadable process state from confirmed absence'
+    Assert ($true -ceq (Test-AppProcessInSession $fixtureApp 7 @($unknown,$sameSession))) 'Confirmed live app takes precedence over an unreadable process'
+}
+$handoff=[DateTime]::UtcNow
+$oldApp=[pscustomobject]@{ProcessName='SplitCord';Path=$fixtureApp;SessionId=7;HasExited=$false;StartTime=$handoff.AddSeconds(-1)}
+$newApp=[pscustomobject]@{ProcessName='SplitCord';Path=$fixtureApp;SessionId=7;HasExited=$false;StartTime=$handoff.AddSeconds(1)}
+Assert ($false -ceq (Test-AppProcessInSession $fixtureApp 7 @($oldApp) $handoff) -and
+    $null -eq (Test-AppProcessInSession $fixtureApp 7 @($oldApp,$sameSession) $handoff) -and
+    $true -ceq (Test-AppProcessInSession $fixtureApp 7 @($sameSession,$newApp) $handoff)) 'Fresh launch requires an observable process created after Explorer handoff'
+# Inert files, process records and command mocks exercise uninstall preflight.
+$fixtureAppDirectory=Join-Path $testRoot 'splitcord-uninstall'
+[void](New-Item -ItemType Directory -Path $fixtureAppDirectory)
+$fixtureApp=Join-Path $fixtureAppDirectory 'SplitCord-Turkey.exe'
+$fixtureUninstaller=Join-Path $fixtureAppDirectory 'Uninstall.exe'
+$secondUninstaller=Join-Path $fixtureAppDirectory 'Uninstall-old.exe'
+[IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
+$previousFindApp=(Get-Command Find-App).ScriptBlock
+$previousAdminGuard=(Get-Command Require-Admin).ScriptBlock
+$previousSplitCordProtection=(Get-Command Assert-SplitCordMaintenancePaths).ScriptBlock
+$previousSplitCordCommand=(Get-Command Read-SplitCordMachineUninstallCommand).ScriptBlock
+$previousAppStopRequest=$r
+$previousAppStopJournal=(Get-Command Save-Journal).ScriptBlock
+try {
+    function Find-App {param($variant);return $fixtureApp}
+    function Require-Admin {}
+    function Assert-SplitCordMaintenancePaths {}
+    function Read-SplitCordMachineUninstallCommand {return ('"'+$fixtureUninstaller+'" /allusers')}
+    function Get-Process {param($ErrorAction);return $appStopRecords}
+    $fixtureSession=[Diagnostics.Process]::GetCurrentProcess().SessionId
+    $script:appStopCalls=0;$script:appStopFailure=$true;$script:externalEffectsPending=$false
+    $script:appStopWaits=0
+    $script:appStopExitDuringKill=$false
+    $script:appStopDisposals=0
+    $script:appStopRecord=[pscustomobject]@{Path=$fixtureApp;SessionId=$fixtureSession;Handle=[IntPtr]123;HasExited=$false;ExitObserved=$false}
+    $appStopRecords=@($script:appStopRecord)
+    $script:appStopRecord | Add-Member ScriptMethod Kill {
+        $script:appStopCalls++
+        if($script:appStopExitDuringKill){$this.HasExited=$true}
+        if($script:appStopFailure){throw 'private fixture detail'}
+    }
+    $script:appStopRecord | Add-Member ScriptMethod Dispose { $script:appStopDisposals++ }
+    $script:appStopRecord | Add-Member ScriptMethod Refresh {}
+    $script:appStopRecord | Add-Member ScriptMethod WaitForExit {
+        param($milliseconds)
+        $script:appStopWaits++
+        if($milliseconds -ne 5000){throw 'Unexpected exit deadline'}
+        return $this.ExitObserved
+    }
+    $rejected=$false;try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'Expected exactly one SplitCord uninstaller'}
+    Assert ($rejected -and $script:appStopCalls -eq 0 -and -not $script:externalEffectsPending) 'Application removal leaves processes running when the uninstaller is missing'
+    [IO.File]::WriteAllBytes($fixtureUninstaller,[byte[]]@(0))
+    [IO.File]::WriteAllBytes($secondUninstaller,[byte[]]@(0))
+    $rejected=$false;try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'Expected exactly one SplitCord uninstaller'}
+    Assert ($rejected -and $script:appStopCalls -eq 0 -and -not $script:externalEffectsPending) 'Application removal leaves processes running when uninstallers are ambiguous'
+    [IO.File]::Delete($secondUninstaller)
+    $conflictingProcess=[pscustomobject]@{Path=$fixtureApp;SessionId=($fixtureSession+1)}
+    $conflictingProcess | Add-Member ScriptMethod Dispose {}
+    $appStopRecords=@($script:appStopRecord,$conflictingProcess)
+    $rejected=$false
+    try {Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application is running in another Windows session'}
+    Assert ($rejected -and $script:appStopCalls -eq 0 -and -not $script:externalEffectsPending) 'Application removal refuses a matching client in another session before stopping any process'
+    $conflictingProcess.SessionId=$null
+    $rejected=$false
+    try {Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application process session could not be verified'}
+    Assert ($rejected -and $script:appStopCalls -eq 0 -and -not $script:externalEffectsPending) 'Application removal refuses an unverified matching session before stopping any process'
+    $hiddenImage=[pscustomobject]@{ProcessName='SplitCord-Turkey';HasExited=$false}
+    $hiddenImage | Add-Member ScriptProperty Path {throw 'Synthetic inaccessible executable'}
+    $script:hiddenImageDisposals=0
+    $hiddenImage | Add-Member ScriptMethod Dispose {$script:hiddenImageDisposals++}
+    $appStopRecords=@($script:appStopRecord,$hiddenImage)
+    $rejected=$false
+    try {Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A possible application process executable could not be verified'}
+    Assert ($rejected -and $script:appStopCalls -eq 0 -and $script:hiddenImageDisposals -eq 1 -and
+        -not $script:externalEffectsPending) 'Application removal preserves processes when a plausible executable cannot be verified'
+    $appStopRecords=@($script:appStopRecord)
+    $script:appStopDisposals=0
+    $rejected=$false;try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application process could not be stopped; the operation was not continued'}
+    Assert ($rejected -and $script:appStopCalls -eq 1 -and $script:externalEffectsPending) 'Application removal stops on a matching process failure and records an external effect'
+    $script:appStopCalls=0;$script:appStopFailure=$true;$script:externalEffectsPending=$false
+    $script:appStopExitDuringKill=$true
+    try {Stop-AppProcesses 'splitcord'} finally {$script:appStopExitDuringKill=$false}
+    Assert ($script:appStopCalls -eq 1 -and $script:externalEffectsPending) 'Application process exit race remains a recorded external effect'
+    $script:appStopCalls=0;$script:appStopFailure=$false;$script:externalEffectsPending=$false
+    $script:appStopRecord.HasExited=$false
+    $rejected=$false
+    try {Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application process could not be stopped; the operation was not continued'}
+    Assert ($rejected -and $script:appStopCalls -eq 1 -and $script:appStopWaits -eq 1 -and $script:externalEffectsPending) 'Application removal refuses an unconfirmed process exit'
+    $script:appStopCalls=0;$script:appStopWaits=0;$script:externalEffectsPending=$false
+    $script:appStopRecord.ExitObserved=$true
+    Stop-AppProcesses 'splitcord'
+    Assert ($script:appStopCalls -eq 1 -and $script:appStopWaits -eq 1 -and $script:appStopDisposals -eq 4 -and $script:externalEffectsPending) 'Application process stop records an external effect'
+
+    $changedProcess=[pscustomobject]@{
+        Path=$fixtureApp;ProcessName='SplitCord-Turkey';SessionId=$fixtureSession;Handle=[IntPtr]456;HasExited=$false;Drift=''
+    }
+    $changedProcess | Add-Member ScriptMethod Dispose {}
+    $changedProcess | Add-Member ScriptMethod Kill {$script:appStopCalls++}
+    $changedProcess | Add-Member ScriptMethod Refresh {
+        switch -CaseSensitive ($this.Drift){
+            'image' {$this.Path='C:\fixture\unrelated.exe'}
+            'session' {$this.SessionId++}
+            'unreadable' {$this.Path=$null}
+        }
+    }
+    $appStopRecords=@($script:appStopRecord,$changedProcess)
+    foreach($drift in @('image','session','unreadable','handle')){
+        $changedProcess.Path=$fixtureApp;$changedProcess.SessionId=$fixtureSession;$changedProcess.Drift=$drift
+        $changedProcess.Handle=if($drift -ceq 'handle'){[IntPtr]::Zero}else{[IntPtr]456}
+        $script:appStopCalls=0;$script:externalEffectsPending=$false
+        $rejected=$false
+        try {Stop-AppProcesses 'splitcord' $fixtureApp}catch{
+            $rejected=$_.Exception.Message -ceq 'A matching application changed or could not be verified before stopping'
+        }
+        Assert ($rejected -and $script:appStopCalls -eq 0 -and -not $script:externalEffectsPending) ('Application process stop preserves all clients on held identity '+$drift)
+    }
+    $appStopRecords=@($script:appStopRecord)
+    $script:appStopRecord.HasExited=$true
+    $script:appStopCalls=0;$script:externalEffectsPending=$false
+    Stop-AppProcesses 'splitcord'
+    Assert ($script:appStopCalls -eq 0 -and -not $script:externalEffectsPending) 'Application process stop skips a confirmed exit before termination'
+    $script:appStopRecord.HasExited=$false
+
+    $r=[pscustomobject]@{action='app-remove'}
+    $conflictingProcess.SessionId=$fixtureSession+1
+    $script:appStopJournalWrites=0
+    $script:appStopCalls=0;$script:externalEffectsPending=$false
+    $appStopRecords=@($script:appStopRecord)
+    function Save-Journal {
+        $script:appStopJournalWrites++
+        $script:appStopRecords=@($script:appStopRecord,$conflictingProcess)
+    }
+    $rejected=$false
+    try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application is running in another Windows session'}
+    Assert ($rejected -and $script:appStopCalls -eq 0 -and $script:appStopJournalWrites -eq 1 -and
+        $script:externalEffectsPending) 'Application removal rechecks other sessions after journal publication before stopping a client'
+
+    $appStopRecords=@($script:appStopRecord)
+    $script:appStopRecord.HasExited=$false
+    $script:appStopCalls=0;$script:externalEffectsPending=$false
+    function Save-Journal {[IO.File]::WriteAllBytes($secondUninstaller,[byte[]]@(0))}
+    try {
+        $rejected=$false
+        try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'Expected exactly one SplitCord uninstaller'}
+        Assert ($rejected -and $script:appStopCalls -eq 0 -and $script:externalEffectsPending) 'Application removal rechecks the uninstaller after the stop journal and preserves the live client'
+    } finally {[IO.File]::Delete($secondUninstaller)}
+} finally {
+    $r=$previousAppStopRequest
+    Set-Item Function:Save-Journal $previousAppStopJournal
+    Remove-Item Function:Get-Process
+    Set-Item Function:Find-App $previousFindApp
+    Set-Item Function:Require-Admin $previousAdminGuard
+    Set-Item Function:Assert-SplitCordMaintenancePaths $previousSplitCordProtection
+    Set-Item Function:Read-SplitCordMachineUninstallCommand $previousSplitCordCommand
+    $script:externalEffectsPending=$false
+}
+# Verify vendor completion against the previous executable and a fresh process snapshot.
+$appRemovalSaved=@{}
+foreach($name in @('Require-Admin','Require-DesktopUser','Assert-SplitCordMaintenancePaths','Read-SplitCordMachineUninstallCommand','Find-App','Get-AppExecutableDigest','Native','Event','Stop-AppProcesses','Wait-SplitCordService','Save-Journal')){
+    $appRemovalSaved[$name]=(Get-Command $name).ScriptBlock
+}
+try {
+    function Require-Admin {}
+    function Require-DesktopUser {}
+    function Assert-SplitCordMaintenancePaths {}
+    function Read-SplitCordMachineUninstallCommand {
+        if($script:appRemovalForeignCommand){return ('"'+$secondUninstaller+'" /allusers')}
+        if($script:appRemovalInvoked -and $script:appReappearance -ceq 'process-during-registration'){
+            $newProcess.HasExited=$false
+            $script:appRemovalProcesses=@($newProcess)
+        }
+        if((-not $script:appRemovalInvoked -and -not $script:appRemovalMoved) -or $script:appRemovalOrphanedCommand){
+            return ('"'+$fixtureUninstaller+'" /allusers')
+        }
+    }
+    function Find-App {
+        param($variant)
+        if($script:appRemovalMoved){return $fixtureApp+'.replacement'}
+        if(-not $script:appRemovalInvoked){return $fixtureApp}
+    }
+    function Native {
+        param($program,$arguments,$Timeout,[IO.FileStream[]]$StartGuard)
+        $guardCount=if($script:appRemovalOrphanedCommand){1}else{2}
+        if($program -cne $fixtureUninstaller -or ($arguments -join ' ') -cne '/allusers /S' -or $StartGuard.Count -ne $guardCount -or
+            $StartGuard[0].Name -ine $program -or ($guardCount -eq 2 -and $StartGuard[1].Name -ine $fixtureApp)){
+            throw 'Vendor launch did not receive the expected verified executable handles'
+        }
+        foreach($file in $StartGuard){
+            if(-not $file.CanRead){throw 'Vendor launch received a closed executable handle'}
+            $denied=$false
+            try {$writer=[IO.File]::OpenWrite($file.Name);$writer.Dispose()}catch [IO.IOException] {$denied=$true}
+            if(-not $denied){throw 'A verified executable was writable before launch'}
+            $file.Dispose()
+        }
+        $script:appRemovalInvoked=$true
+        if($script:appRemovalOrphanedCommand){$script:appRemovalOrphanedCommand=$false;$script:appRemovalResumed=$true}
+        if($script:appRemovalDelete){[IO.File]::Delete($fixtureApp)}
+        if($script:appRemovalFail){throw 'synthetic vendor failure'}
+    }
+    function Event {param($message);$script:appRemovalEvents.Add($message)}
+    function Wait-SplitCordService {
+        param([string]$App,[int]$Seconds=20,[switch]$AllowAbsentOrStopped,[switch]$AllowMissingStoppedImage)
+        if($AllowAbsentOrStopped){
+            if([bool]$AllowMissingStoppedImage -ne [bool]$script:appRemovalOrphanedCommand){
+                throw 'Only the orphaned uninstall may accept a missing stopped service image'
+            }
+            $expectedImage=if($script:appRemovalOrphanedCommand){Join-Path $fixtureAppDirectory 'SplitCord-Turkey.exe'}else{$fixtureApp}
+            if($App -ine $expectedImage -or $Seconds -ne 0){throw 'Expected immediate service binding check for the selected installation'}
+            if($script:appForeignService){throw 'SplitCord service registration differs from the installed application'}
+            return
+        }
+        if($App){throw 'Unexpected SplitCord install service probe'}
+        if($script:appServiceRemains){throw 'SplitCord service removal could not be verified'}
+        if($script:appReappearance -ceq 'absent-service-check'){$script:appRemovalMoved=$true}
+    }
+    function Get-Process {
+        param($ErrorAction)
+        if($ErrorAction -cne 'Stop'){throw 'Expected a complete fixture process query'}
+        if($script:appRemovalInvoked -and $script:appReappearance -ceq 'replacement'){$script:appRemovalMoved=$true}
+        if($script:appRemovalInvoked -and $script:appReappearance -ceq 'original'){[IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(3))}
+        if($script:appRemovalInvoked -and $script:appReappearance -ceq 'service'){$script:appServiceRemains=$true}
+        return $script:appRemovalProcesses
+    }
+    $expectedClientDigest=Get-AppExecutableDigest $fixtureApp
+    $rejected=$false
+    try{Remove-App 'splitcord' $fixtureApp $expectedClientDigest ('a'*64)}catch{
+        $rejected=$_.Exception.Message -ceq 'Application uninstaller changed before removal'
+    }
+    Assert ($rejected -and -not $script:appRemovalInvoked) 'Application removal refuses a different approved uninstaller digest'
+    $script:appRemovalForeignCommand=$true
+    try {
+        $refused=$false
+        try {Get-AppUninstaller 'splitcord' $fixtureApp}catch{
+            $refused=$_.Exception.Message -ceq 'Application uninstaller not found'
+        }
+        Assert $refused 'SplitCord refuses a machine registration pointing to a missing uninstaller'
+    } finally {$script:appRemovalForeignCommand=$false}
+    $script:appReappearance=$null
+    $script:appRemovalInvoked=$true
+    $rejected=$false
+    try {Wait-App 'splitcord' $false 0 $fixtureApp}catch{$rejected=$_.Exception.Message -like 'Application installation state*'}
+    Assert ($rejected -and (Test-Path -LiteralPath $fixtureApp)) 'Application removal readback requires the previous executable to be absent'
+    $script:appRemovalInvoked=$false
+    Assert ((Wait-App 'splitcord' $true 0) -ceq $fixtureApp) 'Application install readback returns the observed executable for verification'
+    $script:appRemovalInvoked=$true
+    $newProcess=[pscustomobject]@{Path=$fixtureApp;SessionId=($fixtureSession+1);HasExited=$false}
+    $script:appRemovalProcesses=@($newProcess)
+    $rejected=$false
+    try {Wait-AppProcessesExited 'splitcord' $fixtureApp 0}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+    Assert $rejected 'Application removal refuses a surviving process in any session'
+    $unknownExit=[pscustomobject]@{Path=$fixtureApp;SessionId=$fixtureSession}
+    $unknownExit | Add-Member ScriptProperty HasExited {throw 'Synthetic unreadable exit state'}
+    $script:appRemovalProcesses=@($unknownExit)
+    $rejected=$false
+    try {Wait-AppProcessesExited 'splitcord' $fixtureApp 0}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+    Assert $rejected 'Application removal refuses an unreadable matching process exit state'
+    $hiddenImage=[pscustomobject]@{ProcessName='SplitCord-Turkey';Path=$null;HasExited=$false}
+    $unrelatedHiddenImage=[pscustomobject]@{ProcessName='Unrelated';Path=$null;HasExited=$false}
+    $script:appRemovalProcesses=@($unrelatedHiddenImage,$hiddenImage)
+    $rejected=$false
+    try {Wait-AppProcessesExited 'splitcord' $fixtureApp 0}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+    Assert $rejected 'Application removal refuses an inaccessible possibly matching live process after uninstall'
+    $hiddenImage.HasExited=$true
+    Wait-AppProcessesExited 'splitcord' $fixtureApp 0
+    Assert $true 'Application removal accepts an exited hidden process and ignores an unrelated hidden image'
+    $discordBase=Join-Path $testRoot 'Discord'
+    $discordHelper=Join-Path $discordBase 'app-1.0.0\crashpad_handler.exe'
+    $otherDiscord=Join-Path ($discordBase+'PTB') 'app-1.0.0\crashpad_handler.exe'
+    Assert ((Test-AppImagePath $discordHelper $discordBase '') -and
+            -not (Test-AppImagePath $otherDiscord $discordBase '')) 'Application removal scopes shared helper names to the selected installation'
+
+    $discordNames=@(Get-AppProcessNames $discordBase '')
+    foreach($helperName in @('Update','crashpad_handler')){
+        $unreadableHelper=[pscustomobject]@{ProcessName=$helperName;Path=$null;SessionId=0;HasExited=$false}
+        $script:appRemovalProcesses=@($unreadableHelper)
+        Assert (Test-AppProcessesExited $discordBase '' $discordNames) ('Discord ignores an unreadable service-session helper named '+$helperName)
+        foreach($session in @(1,2,$null,'0')){
+            $unreadableHelper.SessionId=$session
+            Assert (-not (Test-AppProcessesExited $discordBase '' $discordNames)) 'Discord keeps an unreadable helper unresolved without a verified service session'
+        }
+        $unreadableHelper.SessionId=0
+        $unreadableHelper.Path=Join-Path $discordBase ($helperName+'.exe')
+        Assert (-not (Test-AppProcessesExited $discordBase '' $discordNames)) 'Discord checks an identified helper in its installation even in the service session'
+    }
+    $script:appRemovalProcesses=@([pscustomobject]@{ProcessName='Discord';Path=$null;SessionId=0;HasExited=$false})
+    Assert (-not (Test-AppProcessesExited $discordBase '' $discordNames)) 'Discord keeps an unreadable client unresolved in the service session'
+    $script:appRemovalProcesses=@([pscustomobject]@{ProcessName='crashpad_handler';Path=$null;SessionId=0;HasExited=$false})
+    Assert (-not (Test-AppProcessesExited '' $fixtureApp @(Get-AppProcessNames '' $fixtureApp))) 'SplitCord keeps an unreadable service-session crash handler unresolved'
+
+    $splitCordHelper=Join-Path $fixtureAppDirectory 'crashpad_handler.exe'
+    $splitCordNeighbor=Join-Path ($fixtureAppDirectory+'-neighbor') 'crashpad_handler.exe'
+    Assert ((Test-AppImagePath $splitCordHelper '' $fixtureApp) -and
+        -not (Test-AppImagePath $splitCordNeighbor '' $fixtureApp)) 'SplitCord scopes crash handlers to the selected installation'
+    $helper=[pscustomobject]@{ProcessName='crashpad_handler';Path=$splitCordHelper;SessionId=($fixtureSession+1);HasExited=$false}
+    $neighbor=[pscustomobject]@{ProcessName='crashpad_handler';Path=$splitCordNeighbor;SessionId=($fixtureSession+1);HasExited=$false}
+    $script:appRemovalProcesses=@($helper,$neighbor)
+    $refused=$false
+    try{Wait-AppProcessesExited 'splitcord' $fixtureApp 0}catch{$refused=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+    Assert $refused 'SplitCord removal refuses a live crash handler in its installation'
+    $helper.Path=$null
+    $refused=$false
+    try{Wait-AppProcessesExited 'splitcord' $fixtureApp 0}catch{$refused=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+    Assert $refused 'SplitCord removal refuses a live crash handler with unknown executable path'
+    $helper.HasExited=$true
+    Wait-AppProcessesExited 'splitcord' $fixtureApp 0
+    Assert $true 'SplitCord removal disregards exited crash handlers and live handlers in other installations'
+
+    $newProcess.HasExited=$true
+    $unrelated=[pscustomobject]@{Path=(Join-Path $fixtureAppDirectory 'Other.exe');SessionId=$fixtureSession;HasExited=$false}
+    $script:appRemovalProcesses=@($newProcess,$unrelated)
+    Wait-AppProcessesExited 'splitcord' $fixtureApp 0
+    Assert $true 'Application removal accepts exited matches and ignores unrelated processes'
+    $script:appRemovalProcesses=@()
+    $script:appRemovalEvents=[Collections.Generic.List[string]]::new()
+    $script:appRemovalMoved=$false
+    $script:appRemovalDelete=$false
+    $script:appRemovalFail=$true
+    $script:appRemovalInvoked=$false
+    $script:externalEffectsPending=$false
+    $rejected=$false
+    try {Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'synthetic vendor failure'}
+    Assert ($rejected -and $script:appRemovalInvoked -and $script:externalEffectsPending -and $script:appRemovalEvents.Count -eq 0) 'Application removal records vendor side effects even without a process stop'
+    $writer=[IO.File]::OpenWrite($fixtureUninstaller)
+    $writer.Dispose()
+    Assert $true 'Application removal releases the uninstaller guard after vendor failure'
+    $writer=[IO.File]::OpenWrite($fixtureApp)
+    $writer.Dispose()
+    Assert $true 'Application removal releases the client guard after vendor failure'
+    function Get-AppExecutableDigest([string]$Path) {
+        $digest=& $appRemovalSaved['Get-AppExecutableDigest'] $Path
+        if(($script:appRemovalChange -ceq 'client-bytes' -and $Path -ceq $fixtureApp) -or
+           ($script:appRemovalChange -ceq 'uninstaller' -and $Path -ceq $fixtureUninstaller)){
+            [IO.File]::WriteAllBytes($Path,[byte[]]@(2))
+        }
+        return $digest
+    }
+    function Stop-AppProcesses {
+        param($variant,$app,$ExpectedUninstaller)
+        $script:appRemovalStopCalls++
+        if($ExpectedUninstaller -cne $fixtureUninstaller){throw 'Process stop did not receive the verified removal target'}
+        foreach($path in @($fixtureApp,$fixtureUninstaller)){
+            $denied=$false
+            try {$writer=[IO.File]::OpenWrite($path);$writer.Dispose()}catch [IO.IOException] {$denied=$true}
+            if(-not $denied){throw 'A verified executable was writable while stopping the client'}
+            $script:appRemovalGuardChecks++
+        }
+        switch ($script:appRemovalChange) {
+            'client' {$script:appRemovalMoved=$true}
+            'ambiguous' {[IO.File]::WriteAllBytes($secondUninstaller,[byte[]]@(0))}
+            'client-restarted' {$newProcess.HasExited=$false;$script:appRemovalProcesses=@($newProcess)}
+            'client-now-unreadable' {$hiddenImage.HasExited=$false;$script:appRemovalProcesses=@($hiddenImage)}
+        }
+    }
+    foreach($case in @(
+        @{kind='client';error='Application installation changed before uninstall launch'},
+        @{kind='client-bytes';error='Application installation changed before uninstall launch'},
+        @{kind='uninstaller';error='Application uninstaller changed before launch'},
+        @{kind='ambiguous';error='Expected exactly one SplitCord uninstaller'},
+        @{kind='client-restarted';error='Application process exit could not be verified before uninstall; close the client and retry'},
+        @{kind='client-now-unreadable';error='Application process exit could not be verified before uninstall; close the client and retry'}
+    )){
+        $script:appRemovalInvoked=$false
+        $script:appRemovalChange=$case.kind
+        $script:appRemovalStopCalls=0;$script:appRemovalGuardChecks=0
+        $script:externalEffectsPending=$false
+        $rejected=$false
+        try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq $case.error}
+        $expectedStops=[int]($case.kind -cnotin @('client-bytes','uninstaller'))
+        Assert ($rejected -and -not $script:appRemovalInvoked -and -not $script:externalEffectsPending -and
+            $script:appRemovalStopCalls -eq $expectedStops -and $script:appRemovalGuardChecks -eq (2*$expectedStops)) ('Application removal refuses '+$case.kind+' changes before vendor launch')
+        $script:appRemovalMoved=$false
+        $script:appRemovalProcesses=@()
+        [IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
+        [IO.File]::WriteAllBytes($fixtureUninstaller,[byte[]]@(0))
+        [IO.File]::Delete($secondUninstaller)
+    }
+    $script:appRemovalChange=$null
+    $script:appRemovalInvoked=$false
+    $script:appRemovalStopCalls=0
+    $rejected=$false
+    try{Remove-App 'splitcord' $fixtureApp ('0'*64)}catch{$rejected=$_.Exception.Message -ceq 'Application installation changed before removal'}
+    Assert ($rejected -and -not $script:appRemovalInvoked -and $script:appRemovalStopCalls -eq 0) 'Application removal refuses stale client bytes before stopping processes'
+    function Save-Journal {
+        switch($script:appRemovalJournalChange){
+            'client' {$script:appRemovalMoved=$true}
+            'uninstaller' {[IO.File]::WriteAllBytes($secondUninstaller,[byte[]]@(1))}
+            'process' {$newProcess.HasExited=$false;$script:appRemovalProcesses=@($newProcess)}
+        }
+    }
+    foreach($case in @(
+        @{kind='client';message='Application installation changed before uninstall launch'},
+        @{kind='uninstaller';message='Expected exactly one SplitCord uninstaller'},
+        @{kind='process';message='Application process exit could not be verified before uninstall; close the client and retry'}
+    )){
+        $script:appRemovalJournalChange=$case.kind
+        $script:externalEffectsPending=$false
+        $rejected=$false
+        try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq $case.message}
+        Assert ($rejected -and -not $script:appRemovalInvoked -and $script:externalEffectsPending) ('Application removal refuses '+$case.kind+' changes during journal publication')
+        $script:appRemovalMoved=$false
+        $script:appRemovalProcesses=@()
+        [IO.File]::Delete($secondUninstaller)
+    }
+    Set-Item Function:Save-Journal $appRemovalSaved['Save-Journal']
+    $script:appRemovalInvoked=$false
+    $script:appRemovalFail=$false
+    $script:appRemovalDelete=$true
+    foreach($script:appReappearance in @('replacement','original')){
+        $script:appRemovalInvoked=$false
+        $script:externalEffectsPending=$false
+        $rejected=$false
+        try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'Application installation reappeared during uninstall verification'}
+        Assert ($rejected -and $script:appRemovalInvoked -and $script:externalEffectsPending -and
+            $script:appRemovalEvents.Count -eq 0) ('Application removal refuses '+$script:appReappearance+' installation observed after process readback')
+        $script:appRemovalMoved=$false
+        [IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
+    }
+    $script:appReappearance=$null
+    $script:appRemovalInvoked=$false
+    $script:appForeignService=$true
+    $script:externalEffectsPending=$false
+    $rejected=$false
+    try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'SplitCord service registration differs from the installed application'}
+    if(-not $rejected -or $script:appRemovalInvoked -or $script:externalEffectsPending){
+        throw 'A foreign SplitCord service was not refused before removal effects'
+    }
+    $script:appForeignService=$false
+    $script:appServiceRemains=$true
+    $rejected=$false
+    try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'SplitCord service removal could not be verified'}
+    Assert ($rejected -and $script:appRemovalInvoked -and $script:appRemovalEvents.Count -eq 0) 'SplitCord removal refuses success when the vendor service remains'
+    $rejected=$false
+    try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'SplitCord service removal could not be verified'}
+    Assert ($rejected -and $script:appRemovalEvents.Count -eq 0) 'SplitCord removal detects an orphaned service when the desktop client is absent'
+    $script:appServiceRemains=$false
+    $script:appReappearance='service'
+    [IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
+    $script:appRemovalInvoked=$false
+    $rejected=$false
+    try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'SplitCord service removal could not be verified'}
+    Assert ($rejected -and $script:appRemovalInvoked -and $script:appServiceRemains -and
+        $script:appRemovalEvents.Count -eq 0) 'SplitCord removal detects service reappearance during process verification'
+    $script:appServiceRemains=$false
+    $script:appReappearance=$null
+    [IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
+    $script:appRemovalInvoked=$false
+    $script:appReappearance='process-during-registration'
+    $script:externalEffectsPending=$false
+    $rejected=$false
+    try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+    Assert ($rejected -and $script:appRemovalInvoked -and $script:externalEffectsPending -and
+        $script:appRemovalEvents.Count -eq 0) 'Application removal refuses a client process that reappears during final registration readback'
+    $script:appRemovalProcesses=@()
+    $script:externalEffectsPending=$false
+    $rejected=$false
+    try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+    Assert ($rejected -and -not $script:externalEffectsPending -and
+        $script:appRemovalEvents.Count -eq 0) 'Application removal refuses an absent-client result when a process reappears during registration readback'
+    $script:appRemovalProcesses=@()
+    $script:appReappearance=$null
+    [IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
+    $script:appRemovalInvoked=$false
+    $removed=Remove-App 'splitcord'
+    Assert ($removed -ceq $true -and $script:appRemovalEvents.Count -eq 1 -and -not (Test-Path -LiteralPath $fixtureApp)) 'Application removal confirms both executable and process readback before success'
+    Assert ((Remove-App 'splitcord') -ceq $false -and $script:appRemovalEvents.Count -eq 1) 'Application removal identifies an already absent client without a vendor launch'
+    $script:appReappearance='absent-service-check'
+    $script:externalEffectsPending=$false
+    $rejected=$false
+    try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'Application installation reappeared during uninstall verification'}
+    Assert ($rejected -and -not $script:externalEffectsPending -and $script:appRemovalEvents.Count -eq 1) 'SplitCord absent-client cleanup refuses an installation found after service readback'
+    $script:appReappearance=$null
+    $script:appRemovalMoved=$false
+    $orphan=[pscustomobject]@{Path=(Join-Path $testRoot 'SplitCord-Turkey.exe');ProcessName='SplitCord-Turkey';HasExited=$false}
+    $sharedHelper=[pscustomobject]@{Path=$null;ProcessName='crashpad_handler';HasExited=$false}
+    foreach($path in @($orphan.Path,$null)){
+        $orphan.Path=$path
+        $script:appRemovalProcesses=@($orphan,$sharedHelper)
+        $rejected=$false
+        try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+        Assert ($rejected -and -not $script:externalEffectsPending -and $script:appRemovalEvents.Count -eq 1) ('SplitCord absent-client cleanup refuses a live client with image readable='+[bool]$path)
+    }
+    $orphan.HasExited=$true
+    Assert ((Remove-App 'splitcord') -ceq $false -and -not $script:externalEffectsPending) 'SplitCord absent-client cleanup disregards an exited client and an unrelated shared helper'
+    $script:appRemovalProcesses=@()
+    $script:appRemovalOrphanedCommand=$true;$script:appRemovalResumed=$false
+    try {
+        foreach($command in @(
+            ('"'+$fixtureUninstaller+'" /currentuser'),
+            ('"'+$fixtureUninstaller+'" /allusers /extra'),
+            ('"'+$fixtureUninstaller+'" /allusers' + [char]10)
+        )){
+            $refused=$false
+            try {Get-RegisteredSplitCordUninstaller $command}catch{
+                $refused=$_.Exception.Message -ceq 'SplitCord machine uninstall registration is invalid'
+            }
+            Assert $refused 'SplitCord removal retry refuses an unexpected registered command'
+        }
+        $actualImage=Join-Path $fixtureAppDirectory 'SplitCord-Turkey.exe'
+        $survivor=[pscustomobject]@{Path=$actualImage;HasExited=$false}
+        $script:appRemovalProcesses=@($survivor)
+        $refused=$false
+        try{Remove-App 'splitcord'}catch{$refused=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+        Assert ($refused -and -not $script:appRemovalResumed) 'SplitCord removal retry preserves a surviving process at the registered image'
+        $script:appRemovalProcesses=@()
+        & {
+            function Save-Journal {$script:appRemovalForeignCommand=$true}
+            $refused=$false
+            try {Remove-App 'splitcord'}catch{
+                $refused=$_.Exception.Message -ceq 'SplitCord installation changed before removal retry'
+            } finally {$script:appRemovalForeignCommand=$false}
+            Assert ($refused -and -not $script:appRemovalResumed) 'SplitCord removal retry refuses registration drift after journaling'
+        }
+        $result=Remove-App 'splitcord'
+        Assert ($result -ceq $true -and $script:appRemovalResumed -and $script:appRemovalEvents.Count -eq 2) 'SplitCord removal retries the protected registered uninstaller when the client is absent'
+        Assert ((Remove-App 'splitcord') -ceq $false) 'SplitCord removal retry reaches a verified no-op on a subsequent call'
+    } finally {$script:appRemovalOrphanedCommand=$false;$script:appRemovalResumed=$false}
+    $originalLocalAppData=$env:LOCALAPPDATA
+    $env:LOCALAPPDATA=Join-Path $testRoot 'discord-removal'
+    try {
+        foreach($variant in @('discord','discord-ptb')){
+            $base=Get-AppProcessBase $variant
+            [void][IO.Directory]::CreateDirectory($base)
+            $updater=[pscustomobject]@{Path=(Join-Path $base 'Update.exe');HasExited=$false}
+            $script:appRemovalProcesses=@($updater)
+            $script:externalEffectsPending=$false
+            $rejected=$false
+            try{Remove-App $variant}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+            Assert ($rejected -and -not $script:externalEffectsPending -and $script:appRemovalEvents.Count -eq 2) ('Application removal refuses absent '+$variant+' while an updater runs')
+            $updater.HasExited=$true
+            [IO.File]::WriteAllText($updater.Path,'inert updater')
+            try {
+                $rejected=$false
+                try{Remove-App $variant}catch{$rejected=$_.Exception.Message -ceq 'Discord updater remains on disk; review the installation before retrying'}
+                Assert ($rejected -and -not $script:externalEffectsPending -and [IO.File]::Exists($updater.Path)) ('Application removal preserves a residual '+$variant+' updater for review')
+
+                $rejected=$false
+                try{Wait-App $variant $false 0 $fixtureApp}catch{$rejected=$_.Exception.Message -ceq 'Discord updater remains on disk; review the installation before retrying'}
+                Assert ($rejected -and $script:appRemovalEvents.Count -eq 2) ('Application removal readback refuses success when the '+$variant+' updater remains at its deadline')
+            } finally {[IO.File]::Delete($updater.Path)}
+            Assert ((Remove-App $variant) -ceq $false -and -not $script:externalEffectsPending) ('Application removal confirms '+$variant+' absence after updater exit and removal')
+        }
+        foreach($variant in @('discord','discord-ptb')){
+            $updaterPath=Join-Path (Get-AppProcessBase $variant) 'Update.exe'
+            foreach($reappears in @($false,$true)){
+                & {
+                    function Start-Sleep([int]$Milliseconds) {
+                        if($Milliseconds -ne 500 -or $observation.waits -ne 0){throw 'Unexpected updater polling'}
+                        $observation.waits++
+                        [IO.File]::Delete($updaterPath)
+                    }
+                    function Get-Process {
+                        param($ErrorAction)
+                        if($ErrorAction -cne 'Stop'){throw 'Expected a complete fixture process query'}
+                        if($reappears){[IO.File]::WriteAllText($updaterPath,'inert updater')}
+                    }
+                    $observation=@{waits=0}
+                    $eventCount=$script:appRemovalEvents.Count
+                    [IO.File]::WriteAllText($updaterPath,'inert updater')
+                    try {
+                        if($reappears){
+                            $refused=$false
+                            try {Confirm-AppRemoval $variant $fixtureApp}catch{
+                                $refused=$_.Exception.Message -ceq 'Discord updater remains on disk; review the installation before retrying'
+                            }
+                            Assert ($refused -and $observation.waits -eq 1 -and $script:appRemovalEvents.Count -eq $eventCount) ('Application removal refuses a reappearing '+$variant+' updater after polling')
+                        }else{
+                            $removed=Confirm-AppRemoval $variant $fixtureApp
+                            Assert ($removed -ceq $true -and $observation.waits -eq 1 -and $script:appRemovalEvents.Count -eq ($eventCount+1)) ('Application removal waits for delayed '+$variant+' updater deletion before reporting success')
+                        }
+                    } finally {[IO.File]::Delete($updaterPath)}
+                }
+            }
+        }
+    } finally {$env:LOCALAPPDATA=$originalLocalAppData}
+} finally {
+    Remove-Item Function:Get-Process
+    foreach($name in $appRemovalSaved.Keys){Set-Item ('Function:'+$name) $appRemovalSaved[$name]}
+    $script:externalEffectsPending=$false
+}
+# Simulate a protected SplitCord uninstall interrupted after removing registration.
+& {
+    $priorSplitCordPath=$script:splitCordRemovalRecoveryPath
+    $priorEffects=$script:externalEffectsPending
+    try {
+        function Require-Admin {}
+        function Find-App([string]$Variant){
+            if($Variant -cne 'splitcord'){throw 'Unexpected fixture application'}
+            if([IO.File]::Exists($splitFixture.app) -and ($splitFixture.mode -cne 'registered-only-client' -or $splitFixture.registration)){return $splitFixture.app}
+        }
+        function Read-SplitCordMachineUninstallCommand {return $splitFixture.registration}
+        function Assert-SplitCordMaintenancePaths([string]$App,[string]$Uninstaller){
+            if($App -ine $splitFixture.app -or $Uninstaller -ine $splitFixture.uninstaller){throw 'Unexpected maintenance paths'}
+            $splitFixture.protectionChecks++
+        }
+        function Wait-SplitCordService([string]$App,[int]$Seconds,[switch]$AllowAbsentOrStopped,[switch]$AllowMissingStoppedImage){
+            if($AllowAbsentOrStopped){
+                if($App -ine $splitFixture.app -or $splitFixture.service -cnotin @('Running','Stopped','Absent')){throw 'Unexpected service maintenance'}
+            }elseif($App -or $splitFixture.service -cne 'Absent'){throw 'SplitCord service removal could not be verified'}
+        }
+        function Stop-AppProcesses {}
+        function Get-Process {param($ErrorAction);return @()}
+        function Event {}
+        function Save-Journal {}
+        function Native {
+            param($Program,$Arguments,$Timeout,[IO.FileStream[]]$StartGuard)
+            $pending=Read-SplitCordRemovalRecovery
+            if($Program -ine $splitFixture.uninstaller -or ($Arguments -join ' ') -cne '/allusers /S' -or $Timeout -ne 600 -or
+                $pending.command -cne $splitFixture.command -or $pending.uninstallerSHA256 -cne (Get-AppExecutableDigest $Program) -or
+                $StartGuard[0].Name -ine $Program -or -not $StartGuard[0].CanRead -or -not $script:externalEffectsPending){
+                throw 'SplitCord vendor execution lacked its approved checkpoint'
+            }
+            foreach($guard in $StartGuard){$guard.Dispose()}
+            $splitFixture.launches++
+            $splitFixture.registration=$null
+            $splitFixture.service='Stopped'
+            if($splitFixture.mode -cnotin @('client-present','registered-only-client') -or $splitFixture.launches -gt 1){[IO.File]::Delete($splitFixture.app)}
+            if($splitFixture.mode -ceq 'completed' -or $splitFixture.launches -gt 1){
+                [IO.File]::Delete($splitFixture.uninstaller)
+                $splitFixture.service='Absent'
+            }
+            if($splitFixture.launches -eq 1){throw 'Synthetic interrupted SplitCord uninstall'}
+        }
+        foreach($mode in @('client-present','registered-only-client','uninstaller-present','completed')){
+            $directory=Join-Path $testRoot ('splitcord-retained-removal-'+$mode)
+            [void][IO.Directory]::CreateDirectory($directory)
+            $script:splitCordRemovalRecoveryPath=Join-Path $directory 'splitcord-removal.pending'
+            $splitFixture=@{mode=$mode;app=(Join-Path $directory 'SplitCord-Turkey.exe');uninstaller=(Join-Path $directory 'Uninstall.exe');
+                service='Running';protectionChecks=0;launches=0}
+            $splitFixture.command='"'+$splitFixture.uninstaller+'" /allusers'
+            $splitFixture.registration=$splitFixture.command
+            [IO.File]::WriteAllText($splitFixture.app,'approved SplitCord app')
+            [IO.File]::WriteAllText($splitFixture.uninstaller,'approved uninstaller')
+            $interrupted=$false
+            try{Remove-App 'splitcord'}catch{if($_.Exception.Message -cne 'Synthetic interrupted SplitCord uninstall'){throw};$interrupted=$true}
+            $saved=Read-SplitCordRemovalRecovery
+            Assert ($interrupted -and $splitFixture.launches -eq 1 -and -not $splitFixture.registration -and
+                $saved.command -ceq $splitFixture.command -and $saved.applicationSHA256 -cmatch '\A[A-F0-9]{64}\z') ('SplitCord retains its verified uninstall record after registration loss: '+$mode)
+
+            $recordBytes=[IO.File]::ReadAllBytes($script:splitCordRemovalRecoveryPath)
+            $recordJSON=[Text.Encoding]::UTF8.GetString($recordBytes) | ConvertFrom-Json
+            $recordJSON.command=''
+            [IO.File]::WriteAllText($script:splitCordRemovalRecoveryPath,($recordJSON | ConvertTo-Json),[Text.UTF8Encoding]::new($false))
+            $refused=$false
+            try{Remove-App 'splitcord'}catch{$refused=$_.Exception.Message -ceq 'SplitCord removal recovery record could not be verified'}
+            Assert ($refused -and $splitFixture.launches -eq 1) ('SplitCord rejects an empty recorded uninstall command: '+$mode)
+            [IO.File]::WriteAllBytes($script:splitCordRemovalRecoveryPath,$recordBytes)
+
+            $splitFixture.registration='"'+(Join-Path $directory 'UninstallOther.exe')+'" /allusers'
+            $refused=$false
+            try{Remove-App 'splitcord'}catch{$refused=$_.Exception.Message -ceq 'SplitCord installation changed before removal retry'}
+            Assert ($refused -and $splitFixture.launches -eq 1 -and (Read-SplitCordRemovalRecovery).sha256 -ceq $saved.sha256) ('SplitCord retry refuses a different registered command: '+$mode)
+            $splitFixture.registration=$null
+
+            foreach($file in @($splitFixture.app,$splitFixture.uninstaller)){
+                if(-not [IO.File]::Exists($file)){continue}
+                $original=[IO.File]::ReadAllText($file)
+                [IO.File]::WriteAllText($file,'changed file')
+                $refused=$false
+                try{Remove-App 'splitcord'}catch{$refused=$_.Exception.Message -match 'SplitCord (client|uninstaller) changed|Application uninstaller changed'}
+                Assert ($refused -and $splitFixture.launches -eq 1 -and (Read-SplitCordRemovalRecovery).sha256 -ceq $saved.sha256) ('SplitCord retry preserves changed '+[IO.Path]::GetFileName($file)+': '+$mode)
+                [IO.File]::WriteAllText($file,$original)
+            }
+            $retry=Remove-App 'splitcord'
+            Assert ($retry -ceq $true -and $splitFixture.launches -eq (1+[int]($mode -cne 'completed')) -and
+                $splitFixture.service -ceq 'Absent' -and -not [IO.File]::Exists($splitFixture.app) -and
+                -not [IO.File]::Exists($script:splitCordRemovalRecoveryPath) -and $splitFixture.protectionChecks -gt 0) ('SplitCord completes verified removal across registration loss: '+$mode)
+        }
+    } finally {
+        $script:splitCordRemovalRecoveryPath=$priorSplitCordPath
+        $script:externalEffectsPending=$priorEffects
+    }
+}
+# Interrupt the vendor between client and updater removal using inert files.
+& {
+    $previousAppData=$env:LOCALAPPDATA
+    $previousRecoveryRoot=$script:appRemovalRecoveryRoot
+    $previousEffects=$script:externalEffectsPending
+    $env:LOCALAPPDATA=Join-Path $testRoot 'discord-retry-appdata'
+    $script:appRemovalRecoveryRoot=Join-Path $testRoot 'discord-retry-state'
+    try {
+        function Require-DesktopUser {}
+        function Get-Process {param($ErrorAction);return $state.processes}
+        function Stop-AppProcesses {param($Variant,$App,$ExpectedUninstaller);$state.stops++}
+        function Event {}
+        function Save-Journal {
+            if($state.recreateClient){[IO.File]::WriteAllText($image,'new client')}
+        }
+        function Native {
+            param($Program,$Arguments,$Timeout,[IO.FileStream[]]$StartGuard)
+            $expectedGuards=if($state.launches -eq 0){2}else{1}
+            $pending=Read-DiscordRemovalRecovery $variant
+            if($Program -ine $updater -or ($Arguments -join ' ') -cne '--uninstall -s' -or $Timeout -ne 300 -or
+                $StartGuard.Count -ne $expectedGuards -or -not $pending -or $pending.image -ine $image -or
+                $pending.updaterSHA256 -cne (Get-AppExecutableDigest $updater)){
+                throw 'Vendor was called without the exact recorded removal'
+            }
+            foreach($guard in $StartGuard){
+                $writeDenied=$false
+                try {$writer=[IO.File]::OpenWrite($guard.Name);$writer.Dispose()}catch [IO.IOException] {$writeDenied=$true}
+                if(-not $writeDenied){throw 'Vendor command did not hold its verified file'}
+                $guard.Dispose()
+            }
+            $state.launches++
+            if($state.launches -eq 1){
+                [IO.File]::Delete($image)
+                throw 'Synthetic interruption after client removal'
+            }
+            [IO.File]::Delete($updater)
+        }
+        foreach($variant in @('discord','discord-ptb')){
+            $state=@{launches=0;stops=0;recreateClient=$false;processes=@()}
+            $appBase=Get-AppProcessBase $variant
+            $appDir=Join-Path $appBase 'app-1.0.0'
+            [void][IO.Directory]::CreateDirectory($appDir)
+            $image=Join-Path $appDir (([IO.Path]::GetFileName($appBase))+'.exe')
+            $updater=Join-Path $appBase 'Update.exe'
+            [IO.File]::WriteAllText($image,'verified client')
+            [IO.File]::WriteAllText($updater,'verified updater')
+            $interrupted=$false
+            try{Remove-App $variant}catch{$interrupted=$_.Exception.Message -ceq 'Synthetic interruption after client removal'}
+            $saved=Read-DiscordRemovalRecovery $variant
+            Assert ($interrupted -and $saved -and -not [IO.File]::Exists($image) -and [IO.File]::Exists($updater)) ($variant+' retains recovery after interrupted removal')
+
+            $recordBytes=[IO.File]::ReadAllBytes($saved.path)
+            [IO.File]::WriteAllText($saved.path,('['+[Text.Encoding]::UTF8.GetString($recordBytes)+']'))
+            $refused=$false
+            try{Remove-App $variant}catch{$refused=$_.Exception.Message -like 'Discord removal recovery record could not be verified*'}
+            Assert ($refused -and $state.launches -eq 1 -and [IO.File]::Exists($saved.path)) ($variant+' rejects an invalid recovery record frame')
+            [IO.File]::WriteAllBytes($saved.path,$recordBytes)
+
+            $state.processes=@([pscustomobject]@{ProcessName='Update';Path=$updater;HasExited=$false})
+            $refused=$false
+            try{Remove-App $variant}catch{$refused=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+            Assert ($refused -and $state.launches -eq 1) ($variant+' defers retry while the original updater is running')
+            $state.processes=@()
+
+            [IO.File]::WriteAllText($updater,'different updater')
+            $refused=$false
+            try{Remove-App $variant}catch{$refused=$_.Exception.Message -ceq 'Discord updater differs from the interrupted removal'}
+            Assert ($refused -and $state.launches -eq 1 -and (Read-DiscordRemovalRecovery $variant).sha256 -ceq $saved.sha256) ($variant+' refuses a replaced updater and retains recovery')
+            [IO.File]::WriteAllText($updater,'verified updater')
+
+            $state.recreateClient=$true
+            $refused=$false
+            try{Remove-App $variant}catch{$refused=$_.Exception.Message -ceq 'Discord reappeared before removal retry; review the current installation'}
+            Assert ($refused -and $state.launches -eq 1 -and [IO.File]::Exists($image)) ($variant+' refuses to retry when the client reappears during journaling')
+            [IO.File]::Delete($image)
+            $state.recreateClient=$false
+
+            $refused=$false
+            try{Complete-DiscordRemovalRecovery $variant $saved}catch{
+                $refused=$_.Exception.Message -ceq 'Discord updater remains on disk; review the installation before retrying'
+            }
+            Assert ($refused -and (Read-DiscordRemovalRecovery $variant).sha256 -ceq $saved.sha256) ($variant+' retains the record while an updater is still present at retirement')
+
+            Assert (((Remove-App $variant) -ceq $true) -and $state.launches -eq 2 -and $state.stops -eq 1 -and
+                -not [IO.File]::Exists($updater) -and -not [IO.File]::Exists($saved.path)) ($variant+' finishes interrupted removal and retires its exact recovery record')
+            Assert (((Remove-App $variant) -ceq $false) -and $state.launches -eq 2) ($variant+' verifies a no-op after successful retry')
+        }
+    } finally {
+        $env:LOCALAPPDATA=$previousAppData
+        $script:appRemovalRecoveryRoot=$previousRecoveryRoot
+        $script:externalEffectsPending=$previousEffects
+    }
+}
+# Verify reinstall recovery across fresh jobs without launching a vendor binary.
+& {
+    $previousAppData=$env:LOCALAPPDATA
+    $previousRecoveryRoot=$script:appRemovalRecoveryRoot
+    $previousEffects=$script:externalEffectsPending
+    $env:LOCALAPPDATA=Join-Path $testRoot 'discord-reinstall-appdata'
+    try {
+        function Require-DesktopUser {}
+        function Get-Process {param($ErrorAction);return $state.processes}
+        function Stop-AppProcesses {}
+        function Event {}
+        function Save-Journal {}
+        function Download {
+            param($url,$hash,$destination,[switch]$Signed,$Publisher,[switch]$ReturnVerifiedHash,[switch]$Proxy)
+            if(-not $Signed -or $Publisher -cne 'discord' -or -not $ReturnVerifiedHash){throw 'Replacement was not acquired with publisher verification'}
+            $state.downloads++
+            if($Proxy){$state.proxyDownloads++}
+            if($state.failDownload){throw 'Synthetic proxy download failure'}
+            if($state.downloads -eq 1){$state.installer=$destination}
+            [IO.File]::WriteAllText($destination,'verified replacement installer')
+            return (Get-AppExecutableDigest $destination)
+        }
+        function Get-AuthenticodeSignature {
+            param($LiteralPath)
+            if($LiteralPath -ine $state.installer){throw 'Publisher check did not use the retained installer'}
+            $state.signatureChecks++
+            return @{Status=$(if($state.invalidSignature){'NotTrusted'}else{'Valid'});SignerCertificate=@{Subject='CN=Discord fixture'}}
+        }
+        function Native {
+            param($Program,$Arguments,$Timeout,[IO.FileStream[]]$StartGuard)
+            $pending=Read-DiscordRemovalRecovery 'discord'
+            if($Program -ieq $updater){
+                if(($Arguments -join ' ') -cne '--uninstall -s' -or $pending.replacement.setupAttempted){
+                    throw 'Uninstall was called outside the recorded removal phase'
+                }
+                $state.removals++
+                foreach($guard in $StartGuard){$guard.Dispose()}
+                [IO.File]::Delete($image)
+                if($state.mode -ceq 'partial-removal' -and $state.removals -eq 1){throw 'Synthetic removal interruption'}
+                [IO.File]::Delete($updater)
+                return
+            }
+            if($Program -ine $state.installer -or ($Arguments -join ' ') -cne '-s' -or
+                -not $pending.replacement.setupAttempted -or $StartGuard.Count -ne 1 -or -not $StartGuard[0].CanRead){
+                throw 'Setup was called without the retained installer and recorded phase'
+            }
+            $state.setups++
+            $StartGuard[0].Dispose()
+            if($state.mode -ceq 'setup-failure' -and $state.setups -eq 1){throw 'Synthetic replacement interruption'}
+            [IO.File]::WriteAllText($image,'replacement client')
+            [IO.File]::WriteAllText($updater,'replacement updater')
+        }
+        foreach($mode in @('partial-removal','setup-failure')){
+            $state=@{mode=$mode;downloads=0;proxyDownloads=0;failDownload=$false;removals=0;setups=0;signatureChecks=0;installer='';invalidSignature=$false;processes=@()}
+            $workflows=Join-Path $testRoot ('discord-reinstall-'+$mode)
+            $script:appRemovalRecoveryRoot=Join-Path $workflows 'application-recovery'
+            $root=Join-Path $workflows ((('a'*48))+'\application')
+            [void][IO.Directory]::CreateDirectory((Join-Path $root 'downloads'))
+            $useProxy=$mode -ceq 'partial-removal'
+            $r=[pscustomobject]@{action='app-reinstall';engine='discord';clean=$false;repairProxy=$useProxy}
+            $inputData=@{nativeArchitecture='amd64'}
+            $base=Get-AppProcessBase 'discord'
+            $versionDirectory=Join-Path $base 'app-1.0.0'
+            [void][IO.Directory]::CreateDirectory($versionDirectory)
+            $image=Join-Path $versionDirectory 'Discord.exe'
+            $updater=Join-Path $base 'Update.exe'
+            [IO.File]::WriteAllText($image,'original client')
+            [IO.File]::WriteAllText($updater,'original updater')
+
+            if($useProxy){
+                $state.failDownload=$true
+                $refused=$false
+                try{Install-App 'discord' -Reinstall}catch{$refused=$_.Exception.Message -ceq 'Synthetic proxy download failure'}
+                Assert ($refused -and $state.proxyDownloads -eq 1 -and $state.downloads -eq 1 -and
+                    $state.removals -eq 0 -and $state.setups -eq 0 -and [IO.File]::Exists($image) -and
+                    [IO.File]::Exists($updater) -and -not (Read-DiscordRemovalRecovery 'discord')) 'Proxy download failure preserves the original Discord install before any removal'
+                $state.failDownload=$false;$state.downloads=0;$state.proxyDownloads=0
+            }
+            $interrupted=$false
+            $message=if($mode -ceq 'partial-removal'){'Synthetic removal interruption'}else{'Synthetic replacement interruption'}
+            try{Install-App 'discord' -Reinstall}catch{$interrupted=$_.Exception.Message -ceq $message}
+            $saved=Read-DiscordRemovalRecovery 'discord'
+            Assert ($interrupted -and $saved.replacement.job -ceq ('a'*48) -and
+                $saved.replacement.setupAttempted -eq ($mode -ceq 'setup-failure') -and
+                $state.proxyDownloads -eq [int]$useProxy) ('Discord reinstall retains the approved installer and phase after '+$mode)
+
+            $root=Join-Path $workflows ((('b'*48))+'\application')
+            [void][IO.Directory]::CreateDirectory((Join-Path $root 'downloads'))
+            if($mode -ceq 'setup-failure'){
+                $state.processes=@([pscustomobject]@{ProcessName='discord-setup';Path=$state.installer;HasExited=$false})
+                $refused=$false
+                try{Install-App 'discord' -Reinstall}catch{$refused=$_.Exception.Message -like 'The retained Discord installer may still be running*'}
+                Assert ($refused -and $state.setups -eq 1 -and $state.removals -eq 1 -and
+                    (Read-DiscordRemovalRecovery 'discord').sha256 -ceq $saved.sha256) 'Discord reinstall defers while the prior installer is still running'
+                $state.processes=@()
+                [IO.File]::WriteAllText($image,'original client')
+                [IO.File]::WriteAllText($updater,'original updater')
+                $refused=$false
+                try{Install-App 'discord' -Reinstall}catch{$refused=$_.Exception.Message -like 'Stable Discord changed before reinstall*'}
+                Assert ($refused -and $state.removals -eq 1 -and $state.setups -eq 1) 'Discord does not remove a client again after replacement setup was attempted'
+                [IO.File]::Delete($image)
+                [IO.File]::Delete($updater)
+            }
+            [IO.File]::WriteAllText($state.installer,'changed installer')
+            $refused=$false
+            try{Install-App 'discord' -Reinstall}catch{$refused=$_.Exception.Message -like 'Staged application installer differs*'}
+            Assert ($refused -and $state.downloads -eq 1 -and (Read-DiscordRemovalRecovery 'discord').sha256 -ceq $saved.sha256) 'Discord reinstall refuses changed retained installer bytes'
+            [IO.File]::WriteAllText($state.installer,'verified replacement installer')
+            $state.invalidSignature=$true
+            $refused=$false
+            try{Install-App 'discord' -Reinstall}catch{$refused=$_.Exception.Message -ceq 'Recorded Discord replacement publisher signature could not be verified'}
+            Assert ($refused -and $state.removals -eq 1 -and $state.signatureChecks -ge 1 -and [IO.File]::Exists($saved.path)) 'Discord reinstall rechecks publisher trust before resuming'
+            $state.invalidSignature=$false
+
+            $result=Install-App 'discord' -Reinstall
+            Assert ($result.reinstalled -eq $true -and $state.downloads -eq 1 -and
+                $state.removals -eq (1+[int]($mode -ceq 'partial-removal')) -and
+                $state.setups -eq (1+[int]($mode -ceq 'setup-failure')) -and
+                [IO.File]::ReadAllText($image) -ceq 'replacement client' -and -not [IO.File]::Exists($saved.path)) ('Discord reinstall resumes '+$mode+' and verifies cleanup')
+        }
+    } finally {
+        $env:LOCALAPPDATA=$previousAppData
+        $script:appRemovalRecoveryRoot=$previousRecoveryRoot
+        $script:externalEffectsPending=$previousEffects
+    }
+}
+# Interrupt clean-mode PTB after setup, at each stable uninstall boundary.
+& {
+    $previousAppData=$env:LOCALAPPDATA
+    $previousRecoveryRoot=$script:appRemovalRecoveryRoot
+    $previousEffects=$script:externalEffectsPending
+    try {
+        function Require-DesktopUser {}
+        function Get-Process {param($ErrorAction);return @()}
+        function Stop-AppProcesses {
+            if($mode -ceq 'before-stop' -and -not $state.stopInterrupted){
+                $state.stopInterrupted=$true
+                throw 'Synthetic clean removal interruption'
+            }
+        }
+        function Event {}
+        function Save-Journal {}
+        function Download {
+            param($url,$hash,$destination,[switch]$Signed,$Publisher,[switch]$ReturnVerifiedHash)
+            if($url -notmatch 'channel=ptb' -or -not $Signed -or $Publisher -cne 'discord' -or -not $ReturnVerifiedHash){
+                throw 'PTB installer was not acquired with publisher verification'
+            }
+            $state.downloads++
+            [IO.File]::WriteAllText($destination,'verified PTB installer')
+            return (Get-AppExecutableDigest $destination)
+        }
+        function Native {
+            param($Program,$Arguments,$Timeout,[IO.FileStream[]]$StartGuard)
+            if($Program -ieq $fixtureStableUpdater){
+                $pending=Read-DiscordRemovalRecovery 'discord'
+                if(($Arguments -join ' ') -cne '--uninstall -s' -or $pending.cleanPTB.appSHA256 -cne (Get-AppExecutableDigest $fixturePTBImage) -or
+                    $pending.cleanPTB.updaterSHA256 -cne (Get-AppExecutableDigest $fixturePTBUpdater) -or $pending.cleanPTB.image -ine $fixturePTBImage){
+                    throw 'Stable removal began without verified PTB recovery'
+                }
+                foreach($file in @($fixturePTBImage,$fixturePTBUpdater)){
+                    $locked=$false
+                    try {$writer=[IO.File]::OpenWrite($file);$writer.Dispose()}catch [IO.IOException]{$locked=$true}
+                    if(-not $locked){throw 'Verified PTB files were not held during stable cleanup'}
+                }
+                foreach($guard in $StartGuard){$guard.Dispose()}
+                $state.removals++
+                if($state.removals -eq 1 -and $mode -ceq 'client-present'){throw 'Synthetic clean removal interruption'}
+                [IO.File]::Delete($fixtureStableImage)
+                if($state.removals -eq 1 -and $mode -ceq 'updater-present'){throw 'Synthetic clean removal interruption'}
+                [IO.File]::Delete($fixtureStableUpdater)
+                if($state.removals -eq 1 -and $mode -ceq 'stable-absent'){throw 'Synthetic clean removal interruption'}
+                return
+            }
+            if(($Arguments -join ' ') -cne '-s' -or $StartGuard.Count -ne 1 -or -not $StartGuard[0].CanRead){
+                throw 'PTB setup did not use its verified installer'
+            }
+            $state.setups++
+            $StartGuard[0].Dispose()
+            [IO.File]::WriteAllText($fixturePTBImage,'verified replacement PTB client')
+            [IO.File]::WriteAllText($fixturePTBUpdater,'verified PTB updater')
+        }
+        foreach($mode in @('before-stop','client-present','updater-present','stable-absent')){
+            $hadPTB=$mode -ceq 'updater-present'
+            $initialRemovals=[int]($mode -cne 'before-stop')
+            $state=@{downloads=0;setups=0;removals=0;stopInterrupted=$false}
+            $root=Join-Path $testRoot ('ptb-resume-'+$mode)
+            $script:appRemovalRecoveryRoot=Join-Path $root 'application-recovery'
+            $env:LOCALAPPDATA=Join-Path $root 'fixture-appdata'
+            $r=[pscustomobject]@{action='app-install';engine='discord-ptb';clean=$true}
+            $inputData=@{nativeArchitecture='amd64'}
+            $stableBase=Get-AppProcessBase 'discord'
+            $ptbBase=Get-AppProcessBase 'discord-ptb'
+            $fixtureStableImage=Join-Path $stableBase 'app-1.0.0\Discord.exe'
+            $fixturePTBImage=Join-Path $ptbBase 'app-1.0.0\DiscordPTB.exe'
+            $fixtureStableUpdater=Join-Path $stableBase 'Update.exe'
+            $fixturePTBUpdater=Join-Path $ptbBase 'Update.exe'
+            foreach($directory in @((Split-Path -Parent $fixtureStableImage),(Split-Path -Parent $fixturePTBImage),(Join-Path $root 'downloads'))){
+                [void][IO.Directory]::CreateDirectory($directory)
+            }
+            [IO.File]::WriteAllText($fixtureStableImage,'original stable client')
+            [IO.File]::WriteAllText($fixtureStableUpdater,'original stable updater')
+            if($hadPTB){[IO.File]::WriteAllText($fixturePTBImage,'previous PTB client')}
+            $interrupted=$false
+            try{Install-App 'discord-ptb'}catch{if($_.Exception.Message -cne 'Synthetic clean removal interruption'){throw};$interrupted=$true}
+            $saved=Read-DiscordRemovalRecovery 'discord'
+            Assert ($interrupted -and $saved.cleanPTB.previouslyInstalled -eq $hadPTB -and $state.removals -eq $initialRemovals) ('PTB clean saves verified files before interrupted stable cleanup: '+$mode)
+
+            foreach($file in @($fixturePTBImage,$fixturePTBUpdater)){
+                $original=[IO.File]::ReadAllText($file)
+                [IO.File]::WriteAllText($file,'changed PTB file')
+                $refused=$false
+                try{Install-App 'discord-ptb'}catch{$refused=$_.Exception.Message -like 'Verified Discord PTB*changed before stable cleanup retry*'}
+                Assert ($refused -and $state.downloads -eq 1 -and $state.removals -eq $initialRemovals -and
+                    (Read-DiscordRemovalRecovery 'discord').sha256 -ceq $saved.sha256) ('PTB clean retry refuses changed '+[IO.Path]::GetFileName($file)+' before stable cleanup: '+$mode)
+                [IO.File]::WriteAllText($file,$original)
+            }
+            foreach($file in @($fixtureStableImage,$fixtureStableUpdater)){
+                if(-not [IO.File]::Exists($file)){continue}
+                $original=[IO.File]::ReadAllText($file)
+                [IO.File]::WriteAllText($file,'changed stable file')
+                $refused=$false
+                try{Install-App 'discord-ptb'}catch{$refused=$_.Exception.Message -match 'changed before removal|differs from the interrupted removal'}
+                Assert ($refused -and $state.removals -eq $initialRemovals -and
+                    (Read-DiscordRemovalRecovery 'discord').sha256 -ceq $saved.sha256) ('PTB clean retry preserves changed stable files: '+$mode)
+                [IO.File]::WriteAllText($file,$original)
+            }
+            $result=Install-App 'discord-ptb'
+            Assert ($result.installed -eq $true -and $result.previouslyInstalled -eq $hadPTB -and $state.downloads -eq 1 -and $state.setups -eq 1 -and
+                $state.removals -eq ($initialRemovals+[int]($mode -cne 'stable-absent')) -and -not [IO.File]::Exists($fixtureStableImage) -and -not [IO.File]::Exists($fixtureStableUpdater) -and
+                -not [IO.File]::Exists($saved.path)) ('PTB clean completes stable cleanup without running setup again: '+$mode)
+        }
+    } finally {
+        $env:LOCALAPPDATA=$previousAppData
+        $script:appRemovalRecoveryRoot=$previousRecoveryRoot
+        $script:externalEffectsPending=$previousEffects
+    }
+}
+# Mock installer acquisition and user operations; never execute a vendor process.
+$appInstallSaved=@{};foreach($name in @('Require-DesktopUser','Find-App','Get-AppExecutableDigest','Get-AppUninstaller','Open-VerifiedAppExecutable','Remove-App','Download','Native','Wait-App','Wait-AppProcessesExited','Event','Save-Journal')){$appInstallSaved[$name]=(Get-Command $name).ScriptBlock}
+$previousAppRequest=$r
+$previousAppInput=$inputData
+$previousAppRoot=$root
+$previousAppEffects=$script:externalEffectsPending
+$previousAppLocalAppData=$env:LOCALAPPDATA
+$previousAppJournal=$script:journalPath
+$previousAppJournalState=$script:journalState
+try {
+    $root=Join-Path $testRoot 'app-install-fixture'
+    $env:LOCALAPPDATA=Join-Path $root 'local-app-data'
+    $stableFixtureDirectory=Join-Path $env:LOCALAPPDATA 'Discord'
+    [void][IO.Directory]::CreateDirectory($stableFixtureDirectory)
+    $residualUpdater=Join-Path $stableFixtureDirectory 'Update.exe'
+    [void][IO.Directory]::CreateDirectory((Join-Path $root 'downloads'))
+    $journal=Join-Path $root 'application.json'
+    $script:journalPath=$journal
+    $script:journalState='running'
+    $script:appInstallerChanged=$false
+    $script:appStableBytesChanged=$false;$script:appChangeStableBytesDuringDownload=$false
+    $script:appChangeStableBytesDuringSetup=$false
+    $script:appUpdaterMissing=$false;$script:appUpdaterChanged=$false
+    $script:appUpdaterChangesDuringDownload=$false;$script:appUpdaterChangesDuringSetup=$false
+    $script:appPreviouslyInstalled=$false
+    $script:appPTBSetupChanges=$false;$script:appPTBSetupChanged=$false;$script:appPTBUnreadable=$false
+    $script:appReplacementBytesChange=$false;$script:appReplacementBytesChanged=$false
+    $script:appJournalDrift='';$script:appFinalReadbackDrift=''
+    function Save-Journal {
+        & $appInstallSaved['Save-Journal']
+        switch($script:appJournalDrift){
+            'stable-path' {$script:appStableChanged=$true}
+            'stable-bytes' {$script:appStableBytesChanged=$true}
+            'stable-updater' {$script:appUpdaterChanged=$true}
+            'ptb-appearance' {$script:appPreviouslyInstalled=$true}
+            'ptb-bytes' {$script:appPTBSetupChanged=$true}
+            'reinstall-path' {$script:appStableReappears=$true}
+            'reinstall-process' {$script:appStableProcessReturns=$true}
+            'stable-updater-reappears' {[IO.File]::WriteAllText($residualUpdater,'inert updater')}
+        }
+    }
+    function Require-DesktopUser {}
+    function Find-App {
+        param($variant)
+        $script:appInstallTrace.Add('find-'+$variant)
+        if($script:appRemoveClearedStable -and $variant -ceq 'discord'){
+            if($script:appInstallTrace.Contains('verify-ptb')){
+                if($script:appReplacementChanges){return 'C:\fixture\replacement\Discord.exe'}
+                if($script:appReplacementBytesChange){$script:appReplacementBytesChanged=$true}
+                return 'C:\fixture\Discord.exe'
+            }
+            if($script:appStableReappears){return 'C:\fixture\replacement\Discord.exe'}
+            return
+        }
+        if($variant -ceq 'discord' -and $script:appInstallTrace.Contains('download:discord')){
+            if($script:appStableChanged){return 'C:\fixture\updated\Discord.exe'}
+            if($script:appStableDisappearedDuringDownload){return}
+            if($script:appStableAppearedDuringDownload){return 'C:\fixture\new\Discord.exe'}
+        }
+        if($variant -ceq 'discord' -and $script:appStableAppeared -and $script:appInstallTrace.Contains('verify-ptb')){return 'C:\fixture\new\Discord.exe'}
+        if($variant -ceq 'discord-ptb'){
+            if($script:appInstallTrace.Contains('verify-ptb')){
+                if($script:appFinalReadbackDrift -ceq 'absent'){return}
+                if($script:appFinalReadbackDrift -ceq 'path'){return 'C:\fixture\updated\DiscordPTB.exe'}
+                if($script:appFinalReadbackDrift -ceq 'bytes'){$script:appPTBSetupChanged=$true}
+                return 'C:\fixture\DiscordPTB.exe'
+            }
+            if($script:appPreviouslyInstalled){return 'C:\fixture\DiscordPTB.exe'}
+        }
+        if($variant -ceq 'discord' -and $script:appInstallTrace.Contains('remove-stable')){
+            if($script:appStableReturnsDuringCleanup){return 'C:\fixture\new\Discord.exe'}
+            return
+        }
+        if($variant -ceq 'discord' -and -not $script:appStableAbsent){return 'C:\fixture\Discord.exe'}
+    }
+    function Get-AppUninstaller([string]$variant,[string]$app) {
+        if($script:appInstallTrace.Contains('verify-ptb')){
+            if($script:appInstalledUpdaterFault -ceq 'missing'){throw 'Application uninstaller not found'}
+            if($variant -ceq 'discord-ptb' -and $app -ceq 'C:\fixture\DiscordPTB.exe'){return @{path='C:\fixture\ptb\Update.exe'}}
+        }
+        if($variant -cne 'discord' -or $app -cne 'C:\fixture\Discord.exe'){throw 'Unexpected uninstaller request'}
+        if($script:appUpdaterMissing){throw 'Application uninstaller not found'}
+        return @{path='C:\fixture\Update.exe'}
+    }
+    function Get-AppExecutableDigest([string]$path) {
+        if($path -ceq 'C:\fixture\ptb\Update.exe'){
+            if($script:appInstalledUpdaterFault -ceq 'unreadable'){throw 'Fixture installed updater unreadable'}
+            if($script:appInstalledUpdaterFault -ceq 'changes-during-cleanup' -and $script:appInstallTrace.Contains('remove-stable')){return 'e'*64}
+            return 'd'*64
+        }
+        if($path -ceq 'C:\fixture\Update.exe'){
+            if($script:appUpdaterChanged){return 'f'*64}
+            return 'd'*64
+        }
+        if($path -ceq 'C:\fixture\DiscordPTB.exe'){
+            if($script:appPTBUnreadable -and $script:appInstallTrace.Contains('verify-ptb')){throw 'fixture PTB executable unreadable'}
+            if($script:appPTBChangeDuringCleanup -ceq 'bytes' -and $script:appInstallTrace.Contains('remove-stable')){return 'd'*64}
+            if($script:appPTBSetupChanged){return 'e'*64}
+            return 'c'*64
+        }
+        if($path -cne 'C:\fixture\Discord.exe'){throw 'Expected digest for the observed Discord client'}
+        if($script:appReplacementUnreadable -and $script:appInstallTrace.Contains('verify-ptb')){
+            throw 'fixture replacement executable unreadable'
+        }
+        if($script:appStableBytesChanged -or $script:appReplacementBytesChanged){return 'b'*64}
+        return 'a'*64
+    }
+    $replacementFixtures=@{
+        'C:\fixture\DiscordPTB.exe'=(Join-Path $root 'ptb-client-guard')
+        'C:\fixture\ptb\Update.exe'=(Join-Path $root 'ptb-updater-guard')
+    }
+    foreach($fixture in $replacementFixtures.Values){[IO.File]::WriteAllText($fixture,'inert verified replacement')}
+    function Open-VerifiedAppExecutable([string]$Path,[string]$ExpectedDigest){
+        if($Path -cnotin @('C:\fixture\DiscordPTB.exe','C:\fixture\ptb\Update.exe') -or $ExpectedDigest -cnotmatch '\A[a-f0-9]{64}\z'){
+            throw 'Unexpected verified replacement file'
+        }
+        $fixture=$replacementFixtures[$Path]
+        $digest=if($script:appReplacementGuardFault -ceq $Path){'0'*64}else{(Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash}
+        return & $appInstallSaved['Open-VerifiedAppExecutable'] $fixture $digest
+    }
+    function Remove-App {
+        param($variant,$expectedApp,$expectedAppDigest,$expectedUninstallerDigest)
+        if($r.clean){
+            foreach($fixture in $replacementFixtures.Values){
+                $locked=$false
+                try {$writer=[IO.File]::OpenWrite($fixture);$writer.Dispose()}catch [IO.IOException]{$locked=$true}
+                if(-not $locked){throw 'PTB replacement was writable during stable removal'}
+            }
+        }
+        if(($r.clean -or $r.action -ceq 'app-reinstall') -and $expectedUninstallerDigest -cne ('d'*64)){
+            throw 'Application replacement must retain the approved stable updater digest'
+        }
+        if($expectedUninstallerDigest -and (Get-AppExecutableDigest 'C:\fixture\Update.exe') -ine $expectedUninstallerDigest){
+            throw 'Application uninstaller changed before removal'
+        }
+        if($variant -cne 'discord' -or $expectedApp -cne 'C:\fixture\Discord.exe' -or $expectedAppDigest -cne ('a'*64)){
+            throw 'Expected removal bound to the observed stable client path and digest'
+        }
+        $script:appInstallTrace.Add('remove-stable')
+        if($script:appStableReplacedDuringSetup -or (Get-AppExecutableDigest $expectedApp) -ine $expectedAppDigest){
+            throw 'Application installation changed before removal'
+        }
+        $script:appInstallerLocked=$false
+        try {
+            $writer=[IO.File]::OpenWrite($script:appInstallerDestination)
+            $writer.Dispose()
+        }catch [IO.IOException]{$script:appInstallerLocked=$true}
+        if($script:appRemoveFailure){throw 'fixture remove failure'}
+        if($r.action -ceq 'app-reinstall'){$script:appRemoveClearedStable=$true}
+    }
+    function Download {
+        param($Url,$Hash,$Destination,[switch]$Signed,[string]$Publisher,[switch]$ReturnVerifiedHash)
+        $script:appInstallTrace.Add('download:'+ $Publisher)
+        $script:appDownloadURL=$Url
+        if(-not $Signed -or -not $ReturnVerifiedHash){throw 'Expected signed Discord download with verified hash'}
+        if($script:appDownloadFailure){throw 'fixture download failure'}
+        $script:appInstallerDestination=$Destination
+        [IO.File]::WriteAllText($Destination,'inert installer')
+        $digest=(Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash
+        if($script:appInstallerChanged){[IO.File]::AppendAllText($Destination,' changed')}
+        if($script:appChangeStableBytesDuringDownload){$script:appStableBytesChanged=$true}
+        if($script:appUpdaterChangesDuringDownload){$script:appUpdaterChanged=$true}
+        return $digest
+    }
+    function Native {
+        param($Program,$Arguments,$Timeout,[IO.FileStream]$StartGuard)
+        $saved=Get-Content -LiteralPath $journal -Raw | ConvertFrom-Json
+        if(-not $script:externalEffectsPending -or $saved.state -cne 'running' -or
+            $saved.externalEffectsPending -isnot [bool] -or -not $saved.externalEffectsPending){
+            throw 'Vendor setup began without its durable uncertainty record'
+        }
+        $script:appInstallTrace.Add('installer')
+        $script:appInstallerLockedAtLaunch=$false
+        try {
+            $writer=[IO.File]::OpenWrite($Program)
+            $writer.Dispose()
+        }catch [IO.IOException]{$script:appInstallerLockedAtLaunch=$true}
+        if($null -eq $StartGuard -or -not $StartGuard.CanRead -or $StartGuard.Name -ine $Program){throw 'Expected installer handle through process creation'}
+        $StartGuard.Dispose()
+        $writer=[IO.File]::OpenWrite($Program)
+        $writer.Dispose()
+        if($script:appNativeFailure){throw 'fixture installer failure'}
+        if($script:appChangeStableBytesDuringSetup){$script:appStableBytesChanged=$true}
+        if($script:appUpdaterChangesDuringSetup){$script:appUpdaterChanged=$true}
+        if($script:appPTBSetupChanges){$script:appPTBSetupChanged=$true}
+        return @{exitCode=0;outputComplete=$true}
+    }
+    function Wait-App {
+        param($variant,$installed,$seconds)
+        $script:appInstallTrace.Add('verify-ptb')
+        if($script:appReadbackFailure){throw 'fixture executable readback failure'}
+        if($variant -ceq 'discord-ptb'){
+            if($script:appPTBChangeDuringCleanup -ceq 'path' -and $script:appInstallTrace.Contains('remove-stable')){
+                return 'C:\fixture\replacement\DiscordPTB.exe'
+            }
+            return 'C:\fixture\DiscordPTB.exe'
+        }
+        return 'C:\fixture\Discord.exe'
+    }
+    function Wait-AppProcessesExited {
+        param($variant,$app)
+        if($variant -cne 'discord'){throw 'Expected stable Discord cleanup verification'}
+        $script:appInstallTrace.Add('verify-stable-processes')
+        if($script:appStableProcessReturns){throw 'fixture stable process remains'}
+    }
+    function Event {param($text);$script:appInstallTrace.Add('event')}
+    $r=[pscustomobject]@{action='app-install';engine='discord-ptb';clean=$true;sha256=''}
+    $inputData=[pscustomobject]@{nativeArchitecture='amd64'}
+    $script:appInstallTrace=[Collections.Generic.List[string]]::new()
+    $script:appStableAbsent=$true
+    [IO.File]::WriteAllText($residualUpdater,'inert updater')
+    try {
+        $rejected=$false
+        try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Discord updater remains on disk; review the installation before retrying'}
+        Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord') 'PTB clean setup refuses a residual stable updater before acquisition'
+    } finally {
+        [IO.File]::Delete($residualUpdater)
+        $script:appStableAbsent=$false
+    }
+    $script:appInstallTrace=[Collections.Generic.List[string]]::new();$script:appDownloadFailure=$true;$script:appRemoveFailure=$false
+    $script:externalEffectsPending=$false
+    Save-Journal
+    $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$true}
+    Assert ($rejected -and -not $script:externalEffectsPending -and
+        (($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord')) 'PTB clean download failure leaves vendor effects clear and preserves the existing client'
+    $script:appInstallTrace=[Collections.Generic.List[string]]::new();$script:appDownloadFailure=$false;$script:appRemoveFailure=$false
+    $beforeLaunch=Get-Content -LiteralPath $journal -Raw | ConvertFrom-Json
+    Assert ($beforeLaunch.externalEffectsPending -is [bool] -and -not $beforeLaunch.externalEffectsPending) 'Application journal starts with no vendor effect'
+    $script:journalPath=Join-Path $root 'missing-parent\application.json'
+    $refused=$false
+    try{Install-App 'discord-ptb'}catch{$refused=$true}
+    Assert ($refused -and -not $script:externalEffectsPending -and ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord') 'Application setup refuses to launch when its journal cannot be written'
+    $script:journalPath=$journal
+    foreach($case in @(
+        @{drift='stable-path';message='Stable Discord changed before PTB setup; review the current installation'},
+        @{drift='stable-bytes';message='Stable Discord changed before PTB setup; review the current installation'},
+        @{drift='stable-updater';message='Stable Discord uninstaller changed before PTB setup; review the current installation'},
+        @{drift='ptb-appearance';message='Discord PTB changed before setup; stable Discord was preserved'},
+        @{drift='ptb-bytes';message='Discord PTB changed before setup; stable Discord was preserved'}
+    )){
+        $script:appInstallTrace.Clear()
+        $script:appPreviouslyInstalled=$case.drift -ceq 'ptb-bytes'
+        $script:appJournalDrift=$case.drift
+        $rejected=$false
+        try {Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq $case.message}
+        finally {
+            $script:appJournalDrift='';$script:appPreviouslyInstalled=$false;$script:appPTBSetupChanged=$false
+            $script:appStableChanged=$false;$script:appStableBytesChanged=$false;$script:appUpdaterChanged=$false
+        }
+        Assert ($rejected -and -not $script:appInstallTrace.Contains('installer') -and
+            -not $script:appInstallTrace.Contains('remove-stable')) ('PTB clean refuses '+$case.drift+' changes during journal publication')
+    }
+    $script:appInstallTrace.Clear()
+    $script:appUpdaterMissing=$true
+    $rejected=$false
+    try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Application uninstaller not found'}
+    finally{$script:appUpdaterMissing=$false}
+    Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord') 'PTB clean refuses a missing stable updater before acquisition'
+    $script:appInstallTrace.Clear()
+    $script:appUpdaterChangesDuringSetup=$true
+    $rejected=$false
+    try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Application uninstaller changed before removal'}
+    finally{$script:appUpdaterChangesDuringSetup=$false;$script:appUpdaterChanged=$false}
+    Assert ($rejected -and $script:appInstallTrace.Contains('installer') -and
+        -not $script:appInstallTrace.Contains('remove-stable')) 'PTB clean refuses a stable updater replaced during setup'
+    $script:appInstallTrace.Clear()
+    $installed=Install-App 'discord-ptb'
+    Assert (($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,find-discord,find-discord-ptb,installer,verify-ptb,remove-stable,verify-ptb,verify-stable-processes,find-discord,find-discord-ptb,event') 'PTB clean verifies the installed replacement before removal and rechecks it after cleanup'
+    $script:appPreviouslyInstalled=$true
+    $script:appInstallTrace.Clear()
+    $rejected=$false
+    try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -like 'Discord PTB setup did not replace*'}
+    Assert ($rejected -and $script:externalEffectsPending -and -not $script:appInstallTrace.Contains('remove-stable') -and
+        -not $script:appInstallTrace.Contains('event')) 'PTB clean preserves stable Discord when setup leaves the previous PTB executable unchanged'
+    $script:appPTBSetupChanges=$true
+    $script:appInstallTrace.Clear()
+    $updated=Install-App 'discord-ptb'
+    Assert ($updated.installed -and $updated.previouslyInstalled -and $script:appInstallTrace.Contains('remove-stable')) 'PTB clean accepts verified new bytes at the existing PTB path'
+    $script:appPreviouslyInstalled=$false;$script:appPTBSetupChanges=$false;$script:appPTBSetupChanged=$false
+    foreach($change in @('path','bytes')){
+        $script:appPTBChangeDuringCleanup=$change
+        $script:appInstallTrace.Clear()
+        $rejected=$false
+        try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Discord PTB changed during stable client cleanup; review the current installation'}
+        Assert ($rejected -and $script:externalEffectsPending -and
+            ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,find-discord,find-discord-ptb,installer,verify-ptb,remove-stable,verify-ptb') ('PTB clean refuses success when the replacement changes '+$change+' during cleanup')
+    }
+    $script:appPTBChangeDuringCleanup=$null
+    foreach($case in @(
+        @{flag='appStableReturnsDuringCleanup';message='Stable Discord reappeared during PTB cleanup; review the current installation'},
+        @{flag='appStableProcessReturns';message='fixture stable process remains'}
+    )){
+        $script:appInstallTrace.Clear()
+        $script:externalEffectsPending=$false
+        Set-Variable -Scope Script -Name $case.flag -Value $true
+        $rejected=$false
+        try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq $case.message}
+        Set-Variable -Scope Script -Name $case.flag -Value $false
+        Assert ($rejected -and $script:externalEffectsPending -and $script:appInstallTrace.Contains('remove-stable') -and
+            -not $script:appInstallTrace.Contains('event')) ('PTB clean refuses incomplete stable cleanup for '+$case.flag)
+    }
+    $writer=[IO.File]::OpenWrite($script:appInstallerDestination)
+    $writer.Dispose()
+    Assert ($script:appInstallerLockedAtLaunch) 'PTB clean retains a read-only installer handle through installer launch'
+    $script:appInstallTrace.Clear()
+    $script:appInstallerChanged=$true
+    $script:externalEffectsPending=$false
+    $rejected=$false
+    try {Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Staged application installer differs from the verified download'}
+    Assert ($rejected -and -not $script:externalEffectsPending -and
+        ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord') 'PTB clean refuses a changed staged installer before any vendor effect'
+    $script:appInstallerChanged=$false
+    foreach($case in @(
+        @{name='path';flag='appStableChanged'},
+        @{name='bytes';flag='appChangeStableBytesDuringDownload'},
+        @{name='disappearance';flag='appStableDisappearedDuringDownload'},
+        @{name='appearance';flag='appStableAppearedDuringDownload'}
+    )){
+        $script:appInstallTrace.Clear()
+        $script:appStableAbsent=$case.name -ceq 'appearance'
+        $script:externalEffectsPending=$false
+        Set-Variable -Scope Script -Name $case.flag -Value $true
+        $rejected=$false
+        try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -like 'Stable Discord changed during PTB installer acquisition*'}
+        Set-Variable -Scope Script -Name $case.flag -Value $false
+        $script:appStableBytesChanged=$false
+        Assert ($rejected -and -not $script:externalEffectsPending -and
+            ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord') ('PTB clean refuses stable client '+$case.name+' changes during download before setup')
+    }
+    $script:appStableAbsent=$false
+    $script:appInstallTrace.Clear()
+    $script:appNativeFailure=$true
+    $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'fixture installer failure'}
+    Assert ($rejected -and $script:externalEffectsPending -and
+        (($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,find-discord,find-discord-ptb,installer')) 'PTB installer failure preserves stable Discord and retains setup uncertainty'
+    $script:appNativeFailure=$false
+    $script:appInstallTrace.Clear()
+    $script:appReadbackFailure=$true
+    $script:externalEffectsPending=$false
+    $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'fixture executable readback failure'}
+    Assert ($rejected -and $script:externalEffectsPending -and
+        (($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,find-discord,find-discord-ptb,installer,verify-ptb')) 'PTB readback failure preserves stable Discord and retains setup uncertainty'
+    $script:appReadbackFailure=$false
+    foreach($clean in @($false,$true)){
+        $r.clean=$clean;$script:appPTBUnreadable=$true
+        $script:appInstallTrace.Clear()
+        $rejected=$false
+        try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'fixture PTB executable unreadable'}
+        Assert ($rejected -and $script:externalEffectsPending -and -not $script:appInstallTrace.Contains('remove-stable') -and
+            -not $script:appInstallTrace.Contains('event')) ('PTB setup refuses an unreadable installed executable with clean mode '+$clean)
+    }
+    $script:appPTBUnreadable=$false
+    foreach($faultPath in @('C:\fixture\DiscordPTB.exe','C:\fixture\ptb\Update.exe')){
+        $script:appInstallTrace.Clear()
+        $script:appReplacementGuardFault=$faultPath
+        $rejected=$false
+        try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -like 'Discord PTB changed before stable client cleanup*'}
+        finally{$script:appReplacementGuardFault=''}
+        Assert ($rejected -and -not $script:appInstallTrace.Contains('remove-stable')) 'PTB clean preserves stable Discord when verified replacement bytes change'
+        foreach($fixture in $replacementFixtures.Values){$writer=[IO.File]::OpenWrite($fixture);$writer.Dispose()}
+    }
+    foreach($case in @(
+        @{fault='missing';message='Application uninstaller not found';cleaned=$false},
+        @{fault='unreadable';message='Fixture installed updater unreadable';cleaned=$false},
+        @{fault='changes-during-cleanup';message='Discord updater changed during installation verification; review the current installation';cleaned=$true}
+    )){
+        $script:appInstallTrace.Clear()
+        $script:externalEffectsPending=$false
+        $script:appInstalledUpdaterFault=$case.fault
+        $rejected=$false
+        try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq $case.message}
+        finally{$script:appInstalledUpdaterFault=''}
+        Assert ($rejected -and $script:externalEffectsPending -and
+            ($script:appInstallTrace.Contains('remove-stable') -eq $case.cleaned) -and
+            -not $script:appInstallTrace.Contains('event')) ('PTB clean verifies its replacement updater: '+$case.fault)
+    }
+    $script:appInstallTrace.Clear()
+    $script:appStableReplacedDuringSetup=$true
+    $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Application installation changed before removal'}
+    Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,find-discord,find-discord-ptb,installer,verify-ptb,remove-stable')) 'PTB cleanup refuses a replacement stable client'
+    $script:appStableReplacedDuringSetup=$false
+    $script:appChangeStableBytesDuringSetup=$true
+    $script:appInstallTrace.Clear()
+    $rejected=$false
+    try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Application installation changed before removal'}
+    Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,find-discord,find-discord-ptb,installer,verify-ptb,remove-stable') 'PTB cleanup preserves a stable client updated at the same path during setup'
+    $script:appChangeStableBytesDuringSetup=$false;$script:appStableBytesChanged=$false
+    $script:appInstallTrace.Clear()
+    $script:appStableAbsent=$true
+    $script:appStableAppeared=$true
+    $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -like 'Stable Discord appeared during PTB setup*'}
+    Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,find-discord,installer,verify-ptb,find-discord')) 'PTB cleanup preserves a newly observed stable client'
+    $script:appStableAppeared=$false
+    $script:appStableAbsent=$false
+    $script:appInstallTrace.Clear()
+    $script:appRemoveFailure=$true
+    $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'fixture remove failure'}
+    Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,find-discord,find-discord-ptb,installer,verify-ptb,remove-stable')) 'PTB clean reports removal failure after verifying the replacement'
+    $r.clean=$false
+    $script:appRemoveFailure=$false
+    foreach($case in @(
+        @{arch='amd64';variant='discord';query='channel=stable&platform=win&arch=x64'},
+        @{arch='arm64';variant='discord';query='channel=stable&platform=win&arch=arm64'},
+        @{arch='arm64';variant='discord-ptb';query='channel=ptb&platform=win&arch=x64'}
+    )){
+        $script:appInstallTrace.Clear()
+        $inputData.nativeArchitecture=$case.arch
+        [void](Install-App $case.variant)
+        $expectedURL='https://discord.com/api/downloads/distributions/app/installers/latest?'+$case.query
+        $expectedTrace='download:discord,find-'+$case.variant+',installer,verify-ptb,find-'+$case.variant+',event'
+        if($script:appDownloadURL -cne $expectedURL -or ($script:appInstallTrace -join ',') -cne $expectedTrace){
+            throw 'Unexpected Discord installer architecture selection'
+        }
+    }
+    Assert $true 'Discord selects a native stable installer and retains the PTB x64 distribution'
+    foreach($change in @('absent','path','bytes')){
+        $script:appInstallTrace.Clear()
+        $script:appFinalReadbackDrift=$change
+        $rejected=$false
+        try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Application changed during installation verification'}
+        finally{$script:appFinalReadbackDrift='';$script:appPTBSetupChanged=$false}
+        Assert ($rejected -and $script:appInstallTrace.Contains('installer') -and
+            -not $script:appInstallTrace.Contains('event')) ('Standard PTB setup refuses success after final executable drift: '+$change)
+    }
+    $r.clean=$true
+    $script:appInstallTrace.Clear()
+    $script:appFinalReadbackDrift='absent'
+    $rejected=$false
+    try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -like 'Discord PTB changed during stable client cleanup*'}
+    finally{$script:appFinalReadbackDrift='';$r.clean=$false}
+    Assert ($rejected -and $script:appInstallTrace.Contains('verify-stable-processes') -and
+        -not $script:appInstallTrace.Contains('event')) 'Clean PTB setup verifies the replacement after the final stable client check'
+    $script:appInstallTrace.Clear()
+    $script:appPreviouslyInstalled=$true
+    $existing=Install-App 'discord-ptb'
+    Assert ($installed.installed -eq $true -and $installed.previouslyInstalled -eq $false -and
+        $existing.application -ceq 'discord-ptb' -and $existing.installed -eq $true -and $existing.previouslyInstalled -eq $true) 'Application setup distinguishes a newly observed installation from an existing one'
+    $inputData.nativeArchitecture=''
+    $r.clean=$true
+    $script:appInstallTrace.Clear()
+    $rejected=$false
+    try {Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Native Windows architecture is unavailable or unsupported for Discord installation'}
+    Assert ($rejected -and $script:appInstallTrace.Count -eq 0) 'Discord refuses unknown architecture before download or client removal'
+    $inputData.nativeArchitecture='amd64'
+    $r.clean=$false
+    $r.action='app-reinstall'
+    $script:appPreviouslyInstalled=$false
+    $script:appStableAbsent=$true
+    $script:appInstallTrace.Clear()
+    $rejected=$false
+    try {Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -like 'Stable Discord is not installed*'}
+    Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord') 'Discord reinstall requires an installed stable client before download'
+    $script:appStableAbsent=$false
+    $script:externalEffectsPending=$false
+    foreach($fault in @('missing','changed')){
+        $script:appInstallTrace.Clear()
+        $script:appUpdaterMissing=$fault -ceq 'missing'
+        $script:appUpdaterChangesDuringDownload=$fault -ceq 'changed'
+        $expectedMessage=if($script:appUpdaterMissing){'Application uninstaller not found'}else{'Application uninstaller changed before removal'}
+        $expectedTrace=if($script:appUpdaterMissing){'find-discord'}else{'find-discord,download:discord,find-discord'}
+        $rejected=$false
+        try{Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -ceq $expectedMessage}
+        finally{$script:appUpdaterMissing=$false;$script:appUpdaterChangesDuringDownload=$false;$script:appUpdaterChanged=$false}
+        Assert ($rejected -and -not $script:externalEffectsPending -and
+            ($script:appInstallTrace -join ',') -ceq $expectedTrace) ('Discord reinstall refuses a '+$fault+' stable updater before removal')
+    }
+    $script:appStableChanged=$true
+    $script:appInstallTrace.Clear()
+    $rejected=$false
+    try {Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -like 'Stable Discord changed before reinstall*'}
+    Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord') 'Discord reinstall preserves a client updated during download'
+    $script:appStableChanged=$false
+    $script:appChangeStableBytesDuringDownload=$true
+    $script:appInstallTrace.Clear()
+    $rejected=$false
+    try{Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -ceq 'Application installation changed before removal'}
+    Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord,remove-stable') 'Discord reinstall refuses a same-path client update during download'
+    $script:appChangeStableBytesDuringDownload=$false;$script:appStableBytesChanged=$false
+    $script:appInstallerChanged=$true
+    $script:appInstallTrace.Clear()
+    $rejected=$false
+    try {Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -like 'Staged application installer differs*'}
+    Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord') 'Discord reinstall refuses changed installer bytes before removal'
+    $script:appInstallerChanged=$false
+    $script:appRemoveFailure=$true
+    $script:appInstallTrace.Clear()
+    $rejected=$false
+    try {Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -ceq 'fixture remove failure'}
+    Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord,remove-stable') 'Discord reinstall stops when removal fails'
+    $script:appRemoveFailure=$false
+    foreach($case in @(
+        @{drift='reinstall-path';message='Stable Discord reappeared before replacement setup; review the current installation';assertion='Discord reinstall refuses a client that reappears during journal publication'},
+        @{drift='reinstall-process';message='fixture stable process remains';assertion='Discord reinstall refuses a process that reappears during journal publication'},
+        @{drift='stable-updater-reappears';message='Discord updater remains on disk; review the installation before retrying';assertion='Discord reinstall refuses an updater that reappears during journal publication'}
+    )){
+        $script:appInstallTrace.Clear()
+        $script:appRemoveClearedStable=$false
+        $script:appJournalDrift=$case.drift
+        $rejected=$false
+        try{Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -ceq $case.message}
+        finally{
+            $script:appJournalDrift='';$script:appStableReappears=$false;$script:appStableProcessReturns=$false
+            [IO.File]::Delete($residualUpdater)
+        }
+        Assert ($rejected -and $script:appInstallTrace.Contains('remove-stable') -and
+            -not $script:appInstallTrace.Contains('installer')) $case.assertion
+    }
+    foreach($case in @(
+        @{name='reappearing stable client before setup';flag='appStableReappears';message='Stable Discord reappeared before replacement setup; review the current installation';started=$false},
+        @{name='unreadable replacement executable';flag='appReplacementUnreadable';message='fixture replacement executable unreadable';started=$true},
+        @{name='changed replacement executable path';flag='appReplacementChanges';message='Stable Discord changed during replacement verification';started=$true},
+        @{name='changed replacement executable bytes at the same path';flag='appReplacementBytesChange';message='Stable Discord changed during replacement verification';started=$true}
+    )){
+        $script:appInstallTrace.Clear()
+        $script:appRemoveClearedStable=$false
+        Set-Variable -Scope Script -Name $case.flag -Value $true
+        $rejected=$false
+        try{Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -ceq $case.message}
+        finally{Set-Variable -Scope Script -Name $case.flag -Value $false;$script:appReplacementBytesChanged=$false}
+        Assert ($rejected -and ($script:appInstallTrace.Contains('installer') -eq $case.started) -and
+            -not $script:appInstallTrace.Contains('event')) ('Discord reinstall refuses '+$case.name)
+    }
+    $script:appRemoveClearedStable=$false
+    $script:appInstallTrace.Clear()
+    $reinstalled=Install-App 'discord' -Reinstall
+    Assert ($reinstalled.reinstalled -eq $true -and $script:appInstallerLocked -and $script:appInstallerLockedAtLaunch -and
+            ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord,remove-stable,find-discord,verify-stable-processes,find-discord,installer,verify-ptb,find-discord,event') 'Discord reinstall holds its verified installer through removal and launch'
+
+} finally {
+    foreach($name in $appInstallSaved.Keys){Set-Item ('Function:'+ $name) $appInstallSaved[$name]}
+    $r=$previousAppRequest
+    $inputData=$previousAppInput
+    $root=$previousAppRoot
+    $env:LOCALAPPDATA=$previousAppLocalAppData
+    $script:externalEffectsPending=$previousAppEffects
+    $script:journalPath=$previousAppJournal
+    $script:journalState=$previousAppJournalState
+}
+# Exercise setup with inert bytes and changes at the journal and service boundaries.
+& {
+    $r=[pscustomobject]@{action='app-install';engine='splitcord'}
+    $root=Join-Path $testRoot 'splitcord-install-fixture'
+    [void][IO.Directory]::CreateDirectory((Join-Path $root 'downloads'))
+    function Require-Admin {}
+    function Assert-SplitCordSetupPreflight {
+        param($App)
+        if($App){return (Get-AppUninstaller 'splitcord' $App)}
+    }
+    $fixtureClient=Join-Path $root 'SplitCord-Turkey.exe'
+    $fixtureUninstaller=Join-Path $root 'Uninstall-SplitCord.exe'
+    $otherUninstaller=Join-Path $root 'Uninstall-Replacement.exe'
+    [IO.File]::WriteAllText($fixtureClient,'inert client')
+    [IO.File]::WriteAllText($otherUninstaller,'inert uninstaller')
+    function Find-App {
+        param($Variant)
+        if($Variant -cne 'splitcord'){throw 'Unexpected setup variant'}
+        if($observed.launched -or $observed.existing){return $fixtureClient}
+    }
+    function Get-AppUninstaller {
+        param($Variant,$App)
+        if($Variant -cne 'splitcord' -or $App -ine $fixtureClient -or (-not $observed.launched -and -not $observed.existing)){throw 'Unexpected uninstall registry read'}
+        $path=$fixtureUninstaller
+        if($observed.running -and $drift -ceq 'path'){$path=$otherUninstaller}
+        if($observed.running -and $drift -ceq 'registration'){throw 'Application uninstaller not found'}
+        if(-not $observed.launched -and $observed.changedRegistration){$path=$otherUninstaller}
+        return @{path=$path}
+    }
+    function Get-SplitCordInstaller {return @{url='unused';hash=''}}
+    function Change-SplitCordFixture {
+        switch -CaseSensitive ($change) {
+            'client' {[IO.File]::WriteAllText($fixtureClient,'updated inert client')}
+            'uninstaller' {[IO.File]::WriteAllText($fixtureUninstaller,'updated inert uninstaller')}
+            'registration' {$observed.changedRegistration=$true}
+            'appeared' {$observed.existing=$true}
+            'disappeared' {$observed.existing=$false}
+        }
+    }
+    function Download {
+        param($Url,$Hash,$Destination,[switch]$ReturnVerifiedHash)
+        if($phase -ceq 'download'){Change-SplitCordFixture}
+        [IO.File]::WriteAllText($Destination,'inert installer')
+        return (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash
+    }
+    $phase=''
+    $observed=@{probes=0;journalWrites=0;launched=$false;running=$false;reported=$false;existing=$false;changedRegistration=$false}
+    function Wait-SplitCordService {
+        param($App,$Seconds,[switch]$AllowAbsentOrStopped)
+        if($observed.launched){
+            if($App -ine $fixtureClient -or $AllowAbsentOrStopped){throw 'Unexpected installed service probe'}
+            if($drift -ceq 'bytes'){[IO.File]::WriteAllText($fixtureUninstaller,'changed inert uninstaller')}
+            $observed.running=$true
+            return
+        }
+        $expectedApp=if($observed.existing){$fixtureClient}else{$null}
+        if($App -ine $expectedApp -or $Seconds -ne 0 -or -not $AllowAbsentOrStopped){throw 'Unexpected setup service probe'}
+        $observed.probes++
+        if($observed.probes -eq $foreignAt){throw 'Synthetic foreign service'}
+    }
+    function Save-ApplicationEffectBoundary {
+        $observed.journalWrites++
+        if($phase -ceq 'journal'){Change-SplitCordFixture}
+    }
+    function Wait-AppProcessesExited {
+        param($Variant,$App,$Seconds)
+        $expectedApp=if($observed.existing){$fixtureClient}else{$null}
+        if($Variant -cne 'splitcord' -or $App -ine $expectedApp -or $Seconds -ne 0){throw 'Unexpected setup process probe'}
+    }
+    function Native {$observed.launched=$true}
+    function Event {$observed.reported=$true}
+    foreach($foreignAt in @(1,2)){
+        $observed.probes=0
+        $observed.journalWrites=0
+        $failure=$null
+        try{Install-App 'splitcord'}catch{$failure=$_.Exception.Message}
+        if($failure -cne 'Synthetic foreign service' -or $observed.launched -or
+           $observed.probes -ne $foreignAt -or $observed.journalWrites -ne ($foreignAt-1)){
+            throw 'SplitCord setup did not refuse a foreign service at its execution boundary'
+        }
+    }
+    $foreignAt=0
+    foreach($case in @(
+        @{drift='none';failure=$null},
+        @{drift='path';failure='SplitCord uninstaller changed during service verification'},
+        @{drift='bytes';failure='SplitCord uninstaller changed during service verification'},
+        @{drift='registration';failure='Application uninstaller not found'}
+    )){
+        $drift=$case.drift
+        [IO.File]::WriteAllText($fixtureUninstaller,'inert uninstaller')
+        $observed.launched=$false
+        $observed.running=$false
+        $observed.reported=$false
+        $result=$null
+        $failure=$null
+        try{$result=Install-App 'splitcord'}catch{$failure=$_.Exception.Message}
+        $success=$null -eq $case.failure
+        if(-not $observed.running -or $failure -cne $case.failure -or
+           $observed.reported -ne $success -or [bool]$result.installed -ne $success){
+            throw ('Unexpected SplitCord setup outcome after service verification: '+$case.drift)
+        }
+    }
+    Assert $true 'SplitCord setup verifies the registered uninstaller after the service reaches Running'
+
+    $drift='none'
+    foreach($case in @(
+        @{phase='download';change='client'},
+        @{phase='download';change='uninstaller'},
+        @{phase='download';change='registration'},
+        @{phase='download';change='appeared'},
+        @{phase='journal';change='client'},
+        @{phase='journal';change='uninstaller'},
+        @{phase='journal';change='registration'},
+        @{phase='journal';change='disappeared'}
+    )){
+        $phase=$case.phase
+        $change=$case.change
+        $observed.existing=$change -cne 'appeared'
+        $observed.changedRegistration=$false
+        $observed.launched=$false
+        $observed.running=$false
+        $observed.reported=$false
+        $observed.journalWrites=0
+        [IO.File]::WriteAllText($fixtureClient,'inert client')
+        [IO.File]::WriteAllText($fixtureUninstaller,'inert uninstaller')
+        $failure=$null
+        try {Install-App 'splitcord'} catch {$failure=$_.Exception.Message}
+        $expectedJournalWrites=[int]($phase -ceq 'journal')
+        Assert ($failure -ceq 'SplitCord installation or registered uninstaller changed before setup; review the current installation' -and
+            -not $observed.launched -and -not $observed.reported -and $observed.journalWrites -eq $expectedJournalWrites) (
+            'SplitCord setup refuses '+$change+' drift during '+$phase)
+    }
+
+    $phase=''
+    $observed.existing=$true
+    $observed.launched=$false
+    $observed.running=$false
+    $observed.reported=$false
+    $observed.changedRegistration=$false
+    [IO.File]::WriteAllText($fixtureClient,'inert client')
+    [IO.File]::WriteAllText($fixtureUninstaller,'inert uninstaller')
+    $result=Install-App 'splitcord'
+    Assert ($result.installed -and $result.previouslyInstalled -and $observed.launched -and $observed.reported) 'SplitCord setup accepts an unchanged existing installation'
+}
+# Exercise official release selection with fixed metadata and no vendor execution.
+& {
+    $r=[pscustomobject]@{sha256=''}
+    $url='https://github.com/cagritaskn/SplitCord-Turkey/releases/download/1.0.4/SplitCord-Turkey-Setup-1.0.4.exe'
+    $asset=@{name='SplitCord-Turkey-Setup-1.0.4.exe';state='uploaded';browser_download_url=$url;digest=('sha256:'+('a'*64))}
+    $decoy=@{name='SplitCord-Setup-extra.exe';state='uploaded';browser_download_url='https://outside.invalid/setup.exe'}
+    $release=@{tag_name='1.0.4';draft=$false;prerelease=$false;assets=@($decoy,$asset)}
+    function Read-RemoteJSON {
+        param($Uri,$Headers)
+        if($Uri -cne 'https://api.github.com/repos/cagritaskn/SplitCord-Turkey/releases/latest'){throw 'Unexpected SplitCord metadata request'}
+        return $release
+    }
+    $selected=Get-SplitCordInstaller
+    Assert ($selected.url -ceq $url -and $selected.hash -ceq ('a'*64)) 'SplitCord selects the exact uploaded setup asset for the release tag'
+    foreach($case in @(
+        @{assets=@($asset,$asset);message='Expected one uploaded SplitCord installer for the selected release'},
+        @{assets=@(@{name=$asset.name;state='starter';browser_download_url=$url});message='Expected one uploaded SplitCord installer for the selected release'},
+        @{assets=@(@{name=$asset.name;state='uploaded';browser_download_url=($url -replace '/1\.0\.4/','/1.0.3/')});message='SplitCord installer URL does not match the selected release'}
+    )){
+        $release.assets=$case.assets
+        $refused=$false
+        try {Get-SplitCordInstaller | Out-Null}catch{$refused=$_.Exception.Message -ceq $case.message}
+        if(-not $refused){throw 'Unexpected SplitCord asset refusal'}
+    }
+    Assert $true 'SplitCord refuses duplicate pending and wrong-release setup assets'
+    $release.assets=@($asset)
+    $r.sha256='b'*64
+    $refused=$false
+    try {Get-SplitCordInstaller | Out-Null}catch{$refused=$_.Exception.Message -ceq 'SplitCord installer digest conflicts with the requested SHA-256'}
+    $asset.digest='sha256:bad'
+    $malformed=$false
+    try {Get-SplitCordInstaller | Out-Null}catch{$malformed=$_.Exception.Message -ceq 'SplitCord installer digest is invalid'}
+    $asset.digest=$null
+    $selected=Get-SplitCordInstaller
+    $fallbackMatched=$selected.hash -ceq $r.sha256
+    $r.sha256=''
+    $missing=$false
+    try {Get-SplitCordInstaller | Out-Null}catch{$missing=$_.Exception.Message -ceq 'SplitCord installer requires a published or explicitly supplied SHA-256'}
+    Assert ($refused -and $malformed -and $fallbackMatched -and $missing) 'SplitCord checks the release digest and retains explicit hash fallback'
+}
 # Exercise both direct helper calls and the dispatcher before any real OS work.
 $desktopGuard=(Get-Command Require-DesktopUser).ScriptBlock
+$adminGuard=(Get-Command Require-Admin).ScriptBlock
 $machineInitializer=(Get-Command Initialize-Changes).ScriptBlock
+$applicationLock=(Get-Command Enter-ApplicationWorkflow).ScriptBlock
 try{
+    function Enter-ApplicationWorkflow {$script:fixtureApplicationLocked=$true}
     function Require-DesktopUser {throw 'blocked desktop token fixture'}
+    function Require-Admin {throw 'blocked administrator token fixture'}
     foreach($helper in @('Install-App','Remove-App','Start-App')){
         $rejected=$false;try{& $helper 'discord'}catch{$rejected=$_.Exception.Message -eq 'blocked desktop token fixture'}
         Assert $rejected ($helper+' rejects an unsafe token before discovery or execution')
@@ -304,23 +3673,256 @@ try{
     $r=[pscustomobject]@{action='app-repair'}
     $rejected=$false;try{Initialize-Operation}catch{$rejected=$_.Exception.Message -match 'privilege-separated'}
     Assert ($rejected -and $script:machineInitializationCount -eq 0) 'Combined repair blocked before privileged initialization'
+    foreach($invalid in @(
+        @{action='install';engine='byedpi';repairProxy=$true},
+        @{action='app-install';engine='discord';repairProxy=$true},
+        @{action='app-reinstall';engine='discord-ptb';repairProxy=$true},
+        @{action='app-reinstall';engine='discord';repairProxy='true'}
+    )){
+        $r=[pscustomobject]$invalid
+        $rejected=$false
+        try{Initialize-Operation}catch{$rejected=$_.Exception.Message -ceq 'The local repair proxy is available only for stable Discord reinstall'}
+        Assert ($rejected -and $script:machineInitializationCount -eq 0 -and -not $script:fixtureApplicationLocked) 'Repair proxy rejects out-of-scope input before initialization'
+    }
     $inputData=[pscustomobject]@{resultPath=(Join-Path $testRoot 'user-job\result.json')}
-    foreach($action in @('app-install','app-remove','app-start')){
+    foreach($action in @('app-install','app-remove','app-start','app-reinstall')){
         $r=[pscustomobject]@{action=$action;dns='unchanged'}
         $rejected=$false;try{Initialize-Operation}catch{$rejected=$_.Exception.Message -eq 'blocked desktop token fixture'}
         Assert ($rejected -and -not (Test-Path (Join-Path $testRoot 'user-job'))) ($action+' checks the token before staging files')
     }
+    function Require-DesktopUser {}
+    foreach($action in @('app-install','app-remove')){
+        $r=[pscustomobject]@{action=$action;engine='splitcord';dns='unchanged'}
+        $helper=if($action -ceq 'app-install'){'Install-App'}else{'Remove-App'}
+        $rejected=$false;try{& $helper 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'blocked administrator token fixture'}
+        Assert $rejected ($helper+' checks SplitCord maintenance privilege before discovery')
+        $rejected=$false;try{Initialize-Operation}catch{$rejected=$_.Exception.Message -ceq 'blocked administrator token fixture'}
+        Assert ($rejected -and $script:machineInitializationCount -eq 0) ($action+' checks SplitCord maintenance privilege before initialization')
+    }
+    function Require-Admin {}
+    $r=[pscustomobject]@{action='app-install';engine='splitcord';dns='unchanged'}
+    Initialize-Operation
+    Assert ($script:machineInitializationCount -eq 1 -and -not $script:fixtureApplicationLocked) 'SplitCord setup initializes machine workflow storage only'
+    $script:machineInitializationCount=0
+    $r=[pscustomobject]@{action='app-start';engine='splitcord'}
+    function Require-DesktopUser {throw 'blocked desktop token fixture'}
+    $rejected=$false;try{Initialize-Operation}catch{$rejected=$_.Exception.Message -ceq 'blocked desktop token fixture'}
+    Assert ($rejected -and $script:machineInitializationCount -eq 0) 'SplitCord start requires an ordinary desktop session'
     function Require-DesktopUser {}
     $r=[pscustomobject]@{action='app-install';dns='doh'}
     $rejected=$false;try{Initialize-Operation}catch{$rejected=$_.Exception.Message -match 'DNS separately'}
     Assert ($rejected -and -not (Test-Path (Join-Path $testRoot 'user-job'))) 'User application dispatch rejects system DNS changes before staging'
     $r=[pscustomobject]@{action='app-install';dns='unchanged'}
     Initialize-Operation
-    Assert ($root -eq (Join-Path $testRoot 'user-job\application') -and $script:machineInitializationCount -eq 0 -and (Test-Path -LiteralPath $script:journalPath)) 'User application staging and journal avoid machine storage'
+    Assert ($script:fixtureApplicationLocked -and $root -eq (Join-Path $testRoot 'user-job\application') -and
+        $script:machineInitializationCount -eq 0 -and (Test-Path -LiteralPath $script:journalPath)) 'User application staging holds its account lock and avoids machine storage'
+    & {
+        $inputData=[pscustomobject]@{resultPath=(Join-Path $testRoot 'launch-job\result.json')}
+        $r=[pscustomobject]@{action='app-start';engine='discord';dns='unchanged'}
+        $previousEffects=$script:externalEffectsPending
+        $previousState=$script:journalState
+        $script:journalState='running'
+        $script:externalEffectsPending=$false
+        Initialize-Operation
+        $launchJournal=$script:journalPath
+        $launchRoot=Join-Path $testRoot 'launch-job\application'
+        $launchPath=Join-Path $testRoot 'launch fixture\Discord.exe'
+        $trace=[Collections.Generic.List[string]]::new()
+        $fixtureProcessRunning=$false
+        $fixtureProcessUnreadable=$false
+        $fixtureInventoryFails=$false
+        $fixtureProcessTimes=[Collections.Generic.List[datetime]]::new()
+        $fixtureProcessObservations=[Collections.Generic.Queue[string]]::new()
+        [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($launchPath))
+        [IO.File]::WriteAllText($launchPath,'Inert application image')
+        $fixturePathChanged=$false
+        $fixturePathChangesAfterLaunch=$false
+        $fixtureJournalDrift=''
+        $saveLaunchJournal=(Get-Command Save-Journal -CommandType Function).ScriptBlock
+        function Save-Journal {
+            & $saveLaunchJournal
+            $script:fixtureLaunchProcessAfterJournal=$fixtureJournalDrift
+        }
+        $script:fixtureLaunchProcessAfterJournal=''
+        $fixtureObservedLaunchCount=2
+        $fixtureExitsDuringVerification=$false
+        $findCalls=[Collections.Generic.List[bool]]::new()
+        function Find-App {
+            $findCalls.Add($true)
+            if(($fixturePathChanged -and $findCalls.Count -gt 1) -or
+                ($script:fixtureLaunchProcessAfterJournal -ceq 'path') -or
+                ($fixturePathChangesAfterLaunch -and $trace.Count -ge 2)){return $launchPath+'.replacement'}
+            return $launchPath
+        }
+        function Assert-LaunchFileHeld {
+            $denied=$false
+            try {$writer=[IO.File]::OpenWrite($launchPath);$writer.Dispose()}catch [IO.IOException] {$denied=$true}
+            if(-not $denied){throw 'Selected client was writable during its desktop handoff'}
+        }
+        function Start-Process($FilePath,$ArgumentList,$WindowStyle){
+            Assert-LaunchFileHeld
+            $saved=Get-Content -LiteralPath $launchJournal -Raw | ConvertFrom-Json
+            if($FilePath -ine (Join-Path $env:SystemRoot 'explorer.exe') -or $ArgumentList.Count -ne 1 -or
+               $ArgumentList[0] -cne (Quote-Arg $launchPath) -or $WindowStyle -cne 'Hidden' -or
+               $saved.action -cne 'app-start' -or $saved.state -cne 'running' -or $saved.externalEffectsPending -ne $true){
+                throw 'Explorer launch did not use the selected client and durable journal'
+            }
+            $trace.Add('launch')
+            # The synthetic process starts at the recorded handoff boundary.
+            $fixtureProcessTimes.Add($handoffTime)
+            if($fixtureLaunchFails){throw 'Inert Explorer handoff failure'}
+        }
+        function Start-Sleep([int]$Milliseconds){
+            if(-not $fixtureExitsDuringVerification -or $Milliseconds -ne 500){throw 'Unexpected fixture launch poll'}
+            throw 'Fixture reached another poll without reporting launch'
+        }
+        function Get-Process($Name,$ErrorAction){
+            if($Name -or $ErrorAction -cne 'Stop'){throw 'Expected a complete fixture process query'}
+            if($fixtureInventoryFails){throw 'Inert process inventory failure'}
+            if($fixtureProcessUnreadable -or $script:fixtureLaunchProcessAfterJournal -ceq 'unreadable'){return [pscustomobject]@{ProcessName='Discord';Path=$null;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false}}
+            Assert-LaunchFileHeld
+            if($fixtureProcessObservations.Count){
+                $observation=$fixtureProcessObservations.Dequeue()
+                if($observation -ceq 'absent'){return}
+                if($observation -ceq 'unknown'){
+                    return [pscustomobject]@{ProcessName='Discord';Path=$null;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false}
+                }
+                if($observation -cne 'running'){throw 'Unknown fixture process observation'}
+                return [pscustomobject]@{ProcessName='Discord';Path=$launchPath;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false}
+            }
+            if($fixtureProcessRunning -or $script:fixtureLaunchProcessAfterJournal -ceq 'running' -or $trace.Count -ge $fixtureObservedLaunchCount){
+                if($fixtureExitsDuringVerification -and $findCalls.Count -ge 4){return}
+                $created=if($trace.Count){$fixtureProcessTimes[$trace.Count-1]}else{[DateTime]::UtcNow.AddSeconds(-1)}
+                return [pscustomobject]@{ProcessName='Discord';Path=$launchPath;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false;StartTime=$created}
+            }
+        }
+        try {
+            $saved=Get-Content -LiteralPath $launchJournal -Raw | ConvertFrom-Json
+            Assert ($saved.action -ceq 'app-start' -and $saved.externalEffectsPending -eq $false -and
+                $script:machineInitializationCount -eq 0 -and
+                -not [IO.Directory]::Exists((Join-Path $launchRoot 'downloads')) -and
+                -not [IO.Directory]::Exists((Join-Path $launchRoot 'backups'))) 'Application launch initializes only its local recovery journal'
+            $fixtureProcessRunning=$true
+            $alreadyStarted=Start-App 'discord'
+            Assert ($alreadyStarted.alreadyRunning -eq $true -and $trace.Count -eq 0 -and -not $script:externalEffectsPending) 'Application start reuses an existing client without asking Explorer to launch it'
+            $fixtureProcessRunning=$false
+            $fixtureInventoryFails=$true
+            $rejected=$false
+            try{Start-App 'discord'}catch{$rejected=$_.Exception.Message -ceq 'Inert process inventory failure'}
+            Assert ($rejected -and $trace.Count -eq 0 -and -not $script:externalEffectsPending) 'Application launch refuses when process inventory fails'
+            $fixtureInventoryFails=$false
+            $fixtureProcessUnreadable=$true
+            $rejected=$false
+            try{Start-App 'discord'}catch{$rejected=$_.Exception.Message -ceq 'Application process state could not be inspected before launch'}
+            Assert ($rejected -and $trace.Count -eq 0 -and -not $script:externalEffectsPending) 'Application launch refuses an unresolved matching process before journaling or handoff'
+            $fixtureProcessUnreadable=$false
+            $fixturePathChanged=$true
+            # Drift occurs after the first discovery, during process inventory.
+            $findCalls.Clear()
+            $rejected=$false
+            try{Start-App 'discord'}catch{$rejected=$_.Exception.Message -ceq 'Application installation changed before launch'}
+            Assert ($rejected -and $trace.Count -eq 0 -and -not $script:externalEffectsPending) 'Application launch refuses changed discovery before handoff'
+            $fixturePathChanged=$false
+            $script:journalPath=Join-Path $launchRoot 'missing\application.json'
+            $rejected=$false
+            try{Start-App 'discord'}catch{$rejected=$true}
+            Assert ($rejected -and $trace.Count -eq 0 -and -not $script:externalEffectsPending) 'Application launch refuses Explorer handoff if it cannot save the journal'
+            $script:journalPath=$launchJournal
+            foreach($case in @(
+                @{drift='path';message='Application installation changed before launch';assertion='Application launch refuses a path change during journal publication'},
+                @{drift='unreadable';message='Application process state could not be inspected before launch';assertion='Application launch refuses an unreadable process during journal publication'}
+            )){
+                $findCalls.Clear()
+                $fixtureJournalDrift=$case.drift
+                $rejected=$false
+                try{Start-App 'discord'}catch{$rejected=$_.Exception.Message -ceq $case.message}
+                finally{$script:fixtureLaunchProcessAfterJournal=''}
+                $saved=Get-Content -LiteralPath $launchJournal -Raw | ConvertFrom-Json
+                Assert ($rejected -and $trace.Count -eq 0 -and $saved.externalEffectsPending -eq $true) $case.assertion
+            }
+            $fixtureJournalDrift='running'
+            try{$alreadyStarted=Start-App 'discord'}finally{$script:fixtureLaunchProcessAfterJournal='';$fixtureJournalDrift=''}
+            Assert ($alreadyStarted.alreadyRunning -eq $true -and $trace.Count -eq 0) 'Application launch reuses a client that starts during journal publication'
+            $fixtureLaunchFails=$true
+            $rejected=$false
+            try{Start-App 'discord'}catch{$rejected=$_.Exception.Message -ceq 'Inert Explorer handoff failure'}
+            $saved=Get-Content -LiteralPath $launchJournal -Raw | ConvertFrom-Json
+            Assert ($rejected -and $trace.Count -eq 1 -and $saved.externalEffectsPending -eq $true) 'Application launch retains its pending journal after a failed handoff'
+            $writer=[IO.File]::OpenWrite($launchPath);$writer.Dispose()
+            Assert $true 'Application launch releases its executable after failed handoff'
+            $fixtureLaunchFails=$false
+            $fixturePathChangesAfterLaunch=$true
+            $rejected=$false
+            try{Start-App 'discord'}catch{$rejected=$_.Exception.Message -ceq 'Application installation changed during launch verification'}
+            Assert ($rejected -and $trace.Count -eq 2) 'Application launch refuses changed discovery after handoff'
+            $fixturePathChangesAfterLaunch=$false
+            $fixtureObservedLaunchCount=3
+            $fixtureExitsDuringVerification=$true
+            $findCalls.Clear()
+            $rejected=$false
+            try{Start-App 'discord'}catch{$rejected=$_.Exception.Message -ceq 'Fixture reached another poll without reporting launch'}
+            $saved=Get-Content -LiteralPath $launchJournal -Raw | ConvertFrom-Json
+            Assert ($rejected -and $trace.Count -eq 3 -and $saved.externalEffectsPending -eq $true) 'Application launch keeps waiting when the client exits during verification'
+            $fixtureExitsDuringVerification=$false
+            $fixtureObservedLaunchCount=4
+            $started=Start-App 'discord'
+            Assert ($started.application -ceq 'discord' -and $started.alreadyRunning -eq $false -and
+                $trace.Count -eq 4) 'Application launch observes a matching process after its journaled handoff'
+            $writer=[IO.File]::OpenWrite($launchPath);$writer.Dispose()
+            Assert $true 'Application launch releases its executable after process verification'
+            $fixtureObservedLaunchCount=1
+            foreach($phase in @('before journaling','after journaling')){
+                $trace.Clear();$fixtureProcessTimes.Clear();$findCalls.Clear()
+                $script:externalEffectsPending=$false
+                $observations=if($phase -ceq 'before journaling'){@('running','absent','absent')}else{@('absent','running','absent')}
+                foreach($observation in $observations){$fixtureProcessObservations.Enqueue($observation)}
+                $started=Start-App 'discord'
+                Assert ($started.alreadyRunning -eq $false -and $trace.Count -eq 1 -and
+                    $fixtureProcessObservations.Count -eq 0) ('Application launch replaces a client that exits during confirmation '+$phase)
+            }
+            $trace.Clear();$fixtureProcessTimes.Clear()
+            $script:externalEffectsPending=$false
+            $fixtureProcessObservations.Enqueue('running')
+            $fixtureProcessObservations.Enqueue('unknown')
+            $rejected=$false
+            try{Start-App 'discord'}catch{$rejected=$_.Exception.Message -ceq 'Application process state could not be inspected before launch'}
+            Assert ($rejected -and $trace.Count -eq 0 -and -not $script:externalEffectsPending) 'Application launch refuses a client that becomes unreadable during confirmation'
+        } finally {
+            $script:externalEffectsPending=$previousEffects
+            $script:journalState=$previousState
+            $script:fixtureLaunchProcessAfterJournal=''
+        }
+    }
 }finally{
     Set-Item Function:Require-DesktopUser $desktopGuard
+    Set-Item Function:Require-Admin $adminGuard
     Set-Item Function:Initialize-Changes $machineInitializer
+    Set-Item Function:Enter-ApplicationWorkflow $applicationLock
     $root=$testRoot;$script:journalPath=$null
+}
+# Exercise the native Windows object with a fixture-specific name and the real DACL.
+# The product lock is never acquired by these source contracts.
+$lockSource=$applicationLock.ToString()
+$prefix='Global\AccessWeaver-DesktopApplications-'
+Assert ($lockSource.Contains($prefix)) 'Desktop application coordination uses the cross-session namespace'
+$fixturePrefix=$prefix+'fixture-'+[guid]::NewGuid().ToString('N')+'-'
+$lock=[scriptblock]::Create($lockSource.Replace($prefix,$fixturePrefix))
+$script:applicationMutex=$null
+& $lock
+try{
+    $owner=$script:applicationMutex
+    Assert ($null -ne $owner) 'Desktop application operation owns its Windows mutex'
+    $busy=$false
+    try {& $lock}catch{$busy=$_.Exception.Message -ceq 'An AccessWeaver application workflow is already active for this Windows user'}
+    Assert ($busy -and [object]::ReferenceEquals($script:applicationMutex,$owner)) 'Second application operation is refused without replacing the original owner'
+}finally{
+    try {$script:applicationMutex.ReleaseMutex()}finally{$script:applicationMutex.Dispose();$script:applicationMutex=$null}
+}
+& $lock
+try {
+    Assert (($null -ne $script:applicationMutex)) 'Application workflow admission recovers after its owner releases the mutex'
+} finally {
+    try {$script:applicationMutex.ReleaseMutex()}finally{$script:applicationMutex.Dispose();$script:applicationMutex=$null}
 }
 $descriptor=Private-DirectorySecurity
 Assert (Trusted-SecurityDescriptor $descriptor) 'Administrator-owned private storage descriptor accepted'
@@ -341,6 +3943,27 @@ $native=Native $node @('-e','process.stdout.write(JSON.stringify(process.argv.sl
 $nativeArgs=$native.stdout|ConvertFrom-Json
 Assert ($nativeArgs.Count -eq 8 -and $nativeArgs[0] -eq 'with spaces' -and $nativeArgs[1] -eq '' -and $nativeArgs[2] -eq 'trailing\' -and $nativeArgs[3] -eq 'quote"inside' -and $nativeArgs[4] -ceq 'help' -and $nativeArgs[5] -ceq '--flag=value' -and $nativeArgs[6] -ceq 'literal&|<>^%!,;' -and $nativeArgs[7] -ceq 'hyphen-name') 'Native processes receive literal Windows arguments without shell evaluation'
 Assert $native.outputComplete 'Ordinary native output reaches EOF'
+$guardPaths=@((Join-Path $testRoot 'native-start-guard'),(Join-Path $testRoot 'native-client-guard'))
+foreach($path in $guardPaths){[IO.File]::WriteAllText($path,'inert launch fixture')}
+foreach($shouldStart in @($true,$false)){
+    $startGuards=[Collections.Generic.List[IO.FileStream]]::new()
+    try {
+        foreach($path in $guardPaths){
+            $startGuards.Add([IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
+        }
+        if($shouldStart){
+            $guardFixture='const fs=require("node:fs"); let n=0; function attempt(){try{for(const path of process.argv.slice(1))fs.appendFileSync(path," child");process.stdout.write("released")}catch(error){if(++n>=40)throw error;setTimeout(attempt,25)}} attempt()'
+            $native=Native $node (@('-e',$guardFixture)+$guardPaths) -Timeout 5 -StartGuard ($startGuards.ToArray())
+            Assert (-not $startGuards[0].CanRead -and -not $startGuards[1].CanRead -and
+                $native.stdout -ceq 'released' -and $native.outputComplete) 'Native launch releases the verified file before waiting for the child'
+        }else{
+            $refused=$false
+            try{Native (Join-Path $testRoot 'missing-tool.exe') -Timeout 5 -StartGuard ($startGuards.ToArray()) | Out-Null}catch{$refused=$true}
+            Assert ($refused -and -not $startGuards[0].CanRead -and -not $startGuards[1].CanRead) 'A failed native launch releases the verified file'
+        }
+    } finally {foreach($guard in $startGuards){$guard.Dispose()}}
+}
+foreach($path in $guardPaths){[IO.File]::Delete($path)}
 $clock=[Diagnostics.Stopwatch]::StartNew()
 [void](Native $node @('-e','require("child_process").spawn(process.execPath,["-e","setTimeout(()=>{},12000)"],{stdio:"inherit"});process.exit(0)'))
 Assert ($clock.Elapsed.TotalSeconds -lt 10) 'Exited installer does not wait for a GUI child holding inherited output pipes'
@@ -434,12 +4057,153 @@ $backup=$script:undo[0].backup;[IO.File]::WriteAllText($backup,'corrupted recove
 $conflicts=@(Rollback)
 Assert ($conflicts.Count -eq 1 -and (Get-Content -LiteralPath $file -Raw) -eq 'installed with backup') 'Recovery refuses a backup whose bytes differ from the recorded original digest'
 $script:undo.Clear()
+Write-Atomic $file 'installed before interruption'
+$backup=$script:undo[0].backup
+[IO.File]::Delete($file)
+$errors=@(Rollback)
+Assert ($errors.Count -eq 0 -and [IO.File]::ReadAllText($file) -ceq 'installed with backup' -and [IO.File]::Exists($backup)) 'Recovery recreates a missing original and retains its backup'
+Assert (@(Rollback).Count -eq 0) 'Recovery accepts an original already restored'
+$script:undo.Clear()
+Write-Atomic $newFile 'created by the workflow'
+$lock=[IO.File]::Open($newFile,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+try {
+    $errors=@(Rollback)
+    Assert ($errors.Count -eq 1 -and [IO.File]::Exists($newFile)) 'Recovery reports a locked created file and retains it for retry'
+} finally {$lock.Dispose()}
+& {
+    function Remove-Item {}
+    $errors=@(Rollback)
+    Assert ($errors.Count -eq 1 -and $errors[0] -ceq 'Recovery could not verify removal of a file created by the operation') 'Recovery verifies that a created file was actually removed'
+}
+Assert (@(Rollback).Count -eq 0 -and -not [IO.File]::Exists($newFile)) 'Recovery retries removal after the file is released'
+$script:undo.Clear()
+Write-Atomic $file 'installed before blocked restoration'
+$backup=$script:undo[0].backup
+$lock=[IO.File]::Open($file,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+try {
+    $errors=@(Rollback)
+    Assert ($errors.Count -eq 1 -and [IO.File]::ReadAllText($file) -ceq 'installed before blocked restoration' -and
+        [IO.File]::Exists($backup) -and @(Get-ChildItem -LiteralPath $root -Filter '.accessweaver-restore-*.tmp').Count -eq 0) 'Recovery retains the original backup when Windows blocks restoration'
+} finally {$lock.Dispose()}
+Assert (@(Rollback).Count -eq 0 -and [IO.File]::ReadAllText($file) -ceq 'installed with backup') 'Recovery retries restoration after the file is released'
+$script:undo.Clear()
+Write-Atomic $file 'installed before external edit'
+$backup=$script:undo[0].backup
+& {
+    function Get-FileHash($LiteralPath,$Algorithm,$ErrorAction) {
+        if([IO.Path]::GetFileName($LiteralPath) -like '.accessweaver-restore-*.tmp'){
+            [IO.File]::WriteAllText($file,'independently edited during staging')
+        }
+        Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $LiteralPath -Algorithm $Algorithm -ErrorAction $ErrorAction
+    }
+    $errors=@(Rollback)
+    Assert ($errors.Count -eq 1 -and [IO.File]::ReadAllText($file) -ceq 'independently edited during staging' -and
+        [IO.File]::Exists($backup) -and @(Get-ChildItem -LiteralPath $root -Filter '.accessweaver-restore-*.tmp').Count -eq 0) 'Recovery preserves an independent edit made while restoration is staged'
+}
+& {
+    $configuration=Join-Path $root 'generated-configuration.txt'
+    $savedJournal=$script:journalPath
+    $script:journalPath=Join-Path $root 'configuration-journal.json'
+    $replaceConfiguration=(Get-Command Replace-StagedWorkflowFile).ScriptBlock
+    function Replace-StagedWorkflowFile([string]$Staged,[string]$Target){
+        if($Target -ine $configuration -or -not $interruptConfiguration -or $publishConfiguration){
+            & $replaceConfiguration $Staged $Target
+        }
+        if($Target -ieq $configuration -and $interruptConfiguration){throw 'Inert interruption at configuration replacement'}
+    }
+    try {
+        foreach($publishConfiguration in @($false,$true)){
+            $script:undo.Clear()
+            [IO.File]::WriteAllText($configuration,'original')
+            $interruptConfiguration=$false
+            Write-Atomic $configuration 'first revision'
+            $firstDigest=Get-WorkflowFileHash $configuration
+            $interruptConfiguration=$true
+            $rejected=$false
+            try{Write-Atomic $configuration 'second revision'}catch{
+                if($_.Exception.Message -cne 'Inert interruption at configuration replacement'){throw}
+                $rejected=$true
+            }
+            $saved=Read-WorkflowRecoveryJournal $script:journalPath
+            $record=$saved.undo[0]
+            $expectedText=if($publishConfiguration){'second revision'}else{'first revision'}
+            $expectedPending=Get-WorkflowBytesSHA256 ([Text.Encoding]::UTF8.GetBytes('second revision'))
+            Assert ($rejected -and $record.expectedHash -ceq $firstDigest -and $record.pendingHash -ceq $expectedPending -and
+                [IO.File]::ReadAllText($configuration) -ceq $expectedText) ('Configuration journal survives an interrupted rewrite with publish '+$publishConfiguration)
+            $script:undo.Clear()
+            $script:undo.Add($record)
+            $interruptConfiguration=$false
+            $errors=@(Rollback)
+            if($errors.Count){throw ('Configuration rollback failed: '+($errors -join ', '))}
+            Assert ([IO.File]::ReadAllText($configuration) -ceq 'original') ('Configuration rollback restores the original after an interrupted rewrite with publish '+$publishConfiguration)
+        }
+    } finally {$script:journalPath=$savedJournal;$script:undo.Clear()}
+}
+& {
+    $copySource=Join-Path $root 'copy-source.bin'
+    $copyDestination=Join-Path $root 'copy-destination.bin'
+    [IO.File]::WriteAllText($copySource,'verified payload')
+    [IO.File]::WriteAllText($copyDestination,'original payload')
+    Set-Content -LiteralPath $copySource -Stream Zone.Identifier -Value '[ZoneTransfer]','ZoneId=3'
+    $copyDigest=Get-WorkflowFileHash $copySource
+    Copy-Checked $copySource $copyDestination $copyDigest
+    Assert ((Get-WorkflowFileHash $copyDestination) -ceq $copyDigest -and
+        (Get-Content -LiteralPath $copyDestination -Stream Zone.Identifier) -contains 'ZoneId=3') 'Direct component copy publishes verified bytes and retains the source zone marker'
+    Assert (@(Rollback).Count -eq 0 -and [IO.File]::ReadAllText($copyDestination) -ceq 'original payload') 'Direct component replacement restores the original payload'
+    $script:undo.Clear()
+    $rejected=$false
+    try{Copy-Checked $copySource $copyDestination ('0'*64)}catch{
+        if($_.Exception.Message -cne 'Copied component does not match the expected digest'){throw}
+        $rejected=$true
+    }
+    Assert ($rejected -and $script:undo.Count -eq 0 -and [IO.File]::ReadAllText($copyDestination) -ceq 'original payload') 'Direct component copy refuses bytes that differ from the caller-verified digest'
+    function Save-Journal {
+        if($script:undo.Count -eq 1 -and $script:undo[0].pendingHash){
+            [IO.File]::WriteAllText($copyDestination,'independent destination edit')
+        }
+    }
+    $rejected=$false
+    try{Copy-Checked $copySource $copyDestination}catch{
+        if($_.Exception.Message -cne 'Workflow files changed before replacement'){throw}
+        $rejected=$true
+    }
+    Assert ($rejected -and [IO.File]::ReadAllText($copyDestination) -ceq 'independent destination edit' -and
+        @(Get-ChildItem -LiteralPath $root -Filter '.accessweaver-copy-*.tmp').Count -eq 0) 'Direct component copy preserves an independent destination edit and cleans its stage'
+    $script:undo.Clear()
+}
+$script:undo.Clear()
 $source=Join-Path $root 'source.conf';[IO.File]::WriteAllText($source,"[Interface]`nPrivateKey = fixture-only`n[Peer]`nPublicKey = fixture-only`nEndpoint = example.invalid:2408`nAllowedApps = old.exe`n")
 [void](New-Item -ItemType Directory -Force -Path (Join-Path $root 'profiles'))
 $r=[pscustomobject]@{profileId='test-profile';configPath=$source;applications=@('custom.exe');browsers=$false}
 $config=Make-Config;$text=Get-Content -LiteralPath $config -Raw
 Assert ($text -match 'custom.exe' -and $text -notmatch 'old.exe') 'WireSock application policy replaces original selection in a private generated copy'
 Assert ((Get-Content -LiteralPath $source -Raw) -match 'old.exe') 'Original WireGuard config remains unchanged'
+$multiPeer=@"
+[Interface]
+PrivateKey = fixture-only
+
+[Peer]
+PublicKey = fixture-first
+AllowedIPs = 192.0.2.0/24
+#@ws:AllowedApps = old-prefixed.exe
+#@ws: DisallowedApps = custom.exe
+#@ws:DisallowedIPs = 192.0.2.1/32
+
+[Peer]
+PublicKey = fixture-second
+AllowedIPs = 2001:db8::/32
+DisallowedApps = old-direct.exe
+# An ordinary comment about AllowedApps stays
+"@
+[IO.File]::WriteAllText($source,$multiPeer+"`n")
+$text=Get-Content -LiteralPath (Make-Config) -Raw
+$peerSections=@([regex]::Split($text,'(?m)(?=^\[Peer\])') | Where-Object {$_ -match '^\[Peer\]'})
+$badPeers=@($peerSections | Where-Object {
+    [regex]::Matches($_,'(?m)^AllowedApps[ \t]*=').Count -ne 1 -or $_ -notmatch '(?m)^AllowedApps = [^\r\n]*\bcustom\.exe\b'
+})
+$staleRule='(?im)^[ \t]*(?:DisallowedApps|#@ws:[ \t]*(?:AllowedApps|DisallowedApps))[ \t]*='
+Assert ($peerSections.Count -eq 2 -and $badPeers.Count -eq 0 -and $text -notmatch $staleRule -and $text -notmatch 'old-prefixed\.exe|old-direct\.exe') 'WireSock replaces plain and prefixed application rules in every peer'
+Assert ($text.Contains('#@ws:DisallowedIPs = 192.0.2.1/32') -and $text.Contains('# An ordinary comment about AllowedApps stays') -and [IO.File]::ReadAllText($source) -ceq ($multiPeer+"`n")) 'WireSock retains other peer rules and the original configuration'
 [IO.File]::AppendAllText($source,"PostUp = arbitrary-command`n")
 $rejected=$false;try{Make-Config|Out-Null}catch{$rejected=$true}
 Assert $rejected 'WireGuard command hooks rejected'
@@ -477,6 +4241,382 @@ try {
     }
 } finally {$script:undo=$archiveUndo;$script:journalPath=$archiveJournal}
 
+& {
+    $script:undo.Clear()
+    $publicationRoot=Join-Path $archiveFixtures 'publication'
+    [void][IO.Directory]::CreateDirectory($publicationRoot)
+    $publicationTarget=Join-Path $publicationRoot 'root.txt'
+    $publicationArchive=Join-Path $archiveFixtures 'valid-zip64-sentinel.zip'
+    $nextArchive=Join-Path $archiveFixtures 'second-publication.zip'
+    $zip=[IO.Compression.ZipFile]::Open($nextArchive,[IO.Compression.ZipArchiveMode]::Create)
+    try {
+        $member=$zip.CreateEntry('root.txt')
+        $member.ExternalAttributes=0
+        $writer=[IO.StreamWriter]::new($member.Open())
+        try {$writer.Write('second replacement')} finally {$writer.Dispose()}
+    } finally {$zip.Dispose()}
+    $publicationSave=(Get-Command Save-Journal).ScriptBlock
+    function Save-Journal {
+        & $publicationSave
+        if($injectExternalEdit -and $script:undo.Count -eq 1 -and $script:undo[0].pendingHash){
+            [IO.File]::WriteAllText($publicationTarget,'external edit')
+        }
+    }
+    $injectExternalEdit=$true
+    foreach($startsPresent in @($true,$false)){
+        if($startsPresent){[IO.File]::WriteAllText($publicationTarget,'original')}
+        else{[IO.File]::Delete($publicationTarget)}
+        $script:undo.Clear()
+        $rejected=$false
+        try{Expand-Safe $publicationArchive $publicationRoot}catch{
+            if($_.Exception.Message -cne 'Workflow files changed before replacement'){throw}
+            $rejected=$true
+        }
+        Assert ($rejected -and [IO.File]::ReadAllText($publicationTarget) -ceq 'external edit') ('Archive publication preserves an edit after journal save with original present '+$startsPresent)
+    }
+    $injectExternalEdit=$false
+    $replacePublication=(Get-Command Replace-StagedWorkflowFile).ScriptBlock
+    function Replace-StagedWorkflowFile([string]$Staged,[string]$Target){
+        if(-not $interruptPublication -or $replaceBeforeInterrupt){& $replacePublication $Staged $Target}
+        if($interruptPublication){throw 'Inert interruption at archive replacement'}
+    }
+    foreach($replaceBeforeInterrupt in @($false,$true)){
+        $script:undo.Clear()
+        [IO.File]::WriteAllText($publicationTarget,'original')
+        $interruptPublication=$false
+        Expand-Safe $publicationArchive $publicationRoot
+        $firstDigest=Get-WorkflowFileHash $publicationTarget
+        $interruptPublication=$true
+        $rejected=$false
+        try{Expand-Safe $nextArchive $publicationRoot}catch{
+            if($_.Exception.Message -cne 'Inert interruption at archive replacement'){throw}
+            $rejected=$true
+        }
+        $record=$script:undo | Where-Object {$_.path -eq $publicationTarget}
+        $observed=if($replaceBeforeInterrupt){'second replacement'}else{'replacement'}
+        Assert ($rejected -and $record.expectedHash -ceq $firstDigest -and $record.pendingHash -and
+            [IO.File]::ReadAllText($publicationTarget) -ceq $observed) ('Archive journal retains both digests across interrupted replacement with publish '+$replaceBeforeInterrupt)
+        $serialized=ConvertTo-Json -InputObject $record -Compress
+        $script:undo.Clear()
+        $script:undo.Add((ConvertFrom-Json -InputObject $serialized))
+        $interruptPublication=$false
+        Assert (@(Rollback).Count -eq 0 -and [IO.File]::ReadAllText($publicationTarget) -ceq 'original') ('Archived recovery record restores the original after interrupted replacement with publish '+$replaceBeforeInterrupt)
+    }
+    $script:undo.Clear()
+}
+
+# Inject fixed Windows results at the existing native replacement boundary.
+& {
+    $replacementRoot=Join-Path $archiveFixtures 'replacement-retry'
+    [void][IO.Directory]::CreateDirectory($replacementRoot)
+    $target=Join-Path $replacementRoot 'target.txt'
+    $staged=Join-Path $replacementRoot 'staged.txt'
+    $attempts=[Collections.Generic.List[int]]::new()
+    $delays=[Collections.Generic.List[int]]::new()
+    function Replace-StagedWorkflowFile([string]$Staged,[string]$Target) {
+        $attempts.Add($attempts.Count+1)
+        if($attempts.Count -le $case.failures){throw [IO.IOException]::new('Inert replacement failure',[int]$case.hresult)}
+        [IO.File]::WriteAllBytes($Target,[IO.File]::ReadAllBytes($Staged))
+        [IO.File]::Delete($Staged)
+    }
+    function Start-Sleep([int]$Milliseconds) {
+        $delays.Add($Milliseconds)
+        if($case.change -eq 'target'){[IO.File]::WriteAllText($target,'changed')}
+        if($case.change -eq 'staged'){[IO.File]::WriteAllText($staged,'changed')}
+    }
+    foreach($case in @(
+        @{hresult=-2147024864;failures=1;attempts=2;delays='50';success=$true},
+        @{hresult=-2147023721;failures=3;attempts=4;delays='50,100,200';success=$true},
+        @{hresult=-2147023721;failures=4;attempts=4;delays='50,100,200';success=$false},
+        @{hresult=-2147023720;failures=1;attempts=1;delays='';success=$false},
+        @{hresult=-2147024864;failures=1;attempts=1;delays='50';success=$false;change='target'},
+        @{hresult=-2147024864;failures=1;attempts=1;delays='50';success=$false;change='staged'}
+    )){
+        [IO.File]::WriteAllText($target,'original')
+        [IO.File]::WriteAllText($staged,'replacement')
+        $expected=(Get-FileHash -LiteralPath $staged -Algorithm SHA256).Hash
+        $attempts.Clear();$delays.Clear();$passed=$false
+        $original=Get-WorkflowFileHash $target
+        try{Publish-StagedWorkflowFile $staged $target $expected $original;$passed=$true}catch{
+            if($case.change -and $_.Exception.Message -cne 'Workflow files changed before replacement'){throw}
+            if(-not $case.change -and $_.Exception.HResult -ne $case.hresult){throw}
+        }
+        $expectedTarget=if($case.success){'replacement'}elseif($case.change -eq 'target'){'changed'}else{'original'}
+        Assert ($passed -eq $case.success -and $attempts.Count -eq $case.attempts -and ($delays -join ',') -ceq $case.delays -and
+            [IO.File]::ReadAllText($target) -ceq $expectedTarget -and [IO.File]::Exists($staged) -eq (-not $case.success)) 'Archive replacement retries only known unchanged-file errors within its fixed budget'
+    }
+}
+
+
+# Only an unambiguous loopback listener owned by the managed service child qualifies.
+& {
+    function Read-ManagedServiceRegistration([string]$Name){
+        if($Name -cne 'AccessWeaver-byedpi'){throw 'Unexpected service query'}
+        return $service
+    }
+    function Get-NetTCPConnection {
+        [CmdletBinding()]param($State)
+        if($State -cne 'Listen'){throw 'Unexpected socket query'}
+        return $listeners
+    }
+    function Get-CimInstance {
+        [CmdletBinding()]param($ClassName,$Filter)
+        if($ClassName -cne 'Win32_Process' -or $Filter -cne 'ProcessId=42'){throw 'Unexpected listener process query'}
+        return $child
+    }
+    $binary='C:\fixture\ciadpi.exe'
+    $service=@{State='Running';ProcessId=40;PathName='fixture protected service command'}
+    $digest=Get-ManagedServiceCommandDigest $service.PathName
+    $command=$binary+' --split 2'
+    $listener=@{LocalAddress='127.0.0.1';LocalPort=1080;OwningProcess=42}
+    $listeners=@($listener,@{LocalAddress='0.0.0.0';LocalPort=45;OwningProcess=15})
+    $creation=[datetime]::UtcNow
+    $child=@{ProcessId=42;ParentProcessId=40;ExecutablePath=$binary;CreationDate=$creation;CommandLine=$command}
+    $owner=Get-ManagedByeDPILoopbackOwner $binary $digest $command
+    Assert ($owner -ceq ('40:42:'+$creation.Ticks)) 'Discord proxy readiness identifies the managed listener child'
+    foreach($case in @(
+        @{row=$service;key='State';value='Stopped'},
+        @{row=$listener;key='LocalAddress';value='0.0.0.0'},
+        @{row=$listener;key='OwningProcess';value=0},
+        @{row=$child;key='ParentProcessId';value=41},
+        @{row=$child;key='ExecutablePath';value='C:\other\ciadpi.exe'},
+        @{row=$child;key='CreationDate';value=$null}
+    )){
+        $previous=$case.row[$case.key]
+        $case.row[$case.key]=$case.value
+        $refused=$false
+        try {Get-ManagedByeDPILoopbackOwner $binary $digest $command | Out-Null}catch{$refused=$true}
+        finally {$case.row[$case.key]=$previous}
+        Assert $refused ('Discord proxy readiness refuses mismatched '+$case.key)
+    }
+    foreach($case in @(
+        @{digest='';command=$command;error='Managed ByeDPI proxy verification requires the recorded service and expected process command'},
+        @{digest=$digest;command='';error='Managed ByeDPI proxy verification requires the recorded service and expected process command'},
+        @{digest=('0'*64);command=$command;error='Managed ByeDPI registration changed during verification'},
+        @{digest=$digest;command=($binary+' --split 3');error='Running ByeDPI arguments differ from the reviewed strategy'}
+    )){
+        $refused=$false
+        try {[void](Get-ManagedByeDPILoopbackOwner $binary $case.digest $case.command)}catch{
+            if($_.Exception.Message -cne $case.error){throw}
+            $refused=$true
+        }
+        Assert $refused $case.error
+    }
+    $listeners+=@(@{LocalAddress='::';LocalPort=1080;OwningProcess=42})
+    $refused=$false
+    try {Get-ManagedByeDPILoopbackOwner $binary $digest $command | Out-Null}catch{$refused=$true}
+    Assert $refused 'Discord proxy readiness refuses an ambiguous loopback listener'
+}
+
+# Test both setup modes against the real Drover ownership preflight.
+& {
+    $root=Join-Path $testRoot 'drover-preflight'
+    $profiles=Join-Path $root 'profiles'
+    [void][IO.Directory]::CreateDirectory($profiles)
+    $manifest=Join-Path $profiles 'drover-owned.json'
+    [IO.File]::WriteAllText($manifest,'inert recovery record')
+    function Enter-ApplicationWorkflow {
+        $script:fixtureDroverLockCalls++
+        if($busy){throw 'Fixture application workflow is active'}
+    }
+    function Discord-Directories {return $directories}
+    function Configure-DNS {throw 'Unexpected DNS mutation'}
+    function Make-Config {throw 'Unexpected WireSock configuration'}
+    function Ensure-Asset {throw 'Unexpected component acquisition'}
+    foreach($selection in @(@{engine='byedpi';mode='dll'},@{engine='wiresock';mode='standard'})){
+        $r=@{engine=$selection.engine;mode=$selection.mode;dns='doh'}
+        $directories=@('C:\fixture\app-1')
+        foreach($busy in @($true,$false)){
+            $script:fixtureDroverLockCalls=0
+            $expected=if($busy){'Fixture application workflow is active'}else{'Restore the existing managed drover installation before replacing it'}
+            $refused=$false
+            try {Install-Method | Out-Null}catch{
+                if($_.Exception.Message -cne $expected){throw}
+                $refused=$true
+            }
+            Assert ($refused -and $script:fixtureDroverLockCalls -eq 1 -and [IO.File]::ReadAllText($manifest) -ceq 'inert recovery record') ('Drover lock precedes ownership checks and machine changes for '+$r.engine)
+        }
+    }
+    [IO.File]::Delete($manifest)
+    $r=@{engine='byedpi';mode='dll';dns='doh'}
+    $directories=@('C:\fixture\app-1')*257
+    $refused=$false
+    try {Install-Method | Out-Null}catch{
+        if($_.Exception.Message -cne 'Expected a bounded stable Discord installation inventory'){throw}
+        $refused=$true
+    }
+    Assert $refused 'Oversized Discord inventory prevents machine changes'
+}
+
+# Use the real dispatch with inert service and routing operations.
+& {
+    $r=@{engine='byedpi'}
+    $trace=[Collections.Generic.List[string]]::new()
+    $root=Join-Path $testRoot 'byedpi-probe'
+    $binary=Join-Path $root 'components\byedpi\ciadpi.exe'
+    $configPath=Join-Path $root 'services\byedpi.json'
+    [void][IO.Directory]::CreateDirectory((Split-Path -Parent $binary))
+    [void][IO.Directory]::CreateDirectory((Split-Path -Parent $configPath))
+    [IO.File]::WriteAllText($binary,'inert proxy fixture')
+    $registrationDigest='A'*64
+    $expectedCommand=(Quote-Arg $binary)+' --ip 127.0.0.1 --port 1080 --split 2'
+    if($binary -cnotmatch '[ \t]'){$expectedCommand=$binary+' --ip 127.0.0.1 --port 1080 --split 2'}
+    function Enter-ApplicationWorkflow {$trace.Add('lock')}
+    function Discord-Directories {return 'C:\fixture\app-1'}
+    function Ensure-Asset {return $binary}
+    function Assert-ManagedServiceOwnership {return $null}
+    function Assert-TrustedItem([string]$Path){
+        if($Path -cnotin @($binary,$configPath)){throw 'Unexpected proxy path'}
+    }
+    function Install-EngineService([string]$Engine,[string]$Path,[string[]]$Arguments,[switch]$PassThru){
+        if($Engine -cne 'byedpi' -or $Path -cne $binary -or -not $PassThru){throw 'Proxy setup did not bind its new registration'}
+        $config=@{name='AccessWeaver-byedpi';binary=$Path;args=$Arguments;directory=(Split-Path -Parent $Path);logPath=(Join-Path $root 'logs\byedpi.log')}
+        [IO.File]::WriteAllText($configPath,($config|ConvertTo-Json -Depth 5))
+        $trace.Add('service')
+        return @{name='AccessWeaver-byedpi';commandSHA256=$registrationDigest}
+    }
+    function Firewall {$trace.Add('firewall')}
+    function Assert-ManagedByeDPILoopbackProxy([string]$Path,[string]$Digest,[string]$Raw){
+        if($Path -cne $binary -or $Digest -cne $registrationDigest -or $Raw -cne $expectedCommand){throw 'Fresh proxy probe received a mismatched identity'}
+        $trace.Add('probe')
+        if($failProbe){throw 'Fixture SOCKS negotiation failed'}
+        return 'fixture owner'
+    }
+    function Get-ManagedByeDPILoopbackOwner([string]$Path,[string]$Digest,[string]$Raw){
+        if($Path -cne $binary -or $Digest -cne $registrationDigest -or $Raw -cne $expectedCommand){throw 'Fresh proxy final check received a mismatched identity'}
+        $trace.Add('confirm')
+        return 'fixture owner'
+    }
+    function Install-Drover {$trace.Add('drover')}
+    function Setup-ProxiFyre([string]$Proxy){
+        if($Proxy -cne '127.0.0.1:1080'){throw 'Unexpected ProxiFyre proxy'}
+        $trace.Add('proxifyre')
+    }
+    function Event {}
+    $fixtureBinary=$binary
+    function Native([string]$Binary,[string[]]$Arguments,[int]$Timeout){
+        if($Binary -cne $fixtureBinary -or $Timeout -ne 86400){throw 'Unexpected foreground launch'}
+        $trace.Add('foreground')
+    }
+    foreach($case in @(
+        @{mode='service';label='service';success='service,firewall,probe'},
+        @{mode='split';label='split';success='service,firewall,probe,proxifyre'},
+        @{mode=$null;label='default';success='service,firewall,probe,proxifyre'},
+        @{mode='dll';label='DLL';success='lock,service,firewall,probe,drover,confirm'}
+    )){
+        $r.mode=$case.mode
+        foreach($failProbe in @($true,$false)){
+            $trace.Clear()
+            $refused=$false
+            try {Install-Method | Out-Null}catch{
+                if($_.Exception.Message -cne 'Fixture SOCKS negotiation failed'){throw}
+                $refused=$true
+            }
+            $expected=if($failProbe -and $case.mode -ceq 'dll'){'lock,service,firewall,probe'}elseif($failProbe){'service,firewall,probe'}else{$case.success}
+            Assert ($refused -eq $failProbe -and ($trace -join ',') -ceq $expected) ('ByeDPI '+$case.label+' install completes only after the managed proxy probe, probe failure '+$failProbe)
+        }
+    }
+    $r.mode='once'
+    $trace.Clear()
+    Install-Method | Out-Null
+    Assert (($trace -join ',') -ceq 'foreground') 'One-shot ByeDPI keeps the foreground launch path'
+
+    function Make-Config {$trace.Add('config');return 'fixture config'}
+    function Connect-WireSock([string]$Path){
+        if($Path -cne 'fixture config'){throw 'Unexpected WireSock configuration path'}
+        $trace.Add('connect')
+        return 'fixture connected'
+    }
+    function Refresh-Task {
+        if(-not $r.enabled){throw 'Expected enabled refresh task'}
+        $trace.Add('refresh')
+    }
+    $r=[pscustomobject]@{engine='wiresock';mode='standard';refresh=$true}
+    $trace.Clear()
+    $result=Install-Method
+    Assert ($result.configPath -ceq 'fixture config' -and $result.status -ceq 'fixture connected' -and
+        ($trace -join ',') -ceq 'lock,config,connect,service,firewall,probe,drover,confirm,refresh') 'Standard WireSock verifies its new proxy across Drover deployment before enabling refresh'
+}
+
+# A retained proxy is reused only after ownership, persisted settings and live argv agree.
+& {
+    $root=Join-Path $testRoot 'retained ByeDPI'
+    $assetNames=@{byedpi='ciadpi.exe'}
+    $binary=Join-Path $root 'components\byedpi\ciadpi.exe'
+    $configPath=Join-Path $root 'services\byedpi.json'
+    [void][IO.Directory]::CreateDirectory((Split-Path -Parent $configPath))
+    $name='AccessWeaver-byedpi'
+    $r=@{engine='byedpi';mode='dll';args=@('--split','2','two words\','a\"b','')}
+    $argsRequested=@('--ip','127.0.0.1','--port','1080')+$r.args
+    $config=@{name=$name;binary=$binary;args=$argsRequested;directory=(Split-Path -Parent $binary);logPath=(Join-Path $root 'logs\byedpi.log')}
+    $configJSON=$config | ConvertTo-Json
+    $serviceDigest='A'*64
+    $expectedCommandLine='"'+$binary+'" --ip 127.0.0.1 --port 1080 --split 2 "two words\\" a\\\"b ""'
+    $trace=[Collections.Generic.List[string]]::new()
+    function Enter-ApplicationWorkflow {}
+    function Discord-Directories {return 'C:\fixture\app-1'}
+    function Assert-ManagedServiceOwnership([string]$Name){
+        if($Name -cne 'AccessWeaver-byedpi'){throw 'Unexpected service name'}
+        $script:externalEffectsPending=$true
+        if($case -eq 'foreign'){throw 'Fixture service ownership mismatch'}
+        return @{name=$Name;commandSHA256=$serviceDigest}
+    }
+    function Assert-TrustedItem([string]$Path){
+        if($Path -cnotin @($binary,$configPath)){throw 'Unexpected protected path'}
+    }
+    function Ensure-Asset {throw 'Retained ByeDPI must not acquire the proxy binary'}
+    function Install-EngineService {throw 'Retained ByeDPI must not register a service'}
+    function Firewall {throw 'Retained ByeDPI must not add firewall rules'}
+    function Assert-ManagedByeDPILoopbackProxy([string]$Path,[string]$Digest,[string]$Raw){
+        if($Path -cne $binary -or $Digest -cne $serviceDigest -or $Raw -cne $expectedCommandLine){throw 'Retained service probe received a mismatched identity'}
+        $trace.Add('probe')
+        if($case -eq 'probe'){throw 'Fixture SOCKS negotiation failed'}
+        return 'fixture owner'
+    }
+    function Install-Drover {
+        $other=$null
+        try {$other=[IO.File]::Open($configPath,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::Read)}
+        catch [IO.IOException] {$trace.Add('drover');return}
+        finally {if($other){$other.Dispose()}}
+        throw 'Retained ByeDPI configuration was writable during deployment'
+    }
+    function Get-ManagedByeDPILoopbackOwner([string]$Path,[string]$Digest,[string]$Raw){
+        if($Path -cne $binary -or $Digest -cne $serviceDigest -or $Raw -cne $expectedCommandLine){throw 'Retained service final check received a mismatched identity'}
+        $trace.Add('confirm')
+        if($case -eq 'replacement'){return 'replacement owner'}
+        return 'fixture owner'
+    }
+    function Event {}
+    $oldEffects=$script:externalEffectsPending
+    try {
+        foreach($entry in @(
+            @{case='foreign';mode='dll';error='Fixture service ownership mismatch';calls=''},
+            @{case='config';mode='dll';error='Existing ByeDPI service configuration does not match the requested proxy';calls=''},
+            @{case='invalid';mode='dll';error='Existing ByeDPI service configuration could not be read safely';calls=''},
+            @{case='probe';mode='dll';error='Fixture SOCKS negotiation failed';calls='probe'},
+            @{case='replacement';mode='dll';error='Managed ByeDPI listener changed during Drover deployment';calls='probe,drover,confirm'},
+            @{case='matching';mode='dll';error='';calls='probe,drover,confirm'},
+            @{case='config';mode='service';error='Existing ByeDPI service configuration does not match the requested proxy';calls=''},
+            @{case='matching';mode='service';error='';calls='probe'}
+        )){
+            $case=$entry.case
+            $r.mode=$entry.mode
+            $json=switch($case){
+                'invalid' {'{'}
+                'config' {$configJSON.Replace('"--split"','"--other"')}
+                default {$configJSON}
+            }
+            [IO.File]::WriteAllText($configPath,$json)
+            $script:externalEffectsPending=$false
+            $trace.Clear()
+            $errorText=''
+            try {[void](Install-Method)}catch{$errorText=$_.Exception.Message}
+            Assert ($errorText -ceq $entry.error -and ($trace -join ',') -ceq $entry.calls -and
+                -not $script:externalEffectsPending -and [IO.File]::ReadAllText($configPath) -ceq $json) ('Retained ByeDPI '+$r.mode+' install handles '+$case)
+        }
+    } finally {$script:externalEffectsPending=$oldEffects}
+}
+
 $previousAppData=$env:APPDATA
 try{
     $env:APPDATA=Join-Path $testRoot 'fake-appdata';$cache=Join-Path $env:APPDATA 'discord';[void](New-Item -ItemType Directory -Force -Path $cache)
@@ -489,32 +4629,42 @@ try{
 }finally{$env:APPDATA=$previousAppData;$script:undo.Clear()}
 Write-Output 'Windows workflow contract tests completed. Test artifacts are under build/.'
 
-# Mock OS cmdlets to exercise DNS snapshot/restore semantics without changing
-# the host's real DNS, services, registry or network adapters.
-$script:dnsCalls=[Collections.Generic.List[object]]::new()
-$script:dohCalls=[Collections.Generic.List[object]]::new()
-function Get-NetAdapter { [pscustomobject]@{Status='Up';InterfaceDescription='Fixture adapter';InterfaceGuid='{00000000-0000-0000-0000-000000000001}';ifIndex=77} }
-function Get-ItemProperty {param($LiteralPath,$Name,$ErrorAction);[pscustomobject]@{NameServer=$(if($LiteralPath -match 'Tcpip6') {''}else{'192.0.2.53'})} }
-function Get-DnsClientServerAddress {param($InterfaceIndex,$AddressFamily);[pscustomobject]@{InterfaceIndex=$InterfaceIndex;AddressFamily=$AddressFamily;ServerAddresses=@($(if($AddressFamily -eq 'IPv4'){'192.0.2.53'}else{'2001:db8::53'}))} }
-function Set-DnsClientServerAddress { [CmdletBinding()]param([Parameter(ValueFromPipeline)]$InputObject,$InterfaceIndex,[string[]]$ServerAddresses,[switch]$ResetServerAddresses);process{$script:dnsCalls.Add(@{family=$InputObject.AddressFamily;index=$InterfaceIndex;servers=@($ServerAddresses);reset=[bool]$ResetServerAddresses})} }
-function Get-DnsClientDohServerAddress {param($ServerAddress,$ErrorAction);if(-not $ServerAddress){[pscustomobject]@{ServerAddress='8.8.8.8';DohTemplate='https://original.invalid/dns-query';AllowFallbackToUdp=$true;AutoUpgrade=$false}} }
-function Add-DnsClientDohServerAddress {param($ServerAddress,$DohTemplate,$AllowFallbackToUdp,$AutoUpgrade);$script:dohCalls.Add(@{action='add';address=$ServerAddress;template=$DohTemplate;fallback=$AllowFallbackToUdp})}
-function Set-DnsClientDohServerAddress {param($ServerAddress,$DohTemplate,$AllowFallbackToUdp,$AutoUpgrade);$script:dohCalls.Add(@{action='set';address=$ServerAddress;template=$DohTemplate;fallback=$AllowFallbackToUdp})}
-function Remove-DnsClientDohServerAddress {param($ServerAddress,$ErrorAction);$script:dohCalls.Add(@{action='remove';address=$ServerAddress})}
-function Get-Service {param($Name,$ErrorAction);return $null}
-function Clear-DnsClientCache {}
-function Resolve-DnsName {param($Name,[switch]$DnsOnly,[switch]$QuickTimeout,$ErrorAction);return [pscustomobject]@{Name='example.com'}}
-Configure-DNS 'doh'
-$dnsSnapshot=Join-Path $root 'profiles\dns-original.json'
-Assert (Test-Path -LiteralPath $dnsSnapshot) 'DNS snapshot persisted before changes'
-Assert ($script:dnsCalls[0].servers.Count -eq 4) 'DNS configuration covers IPv4 and IPv6 providers'
-Assert (@($script:dohCalls | Where-Object {$_.action -eq 'add' -and $_.fallback -eq $false}).Count -eq 4) 'Native DoH configuration disables plaintext fallback'
-Restore-DNS
-Assert (@($script:dnsCalls|Where-Object {$_.family -eq 'IPv4' -and $_.servers -contains '192.0.2.53'}).Count -eq 1) 'Original static IPv4 DNS is restored'
-Assert (@($script:dnsCalls|Where-Object {$_.family -eq 'IPv6' -and $_.reset}).Count -eq 1) 'Original DHCP IPv6 DNS is restored independently'
-Assert (@($script:dohCalls|Where-Object {$_.action -eq 'set' -and $_.template -eq 'https://original.invalid/dns-query'}).Count -eq 1) 'Original DoH metadata is restored'
-Assert (-not (Test-Path -LiteralPath $dnsSnapshot)) 'DNS snapshot removed only after successful recovery'
-Write-Output 'DNS workflow contracts completed using mock OS cmdlets.'
+# Run the current isolated DNS contracts in a fresh stock shell. The older
+# inline mock predates per-family inventory and could not model readback.
+$dnsShell=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+& $dnsShell -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'test-dns-recovery-contracts.ps1') -RequireWindowsPowerShell | Out-Null
+Assert ($LASTEXITCODE -eq 0) 'Dedicated DNS recovery contracts pass in an isolated stock shell'
+$downloadFixtureOut=@()
+$downloadFixtureExit=-1
+$downloadSavedErrorPreference=$ErrorActionPreference
+try {
+    # Windows PowerShell can turn redirected native stderr into error records.
+    # Keep the child exit code authoritative while suppressing private details.
+    $ErrorActionPreference='Continue'
+    $downloadFixtureOut=@(& $dnsShell -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'test-windows-component-downloads.ps1') -RequireWindowsPowerShell 2>$null)
+    $downloadFixtureExit=$LASTEXITCODE
+} finally {
+    $ErrorActionPreference=$downloadSavedErrorPreference
+}
+$downloadStages=@(
+    @('STAGE-ENTRY-PASS','Component download fixture entered'),
+    @('STAGE-SOURCE-PARSE-PASS','Component download source parsed'),
+    @('STAGE-DEFINITION-5-PASS','Component download first five definitions loaded'),
+    @('STAGE-DEFINITION-10-PASS','Component download first ten definitions loaded'),
+    @('STAGE-DEFINITION-15-PASS','Component download first fifteen definitions loaded'),
+    @('STAGE-DEFINITION-20-PASS','Component download first twenty definitions loaded'),
+    @('STAGE-DEFINITION-25-PASS','Component download first twenty-five definitions loaded'),
+    @('STAGE-DEFINITIONS-PASS','Component download definitions fixture completed'),
+    @('STAGE-STREAM-PASS','Component download stream fixture completed'),
+    @('STAGE-COMPOSITION-PASS','Component download composition fixture completed'),
+    @('STAGE-METADATA-PASS','Component download metadata fixture completed'),
+    @('STAGE-REDIRECT-POLICY-PASS','Component redirect policy fixture completed'),
+    @('STAGE-DOTNET-HOPS-PASS','Component .NET redirect fixture completed'),
+    @('STAGE-CURL-OWNER-PASS','Component curl owner fixture completed'),
+    @('STAGE-CURL-HOPS-PASS','Component curl redirect fixture completed')
+)
+foreach($stage in $downloadStages){if(@($downloadFixtureOut | Where-Object {$_ -ceq $stage[0]}).Count -eq 1){Write-Output ('PASS '+$stage[1])}else{Write-Output ('FAIL '+$stage[1])}}
+Assert ($downloadFixtureExit -eq 0) 'Dedicated component download contracts pass in an isolated stock shell'
 
 $oldInputData=$inputData
 $inputData=[pscustomobject]@{managedPolicy=$true;allowDownloads=$false}
@@ -547,6 +4697,102 @@ foreach($url in @('https://github.com/hufrea/byedpi/releases/download/v-test/com
     Assert ((Under $target $archiveRoot) -and [IO.Path]::GetFileName($target) -match '^asset-[a-f0-9]{32}\.zip$') 'Component metadata cannot select the staging filename or escape its directory'
 }
 
+
+# Exercise the real reconnect dispatcher with an inert profile and scheduler.
+& {
+    $root=Join-Path $testRoot 'reconnect-task-fixture'
+    $directory=Join-Path $root 'profiles'
+    [void][IO.Directory]::CreateDirectory($directory)
+    [IO.File]::WriteAllText((Join-Path $directory 'wiresock-owned.json'),'inert ownership record')
+    $r=[pscustomobject]@{enabled=$true}
+    $profile=@{legacy=$false;cli='C:\fixtures\wiresock-connect-cli.exe';profile=('AccessWeaver-'+('a'*32))}
+    $state=@{definition=$null;fault='';operations=[Collections.Generic.List[string]]::new()}
+    $priorEffects=$script:externalEffectsPending
+    $priorUndo=$script:undo
+    $script:undo=[Collections.Generic.List[object]]::new()
+    function Read-OwnedWireSockProfile {return $profile}
+    function Get-RefreshTaskInspection {return @{present=($null -ne $state.definition)}}
+    function Get-WireSockRefreshTaskDefinition {return $state.definition}
+    function Save-Journal {
+        $state.operations.Add('save')
+        if($state.fault -ceq 'journal'){throw 'Synthetic journal publication failed'}
+        $pending=$script:undo[$script:undo.Count-1]
+        if(-not $script:externalEffectsPending -or $pending.instance -cnotmatch '\A[a-f0-9]{32}\z'){
+            throw 'Reconnect task lacked a recorded mutation boundary'
+        }
+    }
+    function Register-WireSockRefreshTask {
+        param($Execute,$Arguments,$Instance)
+        $state.operations.Add('create')
+        if($state.fault -ceq 'race'){
+            $state.definition=@{description='Independent replacement';actionSHA256='0'*64;ready=$true}
+            throw 'Synthetic create-only refusal'
+        }
+        if($null -ne $state.definition){throw 'Unexpected overwrite'}
+        $state.definition=@{description=('AccessWeaver reconnect '+$Instance);ready=$true;
+            actionSHA256=(Get-WireSockRefreshActionDigest $Execute $Arguments '')}
+    }
+    function Event {}
+    function Disable-ScheduledTask {
+        param($TaskName,$TaskPath,$ErrorAction)
+        $state.operations.Add('disable')
+        if($state.fault -ceq 'replace-after-disable'){$state.definition.description='Independent replacement'}
+    }
+    function Stop-ScheduledTask {param($TaskName,$TaskPath,$ErrorAction);$state.operations.Add('stop')}
+    function Unregister-ScheduledTask {
+        param($TaskName,$TaskPath,$ErrorAction,$Confirm)
+        $state.operations.Add('unregister')
+        $state.definition=$null
+    }
+    try {
+        $script:externalEffectsPending=$false
+        $state.fault='journal'
+        $refused=$false
+        try{Refresh-Task}catch{$refused=$_.Exception.Message -ceq 'Synthetic journal publication failed'}
+        Assert ($refused -and -not $script:externalEffectsPending -and ($state.operations -join ',') -ceq 'save') 'Reconnect task creation requires a saved undo entry'
+
+        $state.operations.Clear()
+        $script:undo.Clear()
+        $state.fault='race'
+        $refused=$false
+        try{Refresh-Task}catch{$refused=$_.Exception.Message -ceq 'Synthetic create-only refusal'}
+        $retained=$false
+        try{Remove-WireSockRefreshTask -JournalEntry $script:undo[0]}catch{$retained=$_.Exception.Message -ceq 'WireSock reconnect task differs from the recovery journal'}
+        Assert ($refused -and $retained -and ($state.operations -join ',') -ceq 'save,create' -and
+            $state.definition.description -ceq 'Independent replacement') 'Reconnect task recovery preserves a concurrently created replacement'
+
+        $state.operations.Clear()
+        $state.definition=$null
+        $script:undo.Clear()
+        $state.fault=''
+        Refresh-Task
+        $recorded=$script:undo[0]
+        Refresh-Task
+        $state.definition.actionSHA256='1'*64
+        $refused=$false
+        try{Remove-WireSockRefreshTask -JournalEntry $recorded}catch{$refused=$_.Exception.Message -ceq 'WireSock reconnect task differs from the recovery journal'}
+        Assert ($refused -and $script:undo.Count -eq 1 -and ($state.operations -join ',') -ceq 'save,create') 'Reconnect task reuses a matching installation and refuses changed action recovery'
+        $state.definition.actionSHA256=$recorded.actionSHA256
+
+        $refused=$false
+        try{Remove-WireSockRefreshTask -JournalEntry @{name=$recorded.name}}catch{$refused=$_.Exception.Message -like 'Legacy journal cannot identify*'}
+        Assert ($refused -and ($state.operations -join ',') -ceq 'save,create') 'Legacy reconnect journal leaves an unidentified task intact'
+
+        $state.fault='replace-after-disable'
+        $refused=$false
+        try{Remove-WireSockRefreshTask -JournalEntry $recorded}catch{$refused=$_.Exception.Message -like 'WireSock reconnect task cleanup failed*'}
+        Assert ($refused -and ($state.operations -join ',') -ceq 'save,create,disable') 'Reconnect cleanup stops when task identity changes after disable'
+
+        $state.definition.description='AccessWeaver reconnect '+$recorded.instance
+        $state.fault=''
+        Remove-WireSockRefreshTask -JournalEntry $recorded
+        Remove-WireSockRefreshTask -JournalEntry $recorded
+        Assert ($null -eq $state.definition -and ($state.operations -join ',') -ceq 'save,create,disable,disable,stop,unregister') 'Reconnect task recovery removes its recorded instance once'
+    }finally {
+        $script:externalEffectsPending=$priorEffects
+        $script:undo=$priorUndo
+    }
+}
 
 # Scheduled-task inspection remains read-only, bounded and language-independent.
 $previousTaskNative=(Get-Command Native).ScriptBlock

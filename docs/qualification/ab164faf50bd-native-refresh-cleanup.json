@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "scope": "native-windows-reconnect-task-cleanup",
+  "sourceCommit": "ab164faf50bda8f98c28c607437b4d672d68bc2d",
+  "runID": 43400903874,
+  "sealedDoNotRepoll": true,
+  "sourceSHA256": {
+    "internal/workflow/windows.ps1": "611b63058ecaa62506bf7fb8f231788754339d5d1e45783be2c1fb55c69451ec",
+    "scripts/test-windows-native-refresh-cleanup.ps1": "4eebb631a60a31b3fa98663db12b1375a9a76be86189d825304e4bd31cb4f3bf",
+    ".github/workflows/windows-native-refresh-cleanup.yml": "faf23822048e79041919ae06f8909440350054adfb592c7a2e60dd254adffbe8"
+  },
+  "reports": [
+    {
+      "architecture": "amd64",
+      "artifactID": 14025670631,
+      "providerZIPDigest": "sha256:aa7908a2405413c303f44b0ddb8a06fce588a455a6bd0083f418a9d13750fccc",
+      "providerZIPDigestVerified": true,
+      "checks": {
+        "originalTaskAbsent": true,
+        "fixtureRegistered": true,
+        "runningInstanceObserved": true,
+        "cleanupReturned": true,
+        "fixtureProcessExited": true,
+        "taskAbsent": true,
+        "repeatCleanupPassed": true,
+        "cleanupConfirmed": true
+      }
+    },
+    {
+      "architecture": "arm64",
+      "artifactID": 14025410943,
+      "providerZIPDigest": "sha256:b1c299ca0e458147f3a3d6f2bcb8e9c9d2e7177f8155e0f2cead4cde70f47ce9",
+      "providerZIPDigestVerified": true,
+      "checks": {
+        "originalTaskAbsent": true,
+        "fixtureRegistered": true,
+        "runningInstanceObserved": true,
+        "cleanupReturned": true,
+        "fixtureProcessExited": true,
+        "taskAbsent": true,
+        "repeatCleanupPassed": true,
+        "cleanupConfirmed": true
+      }
+    }
+  ],
+  "vendorCodeExecuted": false,
+  "productionQualificationComplete": false
+}

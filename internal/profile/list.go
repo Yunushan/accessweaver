@@ -2,6 +2,7 @@ package profile
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -41,8 +42,7 @@ func (s *Store) listContext(ctx context.Context, readLocked func(context.Context
 			if err != nil {
 				return nil, err
 			}
-			defer lock.Close()
-			return readLocked(ctx)
+			return readListSynchronously(ctx, readLocked, lock.Close)
 		}
 		s.listMu.Lock()
 		read := s.listing
@@ -146,14 +146,61 @@ func (s *Store) publishList(read *listRead, profiles []Profile, err error) {
 	read.finishing = true
 }
 
-func (s *Store) completeList(read *listRead, closeLock func() error) {
-	if closeLock != nil {
-		// Preserve the existing read-close error policy. The slot bounds active
-		// cleanup attempts; Close returning is not proof of native release success.
-		_ = closeLock()
+// Close failures carry private native/body causes for in-process inspection,
+// while authenticated API errors expose only this fixed cleanup description.
+type listCloseFailure struct{ cause error }
+
+func (e *listCloseFailure) Error() string { return "profile list cleanup could not be confirmed" }
+func (e *listCloseFailure) Unwrap() error { return e.cause }
+
+func listCompletionError(bodyErr, closeErr error) error {
+	if closeErr == nil {
+		return bodyErr
 	}
+	if bodyErr == nil {
+		return &listCloseFailure{cause: closeErr}
+	}
+	return &listCloseFailure{cause: errors.Join(bodyErr, closeErr)}
+}
+
+// The impersonated/nonsharing path stays on its original calling thread. Its
+// private per-call composition lets tests observe real lease closure without
+// selecting a production backend or pretending to impersonate another user.
+func readListSynchronously(ctx context.Context, readLocked func(context.Context) ([]Profile, error), closeLock func() error) (profiles []Profile, failure error) {
+	// Install ownership cleanup before calling the body. A caller such as
+	// net/http may recover a body panic; that must not leave the OS lease held.
+	// No recovery here: the original panic propagates after checked Close.
+	defer func() {
+		closeErr := closeLock()
+		if canceled := ctx.Err(); canceled != nil && !errors.Is(failure, canceled) {
+			if failure == nil {
+				failure = canceled
+			} else {
+				failure = errors.Join(failure, canceled)
+			}
+		}
+		failure = listCompletionError(failure, closeErr)
+		if failure != nil {
+			profiles = nil
+		}
+	}()
+	profiles, failure = readLocked(ctx)
+	return
+}
+
+func (s *Store) completeList(read *listRead, closeLock func() error) {
+	var closeErr error
+	if closeLock != nil {
+		closeErr = closeLock()
+	}
+	// Close can block. Keep it outside listMu, then publish its actual returned
+	// result before releasing the existing slot or notifying any cohort waiter.
 	s.listMu.Lock()
 	defer s.listMu.Unlock()
+	read.err = listCompletionError(read.err, closeErr)
+	if read.err != nil {
+		read.profiles = nil
+	}
 	if s.listing == read {
 		s.listing = nil
 	}

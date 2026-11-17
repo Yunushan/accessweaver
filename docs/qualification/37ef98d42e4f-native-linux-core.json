@@ -1,0 +1,1537 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "37ef98d42e4f5f00f50644558406c86bf3d7fb77",
+  "sourceTree": "4a242a4c8b39eb1a13f200f04a52738ca661fe5b",
+  "branch": "codex/native-core-evidence-93c390f",
+  "run": {
+    "id": 42334621174,
+    "status": "completed",
+    "conclusion": "success",
+    "attempt": 1
+  },
+  "url": "https://github.com/Yunushan/accessweaver/actions/runs/42334621174",
+  "scope": "Complete root Go module ./... on native ordinary-user Linux AMD64 and ARM64; separate unit, race and vet jobs",
+  "toolchain": "go1.27.3",
+  "sourceSHA256": {
+    ".github/workflows/native-core.yml": "fb2ecde1e0ac1e5cf871c876b789c7cc392aa33f039691c18b63dfc681786e94",
+    "scripts/core-test-evidence.cjs": "ebdf09caa492f876612d311203f41ccd886ec5788eb1bf4a80bd21ac1beb45b1",
+    "scripts/core-test-catalog/main.go": "56f3a8731537d111ac7b752a7b0329e0b2275e3b691e0fdf87132d4b3a1d5177",
+    "scripts/core-test-catalog/main_test.go": "778cd56016854cd64f4107a0fd778b5e1209048d8c55d23d4f485d638e21a1a4",
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00"
+  },
+  "workflowRouterSHA256": "dbcb77db3fda5fcfbcaa7671daea3e1c42b7531217de21353a0aa949e7ca0621",
+  "catalogSHA256": {
+    "amd64-unit": "fa7d4cee3704139614a1150a1c23f701ea51f9ad947b0ad25ebda1266ab87277",
+    "amd64-race": "fa7d4cee3704139614a1150a1c23f701ea51f9ad947b0ad25ebda1266ab87277",
+    "arm64-unit": "fa7d4cee3704139614a1150a1c23f701ea51f9ad947b0ad25ebda1266ab87277",
+    "arm64-race": "fa7d4cee3704139614a1150a1c23f701ea51f9ad947b0ad25ebda1266ab87277"
+  },
+  "jobs": [
+    {
+      "id": 128288624756,
+      "name": "native-core / Core (arm64/unit)",
+      "conclusion": "success"
+    },
+    {
+      "id": 128288624831,
+      "name": "native-core / Core (amd64/race)",
+      "conclusion": "success"
+    },
+    {
+      "id": 128288624864,
+      "name": "native-core / Core (arm64/race)",
+      "conclusion": "success"
+    },
+    {
+      "id": 128288624910,
+      "name": "native-core / Core (amd64/unit)",
+      "conclusion": "success"
+    },
+    {
+      "id": 128288625007,
+      "name": "native-core / Core (arm64/vet)",
+      "conclusion": "success"
+    },
+    {
+      "id": 128288625207,
+      "name": "native-core / Core (amd64/vet)",
+      "conclusion": "success"
+    }
+  ],
+  "reports": [
+    {
+      "architecture": "amd64",
+      "mode": "race",
+      "outcome": "passed",
+      "packages": 29,
+      "rootTestsCataloged": 786,
+      "rootPassed": 768,
+      "rootSkipped": 18,
+      "rootNotRun": 0,
+      "childPassed": 937,
+      "childFailed": 0,
+      "childSkipped": 0,
+      "attempts": 786,
+      "unknownEvents": 0,
+      "buildFailures": 0,
+      "discardedOutputEvents": 3824,
+      "inputBytes": 1806452,
+      "packageResults": [
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+          "status": "passed",
+          "rootPassed": 125,
+          "rootSkipped": 7,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-desktop-installer",
+          "status": "passed",
+          "rootPassed": 1,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-installer",
+          "status": "passed",
+          "rootPassed": 2,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-launcher",
+          "status": "passed",
+          "rootPassed": 1,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-product-installer",
+          "status": "passed",
+          "rootPassed": 1,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/api",
+          "status": "passed",
+          "rootPassed": 90,
+          "rootSkipped": 2,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/audit",
+          "status": "passed",
+          "rootPassed": 37,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/backup",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/buildinfo",
+          "status": "passed",
+          "rootPassed": 1,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/diagnostics",
+          "status": "passed",
+          "rootPassed": 19,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/engine",
+          "status": "passed",
+          "rootPassed": 67,
+          "rootSkipped": 3,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/fileidentity",
+          "status": "passed",
+          "rootPassed": 5,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/fileinput",
+          "status": "passed",
+          "rootPassed": 7,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/filelock",
+          "status": "passed",
+          "rootPassed": 11,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/linuxtrust",
+          "status": "passed",
+          "rootPassed": 5,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/logfile",
+          "status": "passed",
+          "rootPassed": 6,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/managed",
+          "status": "passed",
+          "rootPassed": 84,
+          "rootSkipped": 1,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/nativeargs",
+          "status": "passed",
+          "rootPassed": 2,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/nativepath",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/nativeprocess",
+          "status": "passed",
+          "rootPassed": 12,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/packageupgrade",
+          "status": "passed",
+          "rootPassed": 32,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/privatefile",
+          "status": "passed",
+          "rootPassed": 6,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/profile",
+          "status": "passed",
+          "rootPassed": 74,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/servicehost",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/uiaccess",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/wintrust",
+          "status": "skipped",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/workflow",
+          "status": "passed",
+          "rootPassed": 165,
+          "rootSkipped": 5,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/scripts/core-test-catalog",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/web",
+          "status": "skipped",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        }
+      ]
+    },
+    {
+      "architecture": "amd64",
+      "mode": "unit",
+      "outcome": "passed",
+      "packages": 29,
+      "rootTestsCataloged": 786,
+      "rootPassed": 768,
+      "rootSkipped": 18,
+      "rootNotRun": 0,
+      "childPassed": 937,
+      "childFailed": 0,
+      "childSkipped": 0,
+      "attempts": 786,
+      "unknownEvents": 0,
+      "buildFailures": 0,
+      "discardedOutputEvents": 3824,
+      "inputBytes": 1805954,
+      "packageResults": [
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+          "status": "passed",
+          "rootPassed": 125,
+          "rootSkipped": 7,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-desktop-installer",
+          "status": "passed",
+          "rootPassed": 1,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-installer",
+          "status": "passed",
+          "rootPassed": 2,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-launcher",
+          "status": "passed",
+          "rootPassed": 1,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-product-installer",
+          "status": "passed",
+          "rootPassed": 1,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/api",
+          "status": "passed",
+          "rootPassed": 90,
+          "rootSkipped": 2,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/audit",
+          "status": "passed",
+          "rootPassed": 37,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/backup",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/buildinfo",
+          "status": "passed",
+          "rootPassed": 1,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/diagnostics",
+          "status": "passed",
+          "rootPassed": 19,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/engine",
+          "status": "passed",
+          "rootPassed": 67,
+          "rootSkipped": 3,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/fileidentity",
+          "status": "passed",
+          "rootPassed": 5,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/fileinput",
+          "status": "passed",
+          "rootPassed": 7,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/filelock",
+          "status": "passed",
+          "rootPassed": 11,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/linuxtrust",
+          "status": "passed",
+          "rootPassed": 5,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/logfile",
+          "status": "passed",
+          "rootPassed": 6,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/managed",
+          "status": "passed",
+          "rootPassed": 84,
+          "rootSkipped": 1,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/nativeargs",
+          "status": "passed",
+          "rootPassed": 2,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/nativepath",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/nativeprocess",
+          "status": "passed",
+          "rootPassed": 12,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/packageupgrade",
+          "status": "passed",
+          "rootPassed": 32,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/privatefile",
+          "status": "passed",
+          "rootPassed": 6,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/profile",
+          "status": "passed",
+          "rootPassed": 74,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/servicehost",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/uiaccess",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/wintrust",
+          "status": "skipped",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/workflow",
+          "status": "passed",
+          "rootPassed": 165,
+          "rootSkipped": 5,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/scripts/core-test-catalog",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/web",
+          "status": "skipped",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        }
+      ]
+    },
+    {
+      "architecture": "amd64",
+      "mode": "vet",
+      "outcome": "passed",
+      "packages": 29,
+      "rootTestsCataloged": 786,
+      "rootPassed": 0,
+      "rootSkipped": 0,
+      "rootNotRun": 786,
+      "childPassed": 0,
+      "childFailed": 0,
+      "childSkipped": 0,
+      "attempts": 0,
+      "unknownEvents": 0,
+      "buildFailures": 0,
+      "discardedOutputEvents": 0,
+      "inputBytes": 0,
+      "packageResults": [
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 132
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-desktop-installer",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 1
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-installer",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 2
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-launcher",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 1
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-product-installer",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 1
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/api",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 92
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/audit",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 37
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/backup",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 3
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/buildinfo",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 1
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/diagnostics",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 19
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/engine",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 70
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/fileidentity",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 5
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/fileinput",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 7
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/filelock",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 11
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/linuxtrust",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 5
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/logfile",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 6
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/managed",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 85
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/nativeargs",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 2
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/nativepath",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 3
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/nativeprocess",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 12
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/packageupgrade",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 32
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/privatefile",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 6
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/profile",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 74
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/servicehost",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 3
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/uiaccess",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 3
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/wintrust",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/workflow",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 170
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/scripts/core-test-catalog",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 3
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/web",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        }
+      ]
+    },
+    {
+      "architecture": "arm64",
+      "mode": "race",
+      "outcome": "passed",
+      "packages": 29,
+      "rootTestsCataloged": 786,
+      "rootPassed": 768,
+      "rootSkipped": 18,
+      "rootNotRun": 0,
+      "childPassed": 937,
+      "childFailed": 0,
+      "childSkipped": 0,
+      "attempts": 786,
+      "unknownEvents": 0,
+      "buildFailures": 0,
+      "discardedOutputEvents": 3824,
+      "inputBytes": 1806430,
+      "packageResults": [
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+          "status": "passed",
+          "rootPassed": 125,
+          "rootSkipped": 7,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-desktop-installer",
+          "status": "passed",
+          "rootPassed": 1,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-installer",
+          "status": "passed",
+          "rootPassed": 2,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-launcher",
+          "status": "passed",
+          "rootPassed": 1,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-product-installer",
+          "status": "passed",
+          "rootPassed": 1,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/api",
+          "status": "passed",
+          "rootPassed": 90,
+          "rootSkipped": 2,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/audit",
+          "status": "passed",
+          "rootPassed": 37,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/backup",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/buildinfo",
+          "status": "passed",
+          "rootPassed": 1,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/diagnostics",
+          "status": "passed",
+          "rootPassed": 19,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/engine",
+          "status": "passed",
+          "rootPassed": 67,
+          "rootSkipped": 3,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/fileidentity",
+          "status": "passed",
+          "rootPassed": 5,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/fileinput",
+          "status": "passed",
+          "rootPassed": 7,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/filelock",
+          "status": "passed",
+          "rootPassed": 11,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/linuxtrust",
+          "status": "passed",
+          "rootPassed": 5,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/logfile",
+          "status": "passed",
+          "rootPassed": 6,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/managed",
+          "status": "passed",
+          "rootPassed": 84,
+          "rootSkipped": 1,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/nativeargs",
+          "status": "passed",
+          "rootPassed": 2,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/nativepath",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/nativeprocess",
+          "status": "passed",
+          "rootPassed": 12,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/packageupgrade",
+          "status": "passed",
+          "rootPassed": 32,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/privatefile",
+          "status": "passed",
+          "rootPassed": 6,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/profile",
+          "status": "passed",
+          "rootPassed": 74,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/servicehost",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/uiaccess",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/wintrust",
+          "status": "skipped",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/workflow",
+          "status": "passed",
+          "rootPassed": 165,
+          "rootSkipped": 5,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/scripts/core-test-catalog",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/web",
+          "status": "skipped",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        }
+      ]
+    },
+    {
+      "architecture": "arm64",
+      "mode": "unit",
+      "outcome": "passed",
+      "packages": 29,
+      "rootTestsCataloged": 786,
+      "rootPassed": 768,
+      "rootSkipped": 18,
+      "rootNotRun": 0,
+      "childPassed": 937,
+      "childFailed": 0,
+      "childSkipped": 0,
+      "attempts": 786,
+      "unknownEvents": 0,
+      "buildFailures": 0,
+      "discardedOutputEvents": 3824,
+      "inputBytes": 1805763,
+      "packageResults": [
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+          "status": "passed",
+          "rootPassed": 125,
+          "rootSkipped": 7,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-desktop-installer",
+          "status": "passed",
+          "rootPassed": 1,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-installer",
+          "status": "passed",
+          "rootPassed": 2,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-launcher",
+          "status": "passed",
+          "rootPassed": 1,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-product-installer",
+          "status": "passed",
+          "rootPassed": 1,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/api",
+          "status": "passed",
+          "rootPassed": 90,
+          "rootSkipped": 2,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/audit",
+          "status": "passed",
+          "rootPassed": 37,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/backup",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/buildinfo",
+          "status": "passed",
+          "rootPassed": 1,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/diagnostics",
+          "status": "passed",
+          "rootPassed": 19,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/engine",
+          "status": "passed",
+          "rootPassed": 67,
+          "rootSkipped": 3,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/fileidentity",
+          "status": "passed",
+          "rootPassed": 5,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/fileinput",
+          "status": "passed",
+          "rootPassed": 7,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/filelock",
+          "status": "passed",
+          "rootPassed": 11,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/linuxtrust",
+          "status": "passed",
+          "rootPassed": 5,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/logfile",
+          "status": "passed",
+          "rootPassed": 6,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/managed",
+          "status": "passed",
+          "rootPassed": 84,
+          "rootSkipped": 1,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/nativeargs",
+          "status": "passed",
+          "rootPassed": 2,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/nativepath",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/nativeprocess",
+          "status": "passed",
+          "rootPassed": 12,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/packageupgrade",
+          "status": "passed",
+          "rootPassed": 32,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/privatefile",
+          "status": "passed",
+          "rootPassed": 6,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/profile",
+          "status": "passed",
+          "rootPassed": 74,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/servicehost",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/uiaccess",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/wintrust",
+          "status": "skipped",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/workflow",
+          "status": "passed",
+          "rootPassed": 165,
+          "rootSkipped": 5,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/scripts/core-test-catalog",
+          "status": "passed",
+          "rootPassed": 3,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/web",
+          "status": "skipped",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        }
+      ]
+    },
+    {
+      "architecture": "arm64",
+      "mode": "vet",
+      "outcome": "passed",
+      "packages": 29,
+      "rootTestsCataloged": 786,
+      "rootPassed": 0,
+      "rootSkipped": 0,
+      "rootNotRun": 786,
+      "childPassed": 0,
+      "childFailed": 0,
+      "childSkipped": 0,
+      "attempts": 0,
+      "unknownEvents": 0,
+      "buildFailures": 0,
+      "discardedOutputEvents": 0,
+      "inputBytes": 0,
+      "packageResults": [
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 132
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-desktop-installer",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 1
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-installer",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 2
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-launcher",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 1
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/cmd/accessweaver-product-installer",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 1
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/api",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 92
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/audit",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 37
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/backup",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 3
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/buildinfo",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 1
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/diagnostics",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 19
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/engine",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 70
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/fileidentity",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 5
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/fileinput",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 7
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/filelock",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 11
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/linuxtrust",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 5
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/logfile",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 6
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/managed",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 85
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/nativeargs",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 2
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/nativepath",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 3
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/nativeprocess",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 12
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/packageupgrade",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 32
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/privatefile",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 6
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/profile",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 74
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/servicehost",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 3
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/uiaccess",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 3
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/wintrust",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/internal/workflow",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 170
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/scripts/core-test-catalog",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 3
+        },
+        {
+          "path": "github.com/Yunushan/accessweaver/web",
+          "status": "vet-passed",
+          "rootPassed": 0,
+          "rootSkipped": 0,
+          "rootNotRun": 0
+        }
+      ]
+    }
+  ],
+  "explicitRootSkipsInEachUnitAndRaceRun": [
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestBackupOutputCaseAliasCannotCreateInsideSource"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestDisposableLinuxManagedPolicyNative"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestDisposableLinuxRecordedPolicyTransactions"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestForegroundRunClosedPipeWorker"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestRecordedEngineClosedStandardPipeWorker"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestRecordedExportClosedStandardPipeWorker"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestWindowsAuditAliasMetadata"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/api",
+      "test": "TestHistoryBrowserSourceWireInterop"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/api",
+      "test": "TestSupportDesktopWireInterop"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/engine",
+      "test": "TestConfigInputPrepareUsesOneInspectedRead"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/engine",
+      "test": "TestWindowsInstalledComponentDiscovery"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/engine",
+      "test": "TestWireSockApplicationConfigurationIsPrivateCopy"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/managed",
+      "test": "TestDisposableLinuxPolicyTransactions"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/workflow",
+      "test": "TestControllerStorageDesktopWireInterop"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/workflow",
+      "test": "TestLifecycleReconciliationDesktopWireInterop"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/workflow",
+      "test": "TestWorkerReportFinalizationPowerShellInterop"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/workflow",
+      "test": "TestWorkerReportPowerShellInterop"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/workflow",
+      "test": "TestWorkflowCommandPipelineSourceChild"
+    }
+  ],
+  "archiveDigests": {
+    "native-core-arm64-race": "sha256:bf141b3b11e6f718e65699c64b5e826b47102391e726d61b0e64f92983110980",
+    "native-core-amd64-vet": "sha256:7780c04e095ad7b877d2b4b9a38f5f32bfc27e2a325b83988cfb713fd76f5454",
+    "native-core-arm64-unit": "sha256:83a5adf428262914bb4591a8342a281e905d78d87d66eaa2ebadc88e1fc8faac",
+    "native-core-arm64-vet": "sha256:7e56c7182abed83871e0fd5004585497bcb397a5bae81147b11bec5dced01766",
+    "native-core-amd64-unit": "sha256:95345c86264b553d51c862bbce308c2c36c78514d3f182fb2543551a9e7a06c3",
+    "native-core-amd64-race": "sha256:51e6c1731aa68a4ae34ff77805c44eae65f15b76fab7149c35c1762659a61362"
+  },
+  "reportBundleSHA256": "702ae7e38ffcd58438cb1ad82ee8936b72285a1f2a30cd538e4f8d3ef1c8c3ce",
+  "localValidation": [
+    {
+      "check": "test ./scripts/core-test-catalog -count=1",
+      "exitCode": 0
+    },
+    {
+      "check": "test -race ./scripts/core-test-catalog -count=1",
+      "exitCode": 0
+    },
+    {
+      "check": "vet ./scripts/core-test-catalog",
+      "exitCode": 0
+    },
+    {
+      "mode": "unit",
+      "packages": 29,
+      "rootTests": 786
+    },
+    {
+      "mode": "race",
+      "packages": 29,
+      "rootTests": 786
+    }
+  ],
+  "privacyContracts": {
+    "nodeTestsPassed": 4,
+    "rawOutputRetained": false,
+    "dynamicSubtestLabelsRetained": false,
+    "stderrRetained": false,
+    "unknownOrIncompleteResultsPass": false,
+    "providerZipDigestsVerifiedBeforeParsing": true,
+    "sourceAllowlistCheckedForBothArchitectures": true,
+    "rawLogsAnnotationsOrUnrelatedArtifactsRead": false
+  },
+  "qualificationLimits": [
+    "18 root skips per unit/race run remain explicit and unqualified; two packages have no tests.",
+    "Vet success does not execute tests; all cataloged roots remain not-run in vet reports.",
+    "Fuzz functions run only their ordinary seed corpus; no fuzz campaign is claimed.",
+    "Root counts repeat the same suite across modes/architectures; they are not distinct test totals.",
+    "This run does not qualify nested fixture/tool modules, signed installation, update/reboot, actual engine traffic, DNS/application lifecycle, eight-hour stability or every supported desktop target.",
+    "No independent test-quality audit, foreign native run or whole readiness-gate completion is claimed."
+  ],
+  "formalGateCounts": {
+    "partial": 42,
+    "failed": 3,
+    "missing": 4,
+    "unverified": 1,
+    "passed": 0
+  },
+  "readinessSHA256": "6aba24860c171a7a3931029589b0e04dac90ed4a6f22da3fc02bd058bf903b0e",
+  "gatesPromoted": false,
+  "productionQualificationComplete": false
+}

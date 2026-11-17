@@ -1,13 +1,14 @@
 import copy
 import json
 import io
+import os
 import tarfile
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from sbom import generate, installer, json_stream, sha, validate
+from sbom import WINDOWS_BUILD_INFO_PROPERTY, generate, installer, json_stream, prop_map, sha, validate
 from verify_release import inspect_archive
 
 
@@ -35,6 +36,21 @@ class SBOMTests(unittest.TestCase):
                 else:changed["compositions"][0]["aggregate"]="complete"
                 with self.assertRaises(ValueError):validate(changed,b"binary",identity)
 
+    def test_file_components_validate_optional_notice_references_when_present(self):
+        document, identity = self.fixture()
+        file_component = {"bom-ref": "embedded", "type": "file", "name": "data.txt"}
+        document["components"].append(file_component)
+        document["dependencies"][0]["dependsOn"].append("embedded")
+        document["dependencies"].append({"ref": "embedded", "dependsOn": []})
+        self.assertTrue(validate(document, b"binary", identity))
+        for record in ({"path": "licenses/..", "sha256": "a" * 64},
+                       {"path": "licenses/notice.txt", "sha256": True},
+                       {"path": "licenses/notice.txt", "sha256": "a" * 64, "other": "unreviewed"}):
+            with self.subTest(record=record), self.assertRaisesRegex(ValueError, "Invalid license evidence"):
+                file_component["properties"] = [{"name": "accessweaver:license-evidence",
+                                                  "value": json.dumps([record])}]
+                validate(document, b"binary", identity)
+
     def test_installer_preserves_payload_and_marks_native_closure_incomplete(self):
         document,_=self.fixture()
         with tempfile.TemporaryDirectory() as folder:
@@ -42,11 +58,18 @@ class SBOMTests(unittest.TestCase):
             binary=root/"setup.exe";binary.write_bytes(b"installer")
             compiler=root/"ISCC.exe";compiler.write_bytes(b"compiler")
             license=root/"License.txt";license.write_bytes(b"Inno Setup notice")
-            result=installer(binary,document,compiler,"6.7.1",license,root/"licenses")
+            build_info_pin=sha(b"build metadata")
+            result=installer(binary,document,compiler,"6.7.1",license,root/"licenses",
+                             build_info_sha256=build_info_pin)
             self.assertTrue(validate(result,b"installer"))
             self.assertEqual(result["metadata"]["component"]["hashes"][0]["content"],sha(b"installer"))
             payload=next(c for c in result["components"] if c["bom-ref"]=="payload-application")
             self.assertEqual(payload["hashes"][0]["content"],sha(b"binary"))
+            self.assertEqual(prop_map(result["metadata"]["component"])[WINDOWS_BUILD_INFO_PROPERTY],build_info_pin)
+            self.assertNotIn(WINDOWS_BUILD_INFO_PROPERTY,prop_map(payload))
+            with self.assertRaisesRegex(ValueError,"Invalid Windows build metadata SHA-256"):
+                installer(binary,document,compiler,"6.7.1",license,root/"licenses",
+                          build_info_sha256="invalid")
             self.assertEqual(result["compositions"][0]["aggregate"],"incomplete")
             self.assertEqual(document["metadata"]["component"]["bom-ref"],"application")
 
@@ -75,6 +98,37 @@ class SBOMTests(unittest.TestCase):
     def test_stream_parser_requires_valid_bounded_metadata(self):
         self.assertEqual(json_stream(' {"a":1} \n {"b":2} '),[{"a":1},{"b":2}])
         with self.assertRaises((ValueError,json.JSONDecodeError)):json_stream('{"a":')
+
+    def test_go_source_analysis_ignores_local_workspaces_and_flags(self):
+        class StopAtPackageList(Exception):
+            pass
+
+        _, identity = self.fixture()
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            binary = root / "binary"
+            binary.write_bytes(b"not executed")
+            observed = []
+
+            def command(args, cwd=None, env=None):
+                observed.append(args[1])
+                self.assertEqual({key: env[key] for key in ("GOENV", "GOWORK", "GOFLAGS")},
+                                 {"GOENV": "off", "GOWORK": "off", "GOFLAGS": ""})
+                if args[1] == "version":
+                    values = {"GOOS": "linux", "GOARCH": "amd64", "CGO_ENABLED": "0"}
+                    return json.dumps({"GoVersion": identity["goVersion"],
+                                       "Settings": [{"Key": key, "Value": value} for key, value in values.items()]})
+                if args[1] == "env":
+                    return identity["goVersion"]
+                self.assertEqual(args[1:3], ["list", "-mod=readonly"])
+                self.assertEqual(cwd, root.resolve())
+                self.assertEqual((env["GOOS"], env["GOARCH"], env["CGO_ENABLED"]), ("linux", "amd64", "0"))
+                raise StopAtPackageList
+
+            with patch.dict(os.environ, {"GOENV": "other.env", "GOWORK": "other.work", "GOFLAGS": "-mod=vendor"}), \
+                 patch("sbom.command", side_effect=command), self.assertRaises(StopAtPackageList):
+                generate(binary, root, ".", identity, root / "licenses")
+            self.assertEqual(observed, ["version", "env", "list"])
 
     def test_source_analysis_rejects_binary_with_cgo_before_running_sources(self):
         with tempfile.TemporaryDirectory() as folder:

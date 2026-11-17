@@ -1,0 +1,215 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "local-linux-source-unit-race-and-vet",
+  "sourceCommit": "4061b28c965e2742edba02c27efba45ece63fa18",
+  "sourceSHA256": {
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+    "scripts/core-test-catalog/main.go": "0aea23c470ee31523b199e2e6e68d0d42e519c064dae8771c84d30197a3c4d8a",
+    "scripts/core-test-evidence.cjs": "5bc5938975ec46dd1ed00be055f96474e7893a4a95bab0a3266a588a81ec01cf"
+  },
+  "environment": {
+    "go": "go1.27.4 linux/amd64",
+    "runtime": "local Ubuntu WSL",
+    "hostedRunner": false,
+    "goExecutableSHA256": "de0ae3e082ce7599eae4fb69fa2ef1e43b8f31ffd3fce62cdf81930aa9005050",
+    "node": "v26.8.2",
+    "nodeExecutableSHA256": "8a22a371fd85aecf5411636574309f6380fbc42694aaf0651a089a8ef9c44e52",
+    "moduleChecksumsVerified": true,
+    "automaticToolchainSelection": false
+  },
+  "results": [
+    {
+      "mode": "unit",
+      "outcome": "passed",
+      "exitCode": 0,
+      "packageCount": 31,
+      "passed": 837,
+      "skipped": 20,
+      "unknownEvents": 0,
+      "buildFailures": 0
+    },
+    {
+      "mode": "race",
+      "outcome": "passed",
+      "exitCode": 0,
+      "packageCount": 31,
+      "passed": 837,
+      "skipped": 20,
+      "unknownEvents": 0,
+      "buildFailures": 0
+    }
+  ],
+  "vetPassed": true,
+  "skippedSourceRoots": {
+    "unit": [
+      {
+        "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+        "test": "TestBackupOutputCaseAliasCannotCreateInsideSource"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+        "test": "TestDisposableLinuxManagedPolicyNative"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+        "test": "TestDisposableLinuxRecordedPolicyTransactions"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+        "test": "TestForegroundRunClosedPipeWorker"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+        "test": "TestRecordedEngineClosedStandardPipeRepeated"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+        "test": "TestRecordedEngineClosedStandardPipeWorker"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+        "test": "TestRecordedExportClosedStandardPipeWorker"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+        "test": "TestWindowsAuditAliasMetadata"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/api",
+        "test": "TestHistoryBrowserSourceWireInterop"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/api",
+        "test": "TestSupportDesktopWireInterop"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/engine",
+        "test": "TestConfigInputPrepareUsesOneInspectedRead"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/engine",
+        "test": "TestWindowsInstalledComponentDiscovery"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/engine",
+        "test": "TestWireSockApplicationConfigurationIsPrivateCopy"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/logfile",
+        "test": "TestOversizedLogRetainsOriginalWhenReplacementIsBlocked"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/managed",
+        "test": "TestDisposableLinuxPolicyTransactions"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/workflow",
+        "test": "TestControllerStorageDesktopWireInterop"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/workflow",
+        "test": "TestLifecycleReconciliationDesktopWireInterop"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/workflow",
+        "test": "TestWorkerReportFinalizationPowerShellInterop"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/workflow",
+        "test": "TestWorkerReportPowerShellInterop"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/workflow",
+        "test": "TestWorkflowCommandPipelineSourceChild"
+      }
+    ],
+    "race": [
+      {
+        "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+        "test": "TestBackupOutputCaseAliasCannotCreateInsideSource"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+        "test": "TestDisposableLinuxManagedPolicyNative"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+        "test": "TestDisposableLinuxRecordedPolicyTransactions"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+        "test": "TestForegroundRunClosedPipeWorker"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+        "test": "TestRecordedEngineClosedStandardPipeRepeated"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+        "test": "TestRecordedEngineClosedStandardPipeWorker"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+        "test": "TestRecordedExportClosedStandardPipeWorker"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+        "test": "TestWindowsAuditAliasMetadata"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/api",
+        "test": "TestHistoryBrowserSourceWireInterop"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/api",
+        "test": "TestSupportDesktopWireInterop"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/engine",
+        "test": "TestConfigInputPrepareUsesOneInspectedRead"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/engine",
+        "test": "TestWindowsInstalledComponentDiscovery"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/engine",
+        "test": "TestWireSockApplicationConfigurationIsPrivateCopy"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/logfile",
+        "test": "TestOversizedLogRetainsOriginalWhenReplacementIsBlocked"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/managed",
+        "test": "TestDisposableLinuxPolicyTransactions"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/workflow",
+        "test": "TestControllerStorageDesktopWireInterop"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/workflow",
+        "test": "TestLifecycleReconciliationDesktopWireInterop"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/workflow",
+        "test": "TestWorkerReportFinalizationPowerShellInterop"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/workflow",
+        "test": "TestWorkerReportPowerShellInterop"
+      },
+      {
+        "package": "github.com/Yunushan/accessweaver/internal/workflow",
+        "test": "TestWorkflowCommandPipelineSourceChild"
+      }
+    ]
+  },
+  "skipsAreQualificationCredit": false,
+  "rawOutputRetained": false,
+  "nativeMutationFixturesEnabled": false,
+  "interactiveDesktopQualified": false,
+  "productionQualificationComplete": false
+}

@@ -1,0 +1,109 @@
+const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),{createHash}=require('node:crypto');
+const D=require('./browser-shadow-control.cjs'),T=require('./browser-timing.cjs');
+const tinyDocument='<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="app.css"></head><body>fixed source</body></html>';
+const expectedRemoval={original:{startup:[false,false,false,false,false,false,false],editor:[false]},'without-core-and-modal-shadow':{startup:[true,false,false,false,false,false,false],editor:[true]},'without-other-decorative-shadows':{startup:[false,true,true,true,true,true,false],editor:[false]},'without-box-shadow':{startup:[true,true,true,true,true,true,true],editor:[true]}};
+const digest=value=>createHash('sha256').update(value).digest('hex');
+function markerHarness(variant,options={}){
+ const head={},attrs={rel:'stylesheet',href:D.controlStylesheetPath},node={parentNode:head,getAttribute(name){return attrs[name]}};
+ const rule={selectorText:options.wrongSelector?'.foreign':(options.selectorText??D.styles[variant].split('{')[0]),style:{getPropertyValue(name){assert.equal(name,'box-shadow');return options.wrongValue?'private':'none'},getPropertyPriority(name){assert.equal(name,'box-shadow');return options.wrongPriority?'':'important'}}};
+ node.sheet={ownerNode:options.wrongOwner?{}:node,disabled:!!options.disabled,cssRules:variant==='original'?[]:[rule]};if(options.missingRule)node.sheet.cssRules=[];if(options.missingSheet)node.sheet=null;
+ if(options.privateError)Object.defineProperty(node,'sheet',{get(){throw Error('SYNTHETIC_PRIVATE_CANARY')}});
+ const document={head,body:options.bodyPresent?{}:null,getElementById(name){assert.equal(name,'accessweaver-owned-shadow-control');return options.missingNode?null:node},get cookie(){throw Error('SYNTHETIC_PRIVATE_CANARY')}};
+ const context={document,performance:{now:()=>Object.hasOwn(options,'now')?options.now:5}};for(const name of ['setTimeout','setInterval','MutationObserver','location'])Object.defineProperty(context,name,{get(){throw Error('SYNTHETIC_PRIVATE_CANARY')}});
+ vm.runInNewContext(D.markerSource(variant),context,{timeout:1000});return {node,attrs,document,capture:()=>JSON.parse(JSON.stringify(context.__accessweaverShadowControl.capture()))};
+}
+function valid(){
+ const v=D.empty();v.stage='complete';v.profilesRendered=256;v.controlStylesheetRequests=v.controlMarkerRequests=v.documentRequests=1;v.documentSourceMatched=v.documentSecurityHeadersPreserved=true;v.styleState={installed:true,attached:true,hrefMatches:true,sheetReady:true,bodyAbsentAtMarker:true,readyAtMs:5,failed:false};v.shadowChecks={startup:[true,true,true,true,true,true,true],editor:[true]};
+ v.timing={startupJobCpu:{scope:'isolated-job-cgroup-v2',intervalMilliseconds:1000,cpuMicroseconds:500000,userMicroseconds:400000,systemMicroseconds:100000,percentOneCore:50},dashboard:{navigationMs:30,applicationMs:20,paintMs:10},editor:Array.from({length:10},()=>({actionMs:30,visibilityMs:10,paintMs:20,totalMs:60})),startup:{observedMs:100,domContentLoadedMs:10,resourceOverflow:false,invalidRecords:0,readyObservation:{clock:'performance-now-callback-delivery',status:'ready',firstReadyMs:30,readyPaintMs:80,framesAfterReady:2,firstFrameMs:10,lastFrameMs:80,frameCount:4,maxFrameGapMs:30,callbacks:3,stoppedMs:90,context:{start:{visibility:'visible',focused:true},ready:{visibility:'visible',focused:true},stop:{visibility:'visible',focused:true}}},resources:Object.fromEntries(T.startupLabels.map(label=>[label,{startMs:10,firstByteMs:20,endMs:30}]))}};
+ for(const object of [v.browserChecks,v.jobCpuChecks,v.cleanup])for(const key of Object.keys(object))object[key]=true;return v;
+}
+async function temporary(t){const p=await fs.mkdtemp(path.join(os.tmpdir(),'accessweaver-shadow-unit-'));t.after(async()=>{const info=await fs.lstat(p),real=await fs.realpath(p),base=await fs.realpath(os.tmpdir());assert.ok(info.isDirectory()&&!info.isSymbolicLink()&&path.dirname(real)===base&&path.basename(real).startsWith('accessweaver-shadow-unit-'));await fs.rm(real,{recursive:true,force:true})});return p}
+async function fixture(t){const root=await temporary(t);for(const name of D.sources){const p=path.join(root,name);await fs.mkdir(path.dirname(p),{recursive:true});await fs.writeFile(p,'fixed synthetic public source')};await fs.writeFile(path.join(root,'web/index.html'),tinyDocument);return root}
+
+const environment={platform:'linux',architecture:'arm64',node:'v26.8.2',playwright:require('./package-lock.json').packages[''].devDependencies['@playwright/test']};
+test('rendering control requires every hosted opt-in and cannot start a local native fixture',async()=>{
+ const env={GITHUB_ACTIONS:'true',CI:'true',ACCESSWEAVER_BROWSER_SHADOW:'1',ACCESSWEAVER_JOB_CPU_ACCOUNTING:'required'};assert.equal(D.allowed(env,'linux'),true);for(const key of Object.keys(env))assert.equal(D.allowed({...env,[key]:undefined},'linux'),false);for(const platform of ['win32','darwin','freebsd','openbsd'])assert.equal(D.allowed(env,platform),false);await assert.rejects(D.run(),D.allowed()?/Test-runner browser fixture required/:/Explicit hosted Linux/);
+});
+test('both Linux opt-in branches and Windows reject before native lifecycle dependencies',async()=>{
+ const source=await fs.readFile(path.join(__dirname,'browser-shadow-control.cjs'),'utf8'),env={GITHUB_ACTIONS:'true',CI:'true',ACCESSWEAVER_BROWSER_SHADOW:'1',ACCESSWEAVER_JOB_CPU_ACCOUNTING:'required'};
+ for(const [platform,flags,expected] of [['linux',env,/Test-runner browser fixture required/],['linux',{},/Explicit hosted Linux/],['win32',env,/Explicit hosted Linux/]]){let calls=0;const context={module:{exports:{}},process:{platform,env:flags},require:name=>name==='node:assert/strict'?assert:name==='node:child_process'?{spawn(){calls++;throw Error('Native execution prohibited')},execFileSync(){calls++;throw Error('Native execution prohibited')}}:{}};vm.runInNewContext(source,context,{timeout:1000});await assert.rejects(context.module.exports.run(),expected);assert.equal(calls,0)}
+});
+test('the fixed intervention changes box-shadow only and accepts no arbitrary source variant',()=>{
+ assert.deepEqual(D.variants,['original','without-core-and-modal-shadow','without-other-decorative-shadows','without-box-shadow']);assert.equal(D.styles.original,'/* owned box-shadow control: original */');assert.equal(D.styles['without-box-shadow'],'*,*::before,*::after{box-shadow:none!important}');for(const value of ['private','none',null,{},'original;alert(1)'])assert.throws(()=>D.markerSource(value));assert.notEqual(digest(D.markerSource('original')),digest(D.markerSource('without-box-shadow')));
+});
+test('parser insertion retains every original HTML byte and requires one correctly ordered source boundary',async()=>{
+ const original=await fs.readFile(path.join(__dirname,'../../web/index.html'),'utf8'),modified=D.instrumentDocument(original);assert.equal(modified.replace(D.headInsertion,''),original);assert.equal(modified.split(D.headInsertion).length,2);assert.ok(modified.indexOf(D.controlStylesheetPath)<modified.indexOf(D.controlMarkerPath)&&modified.indexOf(D.controlMarkerPath)<modified.indexOf(D.documentBoundary));assert.ok(!/<script(?![^>]*\bsrc=)/.test(D.headInsertion));
+ for(const value of ['',tinyDocument.replace(D.documentBoundary,''),tinyDocument+D.documentBoundary,tinyDocument.replace('<meta charset="utf-8">',''),D.instrumentDocument(tinyDocument),tinyDocument.replace('<body>',''),tinyDocument+' '.repeat(1048576)])assert.throws(()=>D.instrumentDocument(value));
+});
+test('rewriting requires the actual source body and retains every original security header with corrected framing',async()=>{
+ const headers={...D.securityHeaders,'content-type':'text/html; charset=utf-8','content-length':String(Buffer.byteLength(tinyDocument)),'accept-ranges':'bytes'};const response={status:()=>200,headers:()=>headers,body:async()=>Buffer.from(tinyDocument)},result=await D.prepareDocumentResponse(response,tinyDocument);assert.equal(result.body,D.instrumentDocument(tinyDocument));assert.equal(result.headers['content-length'],String(Buffer.byteLength(result.body)));for(const [k,v] of Object.entries(headers))if(k!=='content-length')assert.equal(result.headers[k],v);
+ for(const name of Object.keys(D.securityHeaders)){const changed={...headers,[name]:'private'};assert.equal(D.securityHeadersMatch(changed),false);await assert.rejects(D.prepareDocumentResponse({...response,headers:()=>changed},tinyDocument))}
+ await assert.rejects(D.prepareDocumentResponse({...response,status:()=>302},tinyDocument));await assert.rejects(D.prepareDocumentResponse({...response,body:async()=>Buffer.from('wrong source')},tinyDocument));assert.deepEqual(headers['content-length'],String(Buffer.byteLength(tinyDocument)));
+});
+test('external marker proves parsed stylesheet rules before body construction without callbacks or private reads',()=>{
+ for(const variant of D.variants){const h=markerHarness(variant),state=h.capture();assert.deepEqual(state,{installed:true,attached:true,hrefMatches:true,sheetReady:true,bodyAbsentAtMarker:true,readyAtMs:5,failed:false});assert.ok(!JSON.stringify(state).includes('SYNTHETIC_PRIVATE_CANARY'))}
+});
+test('missing, disabled, foreign-owned or incorrect stylesheet rules cannot provide a readiness proof',()=>{
+ for(const options of [{missingNode:true},{missingSheet:true},{wrongOwner:true},{disabled:true},{missingRule:true},{wrongValue:true},{wrongPriority:true},{wrongSelector:true}]){const state=markerHarness('without-box-shadow',options).capture();assert.equal(state.sheetReady,false);const v=valid();v.styleState=state;assert.equal(D.complete(v),false)}
+});
+test('body-already-present, invalid clocks and private exceptions remain explicit incomplete marker observations',()=>{
+ const body=markerHarness('original',{bodyPresent:true}).capture();assert.equal(body.bodyAbsentAtMarker,false);for(const options of [{now:NaN},{now:Infinity},{now:-1},{privateError:true}]){const state=markerHarness('original',options).capture();assert.equal(state.failed,true);const v=valid();v.styleState=state;assert.equal(D.complete(v),false);assert.ok(!JSON.stringify(state).includes('SYNTHETIC_PRIVATE_CANARY'))}
+});
+test('marker capture detects detached and redirected owned stylesheet nodes',()=>{
+ for(const change of [h=>h.node.parentNode=null,h=>h.attrs.href='/changed']){const h=markerHarness('original');change(h);const v=valid();v.styleState=h.capture();assert.equal(D.complete(v),false)}
+});
+test('only exact owned root and fixture resource URLs may be routed',()=>{
+ for(const [pattern,pathValue] of [[D.documentPattern,'/'],[D.controlPattern,D.controlStylesheetPath],[D.markerPattern,D.controlMarkerPath]]){assert.equal(pattern.test('http://127.0.0.1:1234'+pathValue),true);for(const value of ['file:///private','https://127.0.0.1:1234'+pathValue,'http://example.com'+pathValue,'http://private@127.0.0.1:1234'+pathValue,'http://127.0.0.1:1234'+pathValue+'?private','http://127.0.0.1:1234'+pathValue+'#private','http://127.0.0.1:1234/app.js','http://127.0.0.1:1234/app.css','http://127.0.0.1:1234/api/v1/profiles'])assert.equal(pattern.test(value),false)}
+});
+test('fixed style probes inspect visible controls and the open editor and return only booleans',()=>{
+ const selectors={startup:['.core-symbol','.brand-mark','.btn-primary','.online-dot','.topbar-secure-dot','.orbit-node','.nav-item.active'],editor:['#editor-modal .modal-card']};for(const variant of D.variants)for(const phase of ['startup','editor']){const queries=[],value=vm.runInNewContext('('+D.shadowProjection.toString()+')('+JSON.stringify({variant,phase})+')',{document:{querySelector(s){queries.push(s);return {selector:s,private:'SYNTHETIC_PRIVATE_CANARY'}}},getComputedStyle(node){const none=expectedRemoval[variant][phase][selectors[phase].indexOf(node.selector)];return {boxShadow:none?'none':'0px 0px 50px black'}}});assert.deepEqual(Array.from(value),selectors[phase].map(()=>true));assert.deepEqual(queries,selectors[phase]);assert.ok(!JSON.stringify(value).includes('SYNTHETIC_PRIVATE_CANARY'))}
+});
+test('completion requires source and policy proofs, parser marker, exact request counts and original acceptance operations',()=>{
+ D.validate(valid());assert.equal(D.complete(valid()),true);const earlyEmptyFrame=valid();earlyEmptyFrame.timing.startup.readyObservation.firstFrameMs=1;assert.equal(D.complete(earlyEmptyFrame),true);
+ for(const change of [v=>v.documentSourceMatched=false,v=>v.documentSecurityHeadersPreserved=false,v=>v.documentRequests=0,v=>v.controlStylesheetRequests=2,v=>v.controlMarkerRequests=0,v=>v.profilesRendered=255,v=>v.timing.editor.pop(),v=>v.timing.startup.resources.appScript=null,v=>v.timing.startup.resources.stylesheet=null,v=>v.timing.startupJobCpu=null,v=>v.styleState.bodyAbsentAtMarker=false,v=>v.styleState.sheetReady=false,v=>v.styleState.readyAtMs=20,v=>v.shadowChecks.startup[0]=false,v=>v.shadowChecks.editor[0]=false,v=>v.browserChecks.afterEditor=false,v=>v.jobCpuFailureStage=1,v=>v.cleanup.fixtureRemoved=false]){const v=valid();change(v);assert.equal(D.complete(v),false)}
+});
+test('closed schema rejects private fields, malformed marker data and forged numeric timings',()=>{
+ for(const change of [v=>v.private='SYNTHETIC_PRIVATE_CANARY',v=>v.styleState.private='SYNTHETIC_PRIVATE_CANARY',v=>v.styleState.readyAtMs=Infinity,v=>v.documentSourceMatched=1,v=>v.controlMarkerRequests=3,v=>v.shadowChecks.startup.push(true),v=>v.timing.editor[0].totalMs=999]){const v=valid();change(v);assert.throws(()=>D.validate(v))}
+});
+test('partial report binds source, document, marker and CSS hashes without private data or qualification',async t=>{
+ const root=await fixture(t),v=D.empty(),writing=D.writeReport(root,'a'.repeat(40),null,'webkit','arm64','original',v,environment);v.private='SYNTHETIC_PRIVATE_CANARY';assert.equal(await writing,false);const file=path.join(root,'build/browser-shadow/status.json'),raw=await fs.readFile(file,'utf8'),r=JSON.parse(raw);assert.equal(r.schemaVersion,4);assert.equal(r.documentSHA256,digest(D.instrumentDocument(tinyDocument)));assert.equal(r.markerSHA256,digest(D.markerSource('original')));assert.equal(r.overrideSHA256,digest(D.styles.original));assert.equal(r.applicationDocumentModified,true);assert.equal(r.applicationScriptIntercepted,false);assert.equal(r.applicationStylesheetIntercepted,false);assert.equal(r.apiIntercepted,false);assert.equal(r.orderingProof,'parser-stylesheet-marker-before-body');for(const key of ['qualificationCredit','workingDaySoakQualified','nativeInstalledQualified','productionQualificationComplete'])assert.equal(r[key],false);assert.ok(!raw.includes(root)&&!raw.includes('SYNTHETIC_PRIVATE_CANARY')&&!raw.includes('fixed synthetic public source'));await assert.rejects(D.writeReport(root,'a'.repeat(40),null,'webkit','arm64','original',D.empty(),environment),{code:'EEXIST'});
+});
+test('complete synthetic publication requires exact native artifact identity and remains diagnostic only',async t=>{
+ const root=await fixture(t),binary=path.join(root,'build/browser-tests/accessweaver');await fs.mkdir(path.dirname(binary),{recursive:true});await fs.writeFile(binary,'synthetic binary bytes never executed');await assert.rejects(D.writeReport(root,'a'.repeat(40),'b'.repeat(64),'webkit','arm64','original',valid(),environment));assert.equal(await D.writeReport(root,'a'.repeat(40),digest('synthetic binary bytes never executed'),'webkit','arm64','without-box-shadow',valid(),environment),true);const raw=await fs.readFile(path.join(root,'build/browser-shadow/status.json'),'utf8'),r=JSON.parse(raw);assert.equal(r.complete,true);assert.equal(r.qualificationCredit,false);assert.equal(r.productionQualificationComplete,false);assert.equal(Object.keys(r.sourceSHA256).length,D.sources.length);assert.ok(Buffer.byteLength(raw)<=32768);
+});
+test('public report output refuses a redirected directory',async t=>{
+ const root=await fixture(t),target=path.join(root,'redirect');await fs.mkdir(target);await fs.mkdir(path.join(root,'build'),{recursive:true});await fs.symlink(target,path.join(root,'build/browser-shadow'),process.platform==='win32'?'junction':'dir');await assert.rejects(D.writeReport(root,'a'.repeat(40),null,'webkit','arm64','original',D.empty(),environment));assert.deepEqual(await fs.readdir(target),[]);
+});
+
+// The rendering control requires all historical shadow surfaces to be present.
+test('fixed shadow groups cover the historical stylesheet and identify a border-only stylesheet', async () => {
+ const coreAndModal = '.core-symbol,.modal-card';
+ const otherDecoration = '.brand-mark,.online-dot,.topbar-secure-dot,.btn-primary,.orbit-node,#toast,.sidebar';
+ const classicCSS = [
+  coreAndModal + '{box-shadow: 0 0 20px black}',
+  otherDecoration + '{box-shadow: 0 0 10px black}',
+  '.btn-primary:hover {box-shadow: 0 0 15px black}',
+  '.nav-item.active,.profile-active {box-shadow: inset 2px 0 black}',
+ ].join('\n');
+
+ assert.equal(D.styles['without-core-and-modal-shadow'], coreAndModal + '{box-shadow:none!important}');
+ assert.equal(D.styles['without-other-decorative-shadows'], otherDecoration + '{box-shadow:none!important}');
+ assert.equal(D.matchesShadowFixture(classicCSS), true);
+ assert.equal(D.matchesShadowFixture('.nav-item.active {border-inline-start-color: black}'), false);
+ assert.throws(() => D.matchesShadowFixture(classicCSS.replace('.core-symbol,', '')), /Unexpected shadow fixture stylesheet/);
+ assert.throws(() => D.matchesShadowFixture(classicCSS + '\n.other {box-shadow: 0 0 1px black}'), /Unexpected shadow fixture stylesheet/);
+
+ const currentCSS = await fs.readFile(path.join(__dirname, '../../web/app.css'), 'utf8');
+ assert.doesNotThrow(() => D.matchesShadowFixture(currentCSS));
+});
+test('a computed shadow from the wrong surface family prevents an accepted intervention',()=>{
+ for(const variant of D.variants)for(const phase of ['startup','editor']){
+  const checks=vm.runInNewContext('('+D.shadowProjection.toString()+')('+JSON.stringify({variant,phase})+')',{document:{querySelector(s){return {selector:s}}},getComputedStyle(node){const selectors=phase==='startup'?['.core-symbol','.brand-mark','.btn-primary','.online-dot','.topbar-secure-dot','.orbit-node','.nav-item.active']:['#editor-modal .modal-card'],expected=expectedRemoval[variant][phase][selectors.indexOf(node.selector)];return {boxShadow:expected?'0px 0px 10px black':'none'}}});assert.equal(Array.from(checks).some(Boolean),false);
+ }
+});
+
+test('marker accepts equivalent optional universal pseudo selectors and rejects changed selector coverage',()=>{
+ for(const selectorText of ['*, ::before, ::after','*, *::before, *::after','*, *::before, ::after'])assert.equal(markerHarness('without-box-shadow',{selectorText}).capture().sheetReady,true);
+ for(const selectorText of ['html, ::before, ::after','*, .before, ::after','*, ::before, ::after, .foreign','|*, ::before, ::after','*, *::before.foreign, ::after','*, ::after, ::before'])assert.equal(markerHarness('without-box-shadow',{selectorText}).capture().sheetReady,false);
+ for(const variant of ['without-core-and-modal-shadow','without-other-decorative-shadows'])assert.equal(markerHarness(variant,{selectorText:'*, ::before, ::after'}).capture().sheetReady,false);
+});

@@ -231,6 +231,11 @@ func TestTrackedRunPolicyRevocationRetainsActualWait(t *testing.T) {
 }
 
 func TestTrackedRunResolvesSignalsBeforePublishingImmediateExit(t *testing.T) {
+	report := func(t *testing.T, phase string) {
+		t.Run("lifetime-diagnostic/"+phase, func(t *testing.T) {
+			t.Error("source-known signal ordering phase failed")
+		})
+	}
 	for _, outcome := range []string{"accepted", "failed", "already-done"} {
 		t.Run(outcome, func(t *testing.T) {
 			p, root := trackedFixture(t)
@@ -265,6 +270,7 @@ func TestTrackedRunResolvesSignalsBeforePublishingImmediateExit(t *testing.T) {
 			}
 			err = manager.stop(interrupt, func(*os.Process) error { return signalErr }, 3*time.Second, time.Second)
 			if earlyPublication {
+				report(t, "fixture-terminal-publication")
 				t.Fatal("terminal result published before signal outcome resolved")
 			}
 			if outcome == "failed" {
@@ -274,14 +280,17 @@ func TestTrackedRunResolvesSignalsBeforePublishingImmediateExit(t *testing.T) {
 					}
 				} else {
 					if !errors.Is(err, ErrProcessCleanupPending) || !errors.Is(run.PendingError(), ErrProcessCleanupPending) {
+						report(t, "fixture-cleanup-fault")
 						t.Fatal("failed signal lost retained cleanup fault")
 					}
 					if err := manager.RetryCleanup(run); err != nil {
+						report(t, "fixture-cleanup-retry")
 						t.Fatal("failed signal cleanup retry failed")
 					}
 				}
 			}
 			if outcome != "failed" && err != nil {
+				report(t, "fixture-graceful-stop")
 				t.Fatal(err)
 			}
 			result := waitTracked(t, run)

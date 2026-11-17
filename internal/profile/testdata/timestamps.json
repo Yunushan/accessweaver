@@ -1,0 +1,395 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "omitted",
+      "present": false,
+      "value": null,
+      "accepted": true
+    },
+    {
+      "id": "optional-null",
+      "present": true,
+      "value": null,
+      "accepted": true
+    },
+    {
+      "id": "utc",
+      "present": true,
+      "value": "2026-11-01T12:34:56Z",
+      "accepted": true
+    },
+    {
+      "id": "zero-year",
+      "present": true,
+      "value": "0000-01-01T00:00:00Z",
+      "accepted": true
+    },
+    {
+      "id": "zero-time",
+      "present": true,
+      "value": "0001-01-01T00:00:00Z",
+      "accepted": true
+    },
+    {
+      "id": "short-fraction",
+      "present": true,
+      "value": "2026-11-01T12:34:56.1Z",
+      "accepted": true
+    },
+    {
+      "id": "nanoseconds",
+      "present": true,
+      "value": "2026-11-01T12:34:56.123456789Z",
+      "accepted": true
+    },
+    {
+      "id": "long-fraction",
+      "present": true,
+      "value": "2026-11-01T12:34:56.123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890Z",
+      "accepted": true
+    },
+    {
+      "id": "positive-zero",
+      "present": true,
+      "value": "2026-11-01T12:34:56+00:00",
+      "accepted": true
+    },
+    {
+      "id": "negative-zero",
+      "present": true,
+      "value": "2026-11-01T12:34:56-00:00",
+      "accepted": true
+    },
+    {
+      "id": "positive-offset",
+      "present": true,
+      "value": "2026-11-01T12:34:56.123456789+05:45",
+      "accepted": true
+    },
+    {
+      "id": "max-positive-offset",
+      "present": true,
+      "value": "2026-11-01T23:59:59+23:59",
+      "accepted": true
+    },
+    {
+      "id": "max-negative-offset",
+      "present": true,
+      "value": "2026-11-01T00:00:00-23:59",
+      "accepted": true
+    },
+    {
+      "id": "minimum-year-offset",
+      "present": true,
+      "value": "0000-01-01T00:00:00+23:59",
+      "accepted": true
+    },
+    {
+      "id": "maximum-year-offset",
+      "present": true,
+      "value": "9999-12-31T23:59:59-23:59",
+      "accepted": true
+    },
+    {
+      "id": "february-29-0",
+      "present": true,
+      "value": "0000-02-29T12:34:56Z",
+      "accepted": true
+    },
+    {
+      "id": "february-29-1",
+      "present": true,
+      "value": "0001-02-29T12:34:56Z",
+      "accepted": false
+    },
+    {
+      "id": "february-29-4",
+      "present": true,
+      "value": "0004-02-29T12:34:56Z",
+      "accepted": true
+    },
+    {
+      "id": "february-29-99",
+      "present": true,
+      "value": "0099-02-29T12:34:56Z",
+      "accepted": false
+    },
+    {
+      "id": "february-29-100",
+      "present": true,
+      "value": "0100-02-29T12:34:56Z",
+      "accepted": false
+    },
+    {
+      "id": "february-29-400",
+      "present": true,
+      "value": "0400-02-29T12:34:56Z",
+      "accepted": true
+    },
+    {
+      "id": "february-29-1600",
+      "present": true,
+      "value": "1600-02-29T12:34:56Z",
+      "accepted": true
+    },
+    {
+      "id": "february-29-1700",
+      "present": true,
+      "value": "1700-02-29T12:34:56Z",
+      "accepted": false
+    },
+    {
+      "id": "february-29-1900",
+      "present": true,
+      "value": "1900-02-29T12:34:56Z",
+      "accepted": false
+    },
+    {
+      "id": "february-29-2000",
+      "present": true,
+      "value": "2000-02-29T12:34:56Z",
+      "accepted": true
+    },
+    {
+      "id": "february-29-2024",
+      "present": true,
+      "value": "2024-02-29T12:34:56Z",
+      "accepted": true
+    },
+    {
+      "id": "february-29-2026",
+      "present": true,
+      "value": "2026-02-29T12:34:56Z",
+      "accepted": false
+    },
+    {
+      "id": "february-29-2100",
+      "present": true,
+      "value": "2100-02-29T12:34:56Z",
+      "accepted": false
+    },
+    {
+      "id": "february-29-2400",
+      "present": true,
+      "value": "2400-02-29T12:34:56Z",
+      "accepted": true
+    },
+    {
+      "id": "february-29-9999",
+      "present": true,
+      "value": "9999-02-29T12:34:56Z",
+      "accepted": false
+    },
+    {
+      "id": "empty",
+      "present": true,
+      "value": "",
+      "accepted": false
+    },
+    {
+      "id": "calendar-overflow",
+      "present": true,
+      "value": "2026-02-30T12:00:00Z",
+      "accepted": false
+    },
+    {
+      "id": "april-overflow",
+      "present": true,
+      "value": "2026-04-31T12:00:00Z",
+      "accepted": false
+    },
+    {
+      "id": "day-zero",
+      "present": true,
+      "value": "2026-11-00T12:00:00Z",
+      "accepted": false
+    },
+    {
+      "id": "day-32",
+      "present": true,
+      "value": "2026-11-32T12:00:00Z",
+      "accepted": false
+    },
+    {
+      "id": "month-zero",
+      "present": true,
+      "value": "2026-00-01T12:00:00Z",
+      "accepted": false
+    },
+    {
+      "id": "month-13",
+      "present": true,
+      "value": "2026-13-01T12:00:00Z",
+      "accepted": false
+    },
+    {
+      "id": "hour-24",
+      "present": true,
+      "value": "2026-11-01T24:00:00Z",
+      "accepted": false
+    },
+    {
+      "id": "minute-60",
+      "present": true,
+      "value": "2026-11-01T12:60:00Z",
+      "accepted": false
+    },
+    {
+      "id": "leap-second",
+      "present": true,
+      "value": "2026-11-01T12:00:60Z",
+      "accepted": false
+    },
+    {
+      "id": "space-separator",
+      "present": true,
+      "value": "2026-11-01 12:00:00Z",
+      "accepted": false
+    },
+    {
+      "id": "lowercase-t",
+      "present": true,
+      "value": "2026-11-01t12:00:00Z",
+      "accepted": false
+    },
+    {
+      "id": "lowercase-z",
+      "present": true,
+      "value": "2026-11-01T12:00:00z",
+      "accepted": false
+    },
+    {
+      "id": "extended-year",
+      "present": true,
+      "value": "+010000-11-01T12:00:00Z",
+      "accepted": false
+    },
+    {
+      "id": "negative-year",
+      "present": true,
+      "value": "-000001-11-01T12:00:00Z",
+      "accepted": false
+    },
+    {
+      "id": "short-year",
+      "present": true,
+      "value": "026-11-01T12:00:00Z",
+      "accepted": false
+    },
+    {
+      "id": "short-month",
+      "present": true,
+      "value": "2026-1-01T12:00:00Z",
+      "accepted": false
+    },
+    {
+      "id": "short-day",
+      "present": true,
+      "value": "2026-11-1T12:00:00Z",
+      "accepted": false
+    },
+    {
+      "id": "short-hour",
+      "present": true,
+      "value": "2026-11-01T9:00:00Z",
+      "accepted": false
+    },
+    {
+      "id": "positive-hour-24",
+      "present": true,
+      "value": "2026-11-01T12:00:00+24:00",
+      "accepted": false
+    },
+    {
+      "id": "negative-hour-24",
+      "present": true,
+      "value": "2026-11-01T12:00:00-24:00",
+      "accepted": false
+    },
+    {
+      "id": "offset-minute-60",
+      "present": true,
+      "value": "2026-11-01T12:00:00+00:60",
+      "accepted": false
+    },
+    {
+      "id": "missing-offset",
+      "present": true,
+      "value": "2026-11-01T12:00:00",
+      "accepted": false
+    },
+    {
+      "id": "compact-offset",
+      "present": true,
+      "value": "2026-11-01T12:00:00+0000",
+      "accepted": false
+    },
+    {
+      "id": "comma-fraction",
+      "present": true,
+      "value": "2026-11-01T12:00:00,123Z",
+      "accepted": false
+    },
+    {
+      "id": "empty-fraction",
+      "present": true,
+      "value": "2026-11-01T12:00:00.Z",
+      "accepted": false
+    },
+    {
+      "id": "leading-space",
+      "present": true,
+      "value": " 2026-11-01T12:00:00Z",
+      "accepted": false
+    },
+    {
+      "id": "trailing-space",
+      "present": true,
+      "value": "2026-11-01T12:00:00Z ",
+      "accepted": false
+    },
+    {
+      "id": "trailing-newline",
+      "present": true,
+      "value": "2026-11-01T12:00:00Z\n",
+      "accepted": false
+    },
+    {
+      "id": "trailing-crlf",
+      "present": true,
+      "value": "2026-11-01T12:00:00Z\r\n",
+      "accepted": false
+    },
+    {
+      "id": "trailing-nul",
+      "present": true,
+      "value": "2026-11-01T12:00:00Z\u0000",
+      "accepted": false
+    },
+    {
+      "id": "numeric",
+      "present": true,
+      "value": 123,
+      "accepted": false
+    },
+    {
+      "id": "boolean",
+      "present": true,
+      "value": false,
+      "accepted": false
+    },
+    {
+      "id": "object",
+      "present": true,
+      "value": {},
+      "accepted": false
+    },
+    {
+      "id": "array",
+      "present": true,
+      "value": [],
+      "accepted": false
+    }
+  ]
+}

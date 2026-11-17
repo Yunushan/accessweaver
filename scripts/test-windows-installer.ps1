@@ -34,6 +34,12 @@ $setupMachine=Read-InstallerPEMachine $artifact
 if($setupMachine -ne 0x014c){throw 'Unexpected Inno Setup 6 bootstrap machine'}
 $preprocessed=Join-Path $recordPath 'setup-preprocessed.iss'
 $setup=Assert-InstallerSetupScript $preprocessed $TargetArch $version
+$inventory=Join-Path $recordPath 'payload-files.txt'
+$installerSBOM=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($artifact+'.cdx.json'))
+$fingerprints=@($installerSBOM.metadata.component.properties | Where-Object name -CEQ 'accessweaver:windows-staged-payload-sha256')
+if($fingerprints.Count -ne 1 -or (Get-FileHash -LiteralPath $inventory -Algorithm SHA256).Hash -ine $fingerprints[0].value){
+    throw 'Setup payload inventory does not match its SBOM fingerprint'
+}
 $record=[ordered]@{
     schemaVersion=2
     sourceCommit=$identity.commit

@@ -7,9 +7,8 @@ import (
 )
 
 // Keep the already qualified protected-object sequence byte-for-byte compatible
-// as a prefix. Only the public app follows, at its protected quarantine binding.
-// Registrations, receipts and authority metadata are never payload actions.
-func removalAllActions(plan removalPlan) ([]removalFileAction, error) {
+// as a prefix. The public app follows at its protected quarantine binding.
+func removalPayloadActions(plan removalPlan) ([]removalFileAction, error) {
 	actions, e := removalProtectedActions(plan)
 	if e != nil {
 		return nil, e
@@ -43,6 +42,44 @@ func removalAllActions(plan removalPlan) ([]removalFileAction, error) {
 	}
 	if len(actions) > maxRemovalPlanObjects {
 		return nil, errors.New("removal object action budget exceeded")
+	}
+	return actions, nil
+}
+
+// Registration records follow all payload actions. The registration directory stays.
+func removalRegistrationActions(plan removalPlan) ([]removalFileAction, error) {
+	actions, e := removalPayloadActions(plan)
+	if e != nil {
+		return nil, e
+	}
+	for i, root := range plan.Roots {
+		if root.Kind != "registrations" {
+			continue
+		}
+		for j, object := range root.Objects {
+			if object.Kind == "file" {
+				actions = append(actions, removalFileAction{i, j})
+			}
+		}
+	}
+	return actions, nil
+}
+
+// Each receipt has one journal action, represented by its BOM. The validated
+// plan binds the corresponding plist and preserves the existing action prefix.
+func removalAllActions(plan removalPlan) ([]removalFileAction, error) {
+	actions, e := removalRegistrationActions(plan)
+	if e != nil {
+		return nil, e
+	}
+	for i, root := range plan.Roots {
+		if root.Kind == "receipts" {
+			for j, object := range root.Objects {
+				if strings.HasSuffix(object.Path, ".bom") {
+					actions = append(actions, removalFileAction{i, j})
+				}
+			}
+		}
 	}
 	return actions, nil
 }

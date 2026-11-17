@@ -7,6 +7,7 @@ import zipfile
 
 from macos_launcher import archive_name,inspect_launcher,BINARY,MAIN
 from macos_installer import digest
+from release_archive import epoch_from_timestamp, zip_member_timestamp
 from sbom import properties
 from test_macos_deployment import image
 
@@ -23,11 +24,11 @@ class LauncherArchiveContracts(unittest.TestCase):
         report={"schemaVersion":1,"build":identity,"binarySHA256":digest(binary),"binaryBytes":len(binary),"macho":macho_identity(binary,arch),"goBuildMetadata":metadata,"linkerFlags":flags,"unsigned":True,"publisherSignatureVerified":False,"publicApplicationIntegrated":False,"productionQualificationComplete":False}
         data={BINARY:binary,"BUILD-INFO.json":json.dumps(identity).encode(),"SBOM.cdx.json":json.dumps(bom).encode(),"compiler-artifact.json":json.dumps(report).encode(),"licenses/notice.txt":notice}
         return identity,data
-    def archive(self,data,mode=None,duplicate=False):
+    def archive(self,data,mode=None,duplicate=False,stamp=(1980,1,1,0,0,0),member_stamps=None):
         output=io.BytesIO()
         with zipfile.ZipFile(output,"w",compression=zipfile.ZIP_DEFLATED) as z:
             for name,value in data.items():
-                info=zipfile.ZipInfo(name);info.create_system=3;info.external_attr=((mode if mode is not None and name==BINARY else stat.S_IFREG|(0o755 if name==BINARY else 0o644)))<<16;info.compress_type=zipfile.ZIP_DEFLATED;z.writestr(info,value)
+                info=zipfile.ZipInfo(name,(member_stamps or {}).get(name,stamp));info.create_system=3;info.external_attr=((mode if mode is not None and name==BINARY else stat.S_IFREG|(0o755 if name==BINARY else 0o644)))<<16;info.compress_type=zipfile.ZIP_DEFLATED;z.writestr(info,value)
             if duplicate:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore",UserWarning);z.writestr(BINARY,data[BINARY])
@@ -38,6 +39,17 @@ class LauncherArchiveContracts(unittest.TestCase):
             self.assertEqual(result["binarySHA256"],digest(data[BINARY]));self.assertEqual(result["noticesVerified"],1)
             self.assertFalse(result["publicApplicationIntegrated"]);self.assertFalse(result["publisherSignatureVerified"])
             self.assertTrue(archive_name(arch).endswith(".zip"))
+    def test_new_launcher_binds_every_archive_timestamp_to_build_time(self):
+        identity, data = self.fixture()
+        report = json.loads(data["compiler-artifact.json"])
+        report["schemaVersion"] = 2
+        data["compiler-artifact.json"] = json.dumps(report).encode()
+        stamp = zip_member_timestamp(epoch_from_timestamp(identity["builtAt"]))
+        self.assertEqual(inspect_launcher(self.archive(data, stamp=stamp), identity)["build"], identity)
+        for member in data:
+            with self.subTest(member=member), self.assertRaisesRegex(ValueError, "archive member timestamp"):
+                inspect_launcher(self.archive(data, stamp=stamp, member_stamps={member: (1980, 1, 1, 0, 0, 0)}), identity)
+
     def test_changed_missing_extra_alias_and_duplicate_members_fail(self):
         for kind in ("binary","notice","missing","extra","traversal","symlink","writable","duplicate"):
             with self.subTest(kind=kind):

@@ -6,7 +6,7 @@ module.exports = defineConfig({
   expect: { timeout: 10_000 },
   fullyParallel: false, workers: 1, retries: 0, forbidOnly: !!process.env.CI,
   outputDir: path.resolve(__dirname, '../../build/browser-results/artifacts'),
-  reporter: [['list'], ['json', { outputFile: path.resolve(__dirname, '../../build/browser-results/results.json') }]],
+  reporter: [['list'], ['json', { outputFile: path.resolve(__dirname, '../../build/browser-results/results.json') }], ['./suite-status-reporter.cjs']],
   // Traces contain session headers and private-launch URLs. Keep them disabled.
   use: { headless: true, trace: 'off', screenshot: 'only-on-failure', viewport: { width: 1280, height: 900 } },
   projects: [

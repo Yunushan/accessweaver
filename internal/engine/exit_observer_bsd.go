@@ -5,29 +5,45 @@ package engine
 import (
 	"errors"
 	"golang.org/x/sys/unix"
+	"sync"
 	"syscall"
 )
 
 type bsdExitObserver struct {
-	fd, pid int
-	early   bool
+	fd, pid   int
+	early     bool
+	closeOnce sync.Once
+	closeErr  error
+	closeFD   func(int) error
 }
 
 func newExitObserver() (exitObserver, error) {
-	syscall.ForkLock.RLock()
-	fd, err := unix.Kqueue()
-	if err != nil {
-		syscall.ForkLock.RUnlock()
-		return nil, ErrProcessLifecycle
-	}
-	if _, err := unix.FcntlInt(uintptr(fd), unix.F_SETFD, unix.FD_CLOEXEC); err != nil {
-		unix.Close(fd)
-		syscall.ForkLock.RUnlock()
-		return nil, ErrProcessLifecycle
-	}
-	syscall.ForkLock.RUnlock()
-	return &bsdExitObserver{fd: fd}, nil
+	return newBSDExitObserverWith(unix.Kqueue, func(fd int) error { _, err := unix.FcntlInt(uintptr(fd), unix.F_SETFD, unix.FD_CLOEXEC); return err }, unix.Close)
 }
+
+// The callbacks are fixed per call, private to native defaults and source tests.
+// Keep fork exclusion until close-on-exec succeeds or the acquired owner closes.
+func newBSDExitObserverWith(create func() (int, error), configure func(int) error, closeFD func(int) error) (result exitObserver, failure error) {
+	syscall.ForkLock.RLock()
+	defer syscall.ForkLock.RUnlock()
+	fd, err := create()
+	if err != nil {
+		return nil, &processPreparationFailure{category: ErrProcessLifecycle, cause: err}
+	}
+	owner := &bsdExitObserver{fd: fd, closeFD: closeFD}
+	retained := false
+	defer func() {
+		if !retained {
+			failure = preparationCleanupFailure(failure, owner.close(), owner)
+		}
+	}()
+	if err := configure(fd); err != nil {
+		return nil, &processPreparationFailure{category: ErrProcessLifecycle, cause: err}
+	}
+	retained = true
+	return owner, nil
+}
+
 func (o *bsdExitObserver) bind(pid int) error {
 	if pid <= 1 {
 		return ErrProcessOwnershipLost
@@ -83,4 +99,12 @@ func (o *bsdExitObserver) waitExit() error {
 		return nil
 	}
 }
-func (o *bsdExitObserver) close() error { return unix.Close(o.fd) }
+func (o *bsdExitObserver) close() error {
+	o.closeOnce.Do(func() {
+		// If an internal callback panics, a later call cannot falsely claim success
+		// or retry a descriptor number which may already have been reused.
+		o.closeErr = ErrPreparationCleanupUncertain
+		o.closeErr = o.closeFD(o.fd)
+	})
+	return o.closeErr
+}

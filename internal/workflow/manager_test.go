@@ -47,6 +47,7 @@ func TestApplicationPrivilegeReview(t *testing.T) {
 	m := New(t.TempDir())
 	m.platform = "windows"
 	m.requireAdmin = func() error { return nil }
+	m.requireDesktop = func() error { return nil }
 	p, err := m.Preview(Request{Action: "app-repair", Engine: "discord"})
 	if err != nil || p.Ready || len(p.Issues) == 0 {
 		t.Fatalf("combined repair must be blocked: %+v %v", p, err)
@@ -54,13 +55,77 @@ func TestApplicationPrivilegeReview(t *testing.T) {
 	if _, err = m.Start(p.ID); err == nil {
 		t.Fatal("combined repair started without a privilege-separated broker")
 	}
-	for _, action := range []string{"app-install", "app-remove", "app-start"} {
+	for _, action := range []string{"app-install", "app-remove", "app-start", "app-reinstall"} {
 		if _, err = m.Preview(Request{Action: action, Engine: "discord", DNS: "doh"}); err == nil {
 			t.Fatalf("%s accepted machine DNS mutation", action)
 		}
 		p, err = m.Preview(Request{Action: action, Engine: "discord", DNS: "unchanged"})
-		if err != nil || !p.Ready {
+		if err != nil || !p.Ready || p.RequiresAdministrator {
 			t.Fatalf("user application operation: %+v %v", p, err)
+		}
+	}
+}
+
+func TestSplitCordMaintenanceRequiresAdministrator(t *testing.T) {
+	m := New(t.TempDir())
+	m.platform = "windows"
+	m.requireAdmin = func() error { return errors.New("elevated token required") }
+	m.requireDesktop = func() error { return nil }
+	for _, action := range []string{"app-install", "app-remove", "app-start"} {
+		maintenance := action != "app-start"
+		p, err := m.Preview(Request{Action: action, Engine: "splitcord"})
+		if err != nil || p.RequiresAdministrator != maintenance || p.Ready == maintenance {
+			t.Fatalf("unexpected SplitCord %s plan: %+v, %v", action, p, err)
+		}
+		if maintenance {
+			if _, err := m.Start(p.ID); err == nil {
+				t.Fatalf("unelevated SplitCord %s started", action)
+			}
+		}
+	}
+	m.requireAdmin = func() error { return nil }
+	for _, action := range []string{"app-install", "app-remove"} {
+		p, err := m.Preview(Request{Action: action, Engine: "splitcord"})
+		if err != nil || !p.RequiresAdministrator || !p.Ready {
+			t.Fatalf("unexpected elevated SplitCord %s plan: %+v, %v", action, p, err)
+		}
+	}
+}
+
+func TestRepairProxyRequiresReviewedStableReinstall(t *testing.T) {
+	direct := Request{Action: "app-reinstall", Engine: "discord"}
+	proxy := direct
+	proxy.RepairProxy = true
+	directDigest, directErr := direct.PolicyDigest()
+	proxyDigest, proxyErr := proxy.PolicyDigest()
+	if directErr != nil || proxyErr != nil || directDigest == proxyDigest {
+		t.Fatalf("expected distinct valid policy approvals for proxy and direct reinstall: %v, %v", directErr, proxyErr)
+	}
+	for _, request := range []Request{
+		{Action: "app-install", Engine: "discord", RepairProxy: true},
+		{Action: "app-reinstall", Engine: "discord-ptb", RepairProxy: true},
+		{Action: "app-repair", Engine: "discord", RepairProxy: true},
+		{Action: "install", Engine: "byedpi", RepairProxy: true},
+		{Action: "app-reinstall", Engine: "discord", RepairProxy: true, DownloadURL: "https://example.com/installer"},
+		{Action: "app-reinstall", Engine: "discord", RepairProxy: true, DNS: "doh"},
+	} {
+		if err := request.Validate(); err == nil {
+			t.Fatalf("accepted a proxy outside the fixed reinstall request: %+v", request)
+		}
+	}
+}
+
+func TestDiscordReinstallRejectsReplacementInputs(t *testing.T) {
+	for _, request := range []Request{
+		{Action: "app-reinstall", Engine: "discord-ptb"},
+		{Action: "app-reinstall", Engine: "discord", Clean: true},
+		{Action: "app-reinstall", Engine: "discord", DownloadURL: "https://example.com/setup.exe"},
+		{Action: "app-reinstall", Engine: "discord", SHA256: strings.Repeat("a", 64)},
+		{Action: "app-reinstall", Engine: "discord", ConfigPath: "profile.conf"},
+		{Action: "app-reinstall", Engine: "discord", BundlePath: "bundle"},
+	} {
+		if err := request.Validate(); err == nil {
+			t.Fatalf("unsupported reinstall request accepted: %+v", request)
 		}
 	}
 }
@@ -105,6 +170,7 @@ func TestPlansAreImmutableExpiringAndSingleUse(t *testing.T) {
 	input.Applications[0] = "mutated.exe"
 	p.Request.Applications[0] = "also-mutated.exe"
 	m.execute = func(ctx context.Context, dir string, r Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		if r.Applications[0] != "original.exe" {
 			return nil, errors.New("reviewed request changed")
 		}
@@ -140,6 +206,7 @@ func TestConcurrentJobAndCancellationPersistFailure(t *testing.T) {
 	m.platform = "windows"
 	m.requireAdmin = func() error { return nil }
 	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
@@ -193,6 +260,7 @@ func TestShutdownWaitsForDurableOutcomeAndRejectsNewJobs(t *testing.T) {
 		}
 	})
 	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		close(executing)
 		<-ctx.Done()
 		close(finishing)
@@ -251,5 +319,23 @@ func TestByeDPIInstallRejectsReservedOptionsBeforeRetainingPlan(t *testing.T) {
 	}
 	if p, err := m.Preview(Request{Action: "install", Engine: "byedpi", Mode: "service", Args: []string{"--split", "2"}}); err != nil || !p.Ready {
 		t.Fatalf("normal strategy: %+v %v", p, err)
+	}
+}
+
+func TestWireSockCustomInstallerRequiresHash(t *testing.T) {
+	for _, tc := range []struct {
+		url, hash string
+		valid     bool
+	}{
+		{"", "", true},
+		{"https://example.com/installer.exe", "", false},
+		{"https://example.com/installer.exe", strings.Repeat("z", 64), false},
+		{"http://example.com/installer.exe", strings.Repeat("a", 64), false},
+		{"https://example.com/installer.exe", strings.Repeat("a", 64), true},
+	} {
+		r := Request{Action: "install", Engine: "wiresock", DownloadURL: tc.url, SHA256: tc.hash}
+		if err := r.Validate(); (err == nil) != tc.valid {
+			t.Fatalf("custom installer validation valid=%t: %v", tc.valid, err)
+		}
 	}
 }

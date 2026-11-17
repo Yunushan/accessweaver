@@ -54,6 +54,7 @@ func TestDisposableDarwinAPFSExhaustion(t *testing.T) {
 	if os.Getenv("GITHUB_ACTIONS") != "true" || os.Getenv("RUNNER_ENVIRONMENT") != "github-hosted" || os.Getenv("RUNNER_OS") != "macOS" || os.Geteuid() != 0 {
 		t.Fatal("refusing pressure outside a root disposable hosted fixture")
 	}
+	fmt.Println("ACCESSWEAVER_APFS_PHASE=receipt")
 	var receipt darwinStorageReceipt
 	path := os.Getenv("ACCESSWEAVER_DARWIN_STORAGE_RECEIPT")
 	file, err := os.Open(path)
@@ -88,6 +89,7 @@ func TestDisposableDarwinAPFSExhaustion(t *testing.T) {
 	if !ok || !imageInfo.Mode().IsRegular() || imageStat.Nlink != 1 || uint64(imageStat.Dev) != receipt.ImageDev || imageStat.Ino != receipt.ImageIno || imageInfo.Size() > int64(1<<30) {
 		t.Fatal("unverified bounded image")
 	}
+	fmt.Println("ACCESSWEAVER_APFS_PHASE=mount")
 	volume, err := os.Open(receipt.Mount)
 	if err != nil {
 		t.Fatal(err)
@@ -118,6 +120,7 @@ func TestDisposableDarwinAPFSExhaustion(t *testing.T) {
 			}
 		}
 	}
+	fmt.Println("ACCESSWEAVER_APFS_PHASE=write-report")
 	report := map[string]any{"schemaVersion": 1, "sourceCommit": receipt.SourceCommit, "arch": runtime.GOARCH, "platform": "darwin", "goVersion": runtime.Version(), "effectiveUID": os.Geteuid(), "filesystem": "apfs", "mountFlags": fs.Flags, "volumeBytes": fs.Blocks * uint64(fs.Bsize), "deviceDiffersFromHost": true, "cases": cases, "rootMachinePolicyChanged": false, "powerLossQualified": false, "fullStorageFaultQualificationComplete": false, "productionQualificationComplete": false}
 	data, err = json.MarshalIndent(report, "", "  ")
 	if err != nil {
@@ -151,6 +154,7 @@ func exhaustionEnvelope(t *testing.T, revision uint64, key ed25519.PrivateKey, n
 
 func exerciseDarwinExhaustion(t *testing.T, receipt darwinStorageReceipt, operation, record string) map[string]any {
 	t.Helper()
+	fmt.Println("ACCESSWEAVER_APFS_PHASE=prepare-mutation")
 	parent, err := os.MkdirTemp(receipt.Mount, "policy-case-")
 	if err != nil {
 		t.Fatal(err)
@@ -270,11 +274,13 @@ func exerciseDarwinExhaustion(t *testing.T, receipt darwinStorageReceipt, operat
 			t.Fatal("pressure boundary repeated")
 		}
 		fired = true
+		fmt.Println("ACCESSWEAVER_APFS_PHASE=fill-image")
 		filled = fillDarwinImage(t, filler)
 	})
 	if err := release(); err != nil {
 		t.Fatal(err)
 	}
+	fmt.Println("ACCESSWEAVER_APFS_PHASE=reject-write")
 	if !fired || mutationErr == nil || !errors.Is(mutationErr, unix.ENOSPC) || result.Committed {
 		t.Fatal("expected actual ENOSPC without publication", fired, result, mutationErr)
 	}
@@ -282,6 +288,7 @@ func exerciseDarwinExhaustion(t *testing.T, receipt darwinStorageReceipt, operat
 	if err != nil {
 		t.Fatal(err)
 	}
+	fmt.Println("ACCESSWEAVER_APFS_PHASE=preserve-records")
 	actual, readErr := readDarwinSnapshotAt(dir, 0)
 	if err := errors.Join(readErr, dir.Close()); err != nil {
 		t.Fatal(err)
@@ -322,6 +329,7 @@ func exerciseDarwinExhaustion(t *testing.T, receipt darwinStorageReceipt, operat
 	}
 	// APFS may release blocks asynchronously. Wait only for bounded reclamation;
 	// never grow the image, alter mount flags or relax the required write outcome.
+	fmt.Println("ACCESSWEAVER_APFS_PHASE=reclaim-space")
 	deadline := time.Now().Add(15 * time.Second)
 	for {
 		var available unix.Statfs_t
@@ -336,6 +344,7 @@ func exerciseDarwinExhaustion(t *testing.T, receipt darwinStorageReceipt, operat
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+	fmt.Println("ACCESSWEAVER_APFS_PHASE=signed-retry")
 	retried, retryErr := apply(nil)
 	if retryErr != nil || !retried.Committed {
 		t.Fatal("explicit retry failed after restoring image capacity", retried, retryErr)
@@ -344,6 +353,7 @@ func exerciseDarwinExhaustion(t *testing.T, receipt darwinStorageReceipt, operat
 	if err != nil || authority == nil || history == nil || authority.verified.KeyID != expectedKey || history.revision != retried.Revision {
 		t.Fatal("retry lost signature or accepted history", err)
 	}
+	fmt.Println("ACCESSWEAVER_APFS_PHASE=retained-stage")
 	afterStages, err := filepath.Glob(filepath.Join(parent, darwinStagePrefix+"*"))
 	if err != nil || len(afterStages) != len(stages) {
 		t.Fatal("retry changed retained namespace", err)

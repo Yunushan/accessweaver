@@ -34,6 +34,7 @@ import (
 )
 
 var errDarwinOrdinary = errors.New("ordinary Darwin audit fixture unavailable")
+var errDarwinOrdinaryWireTimeout = errors.New("ordinary Darwin audit pipe deadline expired")
 
 const darwinOrdinaryUID = 65534
 const darwinOrdinaryWireLimit = 32 << 10
@@ -57,6 +58,11 @@ const (
 	darwinOrdinaryCheckGate
 	darwinOrdinaryCheckDrain
 	darwinOrdinaryCheckCleanup
+	darwinOrdinaryCheckIPCEndpoints
+	darwinOrdinaryCheckIPCRequest
+	darwinOrdinaryCheckIPCReply
+	darwinOrdinaryCheckIPCReplyTimeout
+	darwinOrdinaryCheckIPCBinding
 )
 
 func (check darwinOrdinaryCheck) label() string {
@@ -81,6 +87,16 @@ func (check darwinOrdinaryCheck) label() string {
 		return "worker-launch"
 	case darwinOrdinaryCheckIPC:
 		return "worker-ipc"
+	case darwinOrdinaryCheckIPCEndpoints:
+		return "worker-ipc-endpoints"
+	case darwinOrdinaryCheckIPCRequest:
+		return "worker-ipc-request"
+	case darwinOrdinaryCheckIPCReply:
+		return "worker-ipc-reply"
+	case darwinOrdinaryCheckIPCReplyTimeout:
+		return "worker-ipc-reply-timeout"
+	case darwinOrdinaryCheckIPCBinding:
+		return "worker-ipc-binding"
 	case darwinOrdinaryCheckGate:
 		return "signal-lifetime-gate"
 	case darwinOrdinaryCheckDrain:
@@ -245,10 +261,64 @@ func darwinOrdinaryOpenGate(stage string) (file *os.File, failure error) {
 
 var darwinOrdinaryRetainedGates []*os.File
 
+const darwinOrdinaryProgressPrefix = "accessweaver-ordinary-worker-phase:"
+
+var darwinOrdinaryWorkerPhases = append(append([]string{"bootstrap"}, darwinCommandCaseIDs...), "reply")
+
+func darwinOrdinaryWorkerPhase(phase string) {
+	_, _ = io.WriteString(os.Stderr, darwinOrdinaryProgressPrefix+phase+"\n")
+}
+
 type darwinOrdinaryDiscard struct {
 	mu        sync.Mutex
 	remaining int
 	exceeded  bool
+}
+
+type darwinOrdinaryProgress struct {
+	discard darwinOrdinaryDiscard
+	line    [128]byte
+	length  int
+	tooLong bool
+	phase   int // Index into the closed source-owned vocabulary. Starts at -1.
+}
+
+func (p *darwinOrdinaryProgress) Write(data []byte) (int, error) {
+	n, err := p.discard.Write(data)
+	p.discard.mu.Lock()
+	defer p.discard.mu.Unlock()
+	if p.discard.exceeded {
+		return n, err
+	}
+	for _, c := range data {
+		if c == '\n' {
+			if !p.tooLong {
+				for i := p.phase + 1; i < len(darwinOrdinaryWorkerPhases); i++ {
+					if string(p.line[:p.length]) == darwinOrdinaryProgressPrefix+darwinOrdinaryWorkerPhases[i] {
+						p.phase = i
+						break
+					}
+				}
+			}
+			clear(p.line[:p.length])
+			p.length, p.tooLong = 0, false
+		} else if p.length < len(p.line) {
+			p.line[p.length] = c
+			p.length++
+		} else {
+			p.tooLong = true
+		}
+	}
+	return n, err
+}
+
+func (p *darwinOrdinaryProgress) latest() string {
+	p.discard.mu.Lock()
+	defer p.discard.mu.Unlock()
+	if p.phase < 0 || p.discard.exceeded {
+		return ""
+	}
+	return darwinOrdinaryWorkerPhases[p.phase]
 }
 
 func (d *darwinOrdinaryDiscard) Write(data []byte) (int, error) {
@@ -336,6 +406,9 @@ func darwinOrdinaryReadWire(file *os.File, output any, budget time.Duration) err
 	}
 	data, err := io.ReadAll(io.LimitReader(file, darwinOrdinaryWireLimit+1))
 	defer clear(data)
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		return errDarwinOrdinaryWireTimeout
+	}
 	if err != nil {
 		return errDarwinOrdinary
 	}
@@ -483,19 +556,41 @@ func darwinOrdinaryPrivate(path string, directory bool, owner uint32) (os.FileIn
 	return info, nil
 }
 
+// os/exec clears FD_CLOEXEC on ExtraFiles for the worker's initial exec.
+// The worker owns both endpoints and must close them on a subsequent exec.
+func darwinOrdinaryCloseOnExec(descriptor int) error {
+	flags, err := unix.FcntlInt(uintptr(descriptor), unix.F_GETFD, 0)
+	if err != nil {
+		return err
+	}
+	_, err = unix.FcntlInt(uintptr(descriptor), unix.F_SETFD, flags|unix.FD_CLOEXEC)
+	return err
+}
+
 func ordinaryDarwinWorker() int {
+	darwinOrdinaryWorkerPhase("bootstrap")
 	for descriptor, direction := range map[int]int{3: unix.O_RDONLY, 4: unix.O_WRONLY} {
 		var stat unix.Stat_t
 		flags, err := unix.FcntlInt(uintptr(descriptor), unix.F_GETFL, 0)
-		if unix.Fstat(descriptor, &stat) != nil || stat.Mode&unix.S_IFMT != unix.S_IFIFO || err != nil || flags&unix.O_ACCMODE != direction || unix.SetNonblock(descriptor, true) != nil {
-			return 91
+		if unix.Fstat(descriptor, &stat) != nil || stat.Mode&unix.S_IFMT != unix.S_IFIFO || err != nil || flags&unix.O_ACCMODE != direction || unix.SetNonblock(descriptor, true) != nil ||
+			darwinOrdinaryCloseOnExec(descriptor) != nil {
+			if descriptor == 3 {
+				return int(darwinOrdinaryExitRequestDescriptor)
+			}
+			return int(darwinOrdinaryExitReplyDescriptor)
 		}
 	}
 	requestFile := os.NewFile(3, "ordinary-request")
 	replyFile := os.NewFile(4, "ordinary-reply")
 	var request darwinOrdinaryRequest
-	if requestFile == nil || replyFile == nil || darwinOrdinaryReadWire(requestFile, &request, 15*time.Second) != nil || requestFile.Close() != nil {
-		return 91
+	if requestFile == nil || replyFile == nil {
+		return int(darwinOrdinaryExitWireFiles)
+	}
+	if darwinOrdinaryReadWire(requestFile, &request, 15*time.Second) != nil {
+		return int(darwinOrdinaryExitRequestRead)
+	}
+	if requestFile.Close() != nil {
+		return int(darwinOrdinaryExitRequestClose)
 	}
 	reply := darwinOrdinaryReply{Version: 1, Nonce: request.Nonce, PID: os.Getpid()}
 	valid := request.Version == 1 && len(request.Nonce) == 32 && request.WorkerPID == os.Getpid() && len(request.SourceCommit) == 40 && darwinOrdinaryHash(request.TestImageSHA256) && request.TestImageSHA256 == request.WorkerImageSHA256
@@ -549,10 +644,17 @@ func ordinaryDarwinWorker() int {
 	if lifetime != nil && lifetime.Close() != nil {
 		reply.Lifecycle = false
 	}
+	darwinOrdinaryWorkerPhase("reply")
 	writeErr := darwinOrdinaryWriteWire(replyFile, reply)
 	closeErr := replyFile.Close()
 	mask := uint64(1)<<uint(len(darwinCommandCaseIDs)) - 1
-	if writeErr != nil || closeErr != nil || !reply.Identity || !reply.Home || !reply.Image || !reply.Backend || !reply.Lifecycle || reply.Executed != mask || reply.Passed != mask {
+	if writeErr != nil {
+		return int(darwinOrdinaryExitReplyWrite)
+	}
+	if closeErr != nil {
+		return int(darwinOrdinaryExitReplyClose)
+	}
+	if !reply.Identity || !reply.Home || !reply.Image || !reply.Backend || !reply.Lifecycle || reply.Executed != mask || reply.Passed != mask {
 		return 92
 	}
 	return 0
@@ -646,13 +748,15 @@ type darwinOrdinaryOwned struct {
 	digest string
 }
 type ordinaryDarwinFixture struct {
-	scope      *darwinOrdinaryScope
-	owned      []darwinOrdinaryOwned
-	request    darwinOrdinaryRequest
-	preserve   bool
-	gate       *os.File
-	retainGate bool
-	phase      darwinOrdinaryCheck
+	scope       *darwinOrdinaryScope
+	owned       []darwinOrdinaryOwned
+	request     darwinOrdinaryRequest
+	preserve    bool
+	gate        *os.File
+	retainGate  bool
+	workerExit  darwinOrdinaryWorkerExit
+	workerPhase string
+	phase       darwinOrdinaryCheck
 }
 
 func (f *ordinaryDarwinFixture) parent() *os.File { return f.scope.files[len(f.scope.files)-1] }
@@ -1146,8 +1250,14 @@ func (f *ordinaryDarwinFixture) run() (reply darwinOrdinaryReply, failure error)
 	child.Env = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "LANG=C", "LC_ALL=C", "TZ=UTC"}
 	child.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: darwinOrdinaryUID, Gid: darwinOrdinaryUID, Groups: []uint32{}}, Setpgid: true}
 	child.ExtraFiles = []*os.File{requestRead, replyWrite}
-	stdout, stderr := &darwinOrdinaryDiscard{remaining: 1 << 20}, &darwinOrdinaryDiscard{remaining: 1 << 20}
+	stdout := &darwinOrdinaryDiscard{remaining: 1 << 20}
+	stderr := &darwinOrdinaryProgress{discard: darwinOrdinaryDiscard{remaining: 1 << 20}, phase: -1}
 	child.Stdout, child.Stderr = stdout, stderr
+	defer func() {
+		if failure != nil {
+			f.workerPhase = stderr.latest()
+		}
+	}()
 	if child.Start() != nil {
 		closeAll()
 		return reply, errDarwinOrdinary
@@ -1172,7 +1282,24 @@ func (f *ordinaryDarwinFixture) run() (reply darwinOrdinaryReply, failure error)
 		// Kill is issued before the sole Wait begins; no released/reused PID race.
 		_ = child.Process.Kill()
 		if f.holdGateExclusive() == nil {
-			_ = f.waitChild(child)
+			var exit *exec.ExitError
+			if errors.As(f.waitChild(child), &exit) {
+				// The sole Wait returned this owned worker's actual status.
+				// Unknown exits and signals never become projected diagnostics.
+				f.workerExit = darwinOrdinaryWorkerExit(exit.ExitCode())
+			}
+		}
+		switch {
+		case endpointErr != nil:
+			f.phase = darwinOrdinaryCheckIPCEndpoints
+		case writeErr != nil:
+			f.phase = darwinOrdinaryCheckIPCRequest
+		case errors.Is(readErr, errDarwinOrdinaryWireTimeout):
+			f.phase = darwinOrdinaryCheckIPCReplyTimeout
+		case readErr != nil:
+			f.phase = darwinOrdinaryCheckIPCReply
+		default:
+			f.phase = darwinOrdinaryCheckIPCBinding
 		}
 		return reply, errDarwinOrdinary
 	}
@@ -1183,7 +1310,7 @@ func (f *ordinaryDarwinFixture) run() (reply darwinOrdinaryReply, failure error)
 	}
 	f.phase = darwinOrdinaryCheckDrain
 	waitErr := f.waitChild(child)
-	if waitErr != nil || !stdout.clean() || !stderr.clean() || reply.Version != 1 || reply.Nonce != f.request.Nonce || reply.PID != f.request.WorkerPID || !reply.Identity || !reply.Home || !reply.Image || !reply.Backend || !reply.Lifecycle || reply.Executed != mask || reply.Passed != mask || f.checkOwned() != nil {
+	if waitErr != nil || !stdout.clean() || !stderr.discard.clean() || reply.Version != 1 || reply.Nonce != f.request.Nonce || reply.PID != f.request.WorkerPID || !reply.Identity || !reply.Home || !reply.Image || !reply.Backend || !reply.Lifecycle || reply.Executed != mask || reply.Passed != mask || f.checkOwned() != nil {
 		return reply, errDarwinOrdinary
 	}
 	f.preserve = false
@@ -1302,8 +1429,14 @@ func TestDisposableDarwinAuditCommands(t *testing.T) {
 		}
 	} else {
 		t.Error("ordinary Darwin audit worker protocol unavailable")
+		if label := fixture.workerExit.label(); label != "" {
+			t.Errorf("ordinary Darwin audit worker bootstrap failed: %s", label)
+		}
 	}
 	if runErr != nil {
+		if fixture.workerPhase != "" {
+			t.Errorf("ordinary Darwin audit worker last phase: %s", fixture.workerPhase)
+		}
 		t.Errorf("ordinary Darwin audit bootstrap failed: %s", fixture.phase.label())
 	}
 }
@@ -1329,6 +1462,25 @@ func TestDarwinOrdinaryProtocolRejectsAmbiguity(t *testing.T) {
 	discard := &darwinOrdinaryDiscard{remaining: 3}
 	if n, err := discard.Write([]byte("1234")); n != 4 || err != nil || discard.clean() {
 		t.Fatal("ordinary Darwin subprocess output bound lost")
+	}
+}
+
+func TestDarwinOrdinaryProgressRetainsOnlyKnownBoundedPhases(t *testing.T) {
+	report := &darwinOrdinaryProgress{discard: darwinOrdinaryDiscard{remaining: 1024}, phase: -1}
+	_, _ = io.WriteString(report, darwinOrdinaryProgressPrefix+"unknown\n")
+	_, _ = io.WriteString(report, strings.Repeat("x", 128)+darwinOrdinaryProgressPrefix+"reply\n")
+	if got := report.latest(); got != "" {
+		t.Fatal("unknown or oversized phase line admitted")
+	}
+	_, _ = io.WriteString(report, darwinOrdinaryProgressPrefix+"boot")
+	_, _ = io.WriteString(report, "strap\n"+darwinOrdinaryProgressPrefix+"actual-output-alias-admission\n")
+	_, _ = io.WriteString(report, darwinOrdinaryProgressPrefix+"bootstrap\n")
+	if got := report.latest(); got != "actual-output-alias-admission" {
+		t.Fatal("latest closed phase did not survive split or stale output")
+	}
+	_, _ = io.WriteString(report, strings.Repeat("x", 1024))
+	if report.discard.clean() || report.latest() != "" {
+		t.Fatal("overflowed worker output became reportable")
 	}
 }
 

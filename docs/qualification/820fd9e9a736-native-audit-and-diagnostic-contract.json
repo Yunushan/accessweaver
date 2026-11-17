@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "native-windows-audit-and-identity-diagnostic-api-contract",
+  "sourceCommit": "820fd9e9a73632b493d71bef5b414a9170f0f81e",
+  "runID": 43988480743,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/43988480743",
+  "runConclusion": "success",
+  "sourceSHA256": {
+    "cmd/accessweaver/managed_audit_command_stages_test.go": "5f06a0182396cecfc80a880dc32e0d2899c483af8e91a98b7292b9d115df9e69",
+    "cmd/accessweaver/managed_audit_commands_windows_test.go": "9217cbe86c41efbe8b971167204022ea8be9c951c0cba4c05212e20e7b952a1c",
+    "cmd/accessweaver/managed_audit_ordinary_windows_test.go": "48c7b7a45e09095b718ab915470f8ca3d282b7fdbb37b5d8f1b37c0fd4feab09",
+    ".github/workflows/windows-audit-storage.yml": "7a94bd59201cd4ec2c7a27c94a5c2a5046966867997b64a45aefa8dc6cb56789",
+    "internal/fileidentity/native_windows_test.go": "33ca4abbef5e277ee64377248c7b03ee5432aae1952c578529487b7716d9059e",
+    "internal/fileidentity/native_handle_replay_windows_test.go": "76649120811ff39bd480f2b49514e27d3907bf6196eadada8cde286f948872cb"
+  },
+  "providerZIPDigestsVerified": 4,
+  "results": [
+    {
+      "architecture": "amd64",
+      "platform": "windows",
+      "goVersion": "go1.27.4",
+      "commandArtifactID": 14285369481,
+      "commandArtifactSHA256": "d794a8cdf33db9c5828d46cc2c479f72907b2cfd7fa2c453e221020da0320208",
+      "identityArtifactID": 14286273132,
+      "identityArtifactSHA256": "2c9d7eae54a3ff41cdf12bbd32a9d9e96bfbf755a7e2fa297b522b581358e279",
+      "commandTestImageSHA256": "4924641436c638f4060cf2c24a7200deb7ebcfdc459ac5a6359073da285f16a3",
+      "workerImageSHA256": "4924641436c638f4060cf2c24a7200deb7ebcfdc459ac5a6359073da285f16a3",
+      "executedAndPassedCommandCases": 74,
+      "executedAndPassedOrdinaryCases": 15,
+      "passedNativeIdentityCases": 8,
+      "commandCleanupComplete": true,
+      "ordinaryCleanupComplete": true,
+      "ownedJobActiveProcessesAtEnd": 0,
+      "originalIdentityProbeCounts": {
+        "handlesBefore": 117,
+        "handlesAfter": 117,
+        "threadRecordsBefore": 8,
+        "threadRecordsAfter": 8,
+        "gcCyclesBefore": 1,
+        "gcCyclesAfter": 1
+      },
+      "separateDiagnosticApiContractPassed": true,
+      "diagnosticTypeOrder": [
+        "unknown",
+        "process",
+        "thread",
+        "mutant",
+        "event",
+        "section",
+        "semaphore"
+      ],
+      "separateDiagnosticReplayCounts": {
+        "snapshotComplete": true,
+        "handlesBefore": 97,
+        "handlesAfter": 115,
+        "kindsBefore": [
+          71,
+          0,
+          6,
+          2,
+          16,
+          0,
+          2
+        ],
+        "kindsAfter": [
+          83,
+          0,
+          8,
+          2,
+          20,
+          0,
+          2
+        ],
+        "newHandleKinds": [
+          12,
+          0,
+          2,
+          0,
+          4,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "architecture": "arm64",
+      "platform": "windows",
+      "goVersion": "go1.27.4",
+      "commandArtifactID": 14286008930,
+      "commandArtifactSHA256": "816908f0718ea830bd3ede183893fc4805f64116f691d9ec6e6aca0f6ef07909",
+      "identityArtifactID": 14286776985,
+      "identityArtifactSHA256": "311280c7c00ab597359fbec40d6eece0b77e32faee3fd3dae73d9c761b2a2186",
+      "commandTestImageSHA256": "392123e2ad0433a29c10db1e712cc2243f4e6d33cbc7375a8f299d2361eb4a09",
+      "workerImageSHA256": "392123e2ad0433a29c10db1e712cc2243f4e6d33cbc7375a8f299d2361eb4a09",
+      "executedAndPassedCommandCases": 74,
+      "executedAndPassedOrdinaryCases": 15,
+      "passedNativeIdentityCases": 8,
+      "commandCleanupComplete": true,
+      "ordinaryCleanupComplete": true,
+      "ownedJobActiveProcessesAtEnd": 0,
+      "originalIdentityProbeCounts": {
+        "handlesBefore": 120,
+        "handlesAfter": 120,
+        "threadRecordsBefore": 8,
+        "threadRecordsAfter": 8,
+        "gcCyclesBefore": 1,
+        "gcCyclesAfter": 1
+      },
+      "separateDiagnosticApiContractPassed": true,
+      "diagnosticTypeOrder": [
+        "unknown",
+        "process",
+        "thread",
+        "mutant",
+        "event",
+        "section",
+        "semaphore"
+      ],
+      "separateDiagnosticReplayCounts": {
+        "snapshotComplete": true,
+        "handlesBefore": 98,
+        "handlesAfter": 116,
+        "kindsBefore": [
+          72,
+          0,
+          6,
+          2,
+          16,
+          0,
+          2
+        ],
+        "kindsAfter": [
+          84,
+          0,
+          8,
+          2,
+          20,
+          0,
+          2
+        ],
+        "newHandleKinds": [
+          12,
+          0,
+          2,
+          0,
+          4,
+          0,
+          0
+        ]
+      }
+    }
+  ],
+  "limitations": [
+    "This is source-built inert-engine qualification, not a signed installed desktop release or routing/connection qualification.",
+    "The original handle-count probe passes in this cohort. Earlier two-handle increases remain unresolved; no threshold or acceptance criterion changed.",
+    "Diagnostic capture/walk/free/layout is exercised in a separate process after the original identity test. Its counts describe a different runtime warmup context and do not explain the earlier failures.",
+    "The original failure-only replay branch is not entered in this passing cohort; the same replay helper's native API contract is exercised separately."
+  ],
+  "rawJobLogsFetched": false,
+  "productionQualificationComplete": false,
+  "readinessGatesPromoted": []
+}

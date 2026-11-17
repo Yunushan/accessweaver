@@ -188,11 +188,27 @@ func TestAllowlistValidation(t *testing.T) {
 }
 
 func FuzzDecodePolicy(f *testing.F) {
+	f.Add(fuzzPolicyPayload(f, true))
+	f.Add(bytes.Replace(fuzzPolicyPayload(f, false), []byte("2026-11-01T13:00:00Z"), []byte("2026-11-03T13:00:00+24:00"), 1))
+
 	f.Add([]byte(`{"schemaVersion":1,"revision":1,"issuedAt":"2026-11-01T11:00:00Z","expiresAt":"2026-11-01T13:00:00Z","launches":[],"workflows":[]}`))
 	f.Add([]byte(`{"schemaVersion":1,"SchemaVersion":2}`))
 	f.Add([]byte(`null`))
 	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _ = DecodePolicy(data, time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC), 0)
+		before := bytes.Clone(data)
+		policy, err := DecodePolicy(data, fuzzPolicyNow, 0)
+		if !bytes.Equal(data, before) {
+			t.Fatal("policy decoder changed input bytes")
+		}
+		if err == nil {
+			assertFuzzPolicy(t, policy)
+			if _, err := DecodePolicy(data, fuzzPolicyNow, policy.Revision); err == nil {
+				t.Fatal("raw accepted policy replay permitted")
+			}
+			if _, err := DecodePolicy(data, policy.ExpiresAt, 0); err == nil {
+				t.Fatal("raw accepted policy expired permissions permitted")
+			}
+		}
 	})
 }
 
@@ -204,7 +220,16 @@ func FuzzVerifyEnvelope(f *testing.F) {
 	valid, _ := Sign([]byte(`{"schemaVersion":1,"revision":1,"issuedAt":"2026-11-01T11:00:00Z","expiresAt":"2026-11-01T13:00:00Z","launches":[],"workflows":[]}`), private, time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
 	f.Add(valid)
 	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _ = Verify(data, public, time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC), 0)
+		before := bytes.Clone(data)
+		result, err := Verify(data, public, fuzzPolicyNow, 0)
+		if !bytes.Equal(before, data) {
+			t.Fatal("envelope verifier changed input bytes")
+		}
+		if err == nil {
+			assertFuzzVerified(t, data, public, result)
+		} else if result.SignatureValid || result.RuntimeEnforced || result.Policy.Revision != 0 {
+			t.Fatal("rejected envelope published usable verification")
+		}
 	})
 }
 

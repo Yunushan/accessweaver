@@ -1,15 +1,10 @@
 package engine
 
 import (
-	"bufio"
-	"crypto/sha256"
-	"encoding/hex"
+	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -38,19 +33,22 @@ func executableBase(path string) string {
 	return strings.TrimSuffix(strings.ToLower(filepath.Base(path)), ".exe")
 }
 
-func binaryFor(p profile.Profile, d Descriptor) (string, error) {
+func binaryForContext(ctx context.Context, p profile.Profile, d Descriptor) (string, error) {
+	if err := preparationContextError(ctx); err != nil {
+		return "", err
+	}
 	bin := strings.TrimSpace(p.Binary)
 	names := d.ExecutablesFor(runtime.GOOS)
 	if bin == "" {
 		for _, name := range names {
-			if found, err := exec.LookPath(name); err == nil {
+			if found, err := lookupPreviewExecutable(ctx, name); err == nil {
 				bin = found
 				break
 			}
 		}
 		if bin == "" {
 			for _, candidate := range installedCandidates(p.Engine) {
-				if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() {
+				if info, err := statPreviewInput(candidate); err == nil && info.regular {
 					bin = candidate
 					break
 				}
@@ -63,7 +61,7 @@ func binaryFor(p profile.Profile, d Descriptor) (string, error) {
 		if strings.ContainsAny(bin, "/\\") {
 			return "", errors.New("binary must be an absolute path or executable name in PATH")
 		}
-		found, err := exec.LookPath(bin)
+		found, err := lookupPreviewExecutable(ctx, bin)
 		if err != nil {
 			return "", fmt.Errorf("find executable: %w", err)
 		}
@@ -87,31 +85,29 @@ func binaryFor(p profile.Profile, d Descriptor) (string, error) {
 		}
 		return "", fmt.Errorf("%q is not a %s executable for %s; expected %s", base, d.Name, runtime.GOOS, strings.Join(names, ", "))
 	}
-	info, err := os.Stat(bin)
+	info, err := statPreviewInput(bin)
 	if err != nil {
 		return "", fmt.Errorf("read executable: %w", err)
 	}
-	if !info.Mode().IsRegular() {
+	if !info.regular {
 		return "", errors.New("binary must be a regular file")
 	}
-	if runtime.GOOS != "windows" && info.Mode().Perm()&0111 == 0 {
+	if runtime.GOOS != "windows" && !info.unixExecutable {
 		return "", errors.New("binary is not executable; check file permissions")
 	}
 	if p.SHA256 != "" {
-		f, err := os.Open(bin)
+		if err := preparationContextError(ctx); err != nil {
+			return "", err
+		}
+		f, err := openPreviewInput(bin)
 		if err != nil {
 			return "", err
 		}
-		h := sha256.New()
-		_, err = io.Copy(h, f)
-		closeErr := f.Close()
+		digest, err := executableHashContext(ctx, f)
 		if err != nil {
 			return "", err
 		}
-		if closeErr != nil {
-			return "", closeErr
-		}
-		if !strings.EqualFold(hex.EncodeToString(h.Sum(nil)), p.SHA256) {
+		if !strings.EqualFold(digest, p.SHA256) {
 			return "", errors.New("executable SHA-256 mismatch; not launched")
 		}
 	}
@@ -144,16 +140,37 @@ func usesDomainFiles(engine string) bool {
 // Preview does not execute external code, write generated files, or probe the network.
 // Bad schema is an error; missing engine prerequisites are returned as actionable issues.
 func Preview(p profile.Profile, root string) (LaunchPlan, error) {
-	return previewWithGuard(p, root, managed.NewGuard(nil))
+	return PreviewContext(context.Background(), p, root)
+}
+
+func PreviewContext(ctx context.Context, p profile.Profile, root string) (LaunchPlan, error) {
+	return previewWithGuardContext(ctx, p, root, managed.NewGuard(nil))
 }
 func previewWithGuard(p profile.Profile, root string, guard *managed.Guard) (LaunchPlan, error) {
+	return previewWithGuardContext(context.Background(), p, root, guard)
+}
+
+func previewWithGuardContext(ctx context.Context, p profile.Profile, root string, guard *managed.Guard) (LaunchPlan, error) {
+	plan, _, err := previewWithConfigReaderContext(ctx, p, root, guard, readConfigInputContext)
+	return plan, err
+}
+
+func previewWithConfigReader(p profile.Profile, root string, guard *managed.Guard, readConfig func(string) ([]byte, error)) (LaunchPlan, []byte, error) {
+	return previewWithConfigReaderContext(context.Background(), p, root, guard, func(_ context.Context, path string) ([]byte, error) { return readConfig(path) })
+}
+
+func previewWithConfigReaderContext(ctx context.Context, p profile.Profile, root string, guard *managed.Guard, readConfig func(context.Context, string) ([]byte, error)) (LaunchPlan, []byte, error) {
+	var configData []byte
+	if err := preparationContextError(ctx); err != nil {
+		return LaunchPlan{}, nil, err
+	}
 	plan := LaunchPlan{Engine: p.Engine, Platform: runtime.GOOS, Binary: p.Binary, Args: []string{}, Warnings: []string{}, Issues: []string{}, GeneratedFiles: []string{}}
 	if err := p.Validate(); err != nil {
-		return plan, err
+		return plan, nil, err
 	}
 	d, err := Lookup(p.Engine)
 	if err != nil {
-		return plan, err
+		return plan, nil, err
 	}
 	issue := func(s string) { plan.Issues = append(plan.Issues, s) }
 	if !d.Supported(runtime.GOOS) {
@@ -188,7 +205,10 @@ func previewWithGuard(p profile.Profile, root string, guard *managed.Guard) (Lau
 			}
 		}
 	}
-	bin, binErr := binaryFor(p, d)
+	bin, binErr := binaryForContext(ctx, p, d)
+	if canceled := preparationContextError(ctx, binErr); canceled != nil {
+		return plan, nil, canceled
+	}
 	if binErr != nil {
 		issue(binErr.Error())
 	} else {
@@ -200,7 +220,7 @@ func previewWithGuard(p profile.Profile, root string, guard *managed.Guard) (Lau
 	}
 	root, err = filepath.Abs(root)
 	if err != nil {
-		return plan, err
+		return plan, nil, err
 	}
 	include := filepath.Join(root, "generated", p.ID+"-include.txt")
 	exclude := filepath.Join(root, "generated", p.ID+"-exclude.txt")
@@ -214,7 +234,7 @@ func previewWithGuard(p profile.Profile, root string, guard *managed.Guard) (Lau
 	if p.Engine == "wiresock" && len(p.Routing.Applications) > 0 {
 		adapterProfile.ConfigPath = filepath.Join(root, "generated", p.ID+"-wiresock.conf")
 		plan.GeneratedFiles = append(plan.GeneratedFiles, adapterProfile.ConfigPath)
-		plan.Warnings = append(plan.Warnings, "Guided application rules replace AllowedApps/DisallowedApps in a private generated copy. The original tunnel configuration is unchanged.")
+		plan.Warnings = append(plan.Warnings, "Guided application rules replace AllowedApps/DisallowedApps in a generated configuration copy. The original tunnel configuration is unchanged.")
 	}
 	args, warnings, argumentIssues := adapterArgs(adapterProfile, executableBase(plan.Binary), include, exclude)
 	plan.Args = args
@@ -234,8 +254,18 @@ func previewWithGuard(p profile.Profile, root string, guard *managed.Guard) (Lau
 	if p.ConfigPath != "" {
 		if p.Engine != "wiresock" && p.Engine != "sing-box" && p.Engine != "xray" {
 			issue("configPath is only supported by WireSock, sing-box and Xray; use native arguments for other engines")
-		} else if err := inspectConfig(p); err != nil {
-			issue(err.Error())
+		} else {
+			configData, err = readConfig(ctx, p.ConfigPath)
+			if canceled := preparationContextError(ctx, err); canceled != nil {
+				return plan, nil, canceled
+			}
+			if err == nil {
+				err = inspectConfigBytes(p.Engine, configData)
+			}
+			if err != nil {
+				configData = nil
+				issue(err.Error())
+			}
 		}
 	}
 	if p.SHA256 == "" {
@@ -246,46 +276,19 @@ func previewWithGuard(p profile.Profile, root string, guard *managed.Guard) (Lau
 		plan.policyError = err
 		issue(err.Error())
 	}
+	if err := preparationContextError(ctx); err != nil {
+		return plan, nil, err
+	}
 	plan.Ready = len(plan.Issues) == 0
-	return plan, nil
+	return plan, configData, nil
 }
 
 func inspectConfig(p profile.Profile) error {
-	if !filepath.IsAbs(p.ConfigPath) {
-		return errors.New("configPath must be an absolute path to a local file")
-	}
-	fi, err := os.Stat(p.ConfigPath)
+	data, err := readConfigInput(p.ConfigPath)
 	if err != nil {
-		return fmt.Errorf("read configuration: %w", err)
+		return err
 	}
-	if !fi.Mode().IsRegular() || fi.Size() > 4<<20 {
-		return errors.New("configuration must be a regular file no larger than 4 MiB")
-	}
-	f, err := os.Open(p.ConfigPath)
-	if err != nil {
-		return fmt.Errorf("open configuration: %w", err)
-	}
-	defer f.Close()
-	if p.Engine != "wiresock" {
-		return nil
-	}
-	// WireSock supports shell hooks. Reject them so importing a tunnel does not
-	// quietly become a script runner. Never include a line/value in errors (keys).
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		key, _, ok := strings.Cut(scanner.Text(), "=")
-		if !ok {
-			continue
-		}
-		switch strings.ToLower(strings.TrimSpace(key)) {
-		case "preup", "postup", "predown", "postdown":
-			return errors.New("WireSock configuration contains a command hook (PreUp/PostUp/PreDown/PostDown); remove hooks for managed mode")
-		}
-	}
-	if scanner.Err() != nil {
-		return errors.New("could not inspect WireSock configuration")
-	}
-	return nil
+	return inspectConfigBytes(p.Engine, data)
 }
 
 func adapterArgs(p profile.Profile, base, include, exclude string) ([]string, []string, []string) {
@@ -510,10 +513,28 @@ func adapterArgs(p profile.Profile, base, include, exclude string) ([]string, []
 // Prepare verifies all prerequisites again, then materializes only generated data
 // files. It never evaluates a shell command or changes a system proxy/firewall.
 func Prepare(p profile.Profile, root string) (string, []string, error) {
-	return prepareWithGuard(p, root, managed.NewGuard(nil))
+	return PrepareContext(context.Background(), p, root)
+}
+
+// Cancellation stops preparation at operation boundaries; completed generated
+// writes are retained. It cannot interrupt a native call already in progress.
+func PrepareContext(ctx context.Context, p profile.Profile, root string) (string, []string, error) {
+	return prepareWithGuardContext(ctx, p, root, managed.NewGuard(nil))
 }
 func prepareWithGuard(p profile.Profile, root string, guard *managed.Guard) (string, []string, error) {
-	plan, err := previewWithGuard(p, root, guard)
+	return prepareWithGuardContext(context.Background(), p, root, guard)
+}
+
+func prepareWithGuardContext(ctx context.Context, p profile.Profile, root string, guard *managed.Guard) (string, []string, error) {
+	return prepareWithConfigReaderContext(ctx, p, root, guard, readConfigInputContext)
+}
+
+func prepareWithConfigReader(p profile.Profile, root string, guard *managed.Guard, readConfig func(string) ([]byte, error)) (string, []string, error) {
+	return prepareWithConfigReaderContext(context.Background(), p, root, guard, func(_ context.Context, path string) ([]byte, error) { return readConfig(path) })
+}
+
+func prepareWithConfigReaderContext(ctx context.Context, p profile.Profile, root string, guard *managed.Guard, readConfig func(context.Context, string) ([]byte, error)) (string, []string, error) {
+	plan, configData, err := previewWithConfigReaderContext(ctx, p, root, guard, readConfig)
 	if err != nil {
 		return "", nil, err
 	}
@@ -523,13 +544,12 @@ func prepareWithGuard(p profile.Profile, root string, guard *managed.Guard) (str
 	if !plan.Ready {
 		return "", nil, errors.New(strings.Join(plan.Issues, "; "))
 	}
+	if err := preparationContextError(ctx); err != nil {
+		return "", nil, err
+	}
 	if p.Engine == "wiresock" && len(p.Routing.Applications) > 0 {
-		data, err := os.ReadFile(p.ConfigPath)
-		if err != nil {
-			return "", nil, err
-		}
 		var lines []string
-		for _, line := range strings.Split(string(data), "\n") {
+		for _, line := range strings.Split(string(configData), "\n") {
 			key, _, has := strings.Cut(line, "=")
 			if has && (strings.EqualFold(strings.TrimSpace(key), "AllowedApps") || strings.EqualFold(strings.TrimSpace(key), "DisallowedApps")) {
 				continue
@@ -537,9 +557,15 @@ func prepareWithGuard(p profile.Profile, root string, guard *managed.Guard) (str
 			lines = append(lines, line)
 		}
 		text := strings.TrimRight(strings.Join(lines, "\n"), "\r\n") + "\nAllowedApps = " + strings.Join(p.Routing.Applications, ", ") + "\n"
+		if err := preparationContextError(ctx); err != nil {
+			return "", nil, err
+		}
 		if err := profile.AtomicWrite(filepath.Join(root, "generated", p.ID+"-wiresock.conf"), []byte(text)); err != nil {
 			return "", nil, err
 		}
+	}
+	if err := preparationContextError(ctx); err != nil {
+		return "", nil, err
 	}
 	if !usesDomainFiles(p.Engine) {
 		return plan.Binary, plan.Args, nil
@@ -555,9 +581,15 @@ func prepareWithGuard(p profile.Profile, root string, guard *managed.Guard) (str
 		if err != nil {
 			return "", nil, err
 		}
+		if err := preparationContextError(ctx); err != nil {
+			return "", nil, err
+		}
 		if err := profile.AtomicWrite(file, []byte(strings.ToLower(strings.Join(item.values, "\n"))+"\n")); err != nil {
 			return "", nil, err
 		}
+	}
+	if err := preparationContextError(ctx); err != nil {
+		return "", nil, err
 	}
 	return plan.Binary, plan.Args, nil
 }

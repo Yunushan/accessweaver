@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "scope": "local-linux-amd64-core-unit-race-and-static-analysis",
+  "sourceCommit": "57bc58e23c89aea1a418e18d41a1544cbd74816f",
+  "sourceTree": "cb7e25153cf3dfb6a5918e1045487033f64d44d9",
+  "observedAt": "2026-11-16T07:24:24Z",
+  "environment": {
+    "os": "linux",
+    "architecture": "amd64",
+    "runtime": "Ubuntu under WSL2",
+    "source": "immutable Git export",
+    "goVersion": "go1.27.4",
+    "goToolSHA256": "de0ae3e082ce7599eae4fb69fa2ef1e43b8f31ffd3fce62cdf81930aa9005050",
+    "moduleVerificationPassed": true,
+    "testTemporaryStorage": "private local ext4 directory",
+    "disposableAdministrativeFixturesEnabled": false
+  },
+  "checks": [
+    {
+      "command": [
+        "go",
+        "test",
+        "-json",
+        "./...",
+        "-count=1",
+        "-timeout=5m"
+      ],
+      "exitCode": 0,
+      "passedPackages": 29,
+      "passedTestAndSubtestEvents": 1970,
+      "skippedTestEvents": 20,
+      "elapsedSeconds": 30,
+      "privateReportSHA256": "4778e4b31f9077120167c3f110adc97dd26682d634cd52f63d52e68491d96541"
+    },
+    {
+      "command": [
+        "go",
+        "test",
+        "-race",
+        "-json",
+        "./...",
+        "-count=1",
+        "-timeout=6m"
+      ],
+      "exitCode": 0,
+      "passedPackages": 29,
+      "passedTestAndSubtestEvents": 1970,
+      "skippedTestEvents": 20,
+      "elapsedSeconds": 68,
+      "privateReportSHA256": "6b200b2ae32e89f3e505d5570b7ea7b0ababcdc63c59b9605c8acf186af94886"
+    },
+    {
+      "command": [
+        "go",
+        "vet",
+        "./..."
+      ],
+      "exitCode": 0,
+      "privateReportSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "retainedPriorObservation": {
+    "temporaryStorage": "tmpfs",
+    "exitCode": 1,
+    "passedPackages": 28,
+    "passedTestAndSubtestEvents": 1948,
+    "failedTestEvents": 22,
+    "fixedFailureCategory": "ErrJournalStorage",
+    "reason": "The audit journal requires qualified persistent storage and refuses tmpfs.",
+    "privateReportSHA256": "a84d77346f094fe370b3ff365efedbb060d94e15b581098d3c0716866d82f94c",
+    "productionStoragePolicyChanged": false
+  },
+  "limits": [
+    "Local source tests and static analysis only; skipped tests remain unqualified.",
+    "Other architectures and operating systems, installed-product lifecycle, routing, publisher trust and managed endpoints require their own source-bound acceptance.",
+    "Private JSONL reports are retained locally; they are not published or independently attested."
+  ],
+  "productionQualificationComplete": false,
+  "readinessGatesPromoted": []
+}

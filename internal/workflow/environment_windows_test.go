@@ -73,6 +73,7 @@ func TestNativeDiscoveryIgnoresUntrustedEnvironment(t *testing.T) {
 	var result struct {
 		OK   bool `json:"ok"`
 		Data struct {
+			InstallerRecovery          string `json:"installerRecovery"`
 			ManagedRoot                string `json:"managedRoot"`
 			RefreshTask                *bool  `json:"refreshTask"`
 			RefreshTaskInspectionError string `json:"refreshTaskInspectionError"`
@@ -80,6 +81,11 @@ func TestNativeDiscoveryIgnoresUntrustedEnvironment(t *testing.T) {
 	}
 	if err := json.Unmarshal(data, &result); err != nil {
 		t.Fatal(err)
+	}
+	switch result.Data.InstallerRecovery {
+	case "clear", "pending":
+	default:
+		t.Fatal("native discovery could not read the installer recovery marker")
 	}
 	if (result.Data.RefreshTask == nil) != (result.Data.RefreshTaskInspectionError != "") {
 		t.Fatal("discovery confused an unknown scheduled-task state with a known result")

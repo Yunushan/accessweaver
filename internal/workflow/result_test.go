@@ -72,7 +72,10 @@ func TestRejectedResultsRemainDurableAndSerializable(t *testing.T) {
 			m.platform = "windows"
 			m.requireAdmin = func() error { return nil }
 			toolErr := errors.New("fixture tool failed")
-			m.execute = func(context.Context, string, Request) (json.RawMessage, error) { return tc.result, toolErr }
+			m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+				observeWorkflowNoNativeOwners(ctx)
+				return tc.result, toolErr
+			}
 			p, err := m.Preview(Request{Action: "discover"})
 			if err != nil {
 				t.Fatal(err)

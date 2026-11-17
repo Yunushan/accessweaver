@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "scope": "Native Linux AMD64 Debian maintenance with real managed ByeDPI traffic and shutdown",
+  "endpointArchitecture": "amd64",
+  "dpkgVersion": "Debian 'dpkg' package management program version 1.23.7 (amd64).",
+  "builderSHA256": "fa3ecd71a603e020872cf4845818392f0bc3ce2ab0cbd6cfe00e7cb03ab30a68",
+  "probeSHA256": "a3da63375b09793629a9afdb558e54016bde7b9c20d0da406d812aefd00d224a",
+  "packages": [
+    {
+      "arch": "amd64",
+      "version": "0.1.0~alpha",
+      "archiveSHA256": "84af1fae6595f1461e424755de4a128019e79129785ded857aa84053dea29ed4",
+      "debSHA256": "fec8360f344e2aa85aaa97621993fdf3e5853b44205f8d0f50e250523acb39ca",
+      "binarySHA256": "5233d889d4062c4a427565d0f935683b047ed083820bfa5e47d49fbc89e580c6",
+      "payloadFiles": 488
+    },
+    {
+      "arch": "amd64",
+      "version": "0.1.0~alpha.1",
+      "archiveSHA256": "eb94c79ad9d8b043905cb7ef3db4d893530d5220e90e8872b5e751615b047208",
+      "debSHA256": "19ad5eedce0cc1baba25d1ae1db675a38e8f7c5b3c8861574e34bf1a5d8bf889",
+      "binarySHA256": "b1768f66147a9bdeadcd1daa178bd32cd62db99ffba86f5ee635e61b0d6f1142",
+      "payloadFiles": 494
+    },
+    {
+      "arch": "arm64",
+      "version": "0.1.0~alpha.1",
+      "archiveSHA256": "4a3ac231f926ee8321529a95abbd5b1e6bc21f057f18bfa9bb8da6eeed410c4c",
+      "debSHA256": "e92f78843fbb5ed81183680e6db12771cb065e05a24fe5a2fca2bc97e59f2933",
+      "binarySHA256": "8ffe472a972e8ef04b8bd57c62b261314747715f9826462e8beea62f1e7537c0",
+      "payloadFiles": 494
+    }
+  ],
+  "managedRevisionsObserved": [
+    1,
+    2
+  ],
+  "managedFixtureSHA256": "9d702ed010ea92f4c8250141115e94343555de3419b0cb6565b49f51b0e6127e",
+  "checks": [
+    "mismatched-source-digest-refused-without-output",
+    "amd64-and-arm64-control-and-payload-inspected",
+    "reproducible-package-and-exclusive-publication",
+    "clean-install-upgrade-and-same-version-reinstall",
+    "ordinary-user-installed-cli-identity-after-each-change",
+    "dpkg-verify-after-each-change",
+    "guarded-downgrade-refusal-and-explicit-rollback",
+    "purge-and-package-registration-removal",
+    "enrollment-and-profile-created-with-first-installed-controller",
+    "new-controller-advanced-policy-and-older-rollback-refused-replay",
+    "ordinary-mutation-and-engine-launch-denied-through-installed-controllers",
+    "enrolled-policy-and-profile-preserved-through-purge-and-reinstall"
+  ],
+  "amd64Execution": true,
+  "arm64Execution": false,
+  "productionQualificationComplete": false,
+  "liveByedpi": {
+    "engineSHA256": "c70e87c6168af1832b21641a98bb53e3500b1daf6a5df8bfd22fac4a9294abda",
+    "probeSHA256": "d8b2afa13c5d9a67c5a602d97a627d20dccd9951a1803d79dc01ecfd8475233e",
+    "sharedNetworkProbeSHA256": "e6a738ff9a57782c1c3673469367ba815909f42992ad4fdba56fc7f1bb5a3f01",
+    "socksAndShutdownVerifiedAt": [
+      "before-upgrade",
+      "after-upgrade",
+      "after-rollback",
+      "after-purge-and-reinstall"
+    ],
+    "trafficWasLoopbackOnly": true
+  },
+  "sourceCommit": "16632c4b2a7f14c300b2eae4e9cdf33325c7edf1",
+  "payloadSourceCommits": {
+    "0.1.0~alpha": "77a884e7c213d7b5bde3cc2347acdffc2fa0e6d0",
+    "0.1.0~alpha.1": "16632c4b2a7f14c300b2eae4e9cdf33325c7edf1"
+  },
+  "host": "Ubuntu 26.04 WSL AMD64",
+  "isolatedMountNetworkAndPIDNamespaces": true,
+  "wrongEngineSHA256Refused": true,
+  "temporaryPolicySigningKeys": true,
+  "engineRelease": "v0.17.3",
+  "enginePinEvidence": "docs/qualification/adb10502a18a-linux-managed-byedpi.json"
+}

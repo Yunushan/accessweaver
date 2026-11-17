@@ -1,0 +1,424 @@
+{
+  "schemaVersion": 1,
+  "scope": "Offline source-built Linux AMD64 WebKit 15-minute soak in a disposable container",
+  "sourceCommit": "eec0a50e3b29e3faa99efd6b1c125b98d7f4e76c",
+  "sourceSHA256": {
+    "scripts/browser-tests/job-cpu.cjs": "4812d6387bcec43bc84855eef4f223000440fb2e7d15f1ca7a7fe31a85980b37",
+    "scripts/check-native-environment.cjs": "cf56a8253f0444ec6cb8c8bf92249151165d8bd4061985c8a0e8df0df2aea562",
+    "scripts/browser-tests/check-image-environment.cjs": "e19b4bf61bc94d045e2566f0353a04e267e45d404aae4fabfae63dcec87f460b",
+    "scripts/browser-tests/browser-native-binary.cjs": "8194f82559f9b7f32b43d74c3d3c0df6bf00b48e34c23bb3e8ed3132f82db972",
+    "scripts/browser-tests/package-lock.json": "8be62d9880021ca910c493d5540682379b6bc5f0b907707a7579dc4f74fbbd6a",
+    ".github/workflows/browser.yml": "c4979a03afd26c51385edbfe32ae697950e151c3e064c26a043f464684b9b4a9",
+    "scripts/browser-tests/browser-timing.cjs": "a080b95e0fa6531fac4292d87ab9def17e41c22ff2d3811bdd58ef99b64ce7ec",
+    "scripts/browser-tests/browser-timing.test.cjs": "0018acb94ce5b312be06ba73cb57dd6fa8945a51ac8635d4408c0b9ad4b7ad2f",
+    "internal/profile/testdata/timestamps.json": "2009c2b8f7b48e28fd62586809dabff9029c8b386227093345c225dbabb39ffe",
+    "scripts/browser-tests/browser-memory.cjs": "6e3e73268803a6aa43794f62a40bd04a652a06c3d87d7396a1b16ddb5910fc03",
+    "scripts/browser-tests/browser-resources.cjs": "5aeab55a5dd67264a96baf34b264815fb80bcdf9c2ad086b22613ca675c1e5e1",
+    "web/app.js": "54138863e741a62fc1b29a485a172d2859fdbf65a70f78c7364d215be0006ef3",
+    "web/index.html": "5682e309e6dd03d7f0cc1489cf43a6cc7e4535a4dcc31a2bb138562b3701dee5",
+    "web/app.css": "6391cf2d9213fcf49e0cfc27271f5f8aeee4b99c64abbb754159148d50c394f3",
+    "web/locales.js": "ea6f2360041e9da71ee62645049e53180b71c5a14639f248a37b9fb972cc1077",
+    "web/system.js": "b2328e2b085c2d15d8471db0baebd83cf85267eb2c9a482428d2d870226bae3f",
+    "scripts/browser-tests/desktop.spec.cjs": "4907bf49329dac498fae4b5719de5eb42d982f64616339f3975796568459401e",
+    "scripts/browser-tests/desktop-performance.cjs": "997ef389d5acffacb9c1d42d053186fb4152ab6cf71a1841d47c7edb2bcfe29f",
+    "scripts/browser-tests/performance-budgets.json": "97e105bb42966d2b4a0cf4b8505385dbaab1aa1a4afab9670be4f8ee9785160e",
+    "scripts/browser-tests/playwright.config.cjs": "fb951bf6f1eca621cb69eab2d46517b1a57a3779714142879d8f4f93cc719fa9",
+    "scripts/browser-tests/browser-soak.cjs": "1be87f0390b782ca1d0b679410764f7f62e07ee1f36582717cfe4c2d1b4e6a9b",
+    "scripts/browser-tests/browser-soak.test.cjs": "e5b8a18b946f25591d8d37c05ace8cdb8fd879ede230dcba27f323477212a118",
+    "scripts/browser-tests/soak.config.cjs": "7f2abf43c8ab0ff40332042a3f497297f528508ce69203140bbed34332570e39",
+    ".github/workflows/browser-soak.yml": "58e97b7cebfee1716e4dd65de001c4453f47ef8fba7bbdb6883d4f92aa4bfe63"
+  },
+  "binarySHA256": "c4162a62d2e8562eac5e89f6a482d224336e0d0cddffa11aeb7c7001cc297578",
+  "image": "mcr.microsoft.com/playwright@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f",
+  "reportsSHA256": {
+    "image": "127f1cbcb4572014a0609ad0f1d4512bd9e9303035200c93ecd4c1d639f43a74",
+    "performance": "058d199de7fafcc8e3185feb2b2c66558609d84b159b3c1202fddef059d1f8b6",
+    "soak": "b8cd7b1b46b5aeb771c76c4f4ed4778a6ac540b0d5b14b6a66f62ac4bb68cb3e"
+  },
+  "baseline": {
+    "environment": {
+      "platform": "linux",
+      "architecture": "x64",
+      "node": "v26.8.2",
+      "playwright": "1.64.1",
+      "cpuCount": 16,
+      "pageBytes": 4096,
+      "clockTicksPerSecond": 100
+    },
+    "counts": {
+      "reload": 5,
+      "navigation": 24,
+      "editor": 10,
+      "burstRequests": 96,
+      "loadRequests": 240,
+      "resourceSamples": 319,
+      "loadMilliseconds": 60001,
+      "browserResourceSamples": 82,
+      "browserObservedExits": 0,
+      "browserCpuMilliseconds": 60431,
+      "browserFailureStage": 0,
+      "jobCpuMilliseconds": 60426,
+      "jobCpuFailureStage": 0
+    },
+    "metrics": {
+      "controllerStartupMs": 31.20190199999979,
+      "dashboardReadyMs": 3025.030332,
+      "reloadP95Ms": 240.21649400000024,
+      "navigationP95Ms": 359.15293800000654,
+      "editorP95Ms": 510.7722050000011,
+      "apiP95Ms": 87,
+      "burstRequestsPerSecond": 54.95787262952558,
+      "loadRequestsPerSecond": 3.9998783991634697,
+      "loadCpuPercentOneCore": 4.449864719069359,
+      "sampledPeakRssBytes": 18018304,
+      "sampledPeakDescriptors": 14,
+      "sampledPeakThreads": 16,
+      "cooldownRssGrowthBytes": 2052096,
+      "cooldownDescriptorGrowth": -2,
+      "cooldownThreadGrowth": 3,
+      "browserSampledPeakRssBytes": 769916928,
+      "browserSampledPeakDescriptors": 101,
+      "browserSampledPeakThreads": 100,
+      "browserSampledPeakProcesses": 5,
+      "browserObservedLoadCpuPercentOneCore": 11.848220230603998,
+      "browserCooldownRssGrowthBytes": 130748416,
+      "browserCooldownDescriptorGrowth": 5,
+      "browserCooldownThreadGrowth": -11,
+      "browserCooldownProcessGrowth": 0,
+      "jobLoadCpuPercentOneCore": 28.72191355063935
+    },
+    "violations": [
+      "dashboardReadyMs",
+      "editorP95Ms"
+    ],
+    "outcome": "failed"
+  },
+  "sustained": {
+    "baselinePassed": false,
+    "stage": "complete",
+    "failureKind": "none",
+    "counts": {
+      "seconds": 900,
+      "requests": 3600,
+      "navigation": 180,
+      "editor": 30,
+      "samples": 901,
+      "elapsedMilliseconds": 900063
+    },
+    "metrics": {
+      "browserPeakRssBytes": 819257344,
+      "controllerPeakRssBytes": 18583552,
+      "browserPeakDescriptors": 102,
+      "browserPeakThreads": 96,
+      "browserPeakProcesses": 5,
+      "controllerPeakDescriptors": 13,
+      "controllerPeakThreads": 17,
+      "browserRssGrowthBytes": 1499136,
+      "controllerRssGrowthBytes": -356352,
+      "browserDescriptorGrowth": 3,
+      "browserThreadGrowth": 0,
+      "browserProcessGrowth": 0,
+      "controllerDescriptorGrowth": 0,
+      "controllerThreadGrowth": 1,
+      "navigationP95Ms": 276.17730100000335,
+      "editorP95Ms": 524.4549650000408,
+      "apiP95Ms": 60,
+      "browserCpuPercentOneCore": 14.4167686039755,
+      "controllerCpuPercentOneCore": 4.526349822179115,
+      "jobCpuPercentOneCore": 32.13463358501574,
+      "maximumSampleGapMs": 1614.5011669999221,
+      "lateMedianRssGrowthBytes": -40267776
+    },
+    "violations": [
+      "editorP95Ms"
+    ],
+    "checkpoints": [
+      {
+        "second": 0,
+        "browserRssBytes": 766054400,
+        "controllerRssBytes": 16740352,
+        "browserDescriptors": 98,
+        "controllerDescriptors": 9,
+        "browserThreads": 86,
+        "controllerThreads": 16,
+        "browserProcesses": 5
+      },
+      {
+        "second": 100,
+        "browserRssBytes": 789278720,
+        "controllerRssBytes": 17170432,
+        "browserDescriptors": 101,
+        "controllerDescriptors": 12,
+        "browserThreads": 95,
+        "controllerThreads": 17,
+        "browserProcesses": 5
+      },
+      {
+        "second": 200,
+        "browserRssBytes": 781512704,
+        "controllerRssBytes": 17276928,
+        "browserDescriptors": 101,
+        "controllerDescriptors": 12,
+        "browserThreads": 93,
+        "controllerThreads": 17,
+        "browserProcesses": 5
+      },
+      {
+        "second": 300,
+        "browserRssBytes": 792891392,
+        "controllerRssBytes": 16920576,
+        "browserDescriptors": 101,
+        "controllerDescriptors": 12,
+        "browserThreads": 93,
+        "controllerThreads": 17,
+        "browserProcesses": 5
+      },
+      {
+        "second": 400,
+        "browserRssBytes": 806588416,
+        "controllerRssBytes": 17440768,
+        "browserDescriptors": 101,
+        "controllerDescriptors": 12,
+        "browserThreads": 93,
+        "controllerThreads": 17,
+        "browserProcesses": 5
+      },
+      {
+        "second": 500,
+        "browserRssBytes": 802988032,
+        "controllerRssBytes": 17035264,
+        "browserDescriptors": 101,
+        "controllerDescriptors": 12,
+        "browserThreads": 93,
+        "controllerThreads": 17,
+        "browserProcesses": 5
+      },
+      {
+        "second": 600,
+        "browserRssBytes": 781033472,
+        "controllerRssBytes": 18042880,
+        "browserDescriptors": 101,
+        "controllerDescriptors": 12,
+        "browserThreads": 93,
+        "controllerThreads": 17,
+        "browserProcesses": 5
+      },
+      {
+        "second": 700,
+        "browserRssBytes": 751767552,
+        "controllerRssBytes": 17498112,
+        "browserDescriptors": 101,
+        "controllerDescriptors": 12,
+        "browserThreads": 95,
+        "controllerThreads": 17,
+        "browserProcesses": 5
+      },
+      {
+        "second": 800,
+        "browserRssBytes": 752574464,
+        "controllerRssBytes": 16343040,
+        "browserDescriptors": 101,
+        "controllerDescriptors": 12,
+        "browserThreads": 92,
+        "controllerThreads": 17,
+        "browserProcesses": 5
+      },
+      {
+        "second": 900,
+        "browserRssBytes": 768122880,
+        "controllerRssBytes": 16384000,
+        "browserDescriptors": 101,
+        "controllerDescriptors": 12,
+        "browserThreads": 94,
+        "controllerThreads": 17,
+        "browserProcesses": 5
+      }
+    ],
+    "editorTimings": [
+      {
+        "actionMs": 429.47320700000273,
+        "visibilityMs": 26.29047599999467,
+        "paintMs": 89.92290600000706,
+        "totalMs": 545.6865890000045
+      },
+      {
+        "actionMs": 191.72940000001108,
+        "visibilityMs": 14.618249999999534,
+        "paintMs": 42.42338799999561,
+        "totalMs": 248.77103800000623
+      },
+      {
+        "actionMs": 178.5832840000221,
+        "visibilityMs": 15.167391999973916,
+        "paintMs": 32.60832300002221,
+        "totalMs": 226.35899900001823
+      },
+      {
+        "actionMs": 185.3289189999923,
+        "visibilityMs": 11.88935300000594,
+        "paintMs": 45.73612899999716,
+        "totalMs": 242.9544009999954
+      },
+      {
+        "actionMs": 197.45900900001288,
+        "visibilityMs": 12.77011399998446,
+        "paintMs": 32.277344000001904,
+        "totalMs": 242.50646699999925
+      },
+      {
+        "actionMs": 220.9945519999892,
+        "visibilityMs": 12.042252999992343,
+        "paintMs": 42.477902999991784,
+        "totalMs": 275.5147079999733
+      },
+      {
+        "actionMs": 192.48698600003263,
+        "visibilityMs": 12.063565999967977,
+        "paintMs": 23.022548000037204,
+        "totalMs": 227.5731000000378
+      },
+      {
+        "actionMs": 185.79398699995363,
+        "visibilityMs": 11.374907999997959,
+        "paintMs": 34.6639360000263,
+        "totalMs": 231.8328309999779
+      },
+      {
+        "actionMs": 167.92132200003834,
+        "visibilityMs": 11.38180299999658,
+        "paintMs": 33.434854999999516,
+        "totalMs": 212.73798000003444
+      },
+      {
+        "actionMs": 354.09672500001034,
+        "visibilityMs": 14.442834999994375,
+        "paintMs": 41.084719000034966,
+        "totalMs": 409.6242790000397
+      },
+      {
+        "actionMs": 210.77218800003175,
+        "visibilityMs": 10.753467999980785,
+        "paintMs": 37.2789000000339,
+        "totalMs": 258.80455600004643
+      },
+      {
+        "actionMs": 199.55111900001066,
+        "visibilityMs": 13.517952999973204,
+        "paintMs": 37.38774600002216,
+        "totalMs": 250.45681800000602
+      },
+      {
+        "actionMs": 176.6905380000244,
+        "visibilityMs": 14.010802000004333,
+        "paintMs": 35.40695999999298,
+        "totalMs": 226.1083000000217
+      },
+      {
+        "actionMs": 285.12197099998593,
+        "visibilityMs": 19.25777800002834,
+        "paintMs": 53.292159000004176,
+        "totalMs": 357.67190800001845
+      },
+      {
+        "actionMs": 187.32561800000258,
+        "visibilityMs": 10.761994000000414,
+        "paintMs": 44.28547599999001,
+        "totalMs": 242.373087999993
+      },
+      {
+        "actionMs": 225.3929220000282,
+        "visibilityMs": 13.827783999964595,
+        "paintMs": 39.57019100000616,
+        "totalMs": 278.79089699999895
+      },
+      {
+        "actionMs": 178.87567900004797,
+        "visibilityMs": 15.701941999956034,
+        "paintMs": 31.775107000023127,
+        "totalMs": 226.35272800002713
+      },
+      {
+        "actionMs": 390.90922500006855,
+        "visibilityMs": 16.561035000020638,
+        "paintMs": 116.98470499995165,
+        "totalMs": 524.4549650000408
+      },
+      {
+        "actionMs": 181.8517990000546,
+        "visibilityMs": 13.331006999942474,
+        "paintMs": 36.94172600004822,
+        "totalMs": 232.1245320000453
+      },
+      {
+        "actionMs": 186.79778499994427,
+        "visibilityMs": 10.200362000032328,
+        "paintMs": 29.682478999951854,
+        "totalMs": 226.68062599992845
+      },
+      {
+        "actionMs": 193.76952600001823,
+        "visibilityMs": 17.6853570000967,
+        "paintMs": 31.229947999934666,
+        "totalMs": 242.6848310000496
+      },
+      {
+        "actionMs": 208.66607599996496,
+        "visibilityMs": 13.011618999997154,
+        "paintMs": 37.76781899994239,
+        "totalMs": 259.4455139999045
+      },
+      {
+        "actionMs": 192.38626199995633,
+        "visibilityMs": 12.28171300003305,
+        "paintMs": 37.58348299993668,
+        "totalMs": 242.25145799992606
+      },
+      {
+        "actionMs": 156.44560599990655,
+        "visibilityMs": 11.815643000067212,
+        "paintMs": 26.300900999922305,
+        "totalMs": 194.56214999989606
+      },
+      {
+        "actionMs": 168.4624049999984,
+        "visibilityMs": 13.087101999903098,
+        "paintMs": 28.750389000051655,
+        "totalMs": 210.29989599995315
+      },
+      {
+        "actionMs": 260.1546729999827,
+        "visibilityMs": 11.910421999986283,
+        "paintMs": 54.77049200003967,
+        "totalMs": 326.8355870000087
+      },
+      {
+        "actionMs": 212.83518599998206,
+        "visibilityMs": 11.98302100005094,
+        "paintMs": 33.95322299993131,
+        "totalMs": 258.7714299999643
+      },
+      {
+        "actionMs": 234.30389099998865,
+        "visibilityMs": 16.62502600008156,
+        "paintMs": 43.595802999916486,
+        "totalMs": 294.5247199999867
+      },
+      {
+        "actionMs": 175.05044599995017,
+        "visibilityMs": 12.991635999991558,
+        "paintMs": 38.51721099996939,
+        "totalMs": 226.55929299991112
+      },
+      {
+        "actionMs": 213.6629729999695,
+        "visibilityMs": 11.702820000005886,
+        "paintMs": 43.434943000087515,
+        "totalMs": 268.8007360000629
+      }
+    ],
+    "outcome": "failed"
+  },
+  "workingDaySoakQualified": false,
+  "nativeInstalledQualified": false,
+  "productionQualificationComplete": false
+}

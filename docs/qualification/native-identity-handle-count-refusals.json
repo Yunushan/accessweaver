@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "fixed-native-identity-handle-count-refusals",
+  "results": [
+    {
+      "sourceCommit": "58b14b51fcb2140a796ac063b04d3961bd77833f",
+      "producerSHA256": "0912531a8cf5132b3baf0f7931e8670ccdc2192ae265c49e4943b795e029f825",
+      "runID": 43983470773,
+      "artifactID": 14283618434,
+      "artifactSHA256": "a009b616c5fafc9a7e0d44315d95a8e9476d31eebf7a5d1701333d932a24db5a",
+      "providerZIPDigestVerified": true,
+      "architecture": "amd64",
+      "probeCounts": {
+        "handlesBefore": 117,
+        "handlesAfter": 119,
+        "threadRecordsBefore": 8,
+        "threadRecordsAfter": 8,
+        "gcCyclesBefore": 1,
+        "gcCyclesAfter": 1
+      }
+    },
+    {
+      "sourceCommit": "c5b043d863570f34109c63d28e9cd55fa0391b1e",
+      "producerSHA256": "0912531a8cf5132b3baf0f7931e8670ccdc2192ae265c49e4943b795e029f825",
+      "runID": 43984547302,
+      "artifactID": 14284486975,
+      "artifactSHA256": "f81e89e5ddf1fdfec2272ffbf77957706ffccd833291381edd797cc8f9e48c24",
+      "providerZIPDigestVerified": true,
+      "architecture": "arm64",
+      "probeCounts": {
+        "handlesBefore": 118,
+        "handlesAfter": 120,
+        "threadRecordsBefore": 8,
+        "threadRecordsAfter": 8,
+        "gcCyclesBefore": 1,
+        "gcCyclesAfter": 1
+      }
+    },
+    {
+      "sourceCommit": "e0b58f4a6659a07c54d160dcfaf48ef78146be7c",
+      "producerSHA256": "33ca4abbef5e277ee64377248c7b03ee5432aae1952c578529487b7716d9059e",
+      "runID": 43989475830,
+      "artifactID": 14289486171,
+      "artifactSHA256": "a384479894e8df3b196cc5be2a1c2a0242ca73384fadaeda3abb63932c464d61",
+      "providerZIPDigestVerified": true,
+      "architecture": "arm64",
+      "probeCounts": {
+        "failureReplay": {
+          "snapshotComplete": true,
+          "handlesBefore": 120,
+          "handlesAfter": 120,
+          "kindsBefore": [
+            86,
+            0,
+            8,
+            2,
+            22,
+            0,
+            2
+          ],
+          "kindsAfter": [
+            86,
+            0,
+            8,
+            2,
+            22,
+            0,
+            2
+          ],
+          "newHandleKinds": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "handlesBefore": 118,
+        "handlesAfter": 120,
+        "threadRecordsBefore": 8,
+        "threadRecordsAfter": 8,
+        "gcCyclesBefore": 1,
+        "gcCyclesAfter": 1
+      }
+    }
+  ],
+  "interpretation": [
+    "Each immutable source report passes seven native identity subtests and fails owned-metadata-probes-close-on-success-and-failure.",
+    "The measured aggregate handle count grows by two, exceeding the unchanged before+1 threshold, while recorded thread-creation and GC-cycle counts do not change.",
+    "These aggregate counters do not identify the new handle types or establish their cause. No threshold relaxation, GC disablement or resource-leak qualification is justified.",
+    "The PR ARM64 failure replay had no new handles. It does not establish the types added in the first measured interval. The next fixture records bounded type counts at both ends of the original measured interval."
+  ],
+  "rawJobLogsFetched": false,
+  "productionQualificationComplete": false,
+  "readinessGatesPromoted": []
+}

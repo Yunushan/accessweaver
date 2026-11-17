@@ -1,0 +1,849 @@
+# Exercise the real journal dispatcher on inert snapshot files and mocked mutation boundaries.
+$ErrorActionPreference='Stop'
+$path=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.ps1'
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'DNS journal source failed parsing'}
+foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-DNSRecoveryFileBytes','Get-DNSRecoveryCopyPath','Read-DNSRecoveryCopy','Remove-VerifiedDNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-ActiveDNSRecovery','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Get-WorkflowFileHash','Copy-WorkflowFileToNewPath','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Publish-RecordedWorkflowFile','Backup-File','Restore-RecordedWorkflowFile','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Test-DNSCryptLoopbackAddress','Wait-DNSCryptListeners','Get-EffectiveDNSCryptListeners','Assert-EffectiveDNSCryptListeners','Test-DNSAddressAnswer','Assert-DNSCryptConfiguration','Assert-DNSRecoverySnapshotUnchanged','Rollback','Remove-All','Get-ManagedFirewallRule','Remove-ManagedFirewallRule','Firewall','Get-WorkflowRecoveryJournalLimit','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Assert-DNSCryptCanBeRemoved','Remove-RecordedService')){
+    $nodes=@($ast.EndBlock.Statements|Where-Object {
+        $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
+    })
+    if($nodes.Count -ne 1){throw 'Expected one DNS journal function'}
+    . ([scriptblock]::Create($nodes[0].Extent.Text))
+}
+function Require([bool]$Condition,[string]$Failure){if(-not $Condition){throw $Failure}}
+function Read-WorkflowRecoveryJournal {return @{undo=$script:saved}}
+$saveJournal=(Get-Command Save-Journal).ScriptBlock
+function Save-Journal {$script:journalWrites++}
+function Event {}
+function Assert-DNSDohPlaintextRuleOwnership([string]$ID) {
+    if($ID){throw 'Unexpected DNS firewall receipt check'}
+    if($script:remainingDohFirewall){throw 'Synthetic remaining managed DoH firewall rule'}
+}
+function Test-DNSCryptListenerNeeded {
+    if($script:serviceFault -ceq 'replace-during-dns-inventory'){$script:serviceCommand='replacement service command'}
+    return [bool]$script:resolverInUse
+}
+function Wait-RecordedServiceStopped([string]$Name) {
+    if($Name -cne 'AccessWeaver-dnscrypt'){throw 'Unexpected service stop wait'}
+    $script:order.Add('wait-stopped')
+    if($script:serviceFault -ceq 'stop-timeout'){throw 'Synthetic service stop timeout'}
+    if($script:serviceFault -cin @('dependency-during-stop','dependency-with-replacement','dependency-with-broken-listener')){$script:resolverInUse=$true}
+    if($script:serviceFault -cin @('replace-during-stop','dependency-with-replacement')){
+        $script:serviceCommand='replacement service command'
+        $script:serviceState='running'
+    }
+}
+function Assert-TrustedItem([string]$Path){No-Reparse $Path;[void](Get-Item -LiteralPath $Path -Force -ErrorAction Stop)}
+function Get-CimInstance {
+    param($ClassName,$Filter,$ErrorAction)
+    if($ClassName -cne 'Win32_Service' -or $Filter -cne "Name='AccessWeaver-dnscrypt'"){throw 'Unexpected service identity lookup'}
+    if($script:serviceFault -ceq 'identity'){throw 'Synthetic service identity unavailable'}
+    return [pscustomobject]@{Name='AccessWeaver-dnscrypt';PathName=$script:serviceCommand}
+}
+function Native {
+    param($Program,$Arguments,$Allowed,[switch]$Secret,[int]$Timeout)
+    if($Arguments.Count -ne 2 -or $Arguments[1] -cne 'AccessWeaver-dnscrypt' -or
+        $Arguments[0] -cnotin @('query','stop','delete') -or -not $Secret -or $Timeout -ne 5){
+        throw 'Unexpected native service request'
+    }
+    if($Arguments[0] -cne 'query' -and [IO.File]::Exists($snapshot)){throw 'Service mutation started before DNS restoration'}
+    if($Arguments[0] -ne 'query' -or -not [IO.File]::Exists($snapshot)){$script:order.Add($Arguments[0])}
+    switch($Arguments[0]){
+        'query' {
+            if($script:serviceFault -ceq 'inspect'){throw 'Synthetic SCM inspection failure'}
+            if($script:serviceFault -ceq 'truncated'){return @{exitCode=1060;outputComplete=$false}}
+            if($script:serviceState -ceq 'pending' -and $script:serviceFault -ceq 'pending-then-absent'){
+                $script:serviceFault=''
+                return @{exitCode=1072;outputComplete=$true}
+            }
+            if($script:serviceState -ceq 'pending' -and -not $script:serviceFault){$script:serviceState='absent'}
+            $exitCode=switch($script:serviceState){'absent' {1060};'pending' {1072};default {0}}
+        }
+        'stop' {
+            if($script:serviceFault -ceq 'stop-command'){throw 'Synthetic SCM stop failure'}
+            $exitCode=if($script:serviceState -ceq 'stopped'){1062}else{0}
+            $script:serviceState='stopped'
+            if($script:serviceFault -ceq 'replace-already-stopped'){$script:serviceCommand='replacement service command'}
+            if($script:serviceFault -ceq 'dependency-already-stopped'){$script:resolverInUse=$true}
+        }
+        'delete' {
+            if($script:serviceState -cne 'stopped'){throw 'Unstopped service reached deletion'}
+            $script:serviceState='pending';$exitCode=0
+        }
+    }
+    Require ($exitCode -in $Allowed) 'Unexpected SCM accepted-code set'
+    return @{exitCode=$exitCode;outputComplete=$true}
+}
+function Restore-DNS([string]$ExpectedSHA256,$ResolverReload) {
+    $script:restores++
+    $script:order.Add('restore')
+    if($script:failRestore){throw 'Synthetic DNS restore failure'}
+    $digest=Get-DNSRecoverySnapshotDigest
+    Require ($digest -ceq $ExpectedSHA256) 'Adapter restoration received the wrong snapshot digest'
+    if($ResolverReload){Restore-DNSCryptAfterActivationFailure $ResolverReload $digest}
+    Save-DNSRecoveryReceipt $digest
+    [IO.File]::Delete($snapshot)
+}
+# macOS temporary paths may traverse /var -> /private/var. Keep the inert
+# fixture on the physical directory so the real no-reparse reader can run.
+$temporary=[IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+if([IO.Path]::DirectorySeparatorChar -eq '/'){
+    $resolved=[IO.Path]::GetPathRoot($temporary)
+    foreach($part in $temporary.Substring($resolved.Length).Split([IO.Path]::DirectorySeparatorChar)){
+        if(-not $part){continue}
+        $entry=[IO.DirectoryInfo]::new((Join-Path $resolved $part))
+        if($entry.Attributes -band [IO.FileAttributes]::ReparsePoint){$entry=$entry.ResolveLinkTarget($true)}
+        if($null -eq $entry -or $entry -isnot [IO.DirectoryInfo] -or -not $entry.Exists){throw 'DNS journal fixture temporary directory is unavailable'}
+        $resolved=$entry.FullName
+    }
+    $temporary=$resolved
+}
+No-Reparse $temporary
+$root=Join-Path $temporary ('aw-dns-journal-'+[guid]::NewGuid().ToString('N'))
+$profiles=Join-Path $root 'profiles'
+[void][IO.Directory]::CreateDirectory($profiles)
+$snapshot=Join-Path $profiles 'dns-original.json'
+$r=@{journalId=('workflow-'+('a'*32)+'.json')}
+$script:undo=[Collections.Generic.List[object]]::new()
+$script:journalWrites=0
+$script:restores=0
+$script:failRestore=$false
+$script:serviceFault='';$script:serviceState='running'
+$script:serviceCommand='inert service-host command --instance='+('1'*32)
+$script:order=[Collections.Generic.List[string]]::new()
+$originalSystemRoot=$env:SystemRoot
+if(-not $env:SystemRoot){$env:SystemRoot=$temporary}
+$serviceConfig=Join-Path $root 'dnscrypt.toml'
+$script:journalPath=Join-Path $root $r.journalId
+$script:journalState='running'
+$script:events=[Collections.Generic.List[string]]::new()
+try {
+    if($env:OS -ceq 'Windows_NT'){
+        $originalFrame=[Text.Encoding]::ASCII.GetBytes('inert original snapshot')
+        $replacementFrame=[Text.Encoding]::ASCII.GetBytes('inert replacement snapshot')
+        $originalDigest=Get-WorkflowBytesSHA256 $originalFrame
+        [IO.File]::WriteAllBytes($snapshot,$replacementFrame)
+        $refused=$false
+        try{Remove-VerifiedDNSRecoverySnapshot $snapshot $originalDigest}
+        catch{$refused=$_.Exception.Message -ceq 'Original DNS snapshot changed during preflight; retain it for review'}
+        Require ($refused -and (Get-DNSRecoverySnapshotDigest) -ceq (Get-WorkflowBytesSHA256 $replacementFrame)) 'Retirement removed a replacement snapshot'
+        [IO.File]::WriteAllBytes($snapshot,$originalFrame)
+        $guard=[IO.File]::Open($snapshot,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        try {
+            $refused=$false
+            try{Remove-VerifiedDNSRecoverySnapshot $snapshot $originalDigest}
+            catch{$refused=$_.Exception.Message -like '*could not be opened for verified retirement*'}
+            Require $refused 'Retirement accepted an externally held snapshot'
+        } finally {$guard.Dispose()}
+        Require ((Get-DNSRecoverySnapshotDigest) -ceq $originalDigest) 'Refused retirement changed the active snapshot'
+        Remove-VerifiedDNSRecoverySnapshot $snapshot $originalDigest
+        Require (-not [IO.File]::Exists($snapshot)) 'Verified retirement left the active snapshot in place'
+    }
+    & {
+        $calls=[Collections.Generic.List[string]]::new()
+        $fixture=@{present=$true;restoreFails=$true;inspectionFails=$false;methodFails=$false;ownershipFault=$false;servicePresent=$false;listenerNeeded=$false}
+        $digest='A'*64
+        function Get-DNSRecoverySnapshotDigest {
+            if($fixture.inspectionFails){throw 'Synthetic snapshot inspection failure'}
+            if($fixture.present){return $digest}
+        }
+        function Restore-DNS([string]$ExpectedSHA256) {
+            Require ($ExpectedSHA256 -ceq $digest) 'Remove-all bypassed the active snapshot binding'
+            $calls.Add('restore')
+            if($fixture.restoreFails){throw 'Synthetic DNS restoration failure'}
+            $fixture.present=$false
+        }
+        function Assert-ManagedServiceOwnership([string]$Name) {
+            Require ($Name -ceq 'AccessWeaver-dnscrypt' -and -not $fixture.present) 'Remove-all checked the wrong service or checked before restoration'
+            if($fixture.ownershipFault){throw 'Synthetic managed DNSCrypt ownership failure'}
+            if($fixture.servicePresent){return @{name=$Name}}
+        }
+        function Test-DNSCryptListenerNeeded {
+            Require ($fixture.servicePresent) 'Remove-all inspected dependencies without a managed DNSCrypt service'
+            return $fixture.listenerNeeded
+        }
+        function Remove-Method {
+            param($engine,[switch]$OwnedOnly)
+            Require (-not $fixture.present) 'Remove-all touched a managed method while DNS recovery remained active'
+            Require ([bool]$OwnedOnly -eq ($engine -ceq 'windivert')) 'Remove-all lost the WinDivert ownership restriction'
+            $calls.Add($engine)
+            if($fixture.methodFails -and $engine -ceq 'wiresock'){throw 'Synthetic later cleanup failure'}
+        }
+        $refused=$false
+        try{Remove-All}catch{$refused=$_.Exception.Message -ceq 'Synthetic DNS restoration failure'}
+        Require ($refused -and ($calls -join ',') -ceq 'restore' -and $fixture.present) 'Failed DNS restoration allowed partial cleanup'
+        $calls.Clear();$fixture.inspectionFails=$true
+        $refused=$false
+        try{Remove-All}catch{$refused=$_.Exception.Message -ceq 'Synthetic snapshot inspection failure'}
+        Require ($refused -and $calls.Count -eq 0) 'Unreadable snapshot state allowed cleanup'
+        $fixture.inspectionFails=$false;$fixture.restoreFails=$false;$fixture.ownershipFault=$true
+        $refused=$false
+        try{Remove-All}catch{$refused=$_.Exception.Message -ceq 'Synthetic managed DNSCrypt ownership failure'}
+        Require ($refused -and -not $fixture.present -and ($calls -join ',') -ceq 'restore') 'Unverified DNSCrypt ownership allowed method cleanup'
+        $calls.Clear();$fixture.ownershipFault=$false;$fixture.servicePresent=$true
+        $fixture.present=$true;$fixture.listenerNeeded=$true
+        $refused=$false
+        try{Remove-All}catch{$refused=$_.Exception.Message -like 'DNSCrypt service retained because adapter loopback DNS*'}
+        Require ($refused -and -not $fixture.present -and ($calls -join ',') -ceq 'restore') 'DNSCrypt dependency after restoration allowed method cleanup'
+        $calls.Clear();$fixture.listenerNeeded=$false;$fixture.methodFails=$true
+        $refused=$false
+        try{Remove-All}catch{$refused=$_.Exception.Message -ceq 'Synthetic later cleanup failure'}
+        Require ($refused -and -not $fixture.present -and ($calls -join ',') -ceq 'byedpi,zapret,zapret2,goodbyedpi,wiresock') 'Later cleanup failure did not preserve completed DNS restoration'
+        $calls.Clear();$fixture.methodFails=$false;$fixture.servicePresent=$false
+        Remove-All
+        Require (($calls -join ',') -ceq 'byedpi,zapret,zapret2,goodbyedpi,wiresock,windivert,dnscrypt') 'Remove-all retry repeated DNS restoration or changed cleanup order'
+    }
+
+    & {
+        $assetNames=@{byedpi='ciadpi.exe';proxifyre='ProxiFyre.exe'}
+        $name='AccessWeaver-byedpi-Inbound'
+        $program=Join-Path $root 'components\byedpi\ciadpi.exe'
+        $state=@{rules=@{};journal=0;creates=0;removes=0;keep=$false;failRead=$false;warn=$false;failJournal=$false}
+        function Get-NetFirewallRule {
+            [CmdletBinding()]param($PolicyStore)
+            Require ($PolicyStore -ceq 'PersistentStore' -and $ErrorActionPreference -eq 'Stop') 'Unexpected firewall inventory scope'
+            if($state.failRead){throw 'Synthetic inventory refusal'}
+            if($state.warn){Write-Warning 'Synthetic incomplete rule inventory'}
+            return @($state.rules.Values)
+        }
+        function Get-NetFirewallApplicationFilter {
+            [CmdletBinding()]param($AssociatedNetFirewallRule,$PolicyStore)
+            Require ($PolicyStore -ceq 'PersistentStore' -and $ErrorActionPreference -eq 'Stop') 'Unexpected firewall filter scope'
+            return @{Program=$AssociatedNetFirewallRule.Program}
+        }
+        function Save-Journal {
+            if($state.failJournal){throw 'Synthetic journal refusal'}
+            $state.journal++
+        }
+        function New-NetFirewallRule {
+            [CmdletBinding()]param($Name,$DisplayName,$Description,$Program,$Direction,$Action,$Profile,$PolicyStore)
+            Require ($PolicyStore -ceq 'PersistentStore' -and $ErrorActionPreference -eq 'Stop' -and
+                $state.journal -gt $state.creates -and $script:undo[$state.creates].instance -ceq ($Description.Split(' ')[-1])) 'Firewall rule creation preceded its journal binding'
+            $state.creates++
+            $state.rules[$Name]=[pscustomobject]@{Name=$Name;DisplayName=$DisplayName;Description=$Description;
+                Program=$Program;Direction=$Direction;Action=$Action;Profile=$Profile;Enabled='True'}
+        }
+        function Remove-NetFirewallRule {
+            [CmdletBinding(SupportsShouldProcess)]param($InputObject)
+            Require ([object]::ReferenceEquals($InputObject,$state.rules[$InputObject.Name]) -and
+                $ErrorActionPreference -eq 'Stop') 'Firewall removal did not use the verified rule object'
+            $state.removes++
+            if(-not $state.keep){$state.rules.Remove($InputObject.Name)}
+        }
+        $state.failJournal=$true
+        $failed=$false
+        try{Firewall 'byedpi' $program}catch{$failed=$_.Exception.Message -ceq 'Synthetic journal refusal'}
+        Require ($failed -and $state.creates -eq 0) 'Firewall rule was created after journal failure'
+        $script:undo.Clear()
+        $state.failJournal=$false
+        Firewall 'byedpi' $program
+        Require ($state.creates -eq 2 -and $state.journal -eq 2 -and $script:undo.Count -eq 2) 'Firewall rules lack independently journaled identities'
+        Firewall 'byedpi' $program
+        Require ($state.creates -eq 2) 'Existing matching firewall rules were replaced'
+        $instance=$script:undo[0].instance;$ruleID=$name+'-'+$instance;$rule=$state.rules[$ruleID]
+        foreach($change in @('stale','legacy','program','direction','inventory','warning','duplicate')){
+            $rule.Program=$program;$rule.Direction='Inbound';$state.failRead=$false;$state.warn=$false
+            $pin=$instance
+            switch($change){
+                'stale' {$pin='f'*32}
+                'legacy' {$pin=''}
+                'program' {$rule.Program='C:\Other\ciadpi.exe'}
+                'direction' {$rule.Direction='Outbound'}
+                'inventory' {$state.failRead=$true}
+                'warning' {$state.warn=$true}
+                'duplicate' {$duplicate=$rule.PSObject.Copy();$duplicate.Name=$name;$state.rules[$name]=$duplicate}
+            }
+            $failed=$false
+            try{Remove-ManagedFirewallRule $name $pin -Journal}catch{$failed=$true}
+            Require ($failed -and $state.removes -eq 0) 'Unverified firewall rule reached removal'
+        }
+        $state.rules.Remove($name)
+        $rule.Program=$program;$rule.Direction='Inbound';$state.failRead=$false;$state.keep=$true
+        $file=Join-Path $root 'synthetic-firewall-component.exe'
+        [IO.File]::WriteAllText($file,'inert component')
+        try {
+            $script:undo.Clear()
+            $script:undo.Add(@{kind='file';path=$file;expectedHash=(Get-FileHash -LiteralPath $file).Hash})
+            $script:undo.Add(@{kind='firewall';name=$name;instance=$instance})
+            $errors=@(Rollback)
+            Require ($errors.Count -eq 1 -and [IO.File]::Exists($file)) 'Firewall rollback failure removed an earlier component file'
+        } finally {[IO.File]::Delete($file)}
+        $outbound='AccessWeaver-byedpi-Outbound'
+        $outboundID=@($state.rules.Keys | Where-Object {$_ -clike ($outbound+'-*')})[0]
+        $failed=$false
+        try{Remove-ManagedFirewallRule $name $instance -Journal}catch{$failed=$_.Exception.Message -ceq 'Managed firewall rule removal could not be verified'}
+        Require ($failed -and $state.removes -eq 2) 'Firewall rule persistence after delete was credited as cleanup'
+        $state.keep=$false
+        Remove-ManagedFirewallRule $name $instance -Journal
+        Remove-ManagedFirewallRule $name $instance -Journal
+        Require ($state.removes -eq 3 -and -not $state.rules.ContainsKey($ruleID)) 'Firewall rollback did not verify removal or tolerate retry'
+        $legacy=$state.rules[$outboundID]
+        $state.rules.Remove($outboundID)
+        $legacy.Name=$outbound;$legacy.Description=''
+        $state.rules[$outbound]=$legacy
+        Remove-ManagedFirewallRule $outbound
+        Require ($state.removes -eq 4 -and $state.rules.Count -eq 0) 'Explicit cleanup did not accept a matching legacy rule'
+        $script:undo.Clear()
+        $script:externalEffectsPending=$false
+    }
+
+    [IO.File]::WriteAllText($snapshot,'first synthetic snapshot')
+    $first=(Get-FileHash -LiteralPath $snapshot).Hash
+    [IO.File]::WriteAllText($snapshot,'second synthetic snapshot')
+    $current=(Get-FileHash -LiteralPath $snapshot).Hash
+    foreach($entry in @(@{kind='dns';snapshotSHA256=$first},@{kind='dns'},
+                         @{kind='dns';snapshotSHA256=@($current,$current)},
+                         @{kind='file';path=$snapshot})){
+        $script:saved=@($entry,@{kind='service';name='AccessWeaver-byedpi'})
+        $refused=$false
+        try {Recover-Operation}catch{$refused=$_.Exception.Message -match '^DNS recovery journal '}
+        Require ($refused -and $script:restores -eq 0 -and $script:journalWrites -eq 0 -and $script:undo.Count -eq 0) 'An unbound journal reached rollback'
+    }
+    $script:saved=@(@{kind='dns';snapshotSHA256=$current})
+    Recover-Operation
+    Require ($script:restores -eq 1 -and $script:journalWrites -eq 1 -and -not [IO.File]::Exists($snapshot)) 'Bound journal did not retire the snapshot'
+
+    $completedReceipt=Get-DNSRecoveryReceiptPath $current
+    Require ([IO.File]::Exists($completedReceipt)) 'Verified recovery did not save a receipt'
+    [IO.File]::Delete($completedReceipt)
+    $script:saved=@(@{kind='file';path=$snapshot;backup='outside fixture'},@{kind='dns'})
+    Recover-Operation
+    Require ($script:restores -eq 1 -and $script:journalWrites -eq 2 -and -not [IO.File]::Exists($snapshot)) 'Legacy file undo tried to recreate the retired snapshot'
+
+    $firstBytes=[Text.Encoding]::UTF8.GetBytes('first snapshot publication')
+    $secondBytes=[Text.Encoding]::UTF8.GetBytes('second snapshot publication')
+    Publish-WorkflowFile $snapshot $firstBytes
+    Require (Confirm-DNSRecoverySnapshot (Get-WorkflowBytesSHA256 $firstBytes)) 'Initial snapshot publication changed its bytes'
+    $next=Get-WorkflowBytesSHA256 $secondBytes
+    $script:undo.Clear()
+    $script:undo.Add(@{kind='dns';snapshotSHA256=$next})
+    & $saveJournal
+    $prepared=[IO.File]::ReadAllText($script:journalPath) | ConvertFrom-Json
+    Require ($prepared.undo[0].snapshotSHA256 -ceq $next -and
+        (Confirm-DNSRecoverySnapshot (Get-WorkflowBytesSHA256 $firstBytes))) 'Journal preparation changed the active snapshot'
+    Publish-WorkflowFile $snapshot $secondBytes
+    Require (Confirm-DNSRecoverySnapshot (Get-WorkflowBytesSHA256 $secondBytes)) 'Snapshot replacement changed its bytes'
+    & {
+        $attempts=[Collections.Generic.List[int]]::new()
+        $delayLog=[Collections.Generic.List[int]]::new()
+        function Replace-StagedWorkflowFile([string]$Staged,[string]$Target){
+            if($Target -cne $snapshot){throw 'Unexpected retry fixture destination'}
+            $attempts.Add($attempts.Count+1)
+            if($attempts.Count -eq 1){throw [IO.IOException]::new('Inert transient replacement error',-2147023721)}
+            [IO.File]::WriteAllBytes($Target,[IO.File]::ReadAllBytes($Staged))
+            [IO.File]::Delete($Staged)
+        }
+        function Start-Sleep([int]$Milliseconds){
+            $delayLog.Add($Milliseconds)
+            if($fixtureChanged){[IO.File]::WriteAllText($snapshot,'independent edit')}
+        }
+        $fixtureChanged=$false
+        Publish-WorkflowFile $snapshot $firstBytes -BeforeHash $next
+        $firstHash=Get-WorkflowBytesSHA256 $firstBytes
+        Require ($attempts.Count -eq 2 -and ($delayLog -join ',') -ceq '50' -and
+            (Confirm-DNSRecoverySnapshot $firstHash)) 'Snapshot publication did not retry the transient replacement'
+        $attempts.Clear();$delayLog.Clear();$fixtureChanged=$true
+        $refused=$false
+        try{Publish-WorkflowFile $snapshot $secondBytes -BeforeHash $firstHash}catch{
+            $refused=$_.Exception.Message -ceq 'Workflow files changed before replacement'
+        }
+        Require ($refused -and $attempts.Count -eq 1 -and [IO.File]::ReadAllText($snapshot) -ceq 'independent edit') 'Snapshot retry overwrote an independent edit'
+        $refused=$false
+        try{Publish-WorkflowFile $snapshot $secondBytes -BeforeHash ''}catch{
+            $refused=$_.Exception.Message -ceq 'Workflow files changed before replacement'
+        }
+        Require ($refused -and $attempts.Count -eq 1 -and [IO.File]::ReadAllText($snapshot) -ceq 'independent edit') 'Fresh snapshot publication replaced an occupied destination'
+        [IO.File]::WriteAllBytes($snapshot,$secondBytes)
+    }
+    & {
+        $config=Join-Path $root 'dnscrypt-proxy.toml'
+        $backups=Join-Path $root 'backups'
+        [void][IO.Directory]::CreateDirectory($backups)
+        $originalUndo=$script:undo
+        $script:undo=[Collections.Generic.List[object]]::new()
+        try {
+            Publish-WorkflowFile $config $firstBytes -Recorded -BeforeHash ''
+            $originalHash=Get-WorkflowBytesSHA256 $firstBytes
+            Require ((Get-WorkflowFileHash $config) -ceq $originalHash -and $script:undo.Count -eq 1) 'New configuration publication was not recorded'
+            $record=$script:undo[0]
+            Publish-WorkflowFile $config $secondBytes -Recorded -BeforeHash $originalHash
+            Require ((Get-WorkflowFileHash $config) -ceq $next -and $record.expectedHash -ceq $next -and
+                -not $record.ContainsKey('pendingHash')) 'Configuration replacement was not recorded'
+            [IO.File]::WriteAllText($config,'independent edit')
+            $refused=$false
+            try{Publish-WorkflowFile $config $firstBytes -Recorded -BeforeHash $next}catch{
+                $refused=$_.Exception.Message -ceq 'Workflow files changed before replacement'
+            }
+            Require ($refused -and [IO.File]::ReadAllText($config) -ceq 'independent edit' -and
+                $record.expectedHash -ceq $next -and -not $record.ContainsKey('pendingHash')) 'Recorded publication overwrote an independent configuration'
+        } finally {
+            [IO.File]::Delete($config)
+            foreach($entry in $script:undo){
+                if($entry.backup){[IO.File]::Delete($entry.backup)}
+            }
+            [IO.Directory]::Delete($backups)
+            $script:undo=$originalUndo
+        }
+    }
+    & {
+        $receiptPath=Get-DNSRecoveryReceiptPath $next
+        function Replace-StagedWorkflowFile([string]$Staged,[string]$Target){
+            if($Target -cne $receiptPath){throw 'Unexpected receipt fixture destination'}
+            if($publishCorruptReceipt){[IO.File]::WriteAllText($Target,('F'*64));[IO.File]::Delete($Staged)}
+        }
+        foreach($publishCorruptReceipt in @($false,$true)){
+            [IO.File]::WriteAllText($receiptPath,('A'*64))
+            $refused=$false
+            try{Save-DNSRecoveryReceipt $next}catch{
+                $refused=$_.Exception.Message -ceq 'Workflow file publication could not be verified'
+            }
+            Require ($refused -and [IO.File]::Exists($snapshot)) 'Unverified receipt was accepted before snapshot retirement'
+            [IO.File]::Delete($receiptPath)
+        }
+    }
+    $script:journalState='succeeded'
+    & $saveJournal
+    $finished=[IO.File]::ReadAllText($script:journalPath) | ConvertFrom-Json
+    Require ($finished.state -ceq 'succeeded' -and $finished.undo[0].snapshotSHA256 -ceq $next) 'Journal replacement lost the snapshot binding'
+    Require ([IO.Directory]::GetFileSystemEntries($profiles).Length -eq 1 -and
+        [IO.Directory]::GetFileSystemEntries($root).Length -eq 2) 'Successful publication left a sidecar'
+    $directoryTarget=Join-Path $profiles 'directory-target'
+    [void][IO.Directory]::CreateDirectory($directoryTarget)
+    try {
+        $refused=$false
+        try {Publish-WorkflowFile $directoryTarget $firstBytes}catch{$refused=$true}
+        Require ($refused -and [IO.Directory]::Exists($directoryTarget) -and
+            [IO.Directory]::GetFileSystemEntries($profiles).Length -eq 2) 'Failed publication changed its target or left a sidecar'
+    } finally {[IO.Directory]::Delete($directoryTarget)}
+
+    [IO.File]::WriteAllText($serviceConfig,'inert resolver configuration')
+    $configHash=(Get-FileHash -LiteralPath $serviceConfig).Hash
+    $fileUndo=@{kind='file';path=$serviceConfig;expectedHash=$configHash}
+    $serviceUndo=@{kind='service';name='AccessWeaver-dnscrypt';commandSHA256=(Get-ManagedServiceCommandDigest $script:serviceCommand)}
+    $dnsUndo=@{kind='dns';snapshotSHA256=$next;snapshotActive=$true}
+    $script:undo.Clear()
+    foreach($entry in @($dnsUndo,$fileUndo,$serviceUndo)){$script:undo.Add($entry)}
+
+    $script:order.Clear()
+    $originalCommand=$script:serviceCommand
+    $script:serviceCommand='inert service-host command --instance='+('2'*32)
+    $rollback=@(Rollback)
+    Require ($rollback.Count -eq 1 -and $rollback[0] -ceq 'Recovery journal does not match the current managed service' -and
+        $script:order.Count -eq 0 -and [IO.File]::Exists($snapshot) -and [IO.File]::Exists($serviceConfig)) 'Stale service rollback changed DNS or files'
+    $script:serviceCommand=$originalCommand
+    $script:saved=@($dnsUndo,@{kind='service';name='AccessWeaver-dnscrypt'})
+    $refused=$false
+    try{Recover-Operation}catch{$refused=$_.Exception.Message -match '^Recovery journal has no service binding'}
+    Require ($refused -and $script:order.Count -eq 0 -and [IO.File]::Exists($snapshot)) 'Unbound service journal reached recovery'
+    $script:failRestore=$true
+    $rollback=@(Rollback)
+    Require ($rollback.Count -eq 1 -and $rollback[0] -ceq 'Synthetic DNS restore failure' -and
+        ($script:order -join ',') -ceq 'restore' -and [IO.File]::Exists($snapshot) -and
+        (Get-FileHash -LiteralPath $serviceConfig).Hash -ceq $configHash) 'Failed DNS restoration tore down the resolver'
+
+    $script:order.Clear()
+    $script:failRestore=$false
+    $dnsUndo.snapshotSHA256=$first
+    $rollback=@(Rollback)
+    Require ($rollback.Count -eq 1 -and $script:order.Count -eq 0 -and [IO.File]::Exists($serviceConfig)) 'Mismatched DNS rollback tore down the resolver'
+
+    $dnsUndo.snapshotSHA256=$next
+    $script:undo.Add($dnsUndo)
+    $rollback=@(Rollback)
+    Require ($rollback.Count -eq 1 -and $script:order.Count -eq 0 -and [IO.File]::Exists($serviceConfig)) 'Duplicate DNS rollback entries reached mutation'
+    $script:undo.RemoveAt($script:undo.Count-1)
+
+    [IO.File]::Delete($snapshot)
+    $rollback=@(Rollback)
+    Require ($rollback.Count -eq 1 -and ($script:order -join ',') -ceq 'query' -and
+        [IO.File]::Exists($serviceConfig)) 'Missing active snapshot tore down the resolver'
+    $script:order.Clear()
+
+    $script:saved=@($dnsUndo,$serviceUndo)
+    $script:undo.Clear()
+    $refused=$false
+    try{Recover-Operation}catch{$refused=$_.Exception.Message -match 'missing without a verified restoration receipt'}
+    Require ($refused -and $script:order.Count -eq 0 -and $script:undo.Count -eq 0) 'Fresh worker trusted an absent active snapshot'
+    $receipt=Get-DNSRecoveryReceiptPath $next
+    [IO.File]::WriteAllText($receipt,('X'*64))
+    $refused=$false
+    try{Recover-Operation}catch{$refused=$_.Exception.Message -match 'missing without a verified restoration receipt'}
+    Require ($refused -and $script:order.Count -eq 0) 'Malformed restoration receipt allowed teardown'
+    [IO.File]::Delete($receipt)
+
+    foreach($size in @(0,63,65,8192)){
+        [IO.File]::WriteAllText($receipt,('A'*$size))
+        $refused=$false
+        try{Recover-Operation}catch{$refused=$_.Exception.Message -match 'missing without a verified restoration receipt'}
+        Require ($refused -and $script:order.Count -eq 0) 'Wrong-size restoration receipt allowed teardown'
+    }
+    [IO.File]::WriteAllText($receipt,$next.ToUpperInvariant())
+    $receiptLock=[IO.File]::Open($receipt,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    try{
+        $refused=$false
+        try{Recover-Operation}catch{$refused=$_.Exception.Message -match 'missing without a verified restoration receipt'}
+        Require ($refused -and $script:order.Count -eq 0) 'Locked restoration receipt allowed teardown'
+    }finally{$receiptLock.Dispose()}
+    Require (-not (Confirm-DNSRecoveryEntry $dnsUndo)) 'An exact restoration receipt did not allow cleanup'
+    $copyPath=Get-DNSRecoveryCopyPath
+    $copyFrame=[Text.Encoding]::ASCII.GetBytes($next.ToUpperInvariant()+[char]10)+$secondBytes
+    [IO.File]::WriteAllBytes($copyPath,$copyFrame)
+    Require (Confirm-DNSRecoveryEntry $dnsUndo) 'A matching protected copy did not preserve active journal recovery'
+    $refused=$false
+    try{[void](Confirm-DNSRecoveryEntry @{snapshotSHA256=$first;snapshotActive=$true})}catch{
+        $refused=$_.Exception.Message -match 'does not match the protected recovery copy'
+    }
+    Require $refused 'A stale journal accepted a different protected copy'
+    [IO.File]::Delete($copyPath)
+    $script:remainingDohFirewall=$true
+    try{
+        $refused=$false
+        try{Recover-Operation}catch{$refused=$_.Exception.Message -ceq 'Synthetic remaining managed DoH firewall rule'}
+        Require ($refused -and $script:order.Count -eq 0 -and [IO.File]::Exists($receipt)) 'A restoration receipt bypassed verification of remaining managed firewall rules'
+    }finally{$script:remainingDohFirewall=$false}
+    & {
+        $readRecoveryFile=(Get-Command Read-DNSRecoveryFileBytes).ScriptBlock
+        function Read-DNSRecoveryFileBytes([string]$Path,[int]$Maximum){
+            $frame=& $readRecoveryFile $Path $Maximum
+            if($Path -ceq $receipt){[IO.File]::WriteAllBytes($snapshot,$reappearingSnapshot)}
+            if($null -ne $frame){return ,$frame}
+        }
+        $reappearingSnapshot=$firstBytes
+        $refused=$false
+        try{Recover-Operation}catch{$refused=$_.Exception.Message -match 'does not match the active snapshot'}
+        Require ($refused -and $script:order.Count -eq 0 -and [IO.File]::Exists($snapshot)) 'Receipt bypassed a newly active different snapshot'
+        [IO.File]::Delete($snapshot)
+        $reappearingSnapshot=$secondBytes
+        Require (Confirm-DNSRecoveryEntry $dnsUndo) 'Receipt bypassed restoration of the newly active matching snapshot'
+        [IO.File]::Delete($snapshot)
+    }
+    foreach($timing in @('receipt','firewall')){
+        & {
+            $readRecoveryFile=(Get-Command Read-DNSRecoveryFileBytes).ScriptBlock
+            $assertRuleOwnership=(Get-Command Assert-DNSDohPlaintextRuleOwnership).ScriptBlock
+            function Read-DNSRecoveryFileBytes([string]$Path,[int]$Maximum){
+                $frame=& $readRecoveryFile $Path $Maximum
+                if($timing -ceq 'receipt' -and $Path -ceq $receipt){[IO.File]::WriteAllBytes($copyPath,$reappearingCopy)}
+                if($null -ne $frame){return ,$frame}
+            }
+            function Assert-DNSDohPlaintextRuleOwnership([string]$ID){
+                & $assertRuleOwnership $ID
+                if($timing -ceq 'firewall'){[IO.File]::WriteAllBytes($copyPath,$reappearingCopy)}
+            }
+            $reappearingCopy=$copyFrame
+            Require (Confirm-DNSRecoveryEntry $dnsUndo) ('Matching protected copy was ignored during '+$timing+' inspection')
+            Require ([IO.File]::Exists($copyPath) -and -not [IO.File]::Exists($snapshot)) 'Receipt check changed active recovery files'
+            [IO.File]::Delete($copyPath)
+            $olderDigest=Get-WorkflowBytesSHA256 $firstBytes
+            $reappearingCopy=[Text.Encoding]::ASCII.GetBytes($olderDigest.ToUpperInvariant()+[char]10)+$firstBytes
+            $refused=$false
+            try{Recover-Operation}catch{$refused=$_.Exception.Message -match 'does not match the protected recovery copy'}
+            Require ($refused -and $script:order.Count -eq 0 -and [IO.File]::Exists($copyPath)) ('Stale protected copy allowed teardown during '+$timing+' inspection')
+            [IO.File]::Delete($copyPath)
+            $reappearingCopy=[byte[]]@(0)
+            $refused=$false
+            try{Recover-Operation}catch{$refused=$_.Exception.Message -match 'Original DNS recovery copy could not be verified'}
+            Require ($refused -and $script:order.Count -eq 0 -and [IO.File]::Exists($copyPath)) ('Corrupt protected copy allowed teardown during '+$timing+' inspection')
+            [IO.File]::Delete($copyPath)
+        }
+    }
+    [IO.File]::Delete($receipt)
+
+    $dnsUndo.snapshotActive=$false
+    Require (-not (Confirm-DNSRecoveryEntry $dnsUndo)) 'Unpublished snapshot was treated as active'
+    $dnsUndo.snapshotActive=$true
+    foreach($entry in @($dnsUndo,$fileUndo,$serviceUndo)){$script:undo.Add($entry)}
+    Publish-WorkflowFile $snapshot $secondBytes
+    $script:serviceFault='pending-then-absent'
+    $rollback=@(Rollback)
+    Require ($rollback.Count -eq 0 -and ($script:order -join ',') -ceq 'restore,query,query,stop,wait-stopped,query,delete,query,query' -and
+        -not [IO.File]::Exists($snapshot) -and -not [IO.File]::Exists($serviceConfig)) 'Retry did not verify service removal before file rollback'
+    $script:order.Clear()
+    Recover-Operation
+    $script:undo.Insert(1,$fileUndo)
+    Require (($script:order -join ',') -ceq 'query,query,query') 'Already retired service was mutated during retry'
+
+    $failureModes=@(
+        @{fault='inspect';trace='query'},
+        @{fault='truncated';trace='query'},
+        @{fault='identity';trace='query'},
+        @{fault='stop-command';trace='query,query,query,stop'},
+        @{fault='stop-timeout';trace='query,query,query,stop,wait-stopped'}
+    )
+    foreach($case in $failureModes){
+        [IO.File]::WriteAllText($serviceConfig,'inert resolver configuration')
+        $script:serviceFault=$case.fault;$script:serviceState='running';$script:order.Clear()
+        $rollback=@(Rollback)
+        Require ($rollback.Count -eq 1 -and ($script:order -join ',') -ceq $case.trace -and
+            (Get-FileHash -LiteralPath $serviceConfig).Hash -ceq $configHash) 'Unverified service rollback removed a dependent file'
+    }
+    $script:resolverInUse=$true;$script:serviceFault='';$script:serviceState='running';$script:order.Clear()
+    $rollback=@(Rollback)
+    Require ($rollback.Count -eq 1 -and $rollback[0] -match '^DNSCrypt service retained' -and
+        $script:serviceState -ceq 'running' -and ($script:order -join ',') -ceq 'query,query' -and
+        (Get-FileHash -LiteralPath $serviceConfig).Hash -ceq $configHash) 'Rollback stopped a resolver that was still needed'
+    $script:resolverInUse=$false
+    & {
+        function Get-Service {
+            [CmdletBinding()]param($Name)
+            Require ($Name -ceq 'AccessWeaver-dnscrypt') 'Unexpected service restart lookup'
+            $service=[pscustomobject]@{Name=$Name;Status=$script:serviceState}
+            $service | Add-Member ScriptMethod WaitForStatus {
+                param($Status,$Timeout)
+                Require ($Status -ceq 'Running' -and $Timeout.TotalSeconds -eq 20 -and
+                    $script:serviceState -ceq 'running') 'Resolver restart was not verified'
+                $script:order.Add('wait-running')
+            }
+            return $service
+        }
+        function Start-Service {
+            [CmdletBinding()]param($InputObject)
+            Require ($InputObject.Name -ceq 'AccessWeaver-dnscrypt') 'Unexpected service restart'
+            $script:serviceState='running'
+            $script:order.Add('start')
+        }
+        function Read-DNSClientInventory {
+            Require ($script:serviceState -ceq 'running') 'Listener verification started before the service restarted'
+            return @{ServerAddresses=@('127.0.0.1','::ffff:127.0.0.1','2001:db8::53','::1')}
+        }
+        function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds,[string]$FailureMessage){
+            Require ($TimeoutSeconds -eq 5 -and $Servers.Count -eq 2 -and
+                '127.0.0.1' -cin $Servers -and '::1' -cin $Servers) 'Shutdown recovery did not verify each distinct loopback listener'
+            $script:order.Add('probe')
+            if($script:serviceFault -ceq 'dependency-with-broken-listener'){throw $FailureMessage}
+        }
+        foreach($case in @(
+            @{fault='dependency-during-stop';state='running';trace='query,query,query,stop,wait-stopped,query,start,wait-running,probe,query';reason='^DNSCrypt service retained';final='running'},
+            @{fault='dependency-with-broken-listener';state='running';trace='query,query,query,stop,wait-stopped,query,start,wait-running,probe';reason='^Restored DNSCrypt listener could not be verified';final='running'},
+            @{fault='dependency-already-stopped';state='stopped';trace='query,query,query,stop';reason='^DNSCrypt service retained';final='stopped'},
+            @{fault='dependency-with-replacement';state='running';trace='query,query,query,stop,wait-stopped,query';reason='^Recovery journal does not match';final='running'}
+        )){
+            $script:serviceFault=$case.fault
+            $script:serviceState=$case.state
+            $script:order.Clear()
+            $rollback=@(Rollback)
+            Require ($rollback.Count -eq 1 -and $rollback[0] -match $case.reason -and
+                ($script:order -join ',') -ceq $case.trace -and $script:serviceState -ceq $case.final -and
+                (Get-FileHash -LiteralPath $serviceConfig).Hash -ceq $configHash) 'Late DNS dependency did not retain the owned service and configuration'
+            $script:resolverInUse=$false
+            $script:serviceCommand=$originalCommand
+        }
+    }
+    foreach($case in @(
+        @{fault='replace-during-dns-inventory';state='running';trace='query,query,query'},
+        @{fault='replace-during-stop';state='running';trace='query,query,query,stop,wait-stopped,query'},
+        @{fault='replace-already-stopped';state='stopped';trace='query,query,query,stop,query'}
+    )){
+        $script:serviceFault=$case.fault;$script:serviceState=$case.state;$script:order.Clear()
+        $rollback=@(Rollback)
+        Require ($rollback.Count -eq 1 -and $rollback[0] -ceq 'Recovery journal does not match the current managed service' -and
+            ($script:order -join ',') -ceq $case.trace -and
+            (Get-FileHash -LiteralPath $serviceConfig).Hash -ceq $configHash) 'Service replacement reached an unowned mutation or removed its configuration'
+        $script:serviceCommand=$originalCommand
+    }
+    $script:serviceFault='pending';$script:serviceState='stopped';$script:order.Clear()
+    $rollback=@(Rollback)
+    Require ($rollback.Count -eq 1 -and $rollback[0] -match '^Managed service removal is pending' -and
+        $script:order[0] -ceq 'query' -and $script:order[3] -ceq 'stop' -and $script:order[5] -ceq 'delete' -and
+        [IO.File]::Exists($serviceConfig)) 'Delete acceptance was mistaken for verified service removal'
+    $script:serviceFault='';$script:order.Clear()
+    $rollback=@(Rollback)
+    Require ($rollback.Count -eq 0 -and ($script:order -join ',') -ceq 'query,query' -and
+        -not [IO.File]::Exists($serviceConfig)) 'Retry did not complete deferred file recovery'
+    [IO.File]::Delete($receipt)
+
+    $services=Join-Path $root 'services'
+    [void][IO.Directory]::CreateDirectory($services)
+    $hostBytes=[Text.Encoding]::UTF8.GetBytes('synthetic service host')
+    $hostHash=(Get-WorkflowBytesSHA256 $hostBytes).ToLowerInvariant()
+    $hostPath=Join-Path $services ('host-'+$hostHash+'.exe')
+    $config=Join-Path $services 'dnscrypt.json'
+    $registration=Join-Path $services 'dnscrypt.registration'
+    [IO.File]::WriteAllBytes($hostPath,$hostBytes)
+    [IO.File]::WriteAllText($config,'synthetic protected service config')
+    $legacyCommand=(Quote-Arg $hostPath)+' service-host '+(Quote-Arg $config)
+    $modernCommand=$legacyCommand+' --instance='+('a'*32)
+    $script:serviceState='running';$script:order.Clear()
+    $script:serviceCommand=$legacyCommand
+    $entry=Assert-ManagedServiceOwnership 'AccessWeaver-dnscrypt'
+    Require ($entry.commandSHA256 -ceq (Get-ManagedServiceCommandDigest $legacyCommand)) 'Protected legacy registration was refused'
+
+    $script:serviceCommand=$modernCommand
+    $refused=$false
+    try {Assert-ManagedServiceOwnership 'AccessWeaver-dnscrypt'}catch{$refused=$true}
+    Require $refused 'Modern registration without its ownership record was accepted'
+    [IO.File]::WriteAllText($registration,(Get-ManagedServiceCommandDigest $modernCommand))
+    $entry=Assert-ManagedServiceOwnership 'AccessWeaver-dnscrypt'
+    Require ($entry.commandSHA256 -ceq (Get-ManagedServiceCommandDigest $modernCommand)) 'Exact protected modern registration was refused'
+
+    foreach($command in @($legacyCommand,($legacyCommand+' --instance='+('b'*32)),($modernCommand.Replace($config,(Join-Path $root 'other.json'))),'foreign.exe')){
+        $script:serviceCommand=$command
+        $refused=$false
+        try {Assert-ManagedServiceOwnership 'AccessWeaver-dnscrypt'}catch{$refused=$true}
+        Require $refused 'A substituted registration was accepted for explicit removal'
+    }
+    $script:serviceCommand=$modernCommand
+    [IO.File]::WriteAllText($hostPath,'replacement host')
+    $refused=$false
+    try {Assert-ManagedServiceOwnership 'AccessWeaver-dnscrypt'}catch{$refused=$_.Exception.Message -match '^Managed service host content differs'}
+    Require ($refused -and @($script:order | Where-Object {$_ -cne 'query'}).Count -eq 0) 'Changed host reached service mutation'
+    [IO.File]::WriteAllBytes($hostPath,$hostBytes)
+    $entry=Assert-ManagedServiceOwnership 'AccessWeaver-dnscrypt'
+    $script:resolverInUse=$true;$script:order.Clear()
+    $refused=$false
+    try {Remove-RecordedService 'AccessWeaver-dnscrypt' -Entry $entry}catch{$refused=$_.Exception.Message -match '^DNSCrypt service retained'}
+    Require ($refused -and $script:serviceState -ceq 'running' -and
+        ($script:order -join ',') -ceq 'query') 'Explicit removal stopped a resolver that was still needed'
+    $script:resolverInUse=$false
+    Remove-RecordedService 'AccessWeaver-dnscrypt' -Entry $entry
+    Require ($script:serviceState -ceq 'absent') 'Verified explicit removal did not retire the service'
+
+    # Replay an interrupted DNSCrypt activation with actual protected-file rollback.
+    $componentDir=Join-Path $root 'components\dnscrypt'
+    $reloadPath=Join-Path $componentDir 'dnscrypt-proxy.toml'
+    $reloadBackup=Join-Path $root 'backups\reload-original'
+    [void][IO.Directory]::CreateDirectory($componentDir)
+    [void][IO.Directory]::CreateDirectory((Split-Path -Parent $reloadBackup))
+    $originalBytes=[Text.Encoding]::UTF8.GetBytes('original resolver configuration')
+    $replacementBytes=[Text.Encoding]::UTF8.GetBytes('replacement resolver configuration')
+    [IO.File]::WriteAllBytes($reloadBackup,$originalBytes)
+    $originalHash=Get-WorkflowBytesSHA256 $originalBytes
+    $reloadFile=@{kind='file';path=$reloadPath;backup=$reloadBackup;originalHash=$originalHash;expectedHash=(Get-WorkflowBytesSHA256 $replacementBytes)}
+    $reloadEntry=@{kind='dnscrypt-reload';name='AccessWeaver-dnscrypt';commandSHA256=(Get-ManagedServiceCommandDigest $script:serviceCommand);
+        path=$reloadPath;originalHash=$originalHash;originalStartup='Manual'}
+    $dnsUndo.snapshotSHA256=$next
+    $script:serviceState='running';$script:serviceFault=''
+    $script:reloadCount=0;$script:failReload=$true;$script:reloadStartup='Automatic';$script:legacyReload=$false
+    $reloadReceipt=Get-DNSRecoveryReceiptPath $next
+    [IO.File]::Delete($reloadReceipt)
+    $script:recoveryQueries=[Collections.Generic.List[string]]::new()
+    $script:failRecoveryProbe=$false
+    $script:driftAfterRecoveryProbe=$false
+    function Read-DNSClientInventory {
+        if($script:driftAfterRecoveryProbe -and $script:recoveryQueries.Count -gt 0){
+            return @{ServerAddresses=@('127.0.0.1','127.0.0.2','::1')}
+        }
+        return @{ServerAddresses=@('127.0.0.1','::ffff:127.0.0.1','2001:db8::53','::1')}
+    }
+    function Clear-DnsClientCache {[CmdletBinding()]param()}
+    function Resolve-DnsName {
+        [CmdletBinding()]param($Name,$Server,$Type,[switch]$DnsOnly,[switch]$NoHostsFile,[switch]$QuickTimeout)
+        Require ($script:reloadCount -gt 0 -and $Server -cin @('127.0.0.1','::1') -and $Name -ceq 'example.net.' -and
+            $Type -ceq 'A' -and $DnsOnly -and $NoHostsFile -and $QuickTimeout) 'Unexpected recovery DNS query'
+        $script:recoveryQueries.Add($Server)
+        if($script:failRecoveryProbe -and $Server -ceq '::1'){return}
+        return [pscustomobject]@{Name=$Name;Section='Answer';Type='A';IPAddress='192.0.2.15'}
+    }
+    function Set-Service {
+        [CmdletBinding()]param($Name,$StartupType)
+        Require ($Name -ceq 'AccessWeaver-dnscrypt' -and $StartupType -ceq 'Manual' -and
+            $script:reloadCount -eq 4) 'Startup policy changed before the original resolver was reloaded and verified'
+        $script:reloadStartup=$StartupType
+    }
+    function Get-Service {
+        [CmdletBinding()]param($Name)
+        Require ($Name -ceq 'AccessWeaver-dnscrypt') 'Unexpected resolver service name'
+        $service=[pscustomobject]@{Status='Running';StartType=$script:reloadStartup}
+        $service | Add-Member ScriptMethod WaitForStatus {param($State,$Timeout);if($State -cne 'Running'){throw 'Unexpected wait'}}
+        return $service
+    }
+    function Restart-Service {
+        [CmdletBinding()]param($InputObject)
+        if($script:legacyReload){
+            Require (-not [IO.File]::Exists($snapshot) -and [IO.File]::Exists($reloadReceipt) -and
+                -not $script:order.Contains('restore')) 'Legacy receipt did not bypass adapter restoration'
+        }else{
+            Require ((Get-DNSRecoverySnapshotDigest) -ceq $next -and -not [IO.File]::Exists($reloadReceipt) -and
+                $script:order.Contains('restore')) 'Resolver reload did not retain the adapter snapshot until verification'
+        }
+        Require ((Get-WorkflowFileHash $reloadPath) -ceq $originalHash) 'Resolver reloaded before restoring its original file'
+        $script:reloadCount++
+        if($script:failReload){throw 'Synthetic reload failure'}
+    }
+    [IO.File]::WriteAllBytes($snapshot,$secondBytes)
+    $script:saved=@($dnsUndo,$reloadFile,$reloadEntry)
+    foreach($state in @('missing','changed')){
+        if($state -ceq 'changed'){[IO.File]::WriteAllText($reloadPath,'independent resolver configuration')}
+        $script:order.Clear()
+        $refused=$false
+        try{Recover-Operation}catch{$refused=$_.Exception.Message -match '^DNSCrypt configuration differs from the recorded activation'}
+        Require ($refused -and $script:reloadCount -eq 0 -and $script:order.Count -eq 0 -and
+            (Get-DNSRecoverySnapshotDigest) -ceq $next) 'Stale resolver journal changed adapter DNS'
+        if($state -ceq 'changed'){
+            Require ([IO.File]::ReadAllText($reloadPath) -ceq 'independent resolver configuration') 'Stale resolver journal changed the config'
+        }else{
+            Require (-not [IO.File]::Exists($reloadPath)) 'Stale resolver journal recreated a missing config'
+        }
+    }
+    [IO.File]::WriteAllBytes($reloadPath,$replacementBytes)
+    $script:order.Clear()
+    $refused=$false
+    try{Recover-Operation}catch{$refused=$_.Exception.Message -match '^DNSCrypt activation failed'}
+    Require ($refused -and $script:reloadCount -eq 1 -and (Get-DNSRecoverySnapshotDigest) -ceq $next -and
+        -not [IO.File]::Exists($reloadReceipt) -and $script:order.Contains('restore')) 'Failed reload did not preserve the active snapshot for retry'
+    $script:failReload=$false
+    $script:failRecoveryProbe=$true
+    $script:order.Clear()
+    $script:refusedProbe=$false
+    & {
+        function Start-Sleep {[CmdletBinding()]param($Milliseconds);throw 'Synthetic probe deadline'}
+        try{Recover-Operation}catch{$script:refusedProbe=$_.Exception.Message -match '^DNSCrypt activation failed'}
+    }
+    Require ($script:refusedProbe -and $script:reloadCount -eq 2 -and $script:reloadStartup -ceq 'Automatic' -and
+        $script:recoveryQueries.Count -eq 2 -and (Get-DNSRecoverySnapshotDigest) -ceq $next -and
+        -not [IO.File]::Exists($reloadReceipt)) 'Running service with a failed IPv6 listener was recorded as restored'
+    $script:failRecoveryProbe=$false
+    $script:recoveryQueries.Clear()
+    $script:order.Clear()
+    $script:driftAfterRecoveryProbe=$true
+    $refused=$false
+    try{Recover-Operation}catch{$refused=$_.Exception.Message -match '^DNSCrypt activation failed'}
+    Require ($refused -and $script:reloadCount -eq 3 -and $script:reloadStartup -ceq 'Automatic' -and
+        $script:recoveryQueries.Count -eq 2 -and (Get-DNSRecoverySnapshotDigest) -ceq $next -and
+        -not [IO.File]::Exists($reloadReceipt)) 'A newly dependent listener escaped DNSCrypt recovery verification'
+    $script:driftAfterRecoveryProbe=$false
+    $script:recoveryQueries.Clear()
+    $script:order.Clear()
+    Recover-Operation
+    Require ($script:reloadCount -eq 4 -and $script:reloadStartup -ceq 'Manual' -and $script:order.Contains('restore') -and
+        -not [IO.File]::Exists($snapshot) -and [IO.File]::ReadAllText($reloadReceipt) -ceq $next.ToUpperInvariant() -and
+        $script:recoveryQueries.Count -eq 2 -and $script:recoveryQueries.Contains('127.0.0.1') -and
+        $script:recoveryQueries.Contains('::1') -and
+        (Get-WorkflowFileHash $reloadPath) -ceq $originalHash) 'Retry after file restoration did not verify both restored listeners'
+    $script:legacyReload=$true
+    $script:recoveryQueries.Clear()
+    $script:order.Clear()
+    Recover-Operation
+    Require ($script:reloadCount -eq 5 -and $script:recoveryQueries.Count -eq 2 -and
+        -not $script:order.Contains('restore')) 'A matching legacy receipt did not permit listener verification'
+
+    $invalid=@{kind='dnscrypt-reload';name='AccessWeaver-dnscrypt';commandSHA256=$reloadEntry.commandSHA256;
+        path=$serviceConfig;originalHash=$originalHash}
+    $script:saved=@($dnsUndo,$reloadFile,$invalid)
+    $reloadsBeforeForeignFile=$script:reloadCount
+    $refused=$false
+    try{Recover-Operation}catch{$refused=$_.Exception.Message -ceq 'Original DNSCrypt file recovery is unverified'}
+    Require ($refused -and $script:reloadCount -eq $reloadsBeforeForeignFile) 'A foreign file reached resolver reload'
+} finally {
+    if($reloadPath){[IO.File]::Delete($reloadPath)}
+    if($reloadBackup){[IO.File]::Delete($reloadBackup)}
+    if($componentDir){
+        [IO.Directory]::Delete($componentDir)
+        [IO.Directory]::Delete((Split-Path -Parent $componentDir))
+        [IO.Directory]::Delete((Split-Path -Parent $reloadBackup))
+    }
+    foreach($path in @($registration,$config,$hostPath)){if($path){[IO.File]::Delete($path)}}
+    if($services){[IO.Directory]::Delete($services)}
+    $env:SystemRoot=$originalSystemRoot
+    [IO.File]::Delete($serviceConfig)
+    [IO.File]::Delete($snapshot)
+    [IO.File]::Delete((Get-DNSRecoveryCopyPath))
+    [IO.File]::Delete($script:journalPath)
+    foreach($digest in @($current,$next)){
+        if($digest){[IO.File]::Delete((Get-DNSRecoveryReceiptPath $digest))}
+    }
+    [IO.Directory]::Delete($profiles)
+    [IO.Directory]::Delete($root)
+}
+Write-Output 'DNS journal binding, DNS-first remove-all, firewall and service ownership, retirement, rollback and publication checks passed.'

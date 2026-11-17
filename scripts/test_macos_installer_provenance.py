@@ -25,6 +25,8 @@ class NativePackageProvenanceTests(unittest.TestCase):
         package,names=subject_names(VERSION,'amd64')
         for name in names|{BUNDLE_NAME}:(root/name).write_bytes(b'not parsed before real authentication')
         return package,names
+    run_uri = "https://github.com/Yunushan/accessweaver/actions/runs/7/attempts/2\n"
+
     def test_independently_pins_native_workflow_and_source(self):
         command=verification_command(Path('artifact.pkg'),Path('bundle'),COMMIT,REF,'trusted-gh')
         for flag,value in {'--signer-workflow':WORKFLOW,'--repo':'Yunushan/accessweaver','--hostname':'github.com','--source-digest':COMMIT,'--signer-digest':COMMIT,'--source-ref':REF,'--cert-oidc-issuer':'https://token.actions.githubusercontent.com','--predicate-type':'https://slsa.dev/provenance/v1'}.items():self.assertEqual(command[command.index(flag)+1],value)
@@ -36,7 +38,7 @@ class NativePackageProvenanceTests(unittest.TestCase):
     def test_all_snapshot_subjects_authenticate_before_parsing(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);package,names=self.fixture(root);authenticated=[]
-            def auth(path,bundle,commit,ref,gh):
+            def auth(path,bundle,commit,ref,gh,run_id):
                 self.assertNotEqual(path.parent,root);self.assertEqual(bundle.parent,path.parent)
                 self.assertEqual((commit,ref,gh),(COMMIT,REF,'trusted-gh'));authenticated.append(path.name)
             def parse(snapshot,*args):
@@ -44,8 +46,8 @@ class NativePackageProvenanceTests(unittest.TestCase):
                 self.assertEqual((snapshot/package).read_bytes(),(root/package).read_bytes())
                 (root/package).write_bytes(b'changed outside private snapshot')
                 self.assertNotEqual((snapshot/package).read_bytes(),(root/package).read_bytes())
-                return {'mocked':True}
-            with patch('verify_macos_installer_provenance.authenticate',side_effect=auth),patch('verify_macos_installer_provenance.validate_contents',side_effect=parse):report=verify(root,COMMIT,REF,VERSION,'amd64','trusted-gh')
+                return {'mocked':True,'lifecycleRunID':'7'}
+            with patch('verify_macos_installer_provenance.authenticate',side_effect=auth),patch('verify_macos_installer_provenance.validate_contents',side_effect=parse):report=verify(root,COMMIT,REF,VERSION,'amd64','trusted-gh',run_id='7')
             self.assertEqual(report['subjectsVerified'],7);self.assertEqual({v['file'] for v in report['subjects']},names)
             self.assertFalse(report['publisherSignatureVerified']);self.assertFalse(report['localTargetExecution'])
     def test_signature_failures_stop_before_parsing_without_fallback(self):
@@ -54,16 +56,29 @@ class NativePackageProvenanceTests(unittest.TestCase):
                 root=Path(folder);self.fixture(root);calls=[]
                 def run(*args,**kwargs):
                     calls.append(args[0])
-                    if len(calls)==failed_call:raise subprocess.CalledProcessError(1,args[0],stderr=b'private child response')
-                    return subprocess.CompletedProcess(args[0],0)
+                    status = 1 if len(calls) == failed_call else 0
+                    return subprocess.CompletedProcess(args[0], status, stdout=self.run_uri, stderr='private child response')
                 with patch('verify_macos_installer_provenance.subprocess.run',side_effect=run),patch('verify_macos_installer_provenance.validate_contents') as contents:
-                    with self.assertRaisesRegex(ValueError,'cryptographic') as error:verify(root,COMMIT,REF,VERSION,'amd64')
+                    with self.assertRaisesRegex(ValueError,'cryptographic') as error:verify(root,COMMIT,REF,VERSION,'amd64',run_id='7')
                     metadata=json.loads(str(error.exception).split(": ",1)[1])
                     self.assertEqual(metadata['phase'],'subject-authentication')
                     self.assertEqual(metadata['returncode'],1)
                     self.assertEqual(metadata['stderrSHA256'],hashlib.sha256(b'private child response').hexdigest())
                     self.assertNotIn('private child response',str(error.exception))
                     contents.assert_not_called();self.assertEqual(len(calls),failed_call)
+    def test_a_subject_from_another_successful_run_refuses_before_parsing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            good = subprocess.CompletedProcess(["gh"], 0, stdout=self.run_uri)
+            other = subprocess.CompletedProcess(["gh"], 0, stdout=self.run_uri.replace("/runs/7/", "/runs/8/"))
+            with patch("verify_macos_installer_provenance.subprocess.run", side_effect=[good] * 6 + [other]) as run, patch(
+                "verify_macos_installer_provenance.validate_contents"
+            ) as parse, self.assertRaisesRegex(ValueError, "expected GitHub Actions run"):
+                verify(root, COMMIT, REF, VERSION, 'amd64', run_id="7")
+            self.assertEqual(run.call_count, 7)
+            parse.assert_not_called()
+
     def test_bad_inventory_and_wrong_target_fail_before_authentication(self):
         for kind in ('extra','missing','hardlink','wrong-target'):
             with self.subTest(kind=kind),tempfile.TemporaryDirectory() as folder:
@@ -73,7 +88,7 @@ class NativePackageProvenanceTests(unittest.TestCase):
                 if kind=='hardlink':
                     (root/'BUILD-INFO.json').unlink();os.link(root/package,root/'BUILD-INFO.json')
                 with patch('verify_macos_installer_provenance.authenticate') as auth:
-                    with self.assertRaises(ValueError):verify(root,COMMIT,REF,VERSION,'arm64' if kind=='wrong-target' else 'amd64')
+                    with self.assertRaises(ValueError):verify(root,COMMIT,REF,VERSION,'arm64' if kind=='wrong-target' else 'amd64',run_id='7')
                     auth.assert_not_called()
     def test_negative_probes_recheck_correct_subject_and_preserve_other_constraints(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -6,6 +6,11 @@ updates:
       interval: monthly
     open-pull-requests-limit: 5
   - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: gomod
     directory: /scripts/fixtures/wgpeer
     schedule:
       interval: weekly
@@ -15,8 +20,19 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+  - package-ecosystem: gomod
+    directory: /scripts/sbom-tools
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
   - package-ecosystem: npm
     directory: /scripts/browser-tests
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # 1.65.0 failed both Firefox scanner cohorts in the matched image trial.
+    # Package, image and environment checks must be requalified together.
+    # See docs/PERFORMANCE.md and docs/qualification/a6dfd903a14b*.json.
+    ignore:
+      - dependency-name: "@playwright/test"
+        versions: ["1.65.0"]

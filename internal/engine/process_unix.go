@@ -19,12 +19,12 @@ func processOwnershipLost(err error) bool {
 	return errors.Is(err, ErrProcessOwnershipLost) || errors.Is(err, syscall.ECHILD)
 }
 
-func nativeGroupSignal(pgid int, signal syscall.Signal) error {
+func nativeGroupSignal(pgid int, signal syscall.Signal, leaderExited bool) error {
 	if pgid <= 1 {
 		return ErrProcessOwnershipLost
 	}
 	err := syscall.Kill(-pgid, signal)
-	if errors.Is(err, syscall.ESRCH) {
+	if errors.Is(err, syscall.ESRCH) || (leaderExited && groupSignalAlreadyExited(pgid, err)) {
 		return os.ErrProcessDone
 	}
 	return err
@@ -32,5 +32,5 @@ func nativeGroupSignal(pgid int, signal syscall.Signal) error {
 
 // Call only inside the launch owner's admitted dispatch. The supplied Process
 // is an immutable PID view, not a second waitable/releasable process handle.
-func interruptProcess(p *os.Process) error { return nativeGroupSignal(p.Pid, syscall.SIGTERM) }
-func killProcess(p *os.Process) error      { return nativeGroupSignal(p.Pid, syscall.SIGKILL) }
+func interruptProcess(p *os.Process) error { return nativeGroupSignal(p.Pid, syscall.SIGTERM, false) }
+func killProcess(p *os.Process) error      { return nativeGroupSignal(p.Pid, syscall.SIGKILL, false) }

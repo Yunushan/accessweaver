@@ -1,0 +1,258 @@
+# Source-only contracts load explicit functions with mocked native boundaries.
+[CmdletBinding()]param([switch]$RequireWindowsPowerShell)
+$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';Set-StrictMode -Version Latest
+if($RequireWindowsPowerShell -and ($PSVersionTable.PSEdition -cne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1)){throw 'Stock source shell required'}
+foreach($name in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management')){Import-Module ([IO.Path]::Combine($PSHOME,'Modules',$name,($name+'.psd1'))) -ErrorAction Stop}
+$PSModuleAutoLoadingPreference='None'
+$sources=@('scripts/native-dns-query.ps1','scripts/native-dns-query/main_windows.go','scripts/native-dns-query/main_windows_test.go','scripts/native-dns-direct/direct.go','scripts/native-dns-direct/direct_test.go','scripts/native-dns-recovery-observation.ps1','scripts/test-native-dns-query-contracts.ps1','scripts/native-doh-baseline-evidence.ps1','scripts/dns-wire-ip-policy.cjs','scripts/dns-wire-ip-stdin.cjs','scripts/native-doh-ip-binding.ps1','scripts/dns-acceptance-state.ps1','docs/qualification/3e2314a8de82-ip-authority-http2.json','scripts/read-native-ndis-phases.ps1','scripts/ndis-private-phases.cjs','scripts/native-doh-phase-evidence.ps1','scripts/test-ndis-private-phases.cjs','scripts/native-doh-netevent-wire.ps1','scripts/test-native-doh-netevent-contracts.ps1','scripts/test-native-dns-answer-contracts.ps1','scripts/test-native-doh.ps1','scripts/test-dns-acceptance-state.ps1','.github/workflows/native-doh-wire.yml')
+$project=Split-Path -Parent $PSScriptRoot;$hashes=@{};foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
+$t=$null;$e=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-doh-netevent-wire.ps1'),[ref]$t,[ref]$e);if($e.Count){throw 'Backend source syntax'}
+# Load only these source functions. Every operational boundary is a local stub below.
+$load=@('Invoke-DoHWireFreshDNSQuery','New-DoHNetEventTlsEvidence','New-DoHNetEventOperationEvidence','Get-DoHNetEventTlsEvidence','Start-DoHNetEventCapture','Stop-DoHNetEventCapture','Measure-DoHNetEventWire','Complete-DoHNetEventCleanup','Get-DoHNetEventSummary')
+$allowed=@('Get-DoHBaselineFailure','Read-DoHBaselineResolverEvidence','New-DoHBaselineResolverEvidence','Test-DoHIPAuthorityBinding','New-DoHNetEventTlsEvidence','New-DoHNetEventOperationEvidence','New-NativeNDISTlsWireEvidence','Get-DoHNetEventTlsEvidence','ConvertFrom-Json','Invoke-DoHNetEventProcess','New-NativeDNSWireProbeBytes','Get-DnsClientNrptPolicy','Assert-NativeDNSWireFirewall','Invoke-NativeFreshDNSQuery','Invoke-DoHWireFreshDNSQuery','Invoke-DoHNetEventOperation','Invoke-DoHNetEventOffload','Stop-DoHNetEventCapture','Read-DoHNetEventCapture','Add-NativeDNSWireRule','Remove-NativeDNSWireRules','Assert-DNSAcceptanceRestored','Read-DNSAcceptanceState','Where-Object')
+foreach($def in $ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){
+ if($def.Name -cnotin $load){continue};foreach($cmd in $def.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($cmd.GetCommandName() -cnotin $allowed){throw 'Source command boundary'}}
+ . ([scriptblock]::Create($def.Extent.Text))
+}
+$t=$null;$e=$null;$phaseAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-doh-phase-evidence.ps1'),[ref]$t,[ref]$e);if($e.Count){throw 'Phase source syntax'}
+foreach($def in $phaseAst.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){
+ foreach($cmd in $def.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($cmd.GetCommandName() -cnotin @('Get-DoHPhaseDNSKeys','Get-DoHPhaseNumberKeys','New-DoHPhaseReadEvidence','New-DoHPhaseEvidence','ConvertFrom-Json','Where-Object')){throw 'Phase source command boundary'}}
+ . ([scriptblock]::Create($def.Extent.Text))
+}
+# Pure independent acceptance functions used by the binding admission tests.
+$t=$null;$e=$null;$oracleAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'dns-acceptance-state.ps1'),[ref]$t,[ref]$e);if($e.Count){throw 'Binding oracle source syntax'}
+$oracleSelected=@('Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceFamilyPreserved','Assert-DNSAcceptanceConfigured')
+foreach($def in $oracleAst.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){
+ if($def.Name -cnotin $oracleSelected){continue};foreach($cmd in $def.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($cmd.GetCommandName() -cnotin ($oracleSelected+@('Where-Object'))){throw 'Binding oracle command boundary'}}
+ . ([scriptblock]::Create($def.Extent.Text))
+}
+$t=$null;$e=$null;$bindingAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-doh-ip-binding.ps1'),[ref]$t,[ref]$e);if($e.Count){throw 'Binding source syntax'}
+foreach($def in $bindingAst.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){
+ foreach($cmd in $def.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($cmd.GetCommandName() -cnotin @('New-DoHIPAuthorityBinding','Test-DoHIPAuthorityBinding','New-DoHVerifiedIPAuthorityBinding','Get-DoHIPAuthorityTlsEvidence','New-DoHNetEventTlsEvidence','Get-DoHNetEventTlsEvidence','Assert-DNSAcceptanceConfigured','Get-DNSAcceptanceIndex','Where-Object','ConvertFrom-Json','ConvertTo-Json')){throw 'Binding source command boundary'}}
+ . ([scriptblock]::Create($def.Extent.Text))
+}
+$script:ipSource='a'*40;$script:ipPrerequisite='f283959a6b8267a5a576e2d0b1725728d9647276db8421242c3f3b54716c703c'
+function New-PIPStates {
+ $guid='abcdef00-0000-0000-0000-000000000001'
+ $before=@{schemaVersion=1;dohAvailable=$true;doh=@();adapters=@(@{guid=$guid;selected=$true;ipv4=@{mode='dhcp';servers=@()};ipv6=@{mode='dhcp';servers=@()}})}
+ $current=@{schemaVersion=1;dohAvailable=$true;doh=@();adapters=@(@{guid=$guid;selected=$true;ipv4=@{mode='static';servers=@('8.8.8.8','9.9.9.9')};ipv6=@{mode='static';servers=@('2001:4860:4860::8888','2620:fe::fe')}})}
+ foreach($item in @(@('8.8.8.8','https://8.8.8.8/dns-query'),@('9.9.9.9','https://9.9.9.9/dns-query'),@('2001:4860:4860::8888','https://[2001:4860:4860::8888]/dns-query'),@('2620:fe::fe','https://[2620:fe::fe]/dns-query'))){$current.doh+=@(@{address=$item[0];template=$item[1];fallback=$false;upgrade=$true})}
+ return @{before=$before;current=$current}
+}
+function New-PIPBinding {$fixture=New-PIPStates;return (New-DoHVerifiedIPAuthorityBinding $fixture.before $fixture.current $script:ipSource $script:ipPrerequisite)}
+
+$t=$null;$e=$null;$baselineAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-doh-baseline-evidence.ps1'),[ref]$t,[ref]$e);if($e.Count){throw 'Baseline source syntax'}
+foreach($def in $baselineAst.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){
+ foreach($cmd in $def.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($cmd.GetCommandName() -cnotin @('New-DoHBaselineResolverEvidence','Get-DNSAcceptanceIndex','Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress')){throw 'Baseline source command boundary'}}
+ . ([scriptblock]::Create($def.Extent.Text))
+}
+function New-PBaselineFixture {
+ $f=New-PIPStates;$before=$f.before;$before.doh=@()
+ foreach($address in @('8.8.8.8','9.9.9.9','2001:4860:4860::8888','2620:fe::fe')){$name=if($address -in @('8.8.8.8','2001:4860:4860::8888')){'https://dns.google/dns-query'}else{'https://dns.quad9.net/dns-query'};$before.doh+=@(@{address=$address;template=$name;fallback=$false;upgrade=$true})}
+ $adapters=@([pscustomobject]@{InterfaceGuid=$before.adapters[0].guid;ifIndex=77;Status='Up'})
+ $clients=@([pscustomobject]@{InterfaceIndex=77;AddressFamily=2;ServerAddresses=@('8.8.8.8','192.0.2.53')},[pscustomobject]@{InterfaceIndex=77;AddressFamily=23;ServerAddresses=@('2620:fe::fe')})
+ return @{before=$before;first=$adapters;clients=$clients;last=$adapters}
+}
+function Read-DoHBaselineResolverEvidence([object]$State){$script:events.Add('baseline-evidence');if($script:fault -ceq 'baseline-evidence'){throw 'Synthetic baseline refusal'};$f=New-PBaselineFixture;return (Get-DoHBaselineResolverEvidence $f.before $f.first $f.clients $f.last)}
+function Close-PDuringPhase([object]$r){$r.during=$r.before;foreach($prefix in @('tcp','udp','sent','received','udp53','udp443','udpOther','tcpReset')){$r[$prefix+'During']=$r[$prefix+'Before']};foreach($key in (Get-DoHPhaseDNSKeys)){$r.dnsDuring[$key]=$r.dnsBefore[$key]}}
+
+function Assert-P([bool]$Value){if(-not $Value){throw 'Synthetic product capture assertion'}}
+function Reject-P([scriptblock]$Body){$rejected=$false;try{[void](& $Body)}catch{$rejected=$true};Assert-P $rejected}
+function New-NativeNDISTlsWireEvidence([string]$Code='not-inspected'){return @{schemaVersion=1;code=$Code;observation='not-inspected';packets=0;tlsFlows=0;providerMask=0;outboundEncryptedRecords=0;inboundEncryptedRecords=0;productionQualificationComplete=$false}}
+function New-NativeDNSWireProbeBytes {return ,([byte[]]@(1,2))}
+function Reset-P([int]$Count=1,[int]$Mask=3) {
+ $script:events=[Collections.Generic.List[string]]::new();$script:fault='';$script:count=$Count;$script:mask=$Mask
+ $flags=@{};foreach($n in @('baselineResolverPassed','filtersVerified','captureStarted','captureStopped','captureBounded','plaintextBlocked','ordinaryQueryPassed','tlsObserved','tlsBlocked','blockedQueryRejected','tlsBlockRemoved','resumedQueryPassed','originalStateVerified','rulesRemoved','filtersRemoved','originalResolverPassed')){$flags[$n]=$false}
+ $script:state=@{node='synthetic-node';decoder='synthetic-decoder';etl='synthetic-etl';pcap='synthetic-pcap';before='original';phase='initial';failurePhase='none';startAttempted=$false;stopped=$false;cleanupAttempted=$false;cleanupCompleted=$false;flags=$flags;processes=0;joined=0;processFailed=$false;processFailureCode='none';etlBytes=0;pcapBytes=0;decoderCode='not-inspected';outRecords=0;inRecords=0;tlsFlows=0;providers=0;ndis=@{sourceCommit=$script:ipSource;phaseVerified=$true;root='private-root-marker';digest=('a'*64);prepared=$false;count=0;plan=$null;public=@{baselineEvidence=(New-DoHBaselineResolverEvidence);identityBinding=(New-PIPBinding);cleanupCode='none';preflightEmpty=$false;sessionVerified=$false;sessionRemoved=$false;filterEvidence=@{verified=$false};offloadPrepareEvidence=$null;offloadStageEvidence=@();offloadVerifyEvidence=$null;offloadMeasureEvidence=$null;offloadRestoreEvidence=@();fragmentEvidence=@{fragmentIDs=8};conversionEvidence=@{summary=@{tcpClosure=@{resetFlows=0}}}}}}
+}
+function Invoke-DoHNetEventProcess([object]$State,[string]$Program,[string[]]$Arguments,[byte[]]$InputBytes=$null){$script:events.Add('process');if($Arguments[0] -ceq '--version'){return 'v26.8.2'};if($script:fault -ceq 'decoder-preflight'){return '{}'};return '{"schemaVersion":1,"outcome":"refused","code":"capture-empty","evidence":null}'}
+function Get-DnsClientNrptPolicy {param([switch]$Effective,$ErrorAction);if($script:fault -ceq 'nrpt'){return 'foreign'}}
+function Assert-NativeDNSWireFirewall {$script:events.Add('firewall')}
+function Invoke-NativeFreshDNSQuery([object]$State,[string]$Name,[switch]$ExpectFailure){$script:events.Add('query-'+$Name+'-'+[string][bool]$ExpectFailure);if(($script:fault -ceq 'negative' -and $ExpectFailure) -or ($script:fault -ceq 'resolver' -and $Name -ceq 'example.com')){throw 'Synthetic resolver refusal'};return @{answerCount=$(if($script:fault -ceq 'answer-bound'){33}else{1});recordCount=$(if($script:fault -ceq 'record-bound'){33}else{1})}}
+function Invoke-DoHNetEventOperation([object]$State,[string]$Operation){$script:events.Add('ndis-'+$Operation);if($script:fault -ceq $Operation){throw 'Synthetic NDIS refusal'};if($Operation -ceq 'remove'){Assert-P ($State.ndis.plan.originalVerified -and $State.flags.originalStateVerified -and $State.flags.rulesRemoved -and $State.flags.originalResolverPassed -and $State.stopped)};return @{emptyBefore=$true;sessionVerified=$true;providerVerified=$true;state=$(if($Operation -ceq 'start'){'running'}else{'stopped'});emptyAfter=$true}}
+function Invoke-DoHNetEventOffload([object]$State,[string]$Operation,[int]$Ordinal=-1){$script:events.Add('offload-'+$Operation+'-'+$Ordinal);$bad=($script:fault -ceq $Operation -or ($script:fault -ceq 'restore-one' -and $Operation -ceq 'restore' -and $Ordinal -eq 1));return @{code=$(if($bad){'state'}else{'none'});adapters=$script:count;matchedMask=$script:mask;unroutedMask=(15 -bxor $script:mask);restored=($Operation -ceq 'restore' -and -not $bad);readbackVerified=(-not $bad)}}
+function Read-DoHNetEventCapture([object]$State){$script:events.Add('read-capture');$State.flags.captureBounded=$true;$r=New-DoHNetEventTlsEvidence 'none';$r.observation='tls-observed';$r.packets=8;$r.tlsFlows=1;$r.providerMask=$script:mask;$r.outboundEncryptedRecords=2;$r.inboundEncryptedRecords=3;if($script:fault -ceq 'insufficient'){$r.observation='insufficient';$r.plaintextPackets=8};if($script:fault -ceq 'decoder-refusal'){$r=New-NativeNDISTlsWireEvidence 'tcp-gap';$r.observation='refused'};if($script:fault -cin @('client-sni-absent','client-sni-mismatch')){$r=New-NativeNDISTlsWireEvidence $script:fault;$r.observation='refused'};if($script:fault -ceq 'identity-binding'){$r=New-DoHNetEventTlsEvidence 'identity-binding';$r.observation='refused';$State.ndis.public.identityBinding=New-DoHIPAuthorityBinding};return $r}
+function Add-NativeDNSWireRule([object]$State,[string]$Kind,[string]$Protocol){$script:events.Add('add-'+$Kind+'-'+$Protocol)}
+function Remove-NativeDNSWireRules([object]$State,[string]$Kind){$script:events.Add('remove-'+$Kind)}
+function Read-DNSAcceptanceState {return 'original'}
+function Assert-DNSAcceptanceRestored($Before,$After){$script:events.Add('original-state');if($script:fault -ceq 'original'){throw 'Synthetic original state refusal'};Assert-P ($Before -ceq $After)}
+function New-PDocument([string[]]$Providers){$flows=@();foreach($provider in $Providers){$flows+=@(@{provider=$provider;clientHello=$true;serverHello=$true;outboundEncryptedRecords=2;inboundEncryptedRecords=3;records=7})};return @{schemaVersion=1;outcome='decoded';code='none';evidence=@{schemaVersion=1;observation='tls-observed';packets=8;plaintextPackets=0;flows=$flows;dnsPayloadDecrypted=$false;ordinaryResolverBound=$false;negativeControlPassed=$false;productionQualificationComplete=$false}}}
+$cases=[Collections.Generic.List[object]]::new()
+function Case-P([string]$Name,[scriptblock]$Body){$passed=$true;try{& $Body}catch{$passed=$false};$cases.Add(@{name=$Name;passed=$passed})}
+Case-P 'capture-ownership-before-all-offload-setters' {
+ Reset-P;Start-DoHNetEventCapture $state;$s=@($events);Assert-P ($s.IndexOf('ndis-preflight') -lt $s.IndexOf('offload-prepare--1') -and $s.IndexOf('ndis-create') -lt $s.IndexOf('offload-stage-0') -and $s.IndexOf('offload-verify--1') -lt $s.IndexOf('ndis-start') -and $state.ndis.plan.capturePolicy -ceq 'product-doh-all')
+}
+Case-P 'four-adapters-staged-and-restored-individually' {Reset-P 4 15;Start-DoHNetEventCapture $state;Complete-DoHNetEventCleanup $state;Assert-P ($state.ndis.public.offloadStageEvidence.Count -eq 4 -and $state.ndis.public.offloadRestoreEvidence.Count -eq 4 -and $state.flags.filtersRemoved)}
+Case-P 'ipv6-only-mask-not-narrowed-to-google-ipv4' {Reset-P 2 12;Start-DoHNetEventCapture $state;Measure-DoHNetEventWire $state;Complete-DoHNetEventCleanup $state;Assert-P ($state.providers -eq 12 -and $state.cleanupCompleted)}
+Case-P 'foreign-inventory-refused-before-offload' {Reset-P;$script:fault='preflight';Reject-P {Start-DoHNetEventCapture $state};Assert-P (@($events | Where-Object {$_.StartsWith('offload-')}).Count -eq 0)}
+Case-P 'decoder-preflight-refused-before-native-effects' {Reset-P;$script:fault='decoder-preflight';Reject-P {Start-DoHNetEventCapture $state};Assert-P ($events.Count -eq 2 -and -not $state.startAttempted)}
+Case-P 'foreign-name-policy-refused-before-native-effects' {Reset-P;$script:fault='nrpt';Reject-P {Start-DoHNetEventCapture $state};Assert-P (@($events | Where-Object {$_.StartsWith('ndis-') -or $_.StartsWith('offload-')}).Count -eq 0)}
+Case-P 'partial-stage-failure-restores-all-prepared-adapters' {Reset-P 4 15;$script:fault='stage';Reject-P {Start-DoHNetEventCapture $state};$script:fault='';Complete-DoHNetEventCleanup $state;Assert-P ($state.ndis.public.offloadRestoreEvidence.Count -eq 4 -and 'ndis-start' -cnotin @($events))}
+Case-P 'topology-refusal-prevents-capture-start' {Reset-P;$script:fault='verify';Reject-P {Start-DoHNetEventCapture $state};Assert-P ('ndis-start' -cnotin @($events) -and 'ndis-provider' -cnotin @($events))}
+Case-P 'ordinary-resolver-and-causal-block-order-preserved' {Reset-P;Start-DoHNetEventCapture $state;Measure-DoHNetEventWire $state;$a=@($events);Assert-P ($a.IndexOf('add-dns-UDP') -lt $a.IndexOf('query-example.net-False') -and $a.IndexOf('query-example.net-False') -lt $a.IndexOf('ndis-stop') -and $a.IndexOf('read-capture') -lt $a.IndexOf('add-tls-TCP') -and $a.IndexOf('add-tls-TCP') -lt $a.IndexOf('query-example.org-True') -and $a.IndexOf('query-example.org-True') -lt $a.IndexOf('remove-tls') -and $a.IndexOf('remove-tls') -lt $a.IndexOf('query-example.org-False'))}
+Case-P 'handled-decoder-refusal-still-runs-causal-control' {Reset-P;Start-DoHNetEventCapture $state;$script:fault='decoder-refusal';Reject-P {Measure-DoHNetEventWire $state};Assert-P ($state.flags.blockedQueryRejected -and $state.flags.resumedQueryPassed -and -not $state.flags.tlsObserved)}
+Case-P 'capture-read-exception-preserves-phase-and-finishes-causal-control' {
+ Reset-P;Start-DoHNetEventCapture $state
+ function Read-DoHNetEventCapture($State){$State.phase='loss-metadata';throw 'Synthetic capture read failure'}
+ Reject-P {Measure-DoHNetEventWire $state}
+ Assert-P ($state.failurePhase -ceq 'loss-metadata' -and $state.flags.blockedQueryRejected -and $state.flags.tlsBlockRemoved -and $state.flags.resumedQueryPassed -and -not $state.flags.tlsObserved)
+ Complete-DoHNetEventCleanup $state
+ Assert-P ($state.cleanupCompleted -and (Get-DoHNetEventSummary $state).outcome -ceq 'failed')
+}
+Case-P 'causal-query-contradiction-always-unblocks-owned-rule' {Reset-P;Start-DoHNetEventCapture $state;$script:fault='negative';Reject-P {Measure-DoHNetEventWire $state};Assert-P ($state.flags.tlsBlockRemoved -and -not $state.flags.blockedQueryRejected -and -not $state.flags.resumedQueryPassed)}
+Case-P 'restore-failure-attempts-remaining-adapters-and-retains-session' {Reset-P 4 15;Start-DoHNetEventCapture $state;$script:fault='restore-one';Reject-P {Complete-DoHNetEventCleanup $state};Assert-P ($state.ndis.public.offloadRestoreEvidence.Count -eq 4 -and 'offload-restore-3' -cin @($events) -and 'ndis-remove' -cnotin @($events) -and -not $state.ndis.plan.originalVerified)}
+Case-P 'stop-refusal-still-attempts-all-offload-recovery' {Reset-P 4 15;Start-DoHNetEventCapture $state;$script:fault='stop';Reject-P {Complete-DoHNetEventCleanup $state};Assert-P ($state.ndis.public.offloadRestoreEvidence.Count -eq 4 -and 'ndis-remove' -cnotin @($events))}
+Case-P 'full-dns-readback-required-before-session-retirement' {Reset-P;Start-DoHNetEventCapture $state;$script:fault='original';Reject-P {Complete-DoHNetEventCleanup $state};Assert-P ($state.flags.rulesRemoved -and -not $state.flags.originalStateVerified -and 'ndis-remove' -cnotin @($events))}
+Case-P 'original-resolver-required-before-session-retirement' {Reset-P;Start-DoHNetEventCapture $state;$script:fault='resolver';Reject-P {Complete-DoHNetEventCleanup $state};Assert-P (-not $state.flags.originalResolverPassed -and 'ndis-remove' -cnotin @($events))}
+Case-P 'all-four-provider-labels-reduce-without-payloads' {$doc=New-PDocument @('google-v4','quad9-v4','google-v6','quad9-v6');$r=Get-DoHNetEventTlsEvidence ($doc | ConvertTo-Json -Depth 8 -Compress);Assert-P ($r.code -ceq 'none' -and $r.providerMask -eq 15 -and $r.tlsFlows -eq 4 -and $r.outboundEncryptedRecords -eq 8)}
+Case-P 'ipv6-only-tls-evidence-accepted-with-exact-mask' {$doc=New-PDocument @('quad9-v6');$r=Get-DoHNetEventTlsEvidence ($doc | ConvertTo-Json -Depth 8 -Compress);Assert-P ($r.code -ceq 'none' -and $r.providerMask -eq 8)}
+Case-P 'private-or-unknown-tls-fields-and-labels-refused' {$doc=New-PDocument @('unknown');Assert-P ((Get-DoHNetEventTlsEvidence ($doc | ConvertTo-Json -Depth 8 -Compress)).code -ceq 'invalid');$doc=New-PDocument @('google-v4');$doc.evidence.private='secret';Assert-P ((Get-DoHNetEventTlsEvidence ($doc | ConvertTo-Json -Depth 8 -Compress)).code -ceq 'invalid')}
+Case-P 'positive-tls-claims-require-bidirectional-records' {$doc=New-PDocument @('google-v4');$doc.evidence.flows[0].inboundEncryptedRecords=0;Assert-P ((Get-DoHNetEventTlsEvidence ($doc | ConvertTo-Json -Depth 8 -Compress)).code -ceq 'invalid')}
+Case-P 'summary-excludes-private-root-plan-and-digest' {Reset-P;Start-DoHNetEventCapture $state;Measure-DoHNetEventWire $state;Complete-DoHNetEventCleanup $state;$s=Get-DoHNetEventSummary $state;$j=$s | ConvertTo-Json -Depth 8 -Compress;Assert-P (-not $j.Contains('private-root-marker') -and -not $j.Contains('"digest"') -and -not $j.Contains('"plan"') -and $s.outcome -ceq 'passed')}
+Case-P 'native-boundaries-use-attested-bounded-child-wrapper' {$s=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'native-doh-netevent-wire.ps1'));Assert-P ($s.Contains('Assert-DoHNetEventSources $State') -and $s.Contains('Invoke-NativeDNSWireProcess $State $Program $Arguments $InputBytes') -and $s.Contains('Get-DoHIPAuthorityTlsEvidence $text $binding $State.ndis.sourceCommit') -and $s.Contains('Invoke-DoHNetEventProcess $State $State.node $arguments $bytes') -and -not $s.Contains('ndis-tls-control.cjs'))}
+Case-P 'actual-cli-starts-only-after-new-capture-and-finally-cleans' {$s=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-native-doh.ps1'));Assert-P ($s.Contains("Start-DoHNetEventCapture $"+'script:wire;') -and $s.Contains('Measure-DoHNetEventWire $script:wire') -and $s.Contains('Complete-DoHNetEventCleanup $script:wire') -and $s.Contains('ConvertTo-Json -Depth 8 -Compress'))}
+Case-P 'insufficient-plaintext-evidence-keeps-fixed-count-without-success' {$doc=New-PDocument @('google-v4');$doc.evidence.observation='insufficient';$doc.evidence.plaintextPackets=8;$r=Get-DoHNetEventTlsEvidence ($doc | ConvertTo-Json -Depth 8 -Compress);Assert-P ($r.code -ceq 'none' -and $r.observation -ceq 'insufficient' -and $r.plaintextPackets -eq 8 -and $r.tlsFlows -eq 1);$doc.evidence.observation='tls-observed';Assert-P ((Get-DoHNetEventTlsEvidence ($doc | ConvertTo-Json -Depth 8 -Compress)).code -ceq 'invalid')}
+Case-P 'insufficient-decoding-completes-causal-control-and-still-fails' {Reset-P;Start-DoHNetEventCapture $state;$script:fault='insufficient';Reject-P {Measure-DoHNetEventWire $state};Assert-P ($state.flags.blockedQueryRejected -and $state.flags.resumedQueryPassed -and -not $state.flags.tlsObserved);Complete-DoHNetEventCleanup $state;Assert-P ((Get-DoHNetEventSummary $state).outcome -ceq 'failed')}
+Case-P 'phase-read-projection-refuses-private-ticks-and-false-write-claim' {$r=New-DoHPhaseReadEvidence 'none';$r.records=8;$r.frames=4;$r.privateMapWritten=$true;Assert-P ((Get-DoHPhaseReadEvidence ($r | ConvertTo-Json -Compress)).code -ceq 'none');$r.ticks=1;Assert-P ((Get-DoHPhaseReadEvidence ($r | ConvertTo-Json -Compress)).code -ceq 'invalid')}
+Case-P 'phase-count-projection-closes-protocol-and-direction-partitions' {$r=New-DoHPhaseEvidence 'none';$r.outcome='complete';$r.nativeFrameDataRead=$true;$r.sourceBound=$true;$r.records=4;$r.frames=2;$r.before=1;$r.after=1;$r.udpBefore=1;$r.udp53Before=1;$r.dnsBefore.queries=1;$r.dnsBefore.productProbe=1;$r.dnsBefore.a=1;$r.dnsBefore.googleV4=1;$r.tcpAfter=1;$r.sentBefore=1;$r.receivedAfter=1;Close-PDuringPhase $r;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Compress)).outcome -ceq 'complete');$r.tcpAfter=0;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Compress)).code -ceq 'invalid')}
+Case-P 'phase-refusal-cannot-publish-partial-or-qualified-counts' {$r=New-DoHPhaseEvidence 'phase-source';$r.outcome='refused';Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Compress)).code -ceq 'phase-source');$r.frames=1;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Compress)).code -ceq 'invalid')}
+Case-P 'phase-incomplete-still-finishes-causal-check-and-fails' {Reset-P;Start-DoHNetEventCapture $state;$state.ndis.phaseVerified=$false;Reject-P {Measure-DoHNetEventWire $state};Assert-P ($state.flags.blockedQueryRejected -and $state.flags.resumedQueryPassed);Complete-DoHNetEventCleanup $state;Assert-P ((Get-DoHNetEventSummary $state).outcome -ceq 'failed')}
+Case-P 'phase-worker-reads-headers-only-and-never-publishes-vectors' {$s=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'read-native-ndis-phases.ps1'));Assert-P ($s.Contains('$record.TimeCreated.ToUniversalTime().Ticks') -and $s.Contains('$record.Dispose()') -and $s.Contains('$reader.BatchSize=16') -and $s.Contains('$clock.Elapsed.TotalSeconds -ge 3') -and -not $s.Contains('GetPropertyValues') -and -not $s.Contains('FormatDescription') -and -not $s.Contains('ToXml'));$s=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-native-doh.ps1'));Assert-P ($s.IndexOf('Invoke-NativeDoHCLI $request', $s.IndexOf('function Invoke-NativeDoHExercise')) -lt $s.IndexOf('$script:wire.ndis.configuredUtcTicks=[DateTime]::UtcNow.Ticks'))}
+Case-P 'dns-phase-projection-closes-role-type-and-provider-partitions' {$r=New-DoHPhaseEvidence 'none';$r.outcome='complete';$r.nativeFrameDataRead=$true;$r.sourceBound=$true;$r.records=1;$r.frames=1;$r.before=1;$r.udpBefore=1;$r.udp53Before=1;$r.sentBefore=1;$r.dnsBefore.queries=1;$r.dnsBefore.productProbe=1;$r.dnsBefore.a=1;$r.dnsBefore.quad9V4=1;Close-PDuringPhase $r;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).outcome -ceq 'complete');$r.dnsBefore.productProbe=0;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')}
+Case-P 'dns-phase-projection-refuses-private-names-or-coerced-counts' {$r=New-DoHPhaseEvidence 'phase-source';$r.outcome='refused';$r.dnsBefore.name='private';Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid');$r=New-DoHPhaseEvidence 'phase-source';$r.outcome='refused';$r.dnsBefore.queries='0';Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')}
+
+Case-P 'udp-port-counts-close-over-all-udp-and-dns-roles' {$r=New-DoHPhaseEvidence 'none';$r.outcome='complete';$r.nativeFrameDataRead=$true;$r.sourceBound=$true;$r.records=1;$r.frames=1;$r.before=1;$r.udpBefore=1;$r.sentBefore=1;$r.udp443Before=1;$r.dnsBefore.unclassified=1;Close-PDuringPhase $r;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).outcome -ceq 'complete');$r.udpOtherBefore=1;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')}
+Case-P 'dns-question-roles-must-match-capture-direction' {
+    $r=New-DoHPhaseEvidence 'none';$r.outcome='complete';$r.nativeFrameDataRead=$true;$r.sourceBound=$true
+    $r.records=1;$r.frames=1;$r.before=1;$r.udpBefore=1;$r.sentBefore=1;$r.udp53Before=1
+    $r.dnsBefore.queries=1;$r.dnsBefore.googleBootstrap=1;$r.dnsBefore.providerBootstrap=1
+    $r.dnsBefore.a=1;$r.dnsBefore.googleV4=1
+    Close-PDuringPhase $r
+    Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).outcome -ceq 'complete')
+    $r.dnsBefore.queries=0;$r.dnsBefore.responses=1
+    Close-PDuringPhase $r
+    Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')
+}
+Case-P 'udp-non-dns-ports-cannot-claim-classified-dns-questions' {$r=New-DoHPhaseEvidence 'none';$r.outcome='complete';$r.nativeFrameDataRead=$true;$r.sourceBound=$true;$r.records=1;$r.frames=1;$r.before=1;$r.udpBefore=1;$r.sentBefore=1;$r.udp443Before=1;$r.dnsBefore.queries=1;$r.dnsBefore.productProbe=1;$r.dnsBefore.a=1;$r.dnsBefore.googleV4=1;Close-PDuringPhase $r;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')}
+
+
+Case-P 'sni-reasons-are-closed-refusals-without-positive-or-private-evidence' {foreach($code in @('client-sni','client-sni-absent','client-sni-mismatch')){$doc=@{schemaVersion=1;outcome='refused';code=$code;evidence=$null};$r=Get-DoHNetEventTlsEvidence ($doc | ConvertTo-Json -Compress);Assert-P ($r.code -ceq $code -and $r.observation -ceq 'refused' -and $r.tlsFlows -eq 0 -and $r.providerMask -eq 0);$doc.code='client-sni-private.invalid';Assert-P ((Get-DoHNetEventTlsEvidence ($doc | ConvertTo-Json -Compress)).code -ceq 'invalid');$doc.code=$code;$doc.evidence=@{name='private'};Assert-P ((Get-DoHNetEventTlsEvidence ($doc | ConvertTo-Json -Compress)).code -ceq 'invalid')}}
+Case-P 'sni-refusals-still-finish-causal-controls-and-fail-qualification' {foreach($code in @('client-sni-absent','client-sni-mismatch')){Reset-P;Start-DoHNetEventCapture $state;$script:fault=$code;Reject-P {Measure-DoHNetEventWire $state};Assert-P ($state.decoderCode -ceq $code -and $state.flags.blockedQueryRejected -and $state.flags.resumedQueryPassed -and -not $state.flags.tlsObserved);Complete-DoHNetEventCleanup $state;Assert-P ((Get-DoHNetEventSummary $state).outcome -ceq 'failed')}}
+
+
+Case-P 'ip-binding-pins-all-four-uris-flags-source-and-prerequisite' {Assert-P ($hashes['docs/qualification/3e2314a8de82-ip-authority-http2.json'] -ceq $script:ipPrerequisite);$r=New-PIPBinding;Assert-P ((Test-DoHIPAuthorityBinding $r $script:ipSource) -and $r.providerMask -eq 15 -and $r.readbackVerified -and $r.mode -ceq 'configured-ip-authority' -and $r.prerequisiteSHA256 -ceq $script:ipPrerequisite);Assert-P (-not (Test-DoHIPAuthorityBinding (New-DoHIPAuthorityBinding) $script:ipSource))}
+Case-P 'ip-binding-refuses-old-hostnames-foreign-authorities-and-unsafe-flags' {
+ for($i=0;$i -lt 4;$i++){foreach($wrong in @('https://dns.google/dns-query','https://192.0.2.90/dns-query')){$f=New-PIPStates;$f.current.doh[$i].template=$wrong;Reject-P {New-DoHVerifiedIPAuthorityBinding $f.before $f.current $script:ipSource $script:ipPrerequisite}}}
+ foreach($fault in @('fallback','upgrade','missing')){$f=New-PIPStates;switch($fault){'fallback'{$f.current.doh[0].fallback=$true}'upgrade'{$f.current.doh[0].upgrade=$false}'missing'{$f.current.doh=@($f.current.doh[0])}};Reject-P {New-DoHVerifiedIPAuthorityBinding $f.before $f.current $script:ipSource $script:ipPrerequisite}}
+}
+Case-P 'ip-binding-refuses-coerced-private-missing-and-unverified-proof' {
+ foreach($change in @(@('schemaVersion','1'),@('sourceCommit',('b'*40)),@('policySHA256',('b'*64)),@('prerequisiteSHA256',('b'*64)),@('providerMask',3),@('readbackVerified','true'),@('readbackVerified',$false),@('private','secret'))){$r=New-PIPBinding;$r[$change[0]]=$change[1];Assert-P (-not (Test-DoHIPAuthorityBinding $r $script:ipSource))}
+ $r=New-PIPBinding;$r.Remove('policySHA256');Assert-P (-not (Test-DoHIPAuthorityBinding $r $script:ipSource));$f=New-PIPStates;Reject-P {New-DoHVerifiedIPAuthorityBinding $f.before $f.current $script:ipSource ('b'*64)};Reject-P {New-DoHVerifiedIPAuthorityBinding $f.before $f.current 'invalid' $script:ipPrerequisite}
+}
+Case-P 'ip-decoder-projection-requires-exact-binding-and-closed-envelope' {
+ $binding=New-PIPBinding;$doc=New-PDocument @('google-v4');$doc.identityBinding=$binding;Assert-P ((Get-DoHIPAuthorityTlsEvidence ($doc | ConvertTo-Json -Depth 8 -Compress) $binding $script:ipSource).code -ceq 'none')
+ foreach($fault in @('source','receipt','missing','private','false')){$bad=($doc | ConvertTo-Json -Depth 8 -Compress) | ConvertFrom-Json;switch($fault){'source'{$bad.identityBinding.sourceCommit='b'*40}'receipt'{$bad.identityBinding.prerequisiteSHA256='b'*64}'missing'{$bad.identityBinding=$null}'private'{$bad | Add-Member -NotePropertyName private -NotePropertyValue secret}'false'{$bad.identityBinding.readbackVerified=$false}};Assert-P ((Get-DoHIPAuthorityTlsEvidence ($bad | ConvertTo-Json -Depth 8 -Compress) $binding $script:ipSource).code -ceq 'invalid')}
+}
+Case-P 'ip-decoder-binding-never-upgrades-private-or-plaintext-evidence' {
+ $binding=New-PIPBinding;$doc=New-PDocument @('google-v4');$doc.identityBinding=$binding;$doc.evidence.plaintextPackets=1;Assert-P ((Get-DoHIPAuthorityTlsEvidence ($doc | ConvertTo-Json -Depth 8 -Compress) $binding $script:ipSource).code -ceq 'invalid');$doc=@{schemaVersion=1;outcome='refused';code='provider-port';evidence=$null;identityBinding=$binding};Assert-P ((Get-DoHIPAuthorityTlsEvidence ($doc | ConvertTo-Json -Depth 8 -Compress) $binding $script:ipSource).code -ceq 'provider-port');$doc.evidence=@{private='secret'};Assert-P ((Get-DoHIPAuthorityTlsEvidence ($doc | ConvertTo-Json -Depth 8 -Compress) $binding $script:ipSource).code -ceq 'invalid')
+}
+Case-P 'ip-wire-summary-cannot-pass-without-verified-current-binding' {Reset-P;Start-DoHNetEventCapture $state;Measure-DoHNetEventWire $state;Complete-DoHNetEventCleanup $state;Assert-P ((Get-DoHNetEventSummary $state).outcome -ceq 'passed');$state.ndis.public.identityBinding=New-DoHIPAuthorityBinding;Assert-P ((Get-DoHNetEventSummary $state).outcome -ceq 'failed');Reset-P;Start-DoHNetEventCapture $state;$script:fault='identity-binding';Reject-P {Measure-DoHNetEventWire $state};Assert-P ($state.flags.blockedQueryRejected -and $state.flags.resumedQueryPassed -and -not $state.flags.tlsObserved);Complete-DoHNetEventCleanup $state;Assert-P ((Get-DoHNetEventSummary $state).outcome -ceq 'failed')}
+Case-P 'ip-mode-admission-reads-independent-policy-after-full-capture' {$s=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'native-doh-netevent-wire.ps1'));Assert-P ($s.Contains('$current=Read-DNSAcceptanceState') -and $s.Contains('New-DoHVerifiedIPAuthorityBinding $State.before $current') -and $s.Contains('dns-wire-ip-stdin.cjs') -and $s.Contains('Get-DoHIPAuthorityTlsEvidence $text $binding $State.ndis.sourceCommit') -and $s.IndexOf('Read-NativeDNSWireCapture $State') -lt $s.IndexOf('New-DoHVerifiedIPAuthorityBinding $State.before $current'));$s=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-native-doh.ps1'));Assert-P ($s.Contains('docs/qualification/3e2314a8de82-ip-authority-http2.json') -and $s.Contains('native-doh-ip-binding.ps1'))}
+
+
+Case-P 'baseline-effective-dhcp-providers-and-known-templates-are-counted' {$f=New-PBaselineFixture;$r=Get-DoHBaselineResolverEvidence $f.before $f.first $f.clients $f.last;Assert-P ($r.captured -and $r.code -ceq 'complete' -and $r.selectedAdapters -eq 1 -and $r.exposedFamilies -eq 2 -and $r.dhcpFamilies -eq 2 -and $r.staticFamilies -eq 0 -and $r.resolverAddresses -eq 3 -and $r.knownResolverAddresses -eq 2 -and $r.otherResolverAddresses -eq 1 -and $r.resolverProviderMask -eq 9 -and $r.metadataMask -eq 15 -and $r.namedTemplateMask -eq 15 -and $r.literalTemplateMask -eq 0 -and $r.autoUpgradeMask -eq 15 -and $r.udpFallbackMask -eq 0);$f=New-PBaselineFixture;$f.before.adapters[0].ipv4=@{mode='static';servers=@('8.8.8.8','192.0.2.53')};$f.clients[1].ServerAddresses=$null;$r=Get-DoHBaselineResolverEvidence $f.before $f.first $f.clients $f.last;Assert-P ($r.staticFamilies -eq 1 -and $r.dhcpFamilies -eq 1 -and $r.resolverAddresses -eq 2 -and $r.resolverProviderMask -eq 1)}
+Case-P 'baseline-private-addresses-and-unknown-templates-never-leave-projection' {$f=New-PBaselineFixture;$f.before.doh[0].template='https://private.synthetic.invalid/token';$r=Get-DoHBaselineResolverEvidence $f.before $f.first $f.clients $f.last;$text=$r | ConvertTo-Json -Compress;Assert-P ($r.otherTemplateMask -eq 1 -and $r.namedTemplateMask -eq 14 -and -not $text.Contains('192.0.2.53') -and -not $text.Contains('private.synthetic') -and -not $text.Contains($f.before.adapters[0].guid) -and -not $text.Contains('InterfaceIndex'))}
+Case-P 'baseline-unstable-duplicate-missing-and-malformed-inventories-refused' {foreach($fault in @('index','duplicate','family','missing','address','bound','static-order')){$f=New-PBaselineFixture;switch($fault){'index'{$f.last=@([pscustomobject]@{InterfaceGuid=$f.before.adapters[0].guid;ifIndex=88;Status='Up'})}'duplicate'{$f.clients+=@($f.clients[0])}'family'{$f.clients[0].AddressFamily=17}'missing'{$f.clients=@($f.clients[0])}'address'{$f.clients[0].ServerAddresses=@('not-an-address')}'bound'{$f.clients[0].ServerAddresses=@('8.8.8.8')*17}'static-order'{$f.before.adapters[0].ipv4=@{mode='static';servers=@('192.0.2.53','8.8.8.8')}}};Reject-P {Get-DoHBaselineResolverEvidence $f.before $f.first $f.clients $f.last}}}
+Case-P 'baseline-unexposed-family-and-link-local-scope-are-explicit' {$f=New-PBaselineFixture;$f.before.adapters[0].ipv6=@{mode='not-exposed';servers=@();registryHash=('a'*64)};$f.clients=@($f.clients[0]);$r=Get-DoHBaselineResolverEvidence $f.before $f.first $f.clients $f.last;Assert-P ($r.unexposedFamilies -eq 1 -and $r.exposedFamilies -eq 1 -and $r.resolverProviderMask -eq 1);$f=New-PBaselineFixture;$f.clients[1].ServerAddresses=@('fe80::53%77');$r=Get-DoHBaselineResolverEvidence $f.before $f.first $f.clients $f.last;Assert-P ($r.otherResolverAddresses -eq 2 -and $r.resolverProviderMask -eq 1);$f.clients[1].ServerAddresses=@('fe80::53%88');Reject-P {Get-DoHBaselineResolverEvidence $f.before $f.first $f.clients $f.last}}
+Case-P 'baseline-refusal-precedes-effects-and-never-qualifies' {Reset-P;$script:fault='baseline-evidence';Reject-P {Start-DoHNetEventCapture $state};Assert-P (-not $state.ndis.prepared -and $null -eq $state.ndis.plan -and $state.ndis.public.baselineEvidence.code -ceq 'read' -and -not $state.ndis.public.baselineEvidence.captured -and -not $script:events.Contains('ndis-create'));Complete-DoHNetEventCleanup $state;Assert-P ((Get-DoHNetEventSummary $state).outcome -ceq 'failed');Assert-P ((Get-DoHBaselineFailure ([Exception]::new('Invalid DNS acceptance address'))) -ceq 'address');Assert-P ((Get-DoHBaselineFailure ([Exception]::new('private.synthetic.error'))) -ceq 'read')}
+Case-P 'start-phase-projection-closes-every-before-return-partition' {$r=New-DoHPhaseEvidence 'none';$r.outcome='complete';$r.nativeFrameDataRead=$true;$r.sourceBound=$true;$r.records=1;$r.frames=1;$r.before=1;$r.preStart=1;$r.udpBefore=1;$r.udpPreStart=1;$r.udp53Before=1;$r.udp53PreStart=1;$r.sentBefore=1;$r.sentPreStart=1;foreach($d in @($r.dnsBefore,$r.dnsPreStart)){$d.queries=1;$d.providerBootstrap=1;$d.googleBootstrap=1;$d.a=1;$d.googleV4=1};Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).outcome -ceq 'complete');$r.dnsBefore.quad9Bootstrap=1;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid');$r.dnsBefore.quad9Bootstrap=0;$r.during=1;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')}
+Case-P 'start-phase-exact-boundary-and-private-fields-stay-explicit' {$r=New-DoHPhaseEvidence 'none';$r.outcome='complete';$r.nativeFrameDataRead=$true;$r.sourceBound=$true;$r.records=1;$r.frames=1;$r.before=1;$r.startAt=1;$r.udpBefore=1;$r.udpStartAt=1;$r.udp443Before=1;$r.udp443StartAt=1;$r.sentBefore=1;$r.sentStartAt=1;$r.dnsBefore.unclassified=1;$r.dnsStartAt.unclassified=1;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).outcome -ceq 'complete');$r.starts=@(1);Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')}
+Case-P 'start-timestamp-is-recorded-immediately-before-controller-dispatch' {$s=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-native-doh.ps1'));$marker='$script:wire.ndis.configureStartUtcTicks=[DateTime]::UtcNow.Ticks';$dispatch='if(-not $process.Start())';Assert-P ($s.Contains($marker) -and $s.IndexOf($marker) -lt $s.IndexOf($dispatch));$s=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'read-native-ndis-phases.ps1'));Assert-P ($s.Contains('$ConfigureStartUtcTicks -ge $BoundaryUtcTicks') -and $s.Contains('schemaVersion=2') -and $s.Contains('starts=@($starts.ToArray())') -and -not $s.Contains('GetPropertyValues'))}
+Case-P 'baseline-readback-uses-stable-inventories-before-capture-effects' {$s=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'native-doh-netevent-wire.ps1'));Assert-P ($s.Contains('$first=@(Get-NetAdapter -ErrorAction Stop)') -and $s.Contains('$last=@(Get-NetAdapter -ErrorAction Stop)') -and $s.Contains('Get-DnsClientServerAddress -ErrorAction Stop') -and $s.IndexOf('Read-DoHBaselineResolverEvidence $State') -lt $s.IndexOf('Invoke-DoHNetEventOperation $State'))}
+
+
+Case-P 'reset-phase-counts-close-and-cannot-exceed-tcp-frames' {
+    $r=New-DoHPhaseEvidence 'none';$r.outcome='complete';$r.nativeFrameDataRead=$true;$r.sourceBound=$true;$r.records=3;$r.frames=3;$r.before=2;$r.during=2;$r.after=1;$r.tcpBefore=2;$r.tcpDuring=2;$r.tcpAfter=1;$r.sentBefore=2;$r.sentDuring=2;$r.receivedAfter=1;$r.tcpResetBefore=1;$r.tcpResetDuring=1;$r.tcpResetAfter=1
+    $text=$r | ConvertTo-Json -Depth 4 -Compress;$v=Get-DoHPhaseEvidence $text;Assert-P ($v.schemaVersion -eq 4 -and $v.outcome -ceq 'complete' -and $v.tcpResetDuring -eq 1 -and $v.tcpResetAfter -eq 1)
+    $r.tcpResetDuring=0;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')
+    $r.tcpResetDuring=1;$r.tcpResetAfter=2;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')
+    $r.tcpResetAfter='1';Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')
+    $r.tcpResetAfter=1;$r.schemaVersion=2;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')
+}
+Case-P 'reset-phase-total-is-bound-to-complete-conversion-counts' {
+    $s=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'native-doh-netevent-wire.ps1'))
+    Assert-P ($s.Contains('$pe.tcpResetBefore+$pe.tcpResetAt+$pe.tcpResetAfter -eq $q.tcpClosure.sentReset+$q.tcpClosure.receivedReset'))
+    $r=New-DoHPhaseEvidence 'conversion';$r.outcome='refused';$r.tcpResetDuring=1
+    Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')
+    $r=New-DoHPhaseEvidence 'none';$r.outcome='complete';$r.nativeFrameDataRead=$true;$r.sourceBound=$true;$r.records=1;$r.frames=1;$r.before=1;$r.during=1;$r.tcpBefore=1;$r.tcpDuring=1;$r.sentBefore=1;$r.sentDuring=1;$r.tcpResetBefore=1;$r.tcpResetDuring=1;$r.resetFlowIdentity='private.synthetic'
+    Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')
+}
+
+foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'Source changed'}}
+Case-P 'wire-query-helper-preserves-answer-bound' {
+    foreach($fault in @('answer-bound','record-bound')){Reset-P;$script:fault=$fault;$failed=$false
+    try{[void](Invoke-DoHWireFreshDNSQuery $state 'example.net')}catch{$failed=$true}
+    Assert-P $failed}
+}
+Case-P 'wire-query-helper-preserves-capture-and-source-boundaries' {
+    $driver=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-native-doh.ps1'));$wire=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'native-doh-netevent-wire.ps1'))
+    Assert-P ($driver.Contains('if($bytes.Length -gt 24576)'))
+    Assert-P ($driver.Contains('QueryBinarySHA256') -and $driver.Contains('Invoke-NativeFreshDNSQuery $capture -Probe') -and $driver.Contains("Invoke-NativeFreshDNSQuery $"+"script:wire 'example.com'") -and $driver.Contains('querySourceHashes=$hashes.Clone()'))
+    $answerStart=$driver.IndexOf('function Get-NativeDNSAnswerCount');$guarded=$driver.IndexOf('if($WireTransport -and (-not $Restored -or ($RecordType -ceq ''A'' -and $queryProbeReady -and $null -ne $script:wire)))', $answerStart);$return=$driver.IndexOf('return $answer.answerCount', $guarded);$legacyFlush=$driver.IndexOf('Clear-DnsClientCache', $answerStart)
+    Assert-P ($answerStart -ge 0 -and $guarded -gt $answerStart -and $return -gt $guarded -and $legacyFlush -gt $return)
+    Assert-P (-not $wire.Contains('Invoke-NativeDNSWireQuery') -and $wire.Contains("Invoke-DoHWireFreshDNSQuery $"+"State 'example.net'") -and $wire.Contains("Invoke-DoHWireFreshDNSQuery $"+"State 'example.org' -ExpectFailure") -and $wire.Contains('Read-DoHNetEventCapture $State'))
+}
+Case-P 'restored-resolver-releases-fixture-blocks-before-query' {
+    $t=$null;$e=$null
+    $driver=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'test-native-doh.ps1'),[ref]$t,[ref]$e)
+    Assert-P ($e.Count -eq 0)
+    $calls=@($driver.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -ceq 'Invoke-NativeDoHScenario'},$true))
+    Assert-P ($calls.Count -eq 1)
+    $parts=$calls[0].CommandElements
+    $callback=$null
+    for($i=0;$i -lt $parts.Count-1;$i++){
+        if($parts[$i] -is [Management.Automation.Language.CommandParameterAst] -and $parts[$i].ParameterName -ceq 'ResolveRestored'){
+            $body=$parts[$i+1].ScriptBlock
+            foreach($command in $body.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){
+                Assert-P ($command.GetCommandName() -cin @('Stop-DoHNetEventCapture','Remove-NativeDNSWireRules','Get-NativeDNSAnswerCount'))
+            }
+            $callback=$body.GetScriptBlock()
+        }
+    }
+    Assert-P ($null -ne $callback)
+    $restoreTrace=[Collections.Generic.List[string]]::new()
+    function Stop-DoHNetEventCapture($State){Assert-P ([object]::ReferenceEquals($State,$script:wire));$restoreTrace.Add('stop')}
+    function Remove-NativeDNSWireRules($State,[string]$Kind){
+        Assert-P ([object]::ReferenceEquals($State,$script:wire))
+        $restoreTrace.Add($Kind)
+        if($restoreFault -ceq $Kind){throw 'Synthetic restore fixture removal failure'}
+    }
+    function Get-NativeDNSAnswerCount([switch]$Restored,[string]$RecordType='A'){
+        Assert-P ([bool]$Restored -and $RecordType -ceq 'A')
+        $restoreTrace.Add('query')
+        return 2
+    }
+    $ScenarioKind='roundtrip'
+    foreach($restoreFault in @('none','tls','dns')){
+        $WireTransport=$true;$script:wire=@{synthetic=$true};$script:restoredAnswers=0;$restoreTrace.Clear();$failed=$false
+        try{& $callback}catch{$failed=$true}
+        if($restoreFault -ceq 'none'){
+            Assert-P (-not $failed -and $script:restoredAnswers -eq 2 -and ($restoreTrace -join ',') -ceq 'stop,tls,dns,query')
+        }else{
+            $expected=if($restoreFault -ceq 'tls'){'stop,tls'}else{'stop,tls,dns'}
+            Assert-P ($failed -and $script:restoredAnswers -eq 0 -and ($restoreTrace -join ',') -ceq $expected)
+        }
+    }
+    $WireTransport=$false;$script:wire=$null;$script:restoredAnswers=0;$restoreTrace.Clear()
+    & $callback
+    Assert-P ($script:restoredAnswers -eq 2 -and ($restoreTrace -join ',') -ceq 'query')
+}
+Case-P 'configured-readback-control-is-read-only-and-checks-both-families' {
+    $t=$null;$e=$null;$driver=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'test-native-doh.ps1'),[ref]$t,[ref]$e);Assert-P ($e.Count -eq 0)
+    $nodes=@($driver.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq 'Test-NativeConfiguredDNSReadback'});Assert-P ($nodes.Count -eq 1)
+    foreach($command in $nodes[0].FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){Assert-P ($command.GetCommandName() -cnotin @('Set-DnsClientServerAddress','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress','Clear-DnsClientCache','Resolve-DnsName'))}
+    $text=$nodes[0].Extent.Text;Assert-P ($text.Contains('ipv4MismatchRejected') -and $text.Contains('ipv6MismatchRejected') -and $text.Contains("'Configured DNS servers differ'") -and $text.Contains('Assert-DoHNetEventSources $State') -and $text.Contains('Convert-DNSAcceptanceGuid') -and $text.Contains('guid=[string]$matches[0].InterfaceGuid'))
+}
+$passed=@($cases | Where-Object {-not $_.passed}).Count -eq 0
+[Console]::Out.WriteLine((@{schemaVersion=1;scope='actual-product-netevent-lifecycle-source';sourceSHA256=$hashes;cases=@($cases.ToArray());passed=$passed;realCaptureStarted=$false;realDnsChanged=$false;productInvoked=$false;productionQualificationComplete=$false} | ConvertTo-Json -Depth 6 -Compress))
+if(-not $passed){exit 1}

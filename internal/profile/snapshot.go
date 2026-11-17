@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,8 +13,9 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/Yunushan/accessweaver/internal/filelock"
+	"github.com/Yunushan/accessweaver/internal/fileidentity"
 	"github.com/Yunushan/accessweaver/internal/managed"
+	"github.com/Yunushan/accessweaver/internal/privatefile"
 )
 
 const MaxSnapshotProfiles = 256
@@ -70,66 +72,7 @@ func ValidateSnapshot(profiles []Profile) error {
 // SnapshotContext takes one bounded, consistent read under the shared store
 // lock. It never follows references to engine/configuration files.
 func (s *Store) SnapshotContext(ctx context.Context) ([]Profile, error) {
-	lock, err := s.lock(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer lock.Close()
-	path := filepath.Join(s.Root, "profiles")
-	named, err := os.Lstat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !named.IsDir() || named.Mode()&os.ModeSymlink != 0 {
-		return nil, errors.New("snapshot requires a real profile directory")
-	}
-	dir, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer dir.Close()
-	opened, err := dir.Stat()
-	if err != nil || !os.SameFile(named, opened) {
-		return nil, errors.New("snapshot directory changed during open")
-	}
-	result := make([]Profile, 0)
-	scanned, size := 0, 0
-	for {
-		entries, readErr := dir.ReadDir(128)
-		for _, entry := range entries {
-			scanned++
-			if scanned > 4096 {
-				return nil, errors.New("snapshot directory exceeds 4096 entries")
-			}
-			if filepath.Ext(entry.Name()) != ".json" {
-				continue
-			}
-			if len(result) >= MaxSnapshotProfiles {
-				return nil, errors.New("snapshot exceeds 256 profiles")
-			}
-			p, err := s.getLocked(entry.Name()[:len(entry.Name())-5])
-			if err != nil {
-				return nil, err
-			}
-			data, err := json.Marshal(p)
-			if err != nil {
-				return nil, err
-			}
-			size += len(data)
-			if size > MaxSnapshotBytes {
-				return nil, errors.New("snapshot exceeds 8 MiB")
-			}
-			result = append(result, p)
-		}
-		if readErr == io.EOF {
-			break
-		}
-		if readErr != nil {
-			return nil, readErr
-		}
-	}
-	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
-	return result, nil
+	return snapshotContext(ctx, s, physicalSnapshotIO())
 }
 
 // restoreFiles canonicalizes the exact saved data, including revision stamps.
@@ -158,64 +101,35 @@ func restoreFiles(profiles []Profile) (map[string][]byte, []byte, error) {
 }
 
 func writeRestoreFile(path string, data []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	f, err := privatefile.Create(path)
 	if err != nil {
 		return err
 	}
-	_, writeErr := f.Write(data)
+	n, writeErr := f.Write(data)
+	if writeErr == nil && n != len(data) {
+		writeErr = io.ErrShortWrite
+	}
 	if writeErr == nil {
 		writeErr = f.Sync()
 	}
-	return errors.Join(writeErr, f.Close())
+	return snapshotJoin(writeErr, f.Close())
 }
 
 func readRestoreFile(path string, limit int64) ([]byte, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() || info.Size() > limit {
-		return nil, errors.New("unexpected restore file")
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	opened, err := f.Stat()
-	if err != nil || !os.SameFile(info, opened) {
-		return nil, errors.New("restore file changed during open")
-	}
-	return io.ReadAll(io.LimitReader(f, limit+1))
+	return physicalSnapshotIO().readFile(context.Background(), path, limit)
 }
-
 func restoreDirectory(path string) ([]os.DirEntry, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return nil, errors.New("restore requires real directories")
-	}
-	dir, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer dir.Close()
-	entries, err := dir.ReadDir(MaxSnapshotProfiles + 10)
-	if err != nil && err != io.EOF {
-		return nil, err
-	}
-	if len(entries) > MaxSnapshotProfiles+5 {
-		return nil, errors.New("unexpected restore directory contents")
-	}
-	return entries, nil
+	return restoreDirectoryContext(context.Background(), path, physicalSnapshotIO())
 }
 
 // RestoreSnapshot publishes profiles only into an exclusively created root.
 // Resume requires the exact authenticated snapshot marker and never replaces
 // unrelated data. A retained marker blocks ordinary Store reads and mutations.
 func RestoreSnapshot(ctx context.Context, root string, profiles []Profile, resume bool, guard *managed.Guard) error {
+	return restoreSnapshotWithIO(ctx, root, profiles, resume, guard, physicalSnapshotIO())
+}
+func restoreSnapshotWithIO(ctx context.Context, root string, profiles []Profile, resume bool, guard *managed.Guard, ops snapshotIO) (failure error) {
+	defer func() { failure = snapshotJoin(failure, ctx.Err()) }()
 	files, marker, err := restoreFiles(profiles)
 	if err != nil {
 		return err
@@ -237,25 +151,25 @@ func RestoreSnapshot(ctx context.Context, root string, profiles []Profile, resum
 			return err
 		}
 	}
-	original, err := os.Lstat(root)
-	if err != nil || !original.IsDir() || original.Mode()&os.ModeSymlink != 0 {
-		return errors.New("restore root must be a real directory")
+	original, err := ops.named(root)
+	if err != nil || original.Kind != fileidentity.Directory {
+		return snapshotJoin(errors.New("restore root must be a real directory"), err)
 	}
-	controller, err := filelock.TryAcquire(filepath.Join(root, ".controller.lock"))
+	controller, err := ops.acquire(ctx, filepath.Join(root, ".controller.lock"), true)
 	if err != nil {
 		return err
 	}
-	defer controller.Close()
-	lock, err := filelock.Acquire(ctx, filepath.Join(root, ".profiles.lock"))
+	defer snapshotClose(ctx, ops, controller, &failure)
+	lock, err := ops.acquire(ctx, filepath.Join(root, ".profiles.lock"), false)
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
-	current, err := os.Lstat(root)
-	if err != nil || !os.SameFile(original, current) {
-		return errors.New("restore root changed")
+	defer snapshotClose(ctx, ops, lock, &failure)
+	current, err := ops.named(root)
+	if err != nil || !snapshotDirectoryBinding(original, current) {
+		return snapshotJoin(errors.New("restore root changed"), err)
 	}
-	entries, err := restoreDirectory(root)
+	entries, err := restoreDirectoryContext(ctx, root, ops)
 	if err != nil {
 		return err
 	}
@@ -268,9 +182,11 @@ func RestoreSnapshot(ctx context.Context, root string, profiles []Profile, resum
 	}
 	markerPath := filepath.Join(root, restoreMarker)
 	if resume {
-		existing, err := readRestoreFile(markerPath, 256)
-		if err != nil || string(existing) != string(marker) {
-			return errors.New("restore marker does not match this authenticated snapshot")
+		existing, err := ops.readFile(ctx, markerPath, 256)
+		matches := bytes.Equal(existing, marker)
+		clear(existing)
+		if err != nil || !matches {
+			return snapshotJoin(errors.New("restore marker does not match this authenticated snapshot"), err)
 		}
 	} else {
 		if err := writeRestoreFile(markerPath, marker); err != nil {
@@ -283,12 +199,14 @@ func RestoreSnapshot(ctx context.Context, root string, profiles []Profile, resum
 	if err := guard.ProfileChanges(); err != nil {
 		return err
 	}
-	if err := restoreSnapshotFiles(ctx, root, files, guard); err != nil {
+	if err := restoreSnapshotFilesWithIO(ctx, root, files, guard, ops); err != nil {
 		return err
 	}
 	presetPath := filepath.Join(root, "presets-initialized")
-	if existing, err := readRestoreFile(presetPath, 2); err == nil {
-		if string(existing) != "1\n" {
+	if existing, err := ops.readFile(ctx, presetPath, 2); err == nil {
+		matches := bytes.Equal(existing, []byte("1\n"))
+		clear(existing)
+		if !matches {
 			return errors.New("unexpected preset initialization state")
 		}
 	} else if errors.Is(err, os.ErrNotExist) {
@@ -316,8 +234,11 @@ func RestoreSnapshot(ctx context.Context, root string, profiles []Profile, resum
 }
 
 func restoreSnapshotFiles(ctx context.Context, root string, files map[string][]byte, guard *managed.Guard) error {
+	return restoreSnapshotFilesWithIO(ctx, root, files, guard, physicalSnapshotIO())
+}
+func restoreSnapshotFilesWithIO(ctx context.Context, root string, files map[string][]byte, guard *managed.Guard, ops snapshotIO) error {
 	target := filepath.Join(root, "profiles")
-	entries, err := restoreDirectory(target)
+	entries, err := restoreDirectoryContext(ctx, target, ops)
 	if err == nil && len(entries) > 0 {
 		// Process death after publication but before marker removal: accept
 		// only the complete identical snapshot, without writing saved profiles.
@@ -329,9 +250,11 @@ func restoreSnapshotFiles(ctx context.Context, root string, files map[string][]b
 			if !ok {
 				return errors.New("published restore contains unrelated files")
 			}
-			actual, err := readRestoreFile(filepath.Join(target, entry.Name()), 1<<20)
-			if err != nil || string(actual) != string(expected) {
-				return errors.New("published restore differs from authenticated snapshot")
+			actual, err := ops.readFile(ctx, filepath.Join(target, entry.Name()), 1<<20)
+			matches := bytes.Equal(actual, expected)
+			clear(actual)
+			if err != nil || !matches {
+				return snapshotJoin(errors.New("published restore differs from authenticated snapshot"), err)
 			}
 		}
 		if _, err := os.Lstat(filepath.Join(root, restoreStage)); !errors.Is(err, os.ErrNotExist) {
@@ -347,7 +270,7 @@ func restoreSnapshotFiles(ctx context.Context, root string, files map[string][]b
 		if !errors.Is(err, os.ErrExist) {
 			return err
 		}
-		entries, err := restoreDirectory(stage)
+		entries, err := restoreDirectoryContext(ctx, stage, ops)
 		if err != nil {
 			return err
 		}

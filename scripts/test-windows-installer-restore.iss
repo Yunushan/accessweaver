@@ -28,7 +28,7 @@ begin
   Executable := ExpandConstant('{param:Controller|}');
   Directory := ExtractFileDir(Executable);
   Accepted := AWRunBoundedRestoration(Executable,
-    'system apply "' + Directory + '\uninstall-system.json" --confirm',
+    'system installer-restore --confirm',
     Directory, 5000, Code, Failure);
   { A zero controller exit must not hide a still-running descendant. }
   if Accepted or (Code <> 1460) then Exit;

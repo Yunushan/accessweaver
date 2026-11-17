@@ -86,7 +86,12 @@ type ordinaryPending struct {
 var ordinaryUnfinishedIO []*ordinaryPending
 var ordinaryCloseFailure bool
 
+const ordinaryReplySize = 56
+
 type ordinaryFixture struct {
+	releaseFailure                                                       windowsRunReleaseStage
+	desktopFailure                                                       windowsDesktopStage
+	aliasFailure                                                         windowsAliasFailure
 	commands, policyInstalled, policyRemoved, privateChildRemoved        bool
 	childSlot                                                            string
 	cleanupPolicy                                                        func() error
@@ -1044,11 +1049,12 @@ func (f *ordinaryFixture) exchange() error {
 		if ordinaryPipeIO(f.pipe, "write", request, 20*time.Second) != nil {
 			return errOrdinary
 		}
-		reply := make([]byte, 56)
-		budget := 20 * time.Second
+		replySize, budget := ordinaryReplySize, 20*time.Second
 		if f.commands {
+			replySize += 2
 			budget = 120 * time.Second
 		}
+		reply := make([]byte, replySize)
 		if ordinaryPipeIO(f.pipe, "read", reply, budget) != nil || !bytes.Equal(reply[:8], ordinaryMagic[:]) || !bytes.Equal(reply[8:40], request[8:40]) {
 			return errOrdinary
 		}
@@ -1063,6 +1069,15 @@ func (f *ordinaryFixture) exchange() error {
 		names := []string{"worker-primary-token", "worker-loaded-profile-hkcu", "worker-native-image", "worker-isolated-console-interrupt", "worker-public-recording-support-contract"}
 		if f.commands {
 			names = append(names, ordinaryCommandCaseNames...)
+			desktop, alias, valid := decodeWindowsCommandFailure(reply[ordinaryReplySize], executed&^passed)
+			if !valid {
+				return errOrdinary
+			}
+			f.desktopFailure, f.aliasFailure = desktop, alias
+			f.releaseFailure = windowsRunReleaseStage(reply[ordinaryReplySize+1])
+			if !windowsRunReleaseValid(f.releaseFailure, executed&^passed) {
+				return errOrdinary
+			}
 		}
 		var failure error
 		for bit, id := range names {
@@ -1248,12 +1263,19 @@ func runOrdinaryWindowsWorker(arguments []string, commands bool) (exitCode int) 
 		flags |= 16
 	}
 	executed := uint64(31)
+	stage := windowsDesktopNoFailure
+	releaseStage := windowsRunReleaseStage(0)
 	if commands && flags == 31 {
-		commandExecuted, commandPassed := runWindowsCommandCases(request[8:40])
+		commandExecuted, commandPassed, desktopFailure, releaseFailure := runWindowsCommandCases(request[8:40])
 		executed |= commandExecuted << 5
 		flags |= commandPassed << 5
+		stage = desktopFailure
+		releaseStage = releaseFailure
 	}
-	reply := make([]byte, 56)
+	reply := make([]byte, ordinaryReplySize)
+	if commands {
+		reply = append(reply, byte(stage), byte(releaseStage))
+	}
 	copy(reply, request[:40])
 	binary.LittleEndian.PutUint64(reply[40:48], executed)
 	binary.LittleEndian.PutUint64(reply[48:56], flags)
@@ -1445,39 +1467,11 @@ func (f *ordinaryFixture) finish() {
 	}
 	f.stagingRemoved = true
 	for index := len(f.objects) - 1; index >= 0; index-- {
-		object := f.objects[index]
-		safe := f.processesEmpty && (object.path == f.root || strings.EqualFold(filepath.Dir(object.path), f.root))
-		if len(f.objects) > 0 {
-			rootHandle, err := ordinarySameObject(f.objects[0], windows.FILE_READ_ATTRIBUTES)
-			if err != nil {
-				safe = false
-			} else if !ordinaryClose(&rootHandle) {
-				safe = false
-				f.handlesClosed = false
-			}
-		}
-		if !safe {
-			f.stagingRemoved = false
-			continue
-		}
-		handle, err := ordinarySameObject(object, windows.DELETE)
-		if err != nil {
-			f.stagingRemoved = false
-			continue
-		}
-		remove := byte(1)
-		if windows.SetFileInformationByHandle(handle, windows.FileDispositionInfo, &remove, 1) != nil {
-			f.stagingRemoved = false
-		}
-		if !ordinaryClose(&handle) {
-			f.handlesClosed = false
-			f.stagingRemoved = false
-		}
-		_, err = fileidentity.FromPath(object.path, false)
-		if !errors.Is(err, os.ErrNotExist) {
+		if f.removeRecordedStagingObject(f.objects[index]) != nil {
 			f.stagingRemoved = false
 		}
 	}
+
 	if f.stagingCreated {
 		_, absenceErr := fileidentity.FromPath(f.root, false)
 		if !errors.Is(absenceErr, os.ErrNotExist) {
@@ -1497,6 +1491,74 @@ func (f *ordinaryFixture) finish() {
 		return nil
 	})
 }
+
+// Delete only an immutable recorded object. The sole nested layout addition is
+// the approved engine, with its separately recorded protected parent held and
+// revalidated. No enumeration or recursive deletion adopts unexpected objects.
+func (f *ordinaryFixture) removeRecordedStagingObject(object ordinaryObject) (failure error) {
+	relative, err := filepath.Rel(f.root, object.path)
+	kind := windowsStagingObjectKind(relative)
+	if err != nil || !f.processesEmpty || kind == 0 || (kind == 3 && !f.commands) || len(f.objects) == 0 {
+		return errOrdinary
+	}
+	root, err := ordinarySameObject(f.objects[0], windows.FILE_READ_ATTRIBUTES)
+	if err != nil {
+		return errOrdinary
+	}
+	if !ordinaryClose(&root) {
+		f.handlesClosed = false
+		return errOrdinary
+	}
+	var parent windows.Handle
+	if kind == 3 {
+		var recorded ordinaryObject
+		found := false
+		for _, candidate := range f.objects {
+			if strings.EqualFold(candidate.path, filepath.Join(f.root, "approved-engine")) {
+				if found {
+					return errOrdinary
+				}
+				recorded = candidate
+				found = true
+			}
+		}
+		if !found || !wintrust.TrustedSID(recorded.owner) {
+			return errOrdinary
+		}
+		parent, err = ordinarySameObject(recorded, windows.FILE_READ_ATTRIBUTES|windows.READ_CONTROL)
+		if err != nil {
+			return errOrdinary
+		}
+		defer func() {
+			if !ordinaryClose(&parent) {
+				f.handlesClosed = false
+				failure = errOrdinary
+			}
+		}()
+		sd, err := windows.GetSecurityInfo(parent, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+		if err != nil || !ordinaryDescriptor(sd, "", false) {
+			return errOrdinary
+		}
+	}
+	handle, err := ordinarySameObject(object, windows.DELETE)
+	if err != nil {
+		return errOrdinary
+	}
+	remove := byte(1)
+	dispositionErr := windows.SetFileInformationByHandle(handle, windows.FileDispositionInfo, &remove, 1)
+	closed := ordinaryClose(&handle)
+	if !closed {
+		f.handlesClosed = false
+	}
+	if dispositionErr != nil || !closed {
+		return errOrdinary
+	}
+	if _, err := fileidentity.FromPath(object.path, false); !errors.Is(err, os.ErrNotExist) {
+		return errOrdinary
+	}
+	return nil
+}
+
 func ordinaryPublicMetadata(value string) string {
 	if len(value) > 128 || strings.Trim(value, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._- ") != "" {
 		return ""
@@ -1547,6 +1609,12 @@ func (f *ordinaryFixture) report(t *testing.T) {
 		"stagingRemoved": f.stagingRemoved, "privateDesktopObjectsClosed": f.guiClosed, "allHandlesClosed": f.handlesClosed,
 		"privateChildWorkspaceRemoved": f.privateChildRemoved, "requiredAuditPolicyEnrolled": f.policyInstalled, "requiredAuditPolicyRemoved": f.policyRemoved,
 		"cleanupComplete": f.cleanupOK, "passed": passed, "productionQualificationComplete": false,
+	}
+	if f.commands {
+		report["schemaVersion"] = 12
+		report["desktopFailureStage"] = windowsDesktopStageNames[f.desktopFailure]
+		report["runReleaseFailureStage"] = windowsRunReleaseNames[f.releaseFailure]
+		report["aliasFailureVariant"], report["aliasFailureStage"] = windowsAliasFailureNames(f.aliasFailure)
 	}
 	data, err := json.MarshalIndent(report, "", "  ")
 	workspace := os.Getenv("GITHUB_WORKSPACE")

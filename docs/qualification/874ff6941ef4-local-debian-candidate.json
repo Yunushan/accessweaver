@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "scope": "isolated-linux-amd64-dpkg-and-signed-apt-lifecycle",
+  "sourceCommit": "874ff6941ef4b6dbbc270bafa862eb5b962c26c4",
+  "sourceSHA256": {
+    "scripts/test-linux-package-candidate.sh": "6ab4450f67e664779d67136aabdf5c19b4cc96ea2fe3461691150e667a672e0b",
+    "scripts/package-release.sh": "467a7a8f0d3d225148e65cf2342c809cf52f50a3740400b3096e0ec890865b35",
+    "scripts/build-all.sh": "6d8712ac794b04cbd9406d819557db3d74d6f31db43c138a45f5f74be146ccdc",
+    "scripts/verify_release.py": "4338d95d41b2e7c3ab394a0403c1e81ac57f76e524e06f776c58b4a1b2976744",
+    "scripts/build-linux-deb.py": "c32262e9314bf3ae844082dca4b2e65e02ba0ee94ef7cb2c57aa2e3dcb01a0fb",
+    "scripts/test-linux-deb-lifecycle.py": "d336e7f86701a17db552cc769071eb51b058cebb63d837920ada76e78398ac29",
+    "scripts/build-linux-apt-repository.py": "f6af39d051ea0ef10fb358372d4e6b419df1ab1d01f6133c4d3149d0ce84b891",
+    "scripts/test-linux-apt-repository.py": "f5358ebd8d62b079e92c42ad23db3ade61d7775ef57395a4b61fbf3f80e72226",
+    "scripts/linux_package_managed_fixture.py": "9d702ed010ea92f4c8250141115e94343555de3419b0cb6565b49f51b0e6127e"
+  },
+  "environment": {
+    "distribution": "Ubuntu 26.04 WSL",
+    "architecture": "amd64",
+    "goVersion": "go1.27.4",
+    "isolatedMountNetworkProcessNamespaces": true,
+    "externalNetwork": false
+  },
+  "qualificationSHA256": "550dc7d0ff2e0a79975fc41c1c41a74629f34cd1731a738a467b8af5d8f83360",
+  "qualification": {
+    "schemaVersion": 1,
+    "sourceCommit": "874ff6941ef4b6dbbc270bafa862eb5b962c26c4",
+    "endpointArchitecture": "amd64",
+    "fixtureVersions": [
+      "0.0.0~alpha.1",
+      "0.0.0~alpha.2"
+    ],
+    "reportsSHA256": {
+      "dpkg.json": "5a509324dd5a6585b6cf2ec652027fe78c940cede33bdf85df74378d0be1a64f",
+      "apt.json": "542c59070f8a3bd89cee00743ac2d815836db2a3f3c60771a042825d21b498b8"
+    },
+    "productionQualificationComplete": false
+  },
+  "dpkg": {
+    "schemaVersion": 1,
+    "scope": "Isolated unsigned Debian package construction and native Linux dpkg lifecycle",
+    "endpointArchitecture": "amd64",
+    "dpkgVersion": "Debian 'dpkg' package management program version 1.23.7 (amd64).",
+    "builderSHA256": "c32262e9314bf3ae844082dca4b2e65e02ba0ee94ef7cb2c57aa2e3dcb01a0fb",
+    "probeSHA256": "d336e7f86701a17db552cc769071eb51b058cebb63d837920ada76e78398ac29",
+    "packages": [
+      {
+        "arch": "amd64",
+        "version": "0.0.0~alpha.1",
+        "archiveSHA256": "74e681aa0e1b9449e53015acb77ac06484cb4a74d3205798aa8799199b1076d6",
+        "debSHA256": "7a48712814da08bc396fd8dd7bc574346847706ad3065355c89652bf6d24a2d2",
+        "binarySHA256": "aeac7896313f100c9c6a15d6dfe37cb9bba5c2d02e28a47239702c74d2f12ab4",
+        "payloadFiles": 506
+      },
+      {
+        "arch": "amd64",
+        "version": "0.0.0~alpha.2",
+        "archiveSHA256": "c9f1e38ac1bc727b21dcb3efecbbc083cf2388c5d69625d1b7e84cbb059b86dc",
+        "debSHA256": "86a712a21a52b91a2c5d0af6db7b92cc889ae61c700533e766085ab0b6d4f7d2",
+        "binarySHA256": "6894bfb1a29d00396be25f44a126283c9e9cda420fc08b8b2c6216e5e3d20e73",
+        "payloadFiles": 506
+      },
+      {
+        "arch": "arm64",
+        "version": "0.0.0~alpha.2",
+        "archiveSHA256": "e53d6fb4e043a87b0a9156ab04ddf55b9d85f5362b000e601a95064007209a66",
+        "debSHA256": "e84f5349fb6ea6fd2c0185166d79d9afe2e6a7574820ab45ad8f341ea48dc45b",
+        "binarySHA256": "383617a159f3cd249cd1ad06b50281ace67549d53d9307470ea01ee5b640355e",
+        "payloadFiles": 506
+      }
+    ],
+    "managedRevisionsObserved": [
+      1,
+      2
+    ],
+    "managedFixtureSHA256": "9d702ed010ea92f4c8250141115e94343555de3419b0cb6565b49f51b0e6127e",
+    "checks": [
+      "mismatched-source-digest-refused-without-output",
+      "amd64-and-arm64-control-and-payload-inspected",
+      "reproducible-package-and-exclusive-publication",
+      "clean-install-upgrade-and-same-version-reinstall",
+      "ordinary-user-installed-cli-identity-after-each-change",
+      "dpkg-verify-after-each-change",
+      "guarded-downgrade-refusal-and-explicit-rollback",
+      "purge-and-package-registration-removal",
+      "enrollment-and-profile-created-with-first-installed-controller",
+      "new-controller-advanced-policy-and-older-rollback-refused-replay",
+      "ordinary-mutation-and-engine-launch-denied-through-installed-controllers",
+      "enrolled-policy-and-profile-preserved-through-purge-and-reinstall"
+    ],
+    "amd64Execution": true,
+    "arm64Execution": false,
+    "productionQualificationComplete": false
+  },
+  "apt": {
+    "schemaVersion": 1,
+    "scope": "Loopback signed APT publication and isolated native Linux install lifecycle",
+    "endpointArchitecture": "amd64",
+    "builderSHA256": "f6af39d051ea0ef10fb358372d4e6b419df1ab1d01f6133c4d3149d0ce84b891",
+    "probeSHA256": "f5358ebd8d62b079e92c42ad23db3ade61d7775ef57395a4b61fbf3f80e72226",
+    "managedFixtureSHA256": "9d702ed010ea92f4c8250141115e94343555de3419b0cb6565b49f51b0e6127e",
+    "managedRevisionsObserved": [
+      1,
+      2
+    ],
+    "aptVersion": "apt 3.2.1 (amd64)",
+    "packageSHA256": {
+      "accessweaver_0.0.0~alpha.1_amd64.deb": "7a48712814da08bc396fd8dd7bc574346847706ad3065355c89652bf6d24a2d2",
+      "accessweaver_0.0.0~alpha.1_arm64.deb": "5dcd63e91d74a1f9b9e37869ccb00372ba16fef7c421328292c9caefcf4dd7e6",
+      "accessweaver_0.0.0~alpha.2_amd64.deb": "86a712a21a52b91a2c5d0af6db7b92cc889ae61c700533e766085ab0b6d4f7d2",
+      "accessweaver_0.0.0~alpha.2_arm64.deb": "e84f5349fb6ea6fd2c0185166d79d9afe2e6a7574820ab45ad8f341ea48dc45b"
+    },
+    "olderBinarySHA256": "aeac7896313f100c9c6a15d6dfe37cb9bba5c2d02e28a47239702c74d2f12ab4",
+    "newerBinarySHA256": "6894bfb1a29d00396be25f44a126283c9e9cda420fc08b8b2c6216e5e3d20e73",
+    "suiteArchitectures": [
+      "amd64",
+      "arm64"
+    ],
+    "checks": [
+      "approved-signing-subkey-verified-against-primary-fingerprint",
+      "package-pin-and-untrusted-verification-key-rejected-without-publication",
+      "exclusive-publication-preserved-existing-snapshot",
+      "native-apt-fetched-index-by-signed-hash",
+      "signed-install-upgrade-purge-and-reinstall-preserved-enrolled-policy-and-profile",
+      "installed-controller-advanced-policy-and-denied-ordinary-mutation-and-launch",
+      "ordinary-user-installed-cli-matched-package-build-identity",
+      "wrong-scoped-key-tampered-signature-and-expired-metadata-rejected",
+      "tampered-index-and-payload-rejected-before-installation"
+    ],
+    "ephemeralSigningKeys": true,
+    "arm64EndpointExecution": false,
+    "productionQualificationComplete": false
+  },
+  "rebootExercised": false,
+  "productionQualificationComplete": false
+}

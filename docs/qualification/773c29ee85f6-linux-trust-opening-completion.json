@@ -1,0 +1,534 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "773c29ee85f6697d935fdedbd255cfc2a15563b7",
+  "sourceFiles": 907,
+  "sourceDigest": "4db768f8406d7364138bbdc87494c590adabf4c4c422d3a9f1d341f8782da81d",
+  "run": 42309389134,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/42309389134",
+  "nativeJobs": {
+    "targets": [
+      "linux/amd64",
+      "linux/arm64"
+    ],
+    "completed": "success",
+    "attempt": 1,
+    "completeExistingProfileReadScope": true
+  },
+  "scope": "Source-built native Linux trust descriptor opening and completion fixtures; integrated profile/backup/CLI regression",
+  "reports": [
+    {
+      "schemaVersion": 1,
+      "sourceCommit": "773c29ee85f6697d935fdedbd255cfc2a15563b7",
+      "sourceSHA256": {
+        "internal/linuxtrust/files_linux.go": "cbffbfa9dc68757d07681289b7331536d282c53be2b78317021b5f39fe8686d5",
+        "internal/linuxtrust/opening_completion_evidence_linux_test.go": "e157658f57dd04fd41df9fe09224bfa12809eb13674ae52ab2d8515a22c18b13",
+        "internal/linuxtrust/opening_completion_linux_test.go": "39ef435c76f88db3648617ee7e2c1ae88c441ccb65e3bbd806d61738d4075e2f"
+      },
+      "testBinarySHA256": "c826755af46a57d8e8526ac07dcb4c608d7577345fc7d3493665dab98aee1620",
+      "target": "linux/arm64",
+      "goVersion": "go1.27.3",
+      "mode": "normal",
+      "scope": "owned-native-descriptor-opening-completion",
+      "passed": true,
+      "cases": [
+        {
+          "name": "directory-handoff",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 0
+        },
+        {
+          "name": "directory-check-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "regular-handoff",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 1
+        },
+        {
+          "name": "regular-probe-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "regular-probe-check-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "regular-final-check-close",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "regular-changed-close",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "root-handoff",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 0
+        },
+        {
+          "name": "root-check-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "walk-handoff",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 1
+        },
+        {
+          "name": "walk-parent-close",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "walk-parent-child-close",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "walk-child-check-close-parent",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "walk-open-parent-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "walk-open-refusal",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "relative-path-refusal",
+          "passed": true,
+          "checkCalls": 0,
+          "closeCalls": 0
+        }
+      ],
+      "productionQualificationComplete": false
+    },
+    {
+      "schemaVersion": 1,
+      "sourceCommit": "773c29ee85f6697d935fdedbd255cfc2a15563b7",
+      "sourceSHA256": {
+        "internal/linuxtrust/files_linux.go": "cbffbfa9dc68757d07681289b7331536d282c53be2b78317021b5f39fe8686d5",
+        "internal/linuxtrust/opening_completion_evidence_linux_test.go": "e157658f57dd04fd41df9fe09224bfa12809eb13674ae52ab2d8515a22c18b13",
+        "internal/linuxtrust/opening_completion_linux_test.go": "39ef435c76f88db3648617ee7e2c1ae88c441ccb65e3bbd806d61738d4075e2f"
+      },
+      "testBinarySHA256": "5248eaacc53458830db9334962b216550c83cef37cb4df7cec00339f39261ae3",
+      "target": "linux/arm64",
+      "goVersion": "go1.27.3",
+      "mode": "race",
+      "scope": "owned-native-descriptor-opening-completion",
+      "passed": true,
+      "cases": [
+        {
+          "name": "directory-handoff",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 0
+        },
+        {
+          "name": "directory-check-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "regular-handoff",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 1
+        },
+        {
+          "name": "regular-probe-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "regular-probe-check-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "regular-final-check-close",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "regular-changed-close",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "root-handoff",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 0
+        },
+        {
+          "name": "root-check-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "walk-handoff",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 1
+        },
+        {
+          "name": "walk-parent-close",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "walk-parent-child-close",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "walk-child-check-close-parent",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "walk-open-parent-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "walk-open-refusal",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "relative-path-refusal",
+          "passed": true,
+          "checkCalls": 0,
+          "closeCalls": 0
+        }
+      ],
+      "productionQualificationComplete": false
+    },
+    {
+      "schemaVersion": 1,
+      "sourceCommit": "773c29ee85f6697d935fdedbd255cfc2a15563b7",
+      "sourceSHA256": {
+        "internal/linuxtrust/files_linux.go": "cbffbfa9dc68757d07681289b7331536d282c53be2b78317021b5f39fe8686d5",
+        "internal/linuxtrust/opening_completion_evidence_linux_test.go": "e157658f57dd04fd41df9fe09224bfa12809eb13674ae52ab2d8515a22c18b13",
+        "internal/linuxtrust/opening_completion_linux_test.go": "39ef435c76f88db3648617ee7e2c1ae88c441ccb65e3bbd806d61738d4075e2f"
+      },
+      "testBinarySHA256": "690ac6e17c45c21f5d52982b46f0caf8ba021a50fdb7bc3802bc78901dd304a5",
+      "target": "linux/amd64",
+      "goVersion": "go1.27.3",
+      "mode": "normal",
+      "scope": "owned-native-descriptor-opening-completion",
+      "passed": true,
+      "cases": [
+        {
+          "name": "directory-handoff",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 0
+        },
+        {
+          "name": "directory-check-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "regular-handoff",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 1
+        },
+        {
+          "name": "regular-probe-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "regular-probe-check-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "regular-final-check-close",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "regular-changed-close",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "root-handoff",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 0
+        },
+        {
+          "name": "root-check-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "walk-handoff",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 1
+        },
+        {
+          "name": "walk-parent-close",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "walk-parent-child-close",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "walk-child-check-close-parent",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "walk-open-parent-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "walk-open-refusal",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "relative-path-refusal",
+          "passed": true,
+          "checkCalls": 0,
+          "closeCalls": 0
+        }
+      ],
+      "productionQualificationComplete": false
+    },
+    {
+      "schemaVersion": 1,
+      "sourceCommit": "773c29ee85f6697d935fdedbd255cfc2a15563b7",
+      "sourceSHA256": {
+        "internal/linuxtrust/files_linux.go": "cbffbfa9dc68757d07681289b7331536d282c53be2b78317021b5f39fe8686d5",
+        "internal/linuxtrust/opening_completion_evidence_linux_test.go": "e157658f57dd04fd41df9fe09224bfa12809eb13674ae52ab2d8515a22c18b13",
+        "internal/linuxtrust/opening_completion_linux_test.go": "39ef435c76f88db3648617ee7e2c1ae88c441ccb65e3bbd806d61738d4075e2f"
+      },
+      "testBinarySHA256": "fba617358b9df4e63be40e1987f53caa36bbe13b372b7a811968f3a1a4ebe448",
+      "target": "linux/amd64",
+      "goVersion": "go1.27.3",
+      "mode": "race",
+      "scope": "owned-native-descriptor-opening-completion",
+      "passed": true,
+      "cases": [
+        {
+          "name": "directory-handoff",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 0
+        },
+        {
+          "name": "directory-check-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "regular-handoff",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 1
+        },
+        {
+          "name": "regular-probe-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "regular-probe-check-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "regular-final-check-close",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "regular-changed-close",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "root-handoff",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 0
+        },
+        {
+          "name": "root-check-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "walk-handoff",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 1
+        },
+        {
+          "name": "walk-parent-close",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "walk-parent-child-close",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "walk-child-check-close-parent",
+          "passed": true,
+          "checkCalls": 2,
+          "closeCalls": 2
+        },
+        {
+          "name": "walk-open-parent-close",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "walk-open-refusal",
+          "passed": true,
+          "checkCalls": 1,
+          "closeCalls": 1
+        },
+        {
+          "name": "relative-path-refusal",
+          "passed": true,
+          "checkCalls": 0,
+          "closeCalls": 0
+        }
+      ],
+      "productionQualificationComplete": false
+    }
+  ],
+  "archiveDigests": {
+    "linux-trust-opening-arm64": "sha256:0bc39dd0a0f7b21b40113eefa201ade219a9c0d6f2ceaea6005ce58016f69709",
+    "linux-trust-opening-amd64": "sha256:3755efeb752cbe4a461655cca5681f6cbb12e034d28b6345134ec2e54ca3d9b1"
+  },
+  "beforeFix": {
+    "totalCases": 16,
+    "failedCases": [
+      "directory-check-close",
+      "regular-probe-close",
+      "regular-probe-check-close",
+      "regular-final-check-close",
+      "regular-changed-close",
+      "root-check-close",
+      "walk-parent-close",
+      "walk-parent-child-close",
+      "walk-child-check-close-parent",
+      "walk-open-parent-close"
+    ],
+    "falseHandoffCases": [
+      "regular-probe-close",
+      "walk-parent-close",
+      "walk-parent-child-close"
+    ],
+    "method": "Per-call Check/close seam preserves original ignored-close semantics; real owned descriptors are closed before synthetic returned errors"
+  },
+  "localValidation": {
+    "packages": [
+      "linuxtrust",
+      "managed",
+      "packageupgrade",
+      "audit",
+      "cmd/accessweaver"
+    ],
+    "normal": "passed",
+    "race": "passed",
+    "vet": "passed",
+    "compileOnlyTargets": 10,
+    "compileOnlyChecks": 44,
+    "workflowLint": "passed",
+    "productionTrustPredicatesUnchanged": true
+  },
+  "evidenceSHA256": {
+    "provider-linux-trust-metadata.json": "277ee6cb9b1ba3275f8e0b23d6960ae2a5a431eb46001b70bf615bb9aaf2ed30",
+    "linux-trust-opening-reports.json": "b1db3ee7ac355d3bfb5fc50937d650fba616c175528f23e0bef27a2fb27b0aa8",
+    "author-validation.json": "af91d732fd0b11b9a289eb75bc7406529ca52b9fd184a4b9b09a9102b69a082c",
+    "source-freeze.json": "27af20b5841f62da7bb75cc044eed37280f05c011066cf71d6c9e62bccb1af5d",
+    "cross-compile-receipt.json": "849725bed63f2f7922a66d62eebfa5da85ca711dd65e66b389706933f10ea2af",
+    "before-fix-reproduction.json": "cd9e0814c217896479c3de110b8e46f41e8bc1e8ac5d553eb4e4fcaa046b711b",
+    "unchanged-authority.json": "b4f824d777b556ab33d819376b7a72348a1bb2e6e814a576610ca0d8d59c535f"
+  },
+  "qualificationLimits": [
+    "Returned errors after closing real fixture descriptors do not establish actual kernel-close-fault recovery or a hard native syscall deadline",
+    "No private-writer, ACL, quota, storage durability or resource soak qualification",
+    "No signed/installed desktop, vendor traffic, reboot or full ten-target production qualification"
+  ],
+  "rawLogsAnnotationsOrPrivateArtifactsRead": false,
+  "gatesPromoted": false,
+  "productionQualificationComplete": false
+}

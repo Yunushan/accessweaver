@@ -48,6 +48,32 @@ def command(args, timeout=90, check=True, env=None):
     return result
 
 
+PRESSURE_PHASE = re.compile(
+    rb"ACCESSWEAVER_APFS_PHASE="
+    rb"(receipt|mount|prepare-mutation|fill-image|reject-write|preserve-records|"
+    rb"reclaim-space|signed-retry|retained-stage|write-report)"
+)
+
+
+PRESSURE_CASE = re.compile(
+    rb"=== RUN   TestDisposableDarwinAPFSExhaustion/operation=(install|update|rotate|recover)"
+    rb"/record=(installation\.json|acceptance\.json)"
+)
+
+
+def pressure_summary(result):
+    # The native test emits fixed markers. Discard all other command output.
+    summary = {"exitCode": result.returncode, "lastPhase": None, "lastCase": None}
+    for line in result.stdout.splitlines():
+        phase = PRESSURE_PHASE.fullmatch(line)
+        case = PRESSURE_CASE.fullmatch(line)
+        if phase:
+            summary["lastPhase"] = phase[1].decode("ascii")
+        if case:
+            summary["lastCase"] = {"operation": case[1].decode("ascii"), "record": case[2].decode("ascii")}
+    return summary
+
+
 def info(timeout=90):
     return plistlib.loads(command([HDIUTIL, "info", "-plist"], timeout=timeout).stdout)
 
@@ -552,7 +578,7 @@ def main():
     binary = capsule / "managed-storage.test"
     build_env = dict(os.environ, CGO_ENABLED="0")
     command(["go", "test", "-c", "-o", str(binary), "./internal/managed"], timeout=180, env=build_env)
-    record = {"schemaVersion": 2, "sourceCommit": source, "arch": arch,
+    record = {"schemaVersion": 3, "sourceCommit": source, "arch": arch,
               "passed": False, "controlledUnmountedImageRequired": True,
               "imageVirtualBytes": 512 << 20, "nativeToolHelp": help_hashes, "productionQualificationComplete": False,
               "attached": False, "detached": False, "ownedImageRemoved": False,
@@ -566,12 +592,14 @@ def main():
         raise KeyboardInterrupt("Disposable storage test interrupted")
     signal.signal(signal.SIGTERM, interrupted)
     os.chdir(repo)
+    stage = "create-pressure-image"
     try:
         command([HDIUTIL, "create", "-size", "512m", "-type", "SPARSE", "-fs", "APFS",
                  "-volname", "AWStorage-" + capsule.name, str(image)])
         image_stat = image.lstat()
         if not image.is_file() or image.is_symlink() or image_stat.st_uid != os.geteuid():
             raise RuntimeError("Unexpected image identity")
+        stage = "attach-pressure-image"
         # The only attach target is the new owned image, never an existing device.
         command([HDIUTIL, "attach", "-plist", "-nobrowse", "-owners", "on",
                  "-mountpoint", str(mount), str(image)])
@@ -582,6 +610,7 @@ def main():
         owned = next(item for item in initial["images"] if item.get("image-path") == str(image))
         bound_devices = {entry.get("dev-entry") for entry in owned.get("system-entities", [])}
         record.update(attached=True, imageDevice=base_device, volumeDevice=volume_device)
+        stage = "protect-pressure-image"
         mounted = mount.stat()
         volume = os.statvfs(mount)
         if mounted.st_dev == image_stat.st_dev or volume.f_frsize <= 0 or not 0 < volume.f_blocks * volume.f_frsize <= 1 << 30:
@@ -595,14 +624,20 @@ def main():
                    "maximumVolumeBytes": 1 << 30, "report": str(report)}
         receipt_path = capsule / "receipt.json"
         receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
-        # Keep native tool evidence from this exact host; do not infer mount flags.
-        command(["/usr/bin/sudo", "-n", "env", "-i", "PATH=/usr/bin:/bin:/usr/sbin:/sbin",
-                 "LANG=C", "LC_ALL=C", "TZ=UTC", "GITHUB_ACTIONS=true",
-                 "RUNNER_ENVIRONMENT=github-hosted", "RUNNER_OS=macOS", "GITHUB_SHA=" + source, "GITHUB_WORKSPACE=" + str(repo),
-                 "ACCESSWEAVER_DISPOSABLE_DARWIN_STORAGE_TEST=1",
-                 "ACCESSWEAVER_DARWIN_STORAGE_RECEIPT=" + str(receipt_path), str(binary),
-                 "-test.run=^TestDisposableDarwinAPFSExhaustion$", "-test.timeout=8m", "-test.v"],
-                timeout=510)
+        stage = "run-native-pressure-test"
+        pressure = command(
+            ["/usr/bin/sudo", "-n", "env", "-i", "PATH=/usr/bin:/bin:/usr/sbin:/sbin",
+             "LANG=C", "LC_ALL=C", "TZ=UTC", "GITHUB_ACTIONS=true",
+             "RUNNER_ENVIRONMENT=github-hosted", "RUNNER_OS=macOS", "GITHUB_SHA=" + source,
+             "GITHUB_WORKSPACE=" + str(repo), "ACCESSWEAVER_DISPOSABLE_DARWIN_STORAGE_TEST=1",
+             "ACCESSWEAVER_DARWIN_STORAGE_RECEIPT=" + str(receipt_path), str(binary),
+             "-test.run=^TestDisposableDarwinAPFSExhaustion$", "-test.timeout=8m", "-test.v"],
+            timeout=510, check=False,
+        )
+        record["nativePressure"] = pressure_summary(pressure)
+        if pressure.returncode != 0:
+            raise RuntimeError("Native APFS pressure test failed; see fixed phase evidence")
+        stage = "verify-pressure-report"
         if not report.is_file():
             raise RuntimeError("Native test produced no exhaustion evidence")
         result = json.loads(report.read_text(encoding="utf-8"))
@@ -611,6 +646,7 @@ def main():
         record["nativeCasesPassed"] = 8
     except BaseException as error:
         failure = error
+        record.update(primaryFailureStage=stage, primaryFailureType=type(error).__name__)
     finally:
         try:
             bound = info()

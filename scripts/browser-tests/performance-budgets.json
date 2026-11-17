@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 3,
+  "scope": "source-built-linux-controller-and-browser-ci-baseline",
+  "profiles": 256,
+  "loadSeconds": 60,
+  "requestsPerSecond": 4,
+  "burstRequests": 96,
+  "burstConcurrency": 4,
+  "reloadSamples": 5,
+  "navigationSamples": 24,
+  "editorSamples": 10,
+  "resourceIntervalMilliseconds": 250,
+  "cooldownSeconds": 5,
+  "limits": {
+    "controllerStartupMs": {
+      "max": 1500
+    },
+    "dashboardReadyMs": {
+      "max": 3000
+    },
+    "reloadP95Ms": {
+      "max": 1500
+    },
+    "navigationP95Ms": {
+      "max": 500
+    },
+    "editorP95Ms": {
+      "max": 500
+    },
+    "apiP95Ms": {
+      "max": 250
+    },
+    "burstRequestsPerSecond": {
+      "min": 20
+    },
+    "loadRequestsPerSecond": {
+      "min": 3.8
+    },
+    "loadCpuPercentOneCore": {
+      "max": 50
+    },
+    "sampledPeakRssBytes": {
+      "max": 201326592
+    },
+    "sampledPeakDescriptors": {
+      "max": 128
+    },
+    "sampledPeakThreads": {
+      "max": 128
+    },
+    "cooldownRssGrowthBytes": {
+      "max": 67108864
+    },
+    "cooldownDescriptorGrowth": {
+      "max": 2
+    },
+    "cooldownThreadGrowth": {
+      "max": 8
+    },
+    "browserSampledPeakRssBytes": {
+      "max": 1073741824
+    },
+    "browserSampledPeakDescriptors": {
+      "max": 1024
+    },
+    "browserSampledPeakThreads": {
+      "max": 512
+    },
+    "browserSampledPeakProcesses": {
+      "max": 64
+    },
+    "browserObservedLoadCpuPercentOneCore": {
+      "max": 300
+    },
+    "browserCooldownRssGrowthBytes": {
+      "max": 268435456
+    },
+    "browserCooldownDescriptorGrowth": {
+      "max": 64
+    },
+    "browserCooldownThreadGrowth": {
+      "max": 64
+    },
+    "browserCooldownProcessGrowth": {
+      "max": 4
+    },
+    "jobLoadCpuPercentOneCore": {
+      "max": 100
+    }
+  },
+  "browserResourceIntervalMilliseconds": 1000,
+  "browserResourcePolicy": "One-second samples of worker-owned browser and verified descendants. Summed RSS counts shared pages per process; observed CPU is incomplete when processes exit between samples and has sequential-snapshot timing uncertainty. Browser/renderer measurement is separate from the unchanged controller caps.",
+  "jobCpuPolicy": "Read-only private cgroup-v2 usage includes all job processes and descendant cgroups, including exited workers; this is whole-job accounting, not application-only attribution. Existing24caps stay unchanged. The added100percent-of-one-core average cap reserves three of four reference cores."
+}

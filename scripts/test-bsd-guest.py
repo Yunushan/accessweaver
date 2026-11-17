@@ -5,6 +5,7 @@ The host cross-compiles; the guest executes. This is not hardware, routing,
 managed BSD policy, installer or complete platform qualification.
 """
 import argparse
+from bsd_test_observations import source_catalog, observe_output
 import hashlib
 import json
 import lzma
@@ -27,7 +28,7 @@ import threading
 import time
 import urllib.request
 
-from bsd_packaged_candidate import copy_packaged_cli
+from bsd_packaged_candidate import copy_packaged_cli, unique_object
 
 TARGETS = {
     "amd64": {
@@ -191,14 +192,14 @@ class CommandFailure(RuntimeError):
         self.result = result
 
 
-def run(args, *, env=None, timeout=120, limit=8 << 20, data=None, check=True):
+def run(args, *, env=None, timeout=120, limit=8 << 20, data=None, check=True, split_stderr=False):
     """Use explicit argv and bound output/lifetime; guest targets run via SSH."""
     if data is not None and len(data) > 2048:
         raise ValueError("bounded helper input exceeded")
     proc = subprocess.Popen(args, stdin=subprocess.PIPE if data is not None else subprocess.DEVNULL,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE if split_stderr else subprocess.STDOUT, env=env,
                             start_new_session=True)
-    output = bytearray()
+    output, errors = bytearray(), bytearray()
     deadline = time.monotonic() + timeout
     selector = selectors.DefaultSelector()
     try:
@@ -208,22 +209,24 @@ def run(args, *, env=None, timeout=120, limit=8 << 20, data=None, check=True):
                 proc.stdin.close()
             except BrokenPipeError:
                 pass
-        selector.register(proc.stdout, selectors.EVENT_READ)
-        while True:
+        selector.register(proc.stdout, selectors.EVENT_READ, output)
+        if split_stderr:
+            selector.register(proc.stderr, selectors.EVENT_READ, errors)
+        while selector.get_map():
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError("bounded helper deadline exceeded")
             events = selector.select(min(0.25, remaining))
-            if not events:
-                continue
-            chunk = os.read(proc.stdout.fileno(), 65536)
-            if not chunk:
-                break
-            if len(output) + len(chunk) > limit:
-                raise ValueError("bounded helper output exceeded")
-            output.extend(chunk)
+            for key, _ in events:
+                chunk = os.read(key.fileobj.fileno(), 65536)
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    continue
+                if len(output) + len(errors) + len(chunk) > limit:
+                    raise ValueError("bounded helper output exceeded")
+                key.data.extend(chunk)
         code = proc.wait(timeout=max(0.01, deadline - time.monotonic()))
-        result = subprocess.CompletedProcess(args, code, bytes(output), None)
+        result = subprocess.CompletedProcess(args, code, bytes(output), bytes(errors) if split_stderr else None)
         if check and code:
             raise CommandFailure(result)
         return result
@@ -251,6 +254,8 @@ def run(args, *, env=None, timeout=120, limit=8 << 20, data=None, check=True):
         finally:
             selector.close()
             proc.stdout.close()
+            if proc.stderr is not None:
+                proc.stderr.close()
             if proc.stdin is not None and not proc.stdin.closed:
                 try:
                     proc.stdin.close()
@@ -435,7 +440,24 @@ def remove_owned_capsule(capsule, root, identity, emulator_stopped):
     shutil.rmtree(capsule)
 
 
-def build_payload(repo, capsule, source, target, packaged=None):
+def build_failure_observations(error):
+    # Only source-defined codes and bounded integers leave the build runner.
+    kind = {CommandFailure: "command-failed", TimeoutError: "helper-timeout",
+            ValueError: "invalid-build-input", json.JSONDecodeError: "invalid-discovery-json", RuntimeError: "build-assertion"}.get(type(error), "build-exception")
+    cause = {"bounded helper output exceeded": "helper-output-limit",
+             "unsupported package path": "unsupported-package-path",
+             "unexpected test module": "unexpected-test-module",
+             "unexpected unit package set": "unexpected-package-count",
+             "source archive exceeds bounds or contains submodules": "source-archive-limit",
+             "source changed while building": "source-changed",
+             "payload exceeds bound": "payload-limit"}.get(str(error), "unspecified")
+    code = error.result.returncode if isinstance(error, CommandFailure) else None
+    if type(code) is not int or not -255 <= code <= 255:
+        code = None
+    return {"failureKind": kind, "failureCause": cause, "failureExitCode": code}
+
+
+def build_payload(repo, capsule, source, target, packaged=None, observations=None):
     goos = target.get("goos", "freebsd")
     if (goos not in ("freebsd", "openbsd") or target["arch"] not in ("amd64", "arm64") or
             target["label"] != goos + "-" + target["arch"]):
@@ -445,8 +467,11 @@ def build_payload(repo, capsule, source, target, packaged=None):
     tests = payload / "tests"
     tests.mkdir(mode=0o700)
     env = dict(os.environ, GOOS=goos, GOARCH=target["arch"], CGO_ENABLED="0", GOTOOLCHAIN="local")
-    packages = decode_objects(run(["go", "list", "-json", "./..."], env=env).stdout)
-    records = []
+    observations = {} if observations is None else observations
+    observations.update(step="package-discovery", plannedPackages=0, completedPackages=0, currentPackageID=None)
+    packages = decode_objects(run(["go", "list", "-json", "./..."], env=env, split_stderr=True).stdout)
+    observations["plannedPackages"] = sum(bool(p.get("TestGoFiles") or p.get("XTestGoFiles")) for p in packages)
+    records, catalogs = [], {}
     for package in packages:
         if not package.get("TestGoFiles") and not package.get("XTestGoFiles"):
             continue
@@ -454,16 +479,20 @@ def build_payload(repo, capsule, source, target, packaged=None):
         if not name.startswith(MODULE):
             raise RuntimeError("unexpected test module")
         directory = relative_package(package["Dir"], repo)
+        catalogs[name] = source_catalog(repo, directory, package.get("TestGoFiles", []) + package.get("XTestGoFiles", []))
         filename = "tests/" + hashlib.sha256(name.encode()).hexdigest()[:20] + ".test"
         executable = payload / filename
+        observations.update(step="package-compile", currentPackageID=len(records))
         run(["go", "test", "-mod=readonly", "-c", "-o", str(executable), name], env=env, timeout=300)
         if not executable.is_file() or executable.stat().st_size > 128 << 20:
             raise RuntimeError("unbounded test binary")
         records.append({"package": name, "directory": directory, "file": filename, "sha256": digest(executable)})
+        observations["completedPackages"] = len(records)
     if not records or len(records) > 64:
         raise RuntimeError("unexpected unit package set")
     cli = "accessweaver-" + target["label"]
     receipt = None
+    observations.update(step="source-cli-build" if packaged is None else "packaged-cli-copy", currentPackageID=None)
     if packaged is None:
         run(["bash", "scripts/build-all.sh", goos + "/" + target["arch"]],
             env=dict(os.environ, OUTPUT_DIR=str(payload), GOTOOLCHAIN="local"), timeout=300)
@@ -472,6 +501,7 @@ def build_payload(repo, capsule, source, target, packaged=None):
         # Copy the exact staged archive bytes; never substitute a rebuilt CLI.
         receipt = copy_packaged_cli(packaged, payload / cli, source, target["arch"], os.environ.get("GITHUB_REF", ""), goos=goos)
         (payload / "BUILD-INFO.json").write_text(json.dumps(receipt["build"]) + "\n", encoding="utf-8")
+    observations["step"] = "source-archive"
     tree = run(["git", "ls-tree", "-r", "-l", "HEAD"]).stdout.decode("utf-8").splitlines()
     sizes = [line.split("\t", 1)[0].split()[-1] for line in tree]
     if len(tree) > 4096 or any(not value.isdecimal() for value in sizes) or sum(map(int, sizes)) > 64 << 20:
@@ -479,7 +509,7 @@ def build_payload(repo, capsule, source, target, packaged=None):
     run(["git", "archive", "--format=tar", "--output=" + str(payload / "source.tar"), "HEAD"])
     if run(["git", "status", "--porcelain"]).stdout.strip():
         raise RuntimeError("source changed while building")
-    manifest = {"sourceCommit": source, "goos": goos, "goarch": target["arch"], "hostCrossCompiled": True,
+    manifest = {"sourceCommit": source, "goos": goos, "goarch": target["arch"], "hostCrossCompiled": True, "testCatalogs": catalogs,
                 "cli": {"file": cli, "sha256": digest(payload / cli)}, "packages": records,
                 "sourceArchiveSHA256": digest(payload / "source.tar")}
     if receipt is not None:
@@ -491,11 +521,38 @@ def build_payload(repo, capsule, source, target, packaged=None):
     files += [payload / record["file"] for record in records]
     if sum(path.stat().st_size for path in files) > 1 << 30:
         raise RuntimeError("payload exceeds bound")
+    observations["step"] = "transport-archive"
     archive = capsule / "payload.tar.gz"
     with tarfile.open(archive, "w:gz", compresslevel=1) as tar:
         for path in files:
             tar.add(path, arcname=path.relative_to(payload).as_posix(), recursive=False)
+    observations["step"] = "complete"
     return manifest, archive
+
+
+def verify_packaged_update_build(ssh, guest, executable, receipt):
+    """Compare the archived CLI with itself without creating controller state."""
+    build = receipt["build"]
+    tag = "v" + build["version"]
+    state = guest + "/update-identity-state"
+    command = [
+        "env", "-i", "HOME=/home/awtest", "PATH=/sbin:/bin:/usr/sbin:/usr/bin",
+        "LANG=C", "LC_ALL=C", "TZ=UTC", "ACCESSWEAVER_HOME=" + state,
+        executable, "system", "check-version", "--build-identity", "--follow-channel", tag,
+    ]
+    script = (
+        f"set -eu\ntest ! -e {shlex.quote(state)}\n"
+        f"{shlex.join(command)}\n"
+        f"test ! -e {shlex.quote(state)}\n"
+        f"test \"$(sha256 -q {shlex.quote(executable)})\" = {shlex.quote(receipt['binarySha256'])}\n"
+    )
+    result = run(ssh, data=script.encode(), timeout=30, limit=4096)
+    comparison = json.loads(result.stdout.decode("utf-8"), object_pairs_hook=unique_object)
+    if (not isinstance(comparison, dict)
+            or comparison.keys() != {"version", "currentVersion", "updateAvailable", "build"}
+            or comparison["version"] != tag or comparison["currentVersion"] != build["version"]
+            or comparison["updateAvailable"] is not False or comparison["build"] != build):
+        raise RuntimeError("packaged guest update comparison differs from the authenticated build")
 
 
 def packaged_backup_checks(ssh, guest, executable):
@@ -566,8 +623,9 @@ def main():
     output = repo / "build" / "bsd-native-checks"
     output.mkdir(mode=0o700, parents=True, exist_ok=True)
     owned_directory(output)
-    report = {"schemaVersion": 1, "sourceCommit": source, "target": "freebsd/" + target["arch"], "hostSDK": sdk,
-              "imageURL": target["imageURL"], "imageSHA256": target["imageSHA256"], "packages": [], "guestExecutionPassed": False,
+    report = {"schemaVersion": 2 if args.packaged_candidate is not None else 1,
+              "sourceCommit": source, "target": "freebsd/" + target["arch"], "hostSDK": sdk,
+              "imageURL": target["imageURL"], "imageSHA256": target["imageSHA256"], "packages": [], "publicTestObservations": [], "guestExecutionPassed": False,
               "packagedCandidateExecuted": False,
               "hardwareQualificationComplete": False, "platformQualificationComplete": False,
               "readinessGatesPromoted": 0, "productionQualificationComplete": False}
@@ -577,7 +635,8 @@ def main():
     phase = "build"
     failed = True
     try:
-        manifest, archive = build_payload(repo, capsule, source, target, args.packaged_candidate)
+        report["buildObservations"] = {}
+        manifest, archive = build_payload(repo, capsule, source, target, args.packaged_candidate, report["buildObservations"])
         if args.packaged_candidate is not None:
             report["packagedCandidate"] = manifest["packagedCandidate"]
         report["crossCompiledPackages"] = len(manifest["packages"])
@@ -699,6 +758,8 @@ def main():
         if args.packaged_candidate is not None:
             if cli != manifest["packagedCandidate"]["build"] or manifest["cli"]["sha256"] != manifest["packagedCandidate"]["binarySha256"]:
                 raise RuntimeError("executed CLI differs from authenticated archived candidate")
+            verify_packaged_update_build(ssh, guest, guest + "/" + manifest["cli"]["file"], manifest["packagedCandidate"])
+            report["updateBuildVerified"] = True
             report["packagedCandidateExecuted"] = True
         report["executedCLI"] = cli
         report["cliSHA256"] = manifest["cli"]["sha256"]
@@ -716,6 +777,8 @@ def main():
             record = {**package, "returnCode": result.returncode, "elapsedSeconds": round(time.monotonic() - started, 3),
                       "passedTestInstances": len(re.findall(r"--- PASS:", text)), "skippedTestInstances": len(re.findall(r"--- SKIP:", text)),
                       "logSHA256": digest(log)}
+            diagnostic = observe_output(result.stdout, manifest["testCatalogs"][package["package"]], result.returncode)
+            report["publicTestObservations"].append({"packageID": index, **diagnostic})
             report["packages"].append(record)
             print(json.dumps({"package": package["package"], "returnCode": result.returncode}), flush=True)
         if any(record["returnCode"] != 0 for record in report["packages"]):
@@ -724,6 +787,8 @@ def main():
         failed = False
     except Exception as error:
         report.update(firmware_failure_observations(error))
+        if phase == "build":
+            report.setdefault("buildObservations", {}).update(build_failure_observations(error))
         report["failurePhase"] = phase
         report["failureType"] = type(error).__name__
         print("Guest qualification incomplete: " + phase + "/" + type(error).__name__, flush=True)
@@ -742,7 +807,7 @@ def main():
             except (OSError, subprocess.TimeoutExpired):
                 report["cleanupFailed"] = True
                 failed = True
-            report["ownedEmulatorStopped"] = emulator_stopped
+        report["ownedEmulatorStopped"] = emulator_stopped
         if serial_thread is not None:
             serial_thread.join(timeout=2)
             if serial_thread.is_alive():

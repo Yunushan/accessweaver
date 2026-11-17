@@ -7,12 +7,20 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/Yunushan/accessweaver/internal/uiaccess"
 )
 
+func TestNativeDesktopAdmissionRefusesElevatedToken(t *testing.T) {
+	if err := requireAdministrator(); err != nil {
+		t.Skip("this admission check requires an elevated Windows test process")
+	}
+	const denied = "apply from an unelevated Windows desktop session as the signed-in user"
+	if err := requireDesktopUser(); err == nil || err.Error() != denied {
+		t.Fatalf("expected the native desktop-token refusal, got %v", err)
+	}
+}
+
 func TestNativeUserApplicationNoOpAvoidsMachineStorage(t *testing.T) {
-	if err := uiaccess.RequireUnelevated(); err != nil {
+	if err := requireDesktopUser(); err != nil {
 		t.Skip("user application acceptance requires an unelevated desktop token")
 	}
 	root := t.TempDir()
@@ -35,6 +43,10 @@ func TestNativeUserApplicationNoOpAvoidsMachineStorage(t *testing.T) {
 	var outcome struct {
 		OK      bool   `json:"ok"`
 		Journal string `json:"journal"`
+		Data    struct {
+			Application string `json:"application"`
+			Removed     *bool  `json:"removed"`
+		} `json:"data"`
 	}
 	if err = json.Unmarshal(result, &outcome); err != nil {
 		t.Fatal(err)
@@ -42,6 +54,9 @@ func TestNativeUserApplicationNoOpAvoidsMachineStorage(t *testing.T) {
 	journal := filepath.Join(dir, "application", "logs", "application.json")
 	if !outcome.OK || outcome.Journal != journal {
 		t.Fatalf("user operation did not retain a local journal: %+v", outcome)
+	}
+	if outcome.Data.Application != "discord" || outcome.Data.Removed == nil || *outcome.Data.Removed {
+		t.Fatalf("absent application did not return a verified no-op: %+v", outcome.Data)
 	}
 	if _, err = os.Stat(journal); err != nil {
 		t.Fatal(err)

@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "scope": "native-unconfigured-dns-readback-control",
+  "qualification": {
+    "schemaVersion": 1,
+    "sourceCommit": "02bc0ea186b3e48721a8583db195e779bf33f89d",
+    "runID": 42587574178,
+    "allJobsTerminal": true,
+    "sealedDoNotRepoll": true,
+    "jobs": [
+      {
+        "id": 129060977097,
+        "name": "Native DNS readback (windows/arm64)",
+        "status": "completed",
+        "conclusion": "failure",
+        "steps": [
+          {
+            "name": "Verify hosted native SDK and machine identity",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Check actual dual-family inventory and mismatch refusal",
+            "status": "completed",
+            "conclusion": "failure"
+          },
+          {
+            "name": "Retain fixed readback metadata only",
+            "status": "completed",
+            "conclusion": "success"
+          }
+        ]
+      },
+      {
+        "id": 129060977414,
+        "name": "Native DNS readback (windows/amd64)",
+        "status": "completed",
+        "conclusion": "failure",
+        "steps": [
+          {
+            "name": "Verify hosted native SDK and machine identity",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Check actual dual-family inventory and mismatch refusal",
+            "status": "completed",
+            "conclusion": "failure"
+          },
+          {
+            "name": "Retain fixed readback metadata only",
+            "status": "completed",
+            "conclusion": "success"
+          }
+        ]
+      }
+    ],
+    "sourceSHA256": {
+      "internal/workflow/windows.ps1": "3861bd04bfa3596018d20637e8b4264d1edaeee8fb43d96a2c8fd0b7de2c428a",
+      "scripts/test-native-dns-readback.ps1": "8eac9395212d5c6a1bc76784be2d8784fafd30eb760734a4dda27df5c17dee55",
+      "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+      ".github/workflows/native-dns-readback.yml": "0881776ec854aaf7964ddf4d45a829177fb9ecd578540a88733baf462d1a0341"
+    },
+    "artifacts": [
+      {
+        "artifactID": 13659463760,
+        "artifactName": "native-dns-readback-windows-arm64",
+        "providerZIPDigest": "sha256:6135f33788d2b629f5efe2f1fa665c8bdebcc8e2e3de5287850194f3611cded1",
+        "providerZIPDigestVerified": true,
+        "report": {
+          "sourceCommit": "02bc0ea186b3e48721a8583db195e779bf33f89d",
+          "sourceSHA256": {
+            "internal/workflow/windows.ps1": "3861bd04bfa3596018d20637e8b4264d1edaeee8fb43d96a2c8fd0b7de2c428a",
+            "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+            "scripts/test-native-dns-readback.ps1": "8eac9395212d5c6a1bc76784be2d8784fafd30eb760734a4dda27df5c17dee55",
+            ".github/workflows/native-dns-readback.yml": "0881776ec854aaf7964ddf4d45a829177fb9ecd578540a88733baf462d1a0341"
+          },
+          "dnsConfigurationChanged": false,
+          "code": "inventory",
+          "dnsReadOnly": true,
+          "networkQueryInvoked": false,
+          "architecture": "arm64",
+          "positiveVerified": false,
+          "outcome": "failed",
+          "productionQualificationComplete": false,
+          "ipv6MismatchRejected": false,
+          "schemaVersion": 1,
+          "ipv4MismatchRejected": false,
+          "nativeProcessVerified": true
+        }
+      },
+      {
+        "artifactID": 13659403834,
+        "artifactName": "native-dns-readback-windows-amd64",
+        "providerZIPDigest": "sha256:3102c5744bf97341e3fb03187f8dab8c7c9fd8e096c59b767584a09311ab20d8",
+        "providerZIPDigestVerified": true,
+        "report": {
+          "sourceCommit": "02bc0ea186b3e48721a8583db195e779bf33f89d",
+          "sourceSHA256": {
+            "internal/workflow/windows.ps1": "3861bd04bfa3596018d20637e8b4264d1edaeee8fb43d96a2c8fd0b7de2c428a",
+            "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+            "scripts/test-native-dns-readback.ps1": "8eac9395212d5c6a1bc76784be2d8784fafd30eb760734a4dda27df5c17dee55",
+            ".github/workflows/native-dns-readback.yml": "0881776ec854aaf7964ddf4d45a829177fb9ecd578540a88733baf462d1a0341"
+          },
+          "dnsConfigurationChanged": false,
+          "code": "inventory",
+          "dnsReadOnly": true,
+          "networkQueryInvoked": false,
+          "architecture": "amd64",
+          "positiveVerified": false,
+          "outcome": "failed",
+          "productionQualificationComplete": false,
+          "ipv6MismatchRejected": false,
+          "schemaVersion": 1,
+          "ipv4MismatchRejected": false,
+          "nativeProcessVerified": true
+        }
+      }
+    ],
+    "missing": [],
+    "bothPassed": false,
+    "rawLogsRead": false,
+    "credentialQueries": false,
+    "productionQualificationComplete": false,
+    "formalGatesPromoted": 0
+  },
+  "failureCauseKnown": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0
+}

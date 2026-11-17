@@ -33,6 +33,8 @@ A profile is a versioned JSON object. The Go backend validates schema and field 
 
 `binary` may be empty to search the adapter's approved executable names on `PATH`. `configPath` is optional except for WireSock, sing-box and Xray; those adapters require an absolute local path. Profile export contains the path, not the file or its credentials. Absolute paths usually need updating when moving between machines.
 
+On Windows, use ordinary local drive-letter paths for executables and configuration files. Preview refuses UNC/device paths, remote drive mappings and links to remote targets. Bare executable names search absolute local `PATH` entries for `.exe` files; use an absolute path for a binary in the current directory.
+
 ## Field reference
 
 | Field | Meaning |
@@ -47,7 +49,7 @@ A profile is a versioned JSON object. The Go backend validates schema and field 
 | `sha256` | Optional 64-character hex digest of the executable; checked again before launch |
 | `args` | Up to 128 literal arguments, each at most 4,096 bytes; no shell interpolation |
 | `routing.includeDomains`, `routing.excludeDomains` | Up to 4,096 entries each; supported mappings differ by adapter |
-| `routing.applications` | Reserved; nonempty values block launch |
+| `routing.applications` | Guided application rules for the Windows WireSock adapter; nonempty values block launch for other adapters. See the [engine guide](ENGINES.md) |
 | `probe` | Host/IP, port 1–65,535, TLS switch and timeout 1–60 seconds |
 | `updatedAt` | RFC 3339 timestamp managed by the store on save |
 
@@ -75,7 +77,7 @@ Eligible overlapping inventory reads share one worker per Store. Cancelling the 
 
 This bounds active shared inventory workers and cleanup attempts. It adds no profile-count limit, caches no completed inventory, and gives no hard native-I/O deadline or guarantee that a failed close released OS resources. Source tests gate a non-cooperative read and cleanup, verify repeated retries retain one slot, and confirm a later transaction sees a newly committed profile. The unchanged concurrent freshness test caught an earlier healthy-cleanup refusal on hosted Linux ARM; the [source-bound failure record](qualification/d02c3bcc0aa8-linux-arm64-inventory-finalization-regression.json) retains that regression separately from the [a18844b corrected-source result](qualification/a18844bd99b9-linux-arm64-inventory-cleanup-correction.json), where both complete hosted Linux ARM unit and race jobs passed with the original freshness test unchanged.
 
-The CLI holds `.controller.lock` while `ui`, `run` or `import` uses the root. A second foreground controller or CLI import is rejected before seeding or launch. Use dashboard import while the UI is running; close the active controller before CLI import. Read-only `profiles`, `show` and `preview` remain available, using the profile lock for consistent access. Lock files remain after exit: do not delete or replace them to clear a busy message. The OS releases ownership when the handle or process exits, including forced termination. An older AccessWeaver binary that does not use these locks must not share an active store.
+The CLI holds `.controller.lock` while `ui`, `run` or `import` uses the root. A second foreground controller or CLI import is rejected before seeding or launch. Use dashboard import while the UI is running; close the active controller before CLI import. The `profiles`, `show` and `preview` commands remain available, using the profile lock for consistent access. Their normal CLI startup can create the root and seed missing starter profiles before reading. Lock files remain after exit: do not delete or replace them to clear a busy message. The OS releases ownership when the handle or process exits, including forced termination. An older AccessWeaver binary that does not use these locks must not share an active store.
 
 Offline mode uses browser local storage and cannot launch engines or run diagnostics. Browser storage can be cleared by the browser and is separate from Go profile files. Export JSON before switching devices or clearing site data. The desktop backend performs authoritative validation on import.
 
@@ -84,3 +86,9 @@ Offline mode uses browser local storage and cannot launch engines or run diagnos
 Profiles are configurations for executable software, not trusted documents. Review native arguments, Lua scripts and external configuration paths before running someone else's profile. Keep VPN keys, passwords and tokens in protected engine configuration files. Exporting a path does not encrypt it or transfer its referenced file.
 
 See [engine rules](ENGINES.md) for how exclusions are compiled and why a process launch or direct diagnostic is not an end-to-end routing test.
+
+## Failed file updates
+
+The file-update writer checks its reported output write count, staged-file sync and owned stage Close before replacing the destination. A failure can leave `.accessweaver-*` staging files beside the destination, or a destination that was already replaced. Inspect the saved destination and retained stages before deciding on another attempt. AccessWeaver does not automatically replay the update, roll it back or remove a pathname assumed to still belong to its temporary file. The editor preserves an unsaved draft when a save response fails.
+
+Retained stages can contain profile data or complete generated configurations, including tunnel private keys. Keep them out of public issue reports and support attachments. Protect the destination directory and review these files with the data owner before cleanup. Staging still uses the existing platform creation and permission behavior; inherited Windows DACLs or filesystem ACLs can extend access to this data. Retaining a failed stage can extend that exposure and consume additional space. This behavior adds no automatic retention limit, disk quota, private-from-creation guarantee, directory sync or physical power-loss qualification.

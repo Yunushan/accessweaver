@@ -3,11 +3,15 @@
 package uiaccess
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 func TestOwnerRightsRequiresIndependentlyTrustedOwner(t *testing.T) {
@@ -87,5 +91,39 @@ func TestOwnerRightsParentDirectory(t *testing.T) {
 	}
 	if err := checkParents(root); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestWindowsLauncherFileHasProtectedDACL(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "launcher")
+	if err := createPrivateDirectory(directory); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "start.html")
+	file, err := createPrivateFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatal(err)
+	}
+	control, _, err := sd.Control()
+	if err != nil || control&windows.SE_DACL_PROTECTED == 0 {
+		t.Fatal("launcher file DACL is not protected", err)
+	}
+	owner, _, err := sd.Owner()
+	user, sidErr := currentSID()
+	if err != nil || sidErr != nil || owner == nil || owner.String() != user {
+		t.Fatal("launcher file has an unexpected owner")
+	}
+	if other, err := createPrivateFile(path); !errors.Is(err, os.ErrExist) {
+		if other != nil {
+			_ = other.Close()
+		}
+		t.Fatal("launcher file creation did not refuse an existing object", err)
 	}
 }

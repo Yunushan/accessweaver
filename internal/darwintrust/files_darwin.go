@@ -71,7 +71,32 @@ func Check(file *os.File, directory bool, owner uint32) (os.FileInfo, error) {
 	return info, nil
 }
 
+// ErrReadCleanupUncertain means an owned read-acquisition descriptor could not
+// be confirmed closed. A missing-path cause remains discoverable, but must not
+// be treated as clean absence or permission to create/initialize an authority.
+var ErrReadCleanupUncertain = errors.New("managed read acquisition cleanup could not be confirmed")
+
+// IsReadAbsent classifies only an ordinary missing read target. Cleanup
+// uncertainty always takes precedence over a co-occurring ENOENT.
+func IsReadAbsent(err error) bool {
+	return errors.Is(err, unix.ENOENT) && !errors.Is(err, ErrReadCleanupUncertain)
+}
+
+// Each close is attempted once, synchronously. The callback is private and
+// per-call; production always uses the real os.File.Close. Never retry an
+// ambiguous native descriptor close, or close a borrowed parent.
+func closeReadAcquisition(file *os.File, body error, closeFile func(*os.File) error) error {
+	closed := closeFile(file)
+	if closed != nil {
+		return errors.Join(ErrReadCleanupUncertain, body, closed)
+	}
+	return body
+}
+
 func OpenDirectoryAt(parent *os.File, name string, owner uint32) (*os.File, error) {
+	return openReadDirectoryAt(parent, name, owner, (*os.File).Close)
+}
+func openReadDirectoryAt(parent *os.File, name string, owner uint32, closeFile func(*os.File) error) (*os.File, error) {
 	if !validName(name) {
 		return nil, errors.New("expected one directory name")
 	}
@@ -81,8 +106,7 @@ func OpenDirectoryAt(parent *os.File, name string, owner uint32) (*os.File, erro
 	}
 	file := os.NewFile(uintptr(fd), filepath.Join(parent.Name(), name))
 	if _, err := Check(file, true, owner); err != nil {
-		file.Close()
-		return nil, err
+		return nil, closeReadAcquisition(file, err, closeFile)
 	}
 	return file, nil
 }
@@ -96,18 +120,29 @@ func OpenRootDirectory(path string) (*os.File, error) {
 		return nil, err
 	}
 	current := os.NewFile(uintptr(fd), "/")
-	if _, err := Check(current, true, 0); err != nil {
-		current.Close()
-		return nil, err
+	var parts []string
+	if path != "/" {
+		parts = strings.Split(strings.TrimPrefix(path, "/"), "/")
 	}
-	if path == "/" {
-		return current, nil
+	return walkReadDirectories(current, parts, 0, (*os.File).Close)
+}
+
+// Ownership of current transfers on entry, including inspection failure.
+// Every predecessor closes before its successor can be returned. A successor
+// already opened when predecessor cleanup fails is also closed, with all causes
+// retained. Only in-package fixtures supply their own native owner and root.
+func walkReadDirectories(current *os.File, parts []string, owner uint32, closeFile func(*os.File) error) (*os.File, error) {
+	if _, err := Check(current, true, owner); err != nil {
+		return nil, closeReadAcquisition(current, err, closeFile)
 	}
-	for _, part := range strings.Split(strings.TrimPrefix(path, "/"), "/") {
-		next, err := OpenDirectoryAt(current, part, 0)
-		current.Close()
-		if err != nil {
-			return nil, err
+	for _, part := range parts {
+		next, opened := openReadDirectoryAt(current, part, owner, closeFile)
+		completed := closeReadAcquisition(current, opened, closeFile)
+		if completed != nil {
+			if next != nil {
+				completed = closeReadAcquisition(next, completed, closeFile)
+			}
+			return nil, completed
 		}
 		current = next
 	}
@@ -134,13 +169,11 @@ func OpenRegularAt(parent *os.File, name string, owner uint32) (*os.File, error)
 	file := os.NewFile(uintptr(fd), filepath.Join(parent.Name(), name))
 	after, err := Check(file, false, owner)
 	if err != nil {
-		file.Close()
-		return nil, err
+		return nil, closeReadAcquisition(file, err, (*os.File).Close)
 	}
 	stat := after.Sys().(*syscall.Stat_t)
 	if int64(stat.Dev) != int64(before.Dev) || uint64(stat.Ino) != uint64(before.Ino) {
-		file.Close()
-		return nil, errors.New("managed file changed while opening")
+		return nil, closeReadAcquisition(file, errors.New("managed file changed while opening"), (*os.File).Close)
 	}
 	return file, nil
 }

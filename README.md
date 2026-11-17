@@ -30,7 +30,7 @@ Inspired by the workflow of SplitWire-Turkey, independently implemented. AccessW
 - Run direct or explicit SOCKS5/HTTP CONNECT TCP/TLS diagnostics, plus bounded direct/SOCKS5 UDP/STUN checks.
 - Review and apply Windows component installation, services, app routing, hostlists, DNS, application repair and recovery through **Installation & repair**.
 - Work in English, Turkish, Russian or Spanish, with dark/light themes and a responsive interface.
-- Keep profile data on your device. AccessWeaver itself has no telemetry, ads, subscription or cloud sync; external engines have their own policies.
+- Keep profile data on your device. AccessWeaver itself has no telemetry, ads, subscription or cloud sync; external engines have their own policies. See the [network activity inventory](docs/PRIVACY.md) for explicit diagnostics, downloads, DNS, updates and delegated vendor traffic.
 
 ## Quick start
 
@@ -141,6 +141,10 @@ The [audit commands](docs/AUDIT_EVENTS.md) verify segments against independently
 CI is configured to run unit tests on Linux, Windows and macOS, a Linux race check, and ten cross-build targets. A workflow configuration is not evidence that a run passed: see [Actions](https://github.com/Yunushan/accessweaver/actions) for results. BSD cross-compilation does not execute tests on BSD. [Real browser acceptance](docs/BROWSER_ACCEPTANCE.md) documents its pinned non-root environment and qualification limits.
 
 Release archives contain the standalone application, documentation and license notices. They exclude third-party engines and are **unsigned alpha builds**. Checksums detect file changes; they are not publisher signatures. Hosted release builds additionally provide [signed build provenance](docs/RELEASE_PROVENANCE.md), verified against a separately trusted source commit/ref; Windows/macOS publisher signing remains unfinished. [Testing](docs/TESTING.md) · [Contributing](CONTRIBUTING.md) · [Architecture](docs/ARCHITECTURE.md) · [Release process](GITHUB_SETUP.md)
+
+## Support
+
+Read [support and version coverage](docs/SUPPORT_POLICY.md) before filing an issue. The repository maintainer provides best-effort support through GitHub issues, with no guaranteed response or resolution time. An optional [local support summary](docs/SUPPORT.md) exports metadata only; nothing is uploaded automatically.
 
 ## License and security
 

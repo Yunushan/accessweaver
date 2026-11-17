@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -25,15 +26,17 @@ class ProvenanceTests(unittest.TestCase):
         self.assertIn("--deny-self-hosted-runners", command)
         self.assertNotIn("--execute-native", command)
 
-    def fixture(self, root):
+    def fixture(self, root, label="preview"):
         artifacts = []
         for os_name in ("windows", "linux", "darwin", "freebsd", "openbsd"):
             for arch in ("amd64", "arm64"):
                 extension = ".zip" if os_name == "windows" else ".tar.gz"
-                name = f"accessweaver-preview-{os_name}-{arch}{extension}"
+                name = f"accessweaver-{label}-{os_name}-{arch}{extension}"
                 (root / name).write_bytes(b"fixture archive")
                 artifacts.append({"goos": os_name, "goarch": arch, "file": name})
-        (root / "BUILD-MANIFEST.json").write_text(json.dumps({"sourceCommit": COMMIT, "sourceState": "clean", "unsigned": True, "artifacts": artifacts}), encoding="utf-8")
+        manifest = {"sourceCommit": COMMIT, "sourceState": "clean", "unsigned": True,
+                    "releaseLabel": label, "artifacts": artifacts}
+        (root / "BUILD-MANIFEST.json").write_text(json.dumps(manifest), encoding="utf-8")
         (root / "SHA256SUMS.txt").write_bytes(b"fixture checksums")
         (root / BUNDLE_NAME).write_bytes(b"fixture bundle (NOT a signature)")
 
@@ -48,18 +51,184 @@ class ProvenanceTests(unittest.TestCase):
                 self.assertEqual(run.call_count, 1)
                 contents.assert_not_called()
 
-    def test_every_subject_authenticated_before_content_check(self):
+    def test_duplicate_authenticated_manifest_is_refused_before_subject_selection(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             self.fixture(root)
-            with patch("verify_release_provenance.subprocess.run") as run, patch("verify_release_provenance.verify_contents") as contents:
+            path = root / "BUILD-MANIFEST.json"
+            data = path.read_bytes()
+            path.write_bytes(data.replace(b'"sourceCommit": ', b'"sourceCommit": "another", "sourceCommit": ', 1))
+            with (
+                patch("verify_release_provenance.authenticate") as authenticate,
+                patch("verify_release_provenance.verify_contents") as contents,
+                self.assertRaisesRegex(ValueError, "Duplicate release metadata field"),
+            ):
+                verify(root, COMMIT, REF)
+            authenticate.assert_called_once()
+            self.assertEqual(authenticate.call_args.args[0].name, "BUILD-MANIFEST.json")
+            contents.assert_not_called()
+
+    def test_authentication_and_content_checks_use_the_same_private_snapshot(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            original = {path.name: path.read_bytes() for path in root.iterdir()}
+            authenticated = []
+
+            def authenticate(command, **_):
+                subject = Path(command[3])
+                bundle = Path(command[command.index("--bundle") + 1])
+                self.assertNotEqual(subject.parent, root.resolve())
+                self.assertEqual(bundle.parent, subject.parent)
+                self.assertEqual(subject.read_bytes(), original[subject.name])
+                self.assertEqual(bundle.read_bytes(), original[BUNDLE_NAME])
+                if not authenticated:
+                    self.assertEqual(subject.name, "BUILD-MANIFEST.json")
+                    for name in original:
+                        (root / name).write_bytes(b"replacement")
+                    (root / "extra.exe").write_bytes(b"late extra")
+                authenticated.append(subject)
+
+            def check_contents(directory, *, execute_native):
+                self.assertFalse(execute_native)
+                self.assertEqual(len(authenticated), 12)
+                self.assertEqual({path.name for path in authenticated}, original.keys() - {BUNDLE_NAME})
+                self.assertEqual({path.parent for path in authenticated}, {directory.resolve()})
+                self.assertEqual({path.name: path.read_bytes() for path in directory.iterdir()}, original)
+
+            with patch("verify_release_provenance.subprocess.run", side_effect=authenticate), patch(
+                "verify_release_provenance.verify_contents", side_effect=check_contents
+            ) as contents:
                 result = verify(root, COMMIT, REF)
-                self.assertEqual(run.call_count, 12)
-                contents.assert_called_once_with(root.resolve(), execute_native=False)
-                subjects = {Path(call.args[0][3]).name for call in run.call_args_list}
-                self.assertEqual(subjects, {p.name for p in root.iterdir()} - {BUNDLE_NAME})
+                contents.assert_called_once()
+                self.assertFalse(contents.call_args.args[0].exists())
                 self.assertEqual(result["subjectsVerified"], 12)
                 self.assertFalse(result["publisherSignatureVerified"])
+
+    def test_saved_windows_asset_digests_are_checked_on_the_authenticated_snapshot(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            names = (BUNDLE_NAME, "BUILD-MANIFEST.json", "SHA256SUMS.txt",
+                     "accessweaver-preview-windows-arm64.zip")
+            pins = {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in names}
+            with patch("verify_release_provenance.authenticate") as authenticate, patch(
+                "verify_release_provenance.verify_contents"
+            ) as contents:
+                for name in names:
+                    with self.subTest(name=name), self.assertRaisesRegex(ValueError, "expected SHA-256"):
+                        verify(root, COMMIT, REF, asset_sha256={**pins, name: "0" * 64})
+                with self.assertRaisesRegex(ValueError, "files in the release snapshot"):
+                    verify(root, COMMIT, REF, asset_sha256={**pins, "../external": "0" * 64})
+                with self.assertRaisesRegex(ValueError, "lowercase asset SHA-256"):
+                    verify(root, COMMIT, REF, asset_sha256={**pins, BUNDLE_NAME: "A" * 64})
+                authenticate.assert_not_called()
+                contents.assert_not_called()
+                result = verify(root, COMMIT, REF, asset_sha256=pins)
+                self.assertEqual(result["assetDigestsMatched"], 4)
+                self.assertEqual(authenticate.call_count, 12)
+                contents.assert_called_once()
+
+    def test_selected_target_requires_exact_archive_and_authenticates_three_subjects(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            archive = "accessweaver-preview-windows-arm64.zip"
+            for path in root.iterdir():
+                if path.name not in {archive, BUNDLE_NAME, "BUILD-MANIFEST.json", "SHA256SUMS.txt"}:
+                    path.unlink()
+            with patch("verify_release_provenance.authenticate") as authenticate, patch(
+                "verify_release_provenance.verify_contents"
+            ) as contents:
+                with self.assertRaises(ValueError):
+                    verify(root, COMMIT, REF)
+                authenticate.assert_not_called()
+                with self.assertRaisesRegex(ValueError, "Unattested or omitted"):
+                    verify(root, COMMIT, REF, selected_target=("windows", "amd64"))
+                authenticate.reset_mock()
+                result = verify(root, COMMIT, REF, selected_target=("windows", "arm64"))
+                self.assertEqual(result["target"], "windows/arm64")
+                self.assertEqual(result["subjectsVerified"], 3)
+                self.assertEqual([call.args[0].name for call in authenticate.call_args_list],
+                                 ["BUILD-MANIFEST.json", "SHA256SUMS.txt", archive])
+                self.assertEqual(contents.call_args.kwargs,
+                                 {"execute_native": False, "selected_target": ("windows", "arm64")})
+
+    def test_every_subject_must_be_attested_by_the_expected_run(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            for substituted_subject in (None, "BUILD-MANIFEST.json", "SHA256SUMS.txt",
+                                        "accessweaver-preview-windows-arm64.zip"):
+                seen = []
+
+                def gh_result(command, **_):
+                    subject = Path(command[3]).name
+                    seen.append(subject)
+                    self.assertEqual(command[-2:], [
+                        "--jq", ".[] | .verificationResult.signature.certificate.runInvocationURI",
+                    ])
+                    run_id = "67890" if subject == substituted_subject else "12345"
+                    return subprocess.CompletedProcess(
+                        command, 0, f"https://github.com/{REPOSITORY}/actions/runs/{run_id}/attempts/2\n", "",
+                    )
+
+                with self.subTest(subject=substituted_subject), patch(
+                    "verify_release_provenance.subprocess.run", side_effect=gh_result,
+                ), patch("verify_release_provenance.verify_contents") as contents:
+                    if substituted_subject is None:
+                        self.assertEqual(verify(root, COMMIT, REF, run_id="12345")["subjectsVerified"], 12)
+                        self.assertEqual(len(seen), 12)
+                        contents.assert_called_once()
+                    else:
+                        with self.assertRaisesRegex(ValueError, "expected GitHub Actions run"):
+                            verify(root, COMMIT, REF, run_id="12345")
+                        self.assertEqual(seen[-1], substituted_subject)
+                        contents.assert_not_called()
+
+    def test_tag_must_match_authenticated_manifest_version_and_release_label(self):
+        for label, version, accepted in (
+            ("v1.2.3-alpha", "1.2.3-alpha", True),
+            ("v1.2.4-alpha", "1.2.3-alpha", False),
+            ("v1.2.3-alpha", "1.2.3", False),
+            (None, None, False),
+        ):
+            with self.subTest(label=label, version=version), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                self.fixture(root, "v1.2.3-alpha")
+                path = root / "BUILD-MANIFEST.json"
+                manifest = json.loads(path.read_text(encoding="utf-8"))
+                if label is None:
+                    del manifest["releaseLabel"]
+                else:
+                    manifest.update(releaseLabel=label, version=version)
+                path.write_text(json.dumps(manifest), encoding="utf-8")
+                with patch("verify_release_provenance.authenticate") as authenticate, patch("verify_release_provenance.verify_contents") as contents:
+                    if accepted:
+                        verify(root, COMMIT, "refs/tags/v1.2.3-alpha")
+                        self.assertEqual(authenticate.call_count, 12)
+                        contents.assert_called_once()
+                    else:
+                        with self.assertRaisesRegex(ValueError, "label and version"):
+                            verify(root, COMMIT, "refs/tags/v1.2.3-alpha")
+                        authenticate.assert_called_once()
+                        contents.assert_not_called()
+
+    def test_archive_label_mismatch_fails_before_artifact_authentication(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            path = root / "BUILD-MANIFEST.json"
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            manifest["releaseLabel"] = "v1.2.3-alpha"
+            manifest["version"] = "1.2.3-alpha"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with patch("verify_release_provenance.authenticate") as authenticate, patch(
+                "verify_release_provenance.verify_contents"
+            ) as contents, self.assertRaisesRegex(ValueError, "Archive name"):
+                verify(root, COMMIT, "refs/tags/v1.2.3-alpha")
+            authenticate.assert_called_once()
+            contents.assert_not_called()
 
     def test_missing_bundle_extra_files_and_wrong_manifest_fail_closed(self):
         for mode in ("missing", "extra", "wrong-source", "modified"):

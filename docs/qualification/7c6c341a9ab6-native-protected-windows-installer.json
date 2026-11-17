@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "scope": "unsigned-protected-windows-installer-hosted-lifecycle",
+  "sourceCommit": "7c6c341a9ab6c750f549a5f5083acd409e9d0dbb",
+  "sourceRef": "refs/heads/codex/default-protected-windows-setup",
+  "runId": 44064683773,
+  "reportSchemaVersion": 64,
+  "targets": [
+    {
+      "target": "windows/amd64",
+      "sourceCommit": "7c6c341a9ab6c750f549a5f5083acd409e9d0dbb",
+      "sourceRef": "refs/heads/codex/default-protected-windows-setup",
+      "runId": 44064683773,
+      "runAttempt": 1,
+      "jobId": 133975185219,
+      "artifactId": 14321595860,
+      "artifactSHA256": "43de0f539cd66852a503f7ce0c87280520e661d645c9eaeeffec91743c62329a",
+      "attestedSubjectsVerified": 5,
+      "attestedSubjectDigests": [
+        {
+          "file": "accessweaver-0.1.0-alpha-windows-amd64-setup.exe",
+          "sha256": "82f90da20650fa590e9d8a6cf54a36e334dc134999fac7b95a78e793690df220"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-windows-amd64-setup.exe.cdx.json",
+          "sha256": "3f10863f9d303bef2da10477a257cbca65923a03952f5cb2bdb3ef97d5f5210b"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-windows-amd64-setup.exe",
+          "sha256": "9ab7671998868ba9ae64d3afb8915eacca0cfdaa769ac8b77650dfdee500e44b"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-windows-amd64-setup.exe.cdx.json",
+          "sha256": "f361bd3aff22fc349f42d2643e21f236ad8836236032afcca7696a06689809c6"
+        },
+        {
+          "file": "amd64.json",
+          "sha256": "7b7d4fb77c5ccad6a47565767c82098b55a647c7272d0db14dcaefcd0176ab39"
+        }
+      ],
+      "nativeLifecycleOperationsVerified": 16,
+      "protectedRegistryBoundariesVerified": 6,
+      "protectedRegistryAccessRefusalVerified": true,
+      "lateCopyRecoveryVerified": true,
+      "previousVersionRollbackVerified": true,
+      "hostedNegativeProvenanceChecksVerified": 5,
+      "publisherSignatureVerified": false,
+      "productionQualificationComplete": false
+    },
+    {
+      "target": "windows/arm64",
+      "sourceCommit": "7c6c341a9ab6c750f549a5f5083acd409e9d0dbb",
+      "sourceRef": "refs/heads/codex/default-protected-windows-setup",
+      "runId": 44064683773,
+      "runAttempt": 1,
+      "jobId": 133975186335,
+      "artifactId": 14321830694,
+      "artifactSHA256": "a5e33395c6c7f03d09d6743326f9e02a96520e2e8c8a1f25868ff0b06d570fe8",
+      "attestedSubjectsVerified": 5,
+      "attestedSubjectDigests": [
+        {
+          "file": "accessweaver-0.1.0-alpha-windows-arm64-setup.exe",
+          "sha256": "80ab78c16dd1e570bb199e882216550311ba7d06d649b1f0d488215af8d62b07"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-windows-arm64-setup.exe.cdx.json",
+          "sha256": "567bfa9ccfa129f6fa92ebbd0a0c244c7b8d3d595c3bcc2b41dfeb28dd8c5bae"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-windows-arm64-setup.exe",
+          "sha256": "aa8bd0be6ed3988af7d2672d6a8a08e1c6b70a6ff7609958550378c09be7b5b6"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-windows-arm64-setup.exe.cdx.json",
+          "sha256": "8652817c4f4f7b4a492ada705f7806b0a042d0be9eaee156ae7aa736d2a6d0f8"
+        },
+        {
+          "file": "arm64.json",
+          "sha256": "bbd4fb21a762bd50f8524676c15eae74773b312435d94353bab741623ff66d1c"
+        }
+      ],
+      "nativeLifecycleOperationsVerified": 16,
+      "protectedRegistryBoundariesVerified": 6,
+      "protectedRegistryAccessRefusalVerified": true,
+      "lateCopyRecoveryVerified": true,
+      "previousVersionRollbackVerified": true,
+      "hostedNegativeProvenanceChecksVerified": 5,
+      "publisherSignatureVerified": false,
+      "productionQualificationComplete": false
+    }
+  ],
+  "publisherSignatureVerified": false,
+  "rebootTested": false,
+  "managedDeploymentQualified": false,
+  "productionQualificationComplete": false
+}
