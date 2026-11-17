@@ -64,7 +64,7 @@ if($result.schemaVersion -ne 1 -or $result.sourceCommit -cne $env:GITHUB_SHA -or
     $result.runID -cne $env:GITHUB_RUN_ID -or $result.runAttempt -cne $env:GITHUB_RUN_ATTEMPT -or
     $result.architecture -cne $Architecture -or $result.compilerVersion -cne '6.7.1' -or
     $result.scope -cne 'disposable-protected-registry-ownership-contract' -or
-    $result.descriptorResult -cnotin @('not-run','pass','descriptor-read','descriptor-format','descriptor-owner','descriptor-protection','descriptor-aces','descriptor-release') -or
+    $result.descriptorResult -cnotin @('not-run','pass','descriptor-read','descriptor-template','descriptor-owner','descriptor-protection','descriptor-aces','descriptor-release') -or
     $result.cleanupResult -cnotin @('pass','held-delete','root-present-or-unreadable','fixture-or-handle-close') -or
     ($result.cleanupResult -ceq 'pass') -ne $result.cleanupComplete -or
     $result.productionRegistrationChanged -isnot [bool] -or $result.productionRegistrationChanged -or

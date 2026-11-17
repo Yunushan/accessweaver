@@ -65,3 +65,11 @@ metadata, legacy upgrade and uninstall retirement remain to be integrated and
 qualified. The installer registration reader now opens each fixed registry
 component without following symbolic links. A linked or unreadable path blocks
 setup and uninstall, while an absent registration remains distinguishable.
+
+The [descriptor comparison follow-up](https://github.com/Yunushan/accessweaver/actions/runs/43995959172)
+reached `descriptor-format` on AMD64 and ARM64. Each architecture passed 11 of 24
+fixture assertions and removed the disposable registry root. The source-pinned
+receipts are artifacts 14290606526 and 14289808008. Validation now compares the
+owner SID, DACL control bits and complete ordered ACE bytes on the held
+descriptor. The fixture also requires the rejection of an unprotected DACL and
+a protected DACL with the same layout but a write grant for Users.

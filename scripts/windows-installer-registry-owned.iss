@@ -13,6 +13,10 @@ type AWOwnedRegistrySecurity = record
        Length, Descriptor, Inherit: LongWord;
      end;
 
+type AWOwnedRegistryACLSize = record
+       ACECount, BytesUsed, BytesFree: LongWord;
+     end;
+
 var AWOwnedRegistryCleanupUncertain: Boolean;
 
 function AWOwnedRegistryCreateNative(Parent: LongWord; const Name: String;
@@ -46,11 +50,23 @@ function AWOwnedRegistryGetSecurity(Key, ObjectType, Information: LongWord;
 function AWOwnedRegistryParseSD(const Text: String; Revision: LongWord;
   var Descriptor, Bytes: LongWord): Integer;
   external 'ConvertStringSecurityDescriptorToSecurityDescriptorW@advapi32.dll stdcall';
-function AWOwnedRegistryFormatSD(Descriptor, Revision, Information: LongWord;
-  var Text, Characters: LongWord): Integer;
-  external 'ConvertSecurityDescriptorToStringSecurityDescriptorW@advapi32.dll stdcall';
-function AWOwnedRegistryCopyText(Destination: String; Source, Characters: LongWord): LongWord;
-  external 'lstrcpynW@kernel32.dll stdcall';
+function AWOwnedRegistryGetOwner(Descriptor: LongWord; var Owner, Defaulted: LongWord): Integer;
+  external 'GetSecurityDescriptorOwner@advapi32.dll stdcall';
+function AWOwnedRegistryGetDACL(Descriptor: LongWord; var Present, DACL, Defaulted: LongWord): Integer;
+  external 'GetSecurityDescriptorDacl@advapi32.dll stdcall';
+function AWOwnedRegistryGetControl(Descriptor: LongWord; var Control: Word; var Revision: LongWord): Integer;
+  external 'GetSecurityDescriptorControl@advapi32.dll stdcall';
+function AWOwnedRegistryEqualSID(Left, Right: LongWord): Integer;
+  external 'EqualSid@advapi32.dll stdcall';
+function AWOwnedRegistryValidACL(DACL: LongWord): Integer;
+  external 'IsValidAcl@advapi32.dll stdcall';
+function AWOwnedRegistryACLInfo(DACL: LongWord; var Info: AWOwnedRegistryACLSize;
+  Bytes, InfoClass: LongWord): Integer;
+  external 'GetAclInformation@advapi32.dll stdcall';
+function AWOwnedRegistryGetACE(DACL, Index: LongWord; var ACE: LongWord): Integer;
+  external 'GetAce@advapi32.dll stdcall';
+function AWOwnedRegistryCompareBytes(Left, Right, Bytes: LongWord): LongWord;
+  external 'RtlCompareMemory@ntdll.dll stdcall';
 function AWOwnedRegistryLocalFree(Memory: LongWord): LongWord;
   external 'LocalFree@kernel32.dll stdcall';
 
@@ -96,55 +112,58 @@ begin
   Result := True;
 end;
 
-function AWOwnedRegistrySDText(Descriptor: LongWord; var Text: String): Boolean;
-var Memory, Characters: LongWord; Buffer: String;
+function AWOwnedRegistrySameACEs(Actual, Expected: LongWord): Boolean;
+var ActualInfo, ExpectedInfo: AWOwnedRegistryACLSize; ActualACE, ExpectedACE, Bytes: LongWord;
 begin
-  Result := False; Text := ''; Memory := 0; Characters := 0;
-  try
-    if AWOwnedRegistryFormatSD(Descriptor, 1, $00000005, Memory, Characters) = 0 then Exit;
-    if (Memory = 0) or (Characters < 2) or (Characters > 512) then Exit;
-    SetLength(Buffer, Characters);
-    if AWOwnedRegistryCopyText(Buffer, Memory, Characters) = 0 then Exit;
-    if Buffer[Characters] <> #0 then Exit;
-    Text := Copy(Buffer, 1, Characters - 1);
-    Result := Pos(#0, Text) = 0;
-  finally
-    if not AWOwnedRegistryFree(Memory) then Result := False;
-  end;
+  Result := False;
+  if (Actual = 0) or (Expected = 0) then Exit;
+  if (AWOwnedRegistryValidACL(Actual) = 0) or (AWOwnedRegistryValidACL(Expected) = 0) then Exit;
+  if (AWOwnedRegistryACLInfo(Actual, ActualInfo, 12, 2) = 0) or
+     (AWOwnedRegistryACLInfo(Expected, ExpectedInfo, 12, 2) = 0) then Exit;
+  if (ActualInfo.ACECount <> 3) or (ExpectedInfo.ACECount <> 3) or
+     (ActualInfo.BytesUsed <> ExpectedInfo.BytesUsed) or
+     (ExpectedInfo.BytesUsed <= 8) or (ExpectedInfo.BytesUsed > 512) then Exit;
+  ActualACE := 0; ExpectedACE := 0;
+  if (AWOwnedRegistryGetACE(Actual, 0, ActualACE) = 0) or
+     (AWOwnedRegistryGetACE(Expected, 0, ExpectedACE) = 0) then Exit;
+  if (ActualACE = 0) or (ExpectedACE = 0) then Exit;
+  { Skip the eight-byte ACL header. Compare the complete ordered ACE sequence,
+    including types, inheritance flags, access masks, and SIDs. }
+  Bytes := ExpectedInfo.BytesUsed - 8;
+  Result := AWOwnedRegistryCompareBytes(ActualACE, ExpectedACE, Bytes) = Bytes;
 end;
 
 function AWOwnedRegistryDescriptorStatus(Key: LongWord): String;
-var Actual, Expected, Owner, Group, DACL, SACL, Bytes: LongWord;
-    ActualText, ExpectedText, Flags: String; ActualACE, ExpectedACE: Integer;
+var Actual, Expected, Owner, Group, DACL, SACL, Bytes, ExpectedOwner, ExpectedDACL,
+    Defaulted, Present, Revision: LongWord; Control: Word;
 begin
   Result := 'descriptor-read'; Actual := 0; Expected := 0; Bytes := 0;
   Owner := 0; Group := 0; DACL := 0; SACL := 0;
   try
     if AWOwnedRegistryGetSecurity(Key, 4, $00000005, Owner, Group, DACL, SACL, Actual) <> 0 then Exit;
     if (Owner = 0) or (DACL = 0) or (Actual = 0) then Exit;
-    Result := 'descriptor-format';
+
+    Result := 'descriptor-template';
     if AWOwnedRegistryParseSD(AWOwnedRegistrySDDL, 1, Expected, Bytes) = 0 then Exit;
     if Expected = 0 then Exit;
-    if not AWOwnedRegistrySDText(Actual, ActualText) or
-       not AWOwnedRegistrySDText(Expected, ExpectedText) then Exit;
+    ExpectedOwner := 0; ExpectedDACL := 0; Defaulted := 0; Present := 0;
+    if (AWOwnedRegistryGetOwner(Expected, ExpectedOwner, Defaulted) = 0) or
+       (ExpectedOwner = 0) then Exit;
+    if (AWOwnedRegistryGetDACL(Expected, Present, ExpectedDACL, Defaulted) = 0) or
+       (Present = 0) or (ExpectedDACL = 0) then Exit;
 
     Result := 'descriptor-owner';
-    if (Pos('D:', ActualText) <> 5) or (Pos('D:', ExpectedText) <> 5) or
-       (Copy(ActualText, 1, 4) <> 'O:BA') or (Copy(ExpectedText, 1, 4) <> 'O:BA') then Exit;
+    if AWOwnedRegistryEqualSID(Owner, ExpectedOwner) = 0 then Exit;
 
     Result := 'descriptor-protection';
-    ActualACE := Pos('(', ActualText);
-    ExpectedACE := Pos('(', ExpectedText);
-    if (ActualACE <= 7) or (ExpectedACE <= 7) then Exit;
-    Flags := Copy(ActualText, 7, ActualACE - 7);
-    { AI describes automatic ACL propagation. P and exact uninherited ACEs
-      still have to match. Reject requests to reapply inheritance (AR). }
-    if ((Flags <> 'P') and (Flags <> 'PAI')) or
-       (Copy(ExpectedText, 7, ExpectedACE - 7) <> 'P') then Exit;
+    Control := 0; Revision := 0;
+    if (AWOwnedRegistryGetControl(Actual, Control, Revision) = 0) or (Revision <> 1) then Exit;
+    { Require PRESENT and PROTECTED. Refuse DEFAULTED and AUTO_INHERIT_REQ.
+      AUTO_INHERITED is bookkeeping. The ACE flags are still compared exactly. }
+    if (Control and $110C) <> $1004 then Exit;
 
     Result := 'descriptor-aces';
-    if Copy(ActualText, ActualACE, Length(ActualText)) <>
-       Copy(ExpectedText, ExpectedACE, Length(ExpectedText)) then Exit;
+    if not AWOwnedRegistrySameACEs(DACL, ExpectedDACL) then Exit;
     Result := 'pass';
   finally
     if not AWOwnedRegistryFree(Actual) then Result := 'descriptor-release';

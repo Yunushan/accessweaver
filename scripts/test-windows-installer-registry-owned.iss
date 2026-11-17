@@ -120,10 +120,10 @@ begin
 end;
 
 procedure AWFixtureCasesRun(Root: LongWord);
-var Fresh, BadACL, Target, Link, MissingLink, Opened, Flags, Value, Status: LongWord;
+var Fresh, BadACL, Unprotected, Target, Link, MissingLink, Opened, Flags, Value, Status: LongWord;
     Created, OK, LinkReady, MissingLinkReady: Boolean; NativeTarget: String;
 begin
-  Fresh := 0; Opened := 0; Target := 0; BadACL := 0; Link := 0; MissingLink := 0;
+  Fresh := 0; Opened := 0; Target := 0; BadACL := 0; Unprotected := 0; Link := 0; MissingLink := 0;
   OK := AWFixtureNew(Root, 'fresh', Fresh);
   AWFixtureCase('protected-child-created', OK);
   if Fresh <> 0 then AWFixtureDescriptorResult := AWOwnedRegistryDescriptorStatus(Fresh);
@@ -141,9 +141,14 @@ begin
   AWFixtureCase('owned-partial-retry-opens', OK);
   OK := not AWOpenOwnedRegistryChild(Root, 'fresh', AWFixtureOtherTag, Opened) and (Opened = 0);
   AWFixtureCase('wrong-class-refused', OK and AWFixtureSentinel(Fresh));
-  OK := AWFixtureRaw(Root, 'bad-acl', AWFixtureParentSDDL, 0, BadACL);
-  OK := OK and not AWOpenOwnedRegistryChild(Root, 'bad-acl', AWFixtureTag, Opened) and (Opened = 0);
+  OK := AWFixtureRaw(Root, 'bad-acl', 'O:BAD:P(A;;KA;;;SY)(A;;KA;;;BA)(A;;KA;;;BU)', 0, BadACL);
+  OK := OK and (AWOwnedRegistryDescriptorStatus(BadACL) = 'descriptor-aces') and
+    not AWOpenOwnedRegistryChild(Root, 'bad-acl', AWFixtureTag, Opened) and (Opened = 0);
   AWFixtureCase('foreign-writer-descriptor-refused', OK);
+  OK := AWFixtureRaw(Root, 'unprotected', 'O:BAD:(A;;KA;;;SY)(A;;KA;;;BA)(A;;KR;;;BU)', 0, Unprotected);
+  OK := OK and (AWOwnedRegistryDescriptorStatus(Unprotected) = 'descriptor-protection') and
+    not AWOpenOwnedRegistryChild(Root, 'unprotected', AWFixtureTag, Opened) and (Opened = 0);
+  AWFixtureCase('unprotected-descriptor-refused', OK);
   Created := False;
   OK := not AWCreateOwnedRegistryChild(Root, 'nested\unexpected', AWFixtureTag, Opened, Created);
   AWFixtureCase('nested-name-refused', OK and not Created and (Opened = 0));
@@ -329,7 +334,7 @@ begin
     '"scope":"disposable-protected-registry-ownership-contract","cases":[' + AWFixtureCases + '],' +
     '"descriptorResult":"' + AWFixtureDescriptorResult + '","cleanupResult":"' + AWFixtureCleanupResult + '",' +
     '"cleanupComplete":' + AWFixtureBool(AWFixtureCleanup) + ',"passed":' +
-    AWFixtureBool(AWFixturePassed and (AWFixtureCaseCount = 28)) +
+    AWFixtureBool(AWFixturePassed and (AWFixtureCaseCount = 29)) +
     ',"productionRegistrationChanged":false,"productionQualificationComplete":false}' + #10;
   Result := SaveStringToFile('{#EvidenceRoot}\registry-owned-{#TargetArch}.json', RecordText, False);
 end;
