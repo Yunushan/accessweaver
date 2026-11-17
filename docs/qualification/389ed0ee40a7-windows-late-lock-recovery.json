@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "scope": "unsigned-native-windows-setup-late-file-lock-recovery",
+  "sourceCommit": "389ed0ee40a7cce3c26bd69d6264a34a7f643f14",
+  "runId": 44060135075,
+  "sourceRef": "refs/heads/codex/default-protected-windows-setup",
+  "lifecycleReportSchema": 62,
+  "targets": [
+    {
+      "target": "windows/amd64",
+      "jobId": 133959571646,
+      "artifactId": 14318376437,
+      "artifactSHA256": "f06b0b79c47f7ebf0d2c36dabbcf74c24e7d1f81eb9bbad21ccc30fce6377497",
+      "boundary": {
+        "fixtureSHA256": "865c2475433669f2092745de3b58a6066ac44232ea16b001f98dd7c0adf4b6d1",
+        "setupExitCode": 5,
+        "installationStarted": true,
+        "lateLockAcquired": true,
+        "destinationGuardRefused": true,
+        "pendingMarkerRetained": true,
+        "lockedFilePreserved": true
+      },
+      "subsequentFailureStage": "registry-read-boundaries"
+    },
+    {
+      "target": "windows/arm64",
+      "jobId": 133959572057,
+      "artifactId": 14318536802,
+      "artifactSHA256": "cca2b91e3b7e1809d853582643dcfc9f0afbea1271081ddc8308952b175743c9",
+      "boundary": {
+        "fixtureSHA256": "fb7d9e1402541b991db057bfe98bbd3be2855e8c575adac7fe4f35ebbab4a6a3",
+        "setupExitCode": 5,
+        "installationStarted": true,
+        "lateLockAcquired": true,
+        "destinationGuardRefused": true,
+        "pendingMarkerRetained": true,
+        "lockedFilePreserved": true
+      },
+      "subsequentFailureStage": "registry-read-boundaries"
+    }
+  ],
+  "fullInstallerLifecyclePassed": false,
+  "productionQualificationComplete": false
+}
