@@ -54,12 +54,13 @@ type windowsIdentityCase struct {
 }
 
 type windowsIdentityProbeCounts struct {
-	HandlesBefore       uint64 `json:"handlesBefore"`
-	HandlesAfter        uint64 `json:"handlesAfter"`
-	ThreadRecordsBefore int    `json:"threadRecordsBefore"`
-	ThreadRecordsAfter  int    `json:"threadRecordsAfter"`
-	GCCyclesBefore      uint64 `json:"gcCyclesBefore"`
-	GCCyclesAfter       uint64 `json:"gcCyclesAfter"`
+	Replay              *windowsIdentityHandleReplay `json:"failureReplay,omitempty"`
+	HandlesBefore       uint64                       `json:"handlesBefore"`
+	HandlesAfter        uint64                       `json:"handlesAfter"`
+	ThreadRecordsBefore int                          `json:"threadRecordsBefore"`
+	ThreadRecordsAfter  int                          `json:"threadRecordsAfter"`
+	GCCyclesBefore      uint64                       `json:"gcCyclesBefore"`
+	GCCyclesAfter       uint64                       `json:"gcCyclesAfter"`
 }
 
 func reportDisposableWindowsIdentity(t *testing.T, cases []windowsIdentityCase, counts *windowsIdentityProbeCounts) {
@@ -149,7 +150,7 @@ func reportDisposableWindowsIdentity(t *testing.T, cases []windowsIdentityCase, 
 		Scope                           string                      `json:"scope"`
 		ProductionQualificationComplete bool                        `json:"productionQualificationComplete"`
 	}{
-		SchemaVersion: 2, SourceCommit: commit, RunID: runID, TestName: t.Name(),
+		SchemaVersion: 3, SourceCommit: commit, RunID: runID, TestName: t.Name(),
 		Cases: cases, ProbeCounts: counts,
 		Platform: runtime.GOOS, Arch: runtime.GOARCH, RuntimeGoVersion: runtime.Version(),
 		RunnerArch: os.Getenv("RUNNER_ARCH"), RunnerEnvironment: os.Getenv("RUNNER_ENVIRONMENT"),
@@ -609,6 +610,7 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 		}
 		t.Logf("metadata probe aggregate counts: handles-before=%d handles-after=%d thread-create-records-before=%d thread-create-records-after=%d GC-cycles-before=%d GC-cycles-after=%d", before, after, beforeThreads, afterThreads, beforeGC, afterGC)
 		if after > before+1 {
+			probeCounts.Replay = identityWindowsReplayHandleGrowth(t, path, filepath.Join(directory, "missing-probe"))
 			t.Fatal("owned metadata probe handles accumulated")
 		}
 	})

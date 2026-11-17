@@ -50,6 +50,10 @@ jobs:
         run: |
           go test ./internal/fileidentity -run '^TestDisposableWindowsFileIdentityNative$' -count=1 -v -timeout=4m
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Exercise diagnostic APIs in a separate process so their warmup
+          # cannot alter the original identity probe's runtime baseline.
+          go test ./internal/fileidentity -run '^TestDisposableWindowsHandleReplayNative$' -count=1 -v -timeout=4m
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go test ./cmd/accessweaver -run '^TestWindowsAudit(AliasMetadata|InputSnapshot)$' -count=1 -v -timeout=4m
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go test ./internal/uiaccess -run '^TestWindowsLauncherFileHasProtectedDACL$' -count=1 -v -timeout=1m
