@@ -239,9 +239,20 @@ ships. [Inno registration and log source](https://github.com/jrsoftware/issrc/bl
 
 The first [actual Setup run](https://github.com/Yunushan/accessweaver/actions/runs/44012046920)
 verified staged publication rollback, pending detection, retry, and same-version
-repair on ARM64 at 3592dcd8cfa4b1088cbc75dbf6d1801167fc4d5c. It stopped before
-removal when the fixture's extracted controller functions lacked their native
-registry initializer. The fixture now imports that initializer with the reader
-and retains only fixed binding error categories. The ARM64 receipt is artifact
-14297549241 with ZIP SHA-256
+repair on AMD64 and ARM64 at 3592dcd8cfa4b1088cbc75dbf6d1801167fc4d5c. Both
+jobs stopped before removal when the fixture's extracted controller functions
+lacked their native registry initializer. The fixture now imports that
+initializer with the reader and retains only fixed binding error categories.
+The AMD64 receipt is artifact 14297663925 with ZIP SHA-256
+054afc618af7fc90861c058a781c44d107ba61bfb1d8799c1f39be0245a589ff.
+The ARM64 receipt is artifact 14297549241 with ZIP SHA-256
 6620b9d345b2ce7386702592c7c08df4bbcdea2d90c926e8a1ab52b9d6236bee.
+
+The [legacy retirement registry run](https://github.com/Yunushan/accessweaver/actions/runs/44013826652)
+at ac3555dadf73b307a8cc5866233ff72b78130007 passed all 52 assertions on both
+architectures, including foreign legacy value refusal and exact inventory-drift
+refusal inside the transaction. Both jobs verified cleanup. The AMD64 receipt
+is artifact 14298526970 with ZIP SHA-256
+f95470ccba3eeb8e5a05cc89f56f089f62d25141896c774b7b57b60e6829d156.
+The ARM64 receipt is artifact 14298197506 with ZIP SHA-256
+2b034fdc96ba7f350f2bf992873eaed2e788c5488ef42da43bb4aea1b180a762.
