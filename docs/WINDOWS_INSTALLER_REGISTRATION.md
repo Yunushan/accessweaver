@@ -74,7 +74,17 @@ handle after checking the ownership descriptor, class and complete metadata.
 The ordinary committed record must remain readable before commit and after
 rollback. A successful commit must remove only that registration, and a held
 prior handle must refuse writes. Linked names and mismatched versions are
-covered by separate refusal cases. The installer registration reader now opens each fixed registry
+covered by separate refusal cases.
+
+The [retirement run](https://github.com/Yunushan/accessweaver/actions/runs/44002912817)
+passed all 37 assertions and exact fixture cleanup on both architectures at
+`41b265e3a0747d98d1f8ba2a4998a51049e0961c`.
+The AMD64 receipt is artifact `14293820049` with ZIP SHA-256
+`046fc6a1498aeb2ad54fd1b57907baf59f1489dc13ef72a74cd6b003d4e578ce`.
+The ARM64 receipt is artifact `14292189894` with ZIP SHA-256
+`107477a2b7f4f32ad6d4835b08083aff17f2d74f8d0e75eddc73a13be6d8bfa2`.
+
+The installer registration reader now opens each fixed registry
 component without following symbolic links. A linked or unreadable path blocks
 setup and uninstall, while an absent registration remains distinguishable.
 
