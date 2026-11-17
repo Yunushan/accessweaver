@@ -1,6 +1,7 @@
 package api
 
 import (
+	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -57,6 +59,10 @@ func New(store *profile.Store, manager *engine.Manager, static fs.FS) (*Server, 
 	return &Server{Policy: managed.NewGuard(nil), Store: store, Manager: manager, Workflows: workflow.New(store.Root), UI: static, Token: base64.RawURLEncoding.EncodeToString(b)}, nil
 }
 func JSON(w http.ResponseWriter, status int, v any) {
+	writeJSON(w, status, v, false)
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any, gzipInventory bool) {
 	// Encode before committing a success status so serialization errors can
 	// return valid generic JSON without private error details.
 	body, err := json.Marshal(v)
@@ -67,9 +73,39 @@ func JSON(w http.ResponseWriter, status int, v any) {
 	body = append(body, '\n')
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	if gzipInventory && status == http.StatusOK {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.WriteHeader(status)
+		writer := gzip.NewWriter(w)
+		_, _ = writer.Write(body)
+		_ = writer.Close()
+		return
+	}
 	w.WriteHeader(status)
 	_, _ = w.Write(body)
 }
+
+func acceptsInventoryGzip(header http.Header) bool {
+	offered := false
+	for _, value := range header.Values("Accept-Encoding") {
+		for field := range strings.SplitSeq(value, ",") {
+			coding, parameter, weighted := strings.Cut(field, ";")
+			if !strings.EqualFold(strings.TrimSpace(coding), "gzip") {
+				continue
+			}
+			if weighted {
+				name, weight, valid := strings.Cut(parameter, "=")
+				quality, err := strconv.ParseFloat(strings.TrimSpace(weight), 64)
+				if !valid || !strings.EqualFold(strings.TrimSpace(name), "q") || err != nil || !(quality > 0 && quality <= 1) {
+					return false
+				}
+			}
+			offered = true
+		}
+	}
+	return offered
+}
+
 func fail(w http.ResponseWriter, status int, message string) {
 	JSON(w, status, map[string]string{"error": message})
 }
@@ -146,7 +182,9 @@ func (s *Server) Handler() http.Handler {
 			failProfile(w, err, 500)
 			return
 		}
-		JSON(w, 200, p)
+		// The authenticated inventory has no request-derived fields in its body.
+		w.Header().Add("Vary", "Accept-Encoding")
+		writeJSON(w, http.StatusOK, p, acceptsInventoryGzip(r.Header))
 	})
 	mux.HandleFunc("GET /api/v1/profiles/{id}", func(w http.ResponseWriter, r *http.Request) {
 		p, err := s.Store.GetContext(r.Context(), r.PathValue("id"))

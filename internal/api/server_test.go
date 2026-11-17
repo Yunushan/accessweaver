@@ -2,16 +2,21 @@ package api
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
 	"github.com/Yunushan/accessweaver/internal/buildinfo"
 	"github.com/Yunushan/accessweaver/internal/engine"
 	"github.com/Yunushan/accessweaver/internal/filelock"
 	"github.com/Yunushan/accessweaver/internal/profile"
-	"net/http"
-	"net/http/httptest"
-	"path/filepath"
-	"testing"
-	"time"
 )
 
 func makeServer(t *testing.T) *Server {
@@ -77,6 +82,76 @@ func TestLoopbackAndSessionProtection(t *testing.T) {
 		t.Fatalf("authorized request returned %d: %s", good.Code, good.Body.String())
 	}
 }
+func TestProfileInventoryEncoding(t *testing.T) {
+	s := makeServer(t)
+	for i := range 256 {
+		id := fmt.Sprintf("perf-%04d", i)
+		p := profile.New(id, fmt.Sprintf("Performance fixture %d", i), "byedpi")
+		p.Binary = "/accessweaver-performance-fixture/absent-engine"
+		p.UpdatedAt = time.Date(2026, time.November, 1, 0, 0, 0, 0, time.UTC)
+		p.Probe.Host = "example.invalid"
+		data, err := json.Marshal(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(s.Store.Root, "profiles", id+".json"), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	handler := s.Handler()
+	read := func(path, token string, encoding ...string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:54321"+path, nil)
+		r.Header.Set("X-AccessWeaver-Token", token)
+		r.Header["Accept-Encoding"] = encoding
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w
+	}
+	const inventory = "/api/v1/profiles"
+	identity := read(inventory, s.Token)
+	var rows []profile.Profile
+	if identity.Code != http.StatusOK || identity.Header().Get("Content-Encoding") != "" ||
+		json.Unmarshal(identity.Body.Bytes(), &rows) != nil || len(rows) != 256 {
+		t.Fatal("unencoded inventory request failed")
+	}
+	for _, encodings := range [][]string{{"br, GZip;q=0.7"}, {"gzip", "br"}} {
+		w := read(inventory, s.Token, encodings...)
+		if w.Code != http.StatusOK || w.Header().Get("Content-Encoding") != "gzip" ||
+			w.Header().Get("Vary") != "Accept-Encoding" || w.Header().Get("Cache-Control") != "no-store" ||
+			w.Header().Get("Content-Type") != identity.Header().Get("Content-Type") {
+			t.Fatal("compressed inventory response headers differ")
+		}
+		size := w.Body.Len()
+		reader, err := gzip.NewReader(w.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, readErr := io.ReadAll(reader)
+		if closeErr := reader.Close(); readErr != nil || closeErr != nil || !bytes.Equal(body, identity.Body.Bytes()) {
+			t.Fatal("compressed inventory differs from identity inventory")
+		}
+		if size >= len(body) {
+			t.Fatal("compressible inventory transfer was not smaller")
+		}
+		t.Logf("256-profile inventory wire size: %d gzip bytes, %d identity bytes", size, len(body))
+	}
+	for _, encodings := range [][]string{{"gzip;q=0, br"}, {"gzip", "gzip;q=0"}, {"gzip;q=NaN"}, {"gzip;q=2"}, {"br"}, {""}} {
+		w := read(inventory, s.Token, encodings...)
+		if w.Code != http.StatusOK || w.Header().Get("Content-Encoding") != "" || !bytes.Equal(w.Body.Bytes(), identity.Body.Bytes()) {
+			t.Fatal("nonconsenting client did not receive identity inventory")
+		}
+	}
+	for _, test := range []struct {
+		path, token string
+		code        int
+	}{{inventory, "", http.StatusForbidden}, {inventory + "/perf-0000", s.Token, http.StatusOK}} {
+		w := read(test.path, test.token, "gzip")
+		if w.Code != test.code || w.Header().Get("Content-Encoding") != "" {
+			t.Fatal("inventory encoding escaped the authenticated listing route")
+		}
+	}
+}
+
 func TestProfileAPICRUD(t *testing.T) {
 	s := makeServer(t)
 	p := profile.New("my-profile", "My Profile", "byedpi")
