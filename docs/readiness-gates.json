@@ -338,7 +338,8 @@
             "docs/qualification/77a884e7c213-local-portable-rebuild.json",
             "docs/qualification/53abc0178c85-local-portable-rebuild.json",
             "docs/qualification/1c3f86a30f5c-portable-cross-environment-rebuild.json",
-            "docs/qualification/7f76605d73d9-pinned-packaging-rebuild.json"
+            "docs/qualification/7f76605d73d9-pinned-packaging-rebuild.json",
+          "docs/qualification/65b3803c473b-hosted-preview-rebuild.json"
           ]
         },
         {
