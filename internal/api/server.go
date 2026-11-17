@@ -206,7 +206,13 @@ func (s *Server) Handler() http.Handler {
 		}
 		JSON(w, 200, map[string]bool{"deleted": true})
 	})
-	mux.HandleFunc("GET /api/v1/runtime", func(w http.ResponseWriter, r *http.Request) { JSON(w, 200, s.Manager.Snapshot()) })
+	mux.HandleFunc("GET /api/v1/runtime", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("logs") == "0" {
+			JSON(w, http.StatusOK, s.Manager.RuntimeStatus())
+			return
+		}
+		JSON(w, http.StatusOK, s.Manager.Snapshot())
+	})
 	mux.HandleFunc("POST /api/v1/preview", func(w http.ResponseWriter, r *http.Request) {
 		var p profile.Profile
 		if err := readJSON(w, r, &p); err != nil {

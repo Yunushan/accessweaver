@@ -13,6 +13,19 @@ import (
 	"testing"
 )
 
+func TestRuntimeStatusDoesNotIncludeEngineOutput(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	manager.addLog("synthetic engine output")
+	status := manager.RuntimeStatus()
+	if status.State != "stopped" || status.Log != nil {
+		t.Fatalf("unexpected status snapshot: %+v", status)
+	}
+	full := manager.Snapshot()
+	if len(full.Log) != 1 || !strings.Contains(full.Log[0], "synthetic engine output") {
+		t.Fatalf("expected the full snapshot to retain engine output: %+v", full)
+	}
+}
+
 func TestCatalogPlatformConsistency(t *testing.T) {
 	items := Catalog()
 	if len(items) < 8 {

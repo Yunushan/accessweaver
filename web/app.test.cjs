@@ -109,6 +109,32 @@ test('changing language clears the previous runtime announcement and localizes t
   assert.equal(region.textContent,'Motor detenido');
   assert.equal(env.context.document.activeElement,language);
 });
+test('background polls request status and the log viewer fetches current engine output', async () => {
+  const env=environment(),calls=[];
+  env.context.calls=calls;
+  env.run(`
+    state.offline=false;state.loading=false;state.coreAuthenticated=true;
+    state.runtime={state:'running',pid:42,profileId:'sample',startedAt:'first',log:['previous output']};
+    renderHero=()=>{};renderProfiles=()=>{};
+    apiRequest=async path=>{
+      calls.push(path);
+      return {state:'running',pid:42,profileId:'sample',startedAt:fixtureStart,log:path.endsWith('?logs=0')?null:['fresh output']};
+    };
+  `);
+  env.context.fixtureStart='first';
+  await env.run('pollStatus()');
+  assert.equal(env.run('state.runtime.log[0]'),'previous output');
+  env.context.fixtureStart='second';
+  await env.run('pollStatus()');
+  assert.equal(env.run('state.runtime.log'),null);
+  await env.run('showLogs()');
+  assert.deepEqual(calls,['/api/v1/runtime?logs=0','/api/v1/runtime?logs=0','/api/v1/runtime']);
+  assert.equal(env.get('log-output').textContent,'fresh output');
+  assert.equal(env.get('logs-modal').hidden,false);
+  await env.run('pollStatus()');
+  assert.equal(calls.at(-1),'/api/v1/runtime');
+});
+
 test('a superseded runtime poll cannot overwrite or announce a newer state', async () => {
   for (const reject of [false,true]) {
     const env=environment(), response=Promise.withResolvers();
@@ -796,7 +822,7 @@ test('failed engine preparation immediately blocks launch and clears only on fre
  const pending=[];
  env.context.fetch=(path,options)=>new Promise(resolve=>pending.push({path,options,resolve}));
  const stale=env.run('pollStatus()'),launch=env.run('confirmLaunch()');
- assert.equal(pending[0].path,'/api/v1/runtime');assert.equal(pending[1].path,'/api/v1/start');
+ assert.equal(pending[0].path,'/api/v1/runtime?logs=0');assert.equal(pending[1].path,'/api/v1/start');
  pending[1].resolve({ok:false,status:503,json:async()=>({error:'PRIVATE_CLEANUP_DETAIL',code:'engine-preparation-restart-required'})});
  await launch;
  assert.equal(env.run('state.runtime.preparationRestartRequired'),true);

@@ -162,6 +162,15 @@ func NewManagerWithGuard(root string, guard *managed.Guard) *Manager {
 	return &Manager{guard: guard, root: root, state: Snapshot{State: "stopped", Log: []string{}}, log: make([]string, 0, 150)}
 }
 func (m *Manager) Snapshot() Snapshot {
+	return m.snapshot(true)
+}
+
+// RuntimeStatus returns the current process state without copying engine output.
+func (m *Manager) RuntimeStatus() Snapshot {
+	return m.snapshot(false)
+}
+
+func (m *Manager) snapshot(includeLogs bool) Snapshot {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s := m.state
@@ -173,7 +182,10 @@ func (m *Manager) Snapshot() Snapshot {
 			s.LifecyclePending = true
 		}
 	}
-	s.Log = append([]string{}, m.log...)
+	s.Log = nil
+	if includeLogs {
+		s.Log = append([]string{}, m.log...)
+	}
 	return s
 }
 func (m *Manager) addLog(line string) { m.mu.Lock(); defer m.mu.Unlock(); m.addLogLocked(line) }

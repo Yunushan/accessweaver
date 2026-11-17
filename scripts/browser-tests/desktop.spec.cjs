@@ -1260,7 +1260,7 @@ test('forced colors preserve current navigation, selected tabs and keyboard focu
 test('keyboard reconnect keeps focus through failure and restores main content on success',async({page,core})=>{
  await open(page,core);
  let blockRuntime=true;
- await page.route('**/api/v1/runtime',route=>blockRuntime
+ await page.route(/\/api\/v1\/runtime(?:\?logs=0)?$/,route=>blockRuntime
   ? route.fulfill({status:503,json:{error:'Synthetic runtime unavailable'}})
   : route.continue());
  await page.evaluate(()=>pollStatus());
@@ -1347,7 +1347,7 @@ test('background runtime changes announce localized status once and preserve key
   });
 
   let runtime={state:'failed',pid:0,log:['PRIVATE_SYNTHETIC_RUNTIME_LOG']};
-  await page.route('**/api/v1/runtime',route => route.fulfill({json:runtime}));
+  await page.route(/\/api\/v1\/runtime(?:\?logs=0)?$/,route => route.fulfill({json:runtime}));
   await expect(announcement).toHaveText('El motor terminó');
   await expect(language).toBeFocused();
 

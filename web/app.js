@@ -446,14 +446,20 @@ function runtimeStatusKey(runtime) {
   if (['failed','exited','error'].includes(runtime.state)) return 'failedState';
   return runtime.state === 'stopped' ? 'stopped' : null;
 }
-async function pollStatus() {
+async function pollStatus(includeLogs = !$('logs-modal').hidden) {
   if (state.offline || state.loading || state.polling || state.disconnected || document.hidden) return;
   state.polling = true;
   const previousRuntime = state.runtime;
   try {
     const old = [previousRuntime.state,previousRuntime.profileId,previousRuntime.pid,launchBlockMessage()].join(':');
-    const runtime = await apiRequest('/api/v1/runtime','GET',undefined,6000);
+    const path = includeLogs ? '/api/v1/runtime' : '/api/v1/runtime?logs=0';
+    const runtime = await apiRequest(path,'GET',undefined,6000);
     if (state.runtime !== previousRuntime) return;
+    if (!includeLogs && runtime.log === null && Array.isArray(previousRuntime.log) &&
+        runtime.startedAt === previousRuntime.startedAt && runtime.pid === previousRuntime.pid &&
+        runtime.profileId === previousRuntime.profileId && runtime.engine === previousRuntime.engine) {
+      runtime.log = previousRuntime.log;
+    }
     const previousStatus = runtimeStatusKey(previousRuntime);
     state.runtime = runtime;
     const currentStatus = runtimeStatusKey(runtime);
@@ -1227,7 +1233,7 @@ function renderProbe(report) {
 }
 function renderLogs() { $('log-output').textContent = (state.runtime.log || []).join('\n') || t('settingsLogsEmpty'); }
 async function showLogs() {
-  if (coreAvailable()) await pollStatus();
+  if (coreAvailable()) await pollStatus(true);
   renderLogs(); setModal('logs-modal',true); $('close-logs').focus();
 }
 function trapModalKeys(event) {
