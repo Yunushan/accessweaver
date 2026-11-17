@@ -803,7 +803,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 amd64_pin = evidence["amd64", "clean"][1]
                 detector_directory = self.root / "detector-output"
                 detector_directory.mkdir()
-                altered = detector_directory / "altered.ps1"
+                # Publication resolves parent paths, including Windows short names.
+                altered = detector_directory.resolve() / "altered.ps1"
                 native_publish = release.publish_staged_installer
 
                 def change_published_detector(staged, destination):
