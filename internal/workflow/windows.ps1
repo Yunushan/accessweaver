@@ -2549,24 +2549,100 @@ function Test-DNSAddressAnswer([object[]]$Answers,[string]$Name,[ValidateSet('A'
     }
     return $false
 }
+function Test-OrdinaryDNSAddress([ValidateSet('A','AAAA')][string]$Type) {
+    if(-not ('AccessWeaver.DNSHealth' -as [type])){
+        Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
+using System;
+using System.Net;
+using System.Runtime.InteropServices;
+
+namespace AccessWeaver
+{
+    public static class DNSHealth
+    {
+        private const string QueryName = "example.com";
+        private const ushort A = 1;
+        private const ushort AAAA = 28;
+
+        // BYPASS_CACHE | WIRE_ONLY | NO_HOSTS_FILE | NO_NETBT | NO_MULTICAST |
+        // TREAT_AS_FQDN. Windows selects the configured servers and transport.
+        private const uint QueryOptions = 0x19c8;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RecordHeader
+        {
+            public IntPtr Next;
+            public IntPtr Name;
+            public ushort Type;
+            public ushort Length;
+            public uint Flags;
+            public uint Ttl;
+            public uint Reserved;
+        }
+
+        [DllImport("dnsapi.dll", ExactSpelling = true, CharSet = CharSet.Unicode)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        private static extern int DnsQuery_W(string name, ushort type, uint options,
+            IntPtr extra, out IntPtr records, IntPtr reserved);
+
+        [DllImport("dnsapi.dll", ExactSpelling = true)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        private static extern void DnsRecordListFree(IntPtr records, int freeType);
+
+        public static bool Probe(bool ipv6)
+        {
+            ushort type = ipv6 ? AAAA : A;
+            IntPtr records = IntPtr.Zero;
+            try
+            {
+                int status = DnsQuery_W(QueryName, type, QueryOptions, IntPtr.Zero, out records, IntPtr.Zero);
+                return status == 0 && HasAddress(records, type);
+            }
+            finally
+            {
+                // Even a failed query can return a partial list.
+                if (records != IntPtr.Zero) DnsRecordListFree(records, 1); // DnsFreeRecordList
+            }
+        }
+
+        private static bool HasAddress(IntPtr current, ushort type)
+        {
+            int addressLength = type == AAAA ? 16 : 4;
+            int dataOffset = Marshal.SizeOf(typeof(RecordHeader));
+            bool found = false;
+            for (int count = 0; current != IntPtr.Zero; count++)
+            {
+                if (count == 128) return false;
+                var row = (RecordHeader)Marshal.PtrToStructure(current, typeof(RecordHeader));
+                if (row.Type == type && row.Length == addressLength && (row.Flags & 3) == 1 &&
+                    row.Name != IntPtr.Zero && String.Equals(Marshal.PtrToStringUni(row.Name).TrimEnd('.'),
+                        QueryName, StringComparison.OrdinalIgnoreCase))
+                {
+                    var address = new byte[addressLength];
+                    Marshal.Copy(IntPtr.Add(current, dataOffset), address, 0, address.Length);
+                    if (!new IPAddress(address).IsIPv4MappedToIPv6) found = true;
+                }
+                current = row.Next;
+            }
+            return found;
+        }
+    }
+}
+'@
+    }
+    return [AccessWeaver.DNSHealth]::Probe($Type -ceq 'AAAA')
+}
 function Wait-OrdinaryDNSResolver([int]$TimeoutSeconds,[string]$DohProtectionID,$DNSCryptListener) {
     $timer=[Diagnostics.Stopwatch]::StartNew()
     do {
-        $healthy=$false
-        try {
-            Clear-DnsClientCache -ErrorAction Stop
-            $healthy=$true
-        }catch{}
+        $healthy=$true
         foreach($type in @('A','AAAA')){
             if(-not $healthy){break}
             # A policy refusal must reach recovery instead of being retried as
             # a DNS failure. Check both address types on every attempt.
             if($DohProtectionID){Assert-DNSDohPlaintextBlock $DohProtectionID}
             if($DNSCryptListener){Assert-DNSCryptListenerUnchanged $DNSCryptListener}
-            try {
-                $answers=@(Resolve-DnsName -Name 'example.com.' -Type $type -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
-                $healthy=Test-DNSAddressAnswer $answers 'example.com' $type
-            }catch{$healthy=$false}
+            $healthy=Test-OrdinaryDNSAddress $type
         }
         if($healthy){return $true}
         if($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds){break}

@@ -1,5 +1,5 @@
-# Selected-function contracts only: no worker top level or real OS DNS/registry,
-# service, network, process, account or installation operations are invoked.
+# Selected-function contracts and embedded type compilation use synthetic records.
+# All DNS, registry, service, network and installation effects remain mocked.
 [CmdletBinding()]
 param([switch]$RequireWindowsPowerShell,[string]$ReportPath)
 $ErrorActionPreference='Stop'
@@ -21,6 +21,54 @@ $sourceHash=(Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
 $tokens=$null;$parseErrors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($sourcePath,[ref]$tokens,[ref]$parseErrors)
 if($parseErrors.Count){throw 'DNS workflow source did not parse'}
+# Compile the exact embedded probe and exercise only synthetic unmanaged records.
+# The DNS entry point is never called by this fixture.
+& {
+    $function=$ast.Find({param($node)$node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Test-OrdinaryDNSAddress'},$true)
+    $csharp=$function.Find({param($node)$node -is [Management.Automation.Language.StringConstantExpressionAst] -and $node.StringConstantType -eq 'SingleQuotedHereString'},$true)
+    if(-not $csharp){throw 'DNS source type missing'}
+    Microsoft.PowerShell.Utility\Add-Type -TypeDefinition $csharp.Value -ErrorAction Stop
+    $flags=[Reflection.BindingFlags]'Static,NonPublic'
+    if([AccessWeaver.DNSHealth].GetField('QueryOptions',$flags).GetRawConstantValue() -ne 0x19c8 -or
+        [AccessWeaver.DNSHealth].GetField('QueryName',$flags).GetRawConstantValue() -cne 'example.com'){
+        throw 'Unexpected DNS query policy'
+    }
+    $marshal=[Runtime.InteropServices.Marshal]
+    $ptrSize=[IntPtr]::Size
+    $headerSize=2*$ptrSize+16
+    $method=[AccessWeaver.DNSHealth].GetMethod('HasAddress',[Reflection.BindingFlags]'Static,NonPublic')
+    $checks=[Collections.Generic.List[int]]::new()
+    function Assert-Record([string]$Name,[int16]$Type,[int16]$Length,[int]$Section,[string]$Address,[int16]$Requested,[bool]$Expected,[switch]$Loop) {
+        $row=$marshal::AllocHGlobal($headerSize+16)
+        $namePointer=$marshal::StringToHGlobalUni($Name)
+        try {
+            $marshal::Copy([byte[]]::new($headerSize+16),0,$row,$headerSize+16)
+            if($Loop){$marshal::WriteIntPtr($row,0,$row)}
+            $marshal::WriteIntPtr($row,$ptrSize,$namePointer)
+            $marshal::WriteInt16($row,2*$ptrSize,$Type)
+            $marshal::WriteInt16($row,2*$ptrSize+2,$Length)
+            $marshal::WriteInt32($row,2*$ptrSize+4,$Section)
+            $bytes=[Net.IPAddress]::Parse($Address).GetAddressBytes()
+            $marshal::Copy($bytes,0,[IntPtr]::Add($row,$headerSize),$bytes.Length)
+            [uint16]$requestedType=$Requested
+            if($method.Invoke($null,@($row,$requestedType)) -ne $Expected){throw 'Unexpected DNS record assessment'}
+            $checks.Add(1)
+        } finally {
+            $marshal::FreeHGlobal($row)
+            $marshal::FreeHGlobal($namePointer)
+        }
+    }
+    Assert-Record 'EXAMPLE.COM.' 1 4 1 '192.0.2.25' 1 $true
+    Assert-Record 'example.com' 28 16 1 '2001:db8::25' 28 $true
+    Assert-Record 'example.org' 28 16 1 '2001:db8::25' 28 $false
+    Assert-Record 'example.com' 28 16 2 '2001:db8::25' 28 $false
+    Assert-Record 'example.com' 28 16 1 '::ffff:192.0.2.25' 28 $false
+    Assert-Record 'example.com' 28 4 1 '2001:db8::25' 28 $false
+    Assert-Record 'example.com' 1 4 1 '192.0.2.25' 28 $false
+    Assert-Record 'example.com' 1 4 1 '192.0.2.25' 1 $false -Loop
+    if($checks.Count -ne 8){throw "Incomplete synthetic verification"}
+    Write-Output "Compiled $($PSVersionTable.PSEdition). Verified $($checks.Count) synthetic DNS records"
+}
 $selected=@('Assert-DNSCryptConfiguration','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Assert-DNSCryptServiceState','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Get-ManagedServiceCommandDigest','Assert-DNSMutationAdapter','Test-DNSRecoveryUsesAdapterOwnership','Test-DNSFamilyMatchesOriginal','Read-ObservedDNSFamily','Test-DNSFamilyNeedsRollback','Get-ActiveDNSAdapters','Assert-ConfiguredDNSDohPolicy','Get-DNSDohProviders','Test-DNSRecoveryUsesDohOwnership','Get-DNSOriginalDohEntry','Test-DNSDohEntriesEqual','Test-DNSRecoveryOwnsDoh','Get-DNSClientMutationRow','Read-DNSRecoveryFileBytes','Read-DNSRecoverySnapshot','Assert-DNSRecoverySnapshotUnchanged','Get-WorkflowRecoveryJournalLimit','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Assert-ConfiguredDNSServers','Assert-RestoredDNSFamily','Assert-RestoredDNSState','Get-StaticDNSServers','Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Assert-OriginalDNSModes','Read-OriginalDNSFamily','Read-OriginalDNSAdapter','Read-OriginalDNSNameServer','Get-DNSOverridePath','Read-DNSStaticOverride','Test-DNSAddressAnswer','Wait-OrdinaryDNSResolver','Wait-DNSCryptListeners','Get-ManagedDNSCryptListenerOwner','Wait-ManagedDNSCryptListeners','Get-EffectiveDNSCryptListeners','Assert-EffectiveDNSCryptListeners','Get-DNSCryptAdapterIdentities','Test-DNSCryptLoopbackAddress','Get-DNSCryptIndependentFamilies','Test-DNSCryptListenerNeeded','Assert-DNSCryptCanBeRemoved','Configure-DNS','Restore-DNS','Remove-Method','Remove-All')
 $allowed=@('Read-OwnedWireSockProfile','Remove-WireSockRefreshTask','Disconnect-OwnedWireSock','Native','Remove-ModernWireSockProfile','Restore-Drover','Get-ManagedFirewallRule','Remove-RecordedService','Remove-ManagedFirewallRule','Remove-Method','Under','Assert-DNSCryptConfiguration','Get-WorkflowFileHash','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Assert-DNSCryptServiceState','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Get-ManagedServiceCommandDigest','Get-CimInstance','Get-NetTCPConnection','Get-NetUDPEndpoint','Assert-DNSMutationAdapter','Test-DNSRecoveryUsesAdapterOwnership','Test-DNSFamilyMatchesOriginal','Read-ObservedDNSFamily','Test-DNSFamilyNeedsRollback','Get-ActiveDNSAdapters','Assert-ConfiguredDNSDohPolicy','Get-DNSDohProviders','Test-DNSRecoveryUsesDohOwnership','Get-DNSOriginalDohEntry','Test-DNSDohEntriesEqual','Test-DNSRecoveryOwnsDoh','Get-DNSClientMutationRow','Read-DNSRecoveryFileBytes','Read-DNSRecoverySnapshot','Assert-DNSRecoverySnapshotUnchanged','Get-WorkflowRecoveryJournalLimit','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Save-DNSRecoveryReceipt','Publish-WorkflowFile','No-Reparse','Get-Item','Assert-ConfiguredDNSServers','Assert-RestoredDNSFamily','Assert-RestoredDNSState','Get-StaticDNSServers','Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Assert-OriginalDNSModes','Read-OriginalDNSFamily','Read-OriginalDNSAdapter','Read-OriginalDNSNameServer','Get-DNSOverridePath','Read-DNSStaticOverride','Test-DNSAddressAnswer','Wait-OrdinaryDNSResolver','Wait-DNSCryptListeners','Get-ManagedDNSCryptListenerOwner','Wait-ManagedDNSCryptListeners','Get-EffectiveDNSCryptListeners','Assert-EffectiveDNSCryptListeners','Get-DNSCryptAdapterIdentities','Test-DNSCryptLoopbackAddress','Get-DNSCryptIndependentFamilies','Test-DNSCryptListenerNeeded','Assert-DNSCryptCanBeRemoved','Restore-DNS','Get-ItemProperty','Get-Command','Join-Path','Get-NetAdapter','Where-Object','ForEach-Object','Select-Object','Test-Path','Get-DnsClientServerAddress','Get-DnsClientDohServerAddress','Get-FileHash','Add-Member','ConvertTo-Json','Save-Journal','Ensure-Asset','Split-Path','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Get-Service','Restore-RecordedWorkflowFile','Install-EngineService','Set-Service','Start-Service','Restart-Service','Stop-Service','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress','Set-DnsClientServerAddress','Clear-DnsClientCache','Resolve-DnsName','Start-Sleep','Event','ConvertFrom-Json','Remove-Item','Remove-VerifiedDNSRecoverySnapshot')
 $selected+=@('Set-RestoredDNSFamily','Wait-RecordedServiceStopped','Assert-DNSCryptLoopbackPortsAvailable','Assert-DNSCryptListenerUnchanged')
@@ -32,6 +80,7 @@ $dohFirewallFunctions=@('Get-DNSDohPlaintextBlockID','Assert-DNSDohFirewallAvail
 $dnsCopyFunctions=@('ConvertFrom-DNSRecoverySnapshotBytes','Get-DNSRecoveryCopyPath','Read-DNSRecoveryCopy','Assert-DNSRecoveryCopyMatches','Publish-DNSRecoveryCopy')
 $retirementFunctions=@('Wait-DNSCryptServiceTransition','New-DNSCryptRetirementRecord','Read-DNSCryptRetirementState','Restore-DNSCryptRetirement','Rollback')
 $dohFirewallFunctions+=@('Get-DNSDohFirewallProfileBits','Get-DNSDohPlaintextRuleName','Assert-DNSDohEffectiveStatus')
+$allowed+='Test-OrdinaryDNSAddress'
 $selected+=$dohFirewallFunctions+$dnsCopyFunctions+$retirementFunctions
 $allowed+='Get-DNSDohActiveProfileMask'
 $allowed+=$retirementFunctions+@('Backup-File','Confirm-DNSRecoveryEntry','Select-Object','Remove-WireSockRefreshTask','Move-Item')
@@ -817,6 +866,10 @@ function Test-DNSCryptTransportAnswer([string]$Server,[string]$Type,[string]$Pro
     if($Protocol -ceq 'UDP'){return "$Server/$Type" -cne $script:listenerUDPFault}
     $answers=@(Resolve-DnsName -Name 'example.net.' -Server $Server -Type $Type -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
     return Test-DNSAddressAnswer $answers 'example.net' $Type
+}
+function Test-OrdinaryDNSAddress([string]$Type) {
+    $answers=@(Resolve-DnsName -Name 'example.com.' -Type $Type -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
+    return Test-DNSAddressAnswer $answers 'example.com' $Type
 }
 function Resolve-DnsName {
     [CmdletBinding()]param($Name,$Server,$Type,[switch]$DnsOnly,[switch]$NoHostsFile,[switch]$QuickTimeout)
@@ -1672,14 +1725,13 @@ try {
         $script:dohFirewallRules.Count -eq 0 -and -not [IO.File]::Exists($snapshot) -and
         -not [IO.File]::Exists($copyPath)) 'doh-firewall-loss-restores-applied-family'
 
-    foreach($probeLoss in @('after-cache-flush','before-aaaa','before-retry','after-service-stop')){
+    foreach($probeLoss in @('before-aaaa','before-retry','after-service-stop')){
         $afterStop=$probeLoss -ceq 'after-service-stop'
         New-DNSCase -ExistingResolver:$afterStop
         $script:firewallAfterAProbe=if($afterStop){'after-service-stop'}else{'first'}
-        if($probeLoss -ceq 'after-cache-flush'){$script:cacheFlushFault='firewall'}
         if($probeLoss -ceq 'before-retry'){$script:emptyOrdinaryAnswers=1}
         Reject-DNS {Configure-DNS 'doh'} 'Managed DoH plaintext protection is missing from effective Windows Firewall policy'
-        $expectedA=if($probeLoss -ceq 'after-cache-flush'){0}else{1+[int]$afterStop}
+        $expectedA=1+[int]$afterStop
         Assert-DNS ($script:resolverQueries -eq $expectedA -and
             $script:resolverAAAAQueries -eq [int]$afterStop -and $script:serviceStops -eq [int]$afterStop -and
             $script:ordinaryResolverWaits -eq [int]($probeLoss -ceq 'before-retry') -and
@@ -2203,9 +2255,9 @@ try {
         Assert-SnapshotRetained $hash
         Assert-DNS ((Mutation-Count) -eq 0) 'invalid-doh-recovery-scope'
     }
-    New-DNSCase;$script:emptyOrdinaryAnswers=1
+    New-DNSCase;$script:emptyOrdinaryAnswers=1;$script:cacheFlushFault='unavailable'
     Configure-DNS 'doh'
-    Assert-DNS ($script:resolverQueries -eq 2 -and $script:resolverAAAAQueries -eq 1 -and
+    Assert-DNS ($script:cacheFlushes -eq 0 -and $script:resolverQueries -eq 2 -and $script:resolverAAAAQueries -eq 1 -and
         $script:ordinaryResolverWaits -eq 1 -and $script:dnsConfigured) 'ordinary-resolver-requires-address-answer'
     New-DNSCase;$script:emptyOrdinaryAAAAAnswers=1
     Configure-DNS 'doh'
