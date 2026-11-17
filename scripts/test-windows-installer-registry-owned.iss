@@ -302,6 +302,93 @@ begin
   if Absent then AWFixtureCloseRetired(Prior);
 end;
 
+const AWFixtureLegacyDescriptor = 'O:BAD:P(A;;KA;;;SY)(A;;KA;;;BA)(A;;KA;;;BU)';
+
+function AWFixtureLegacyMatches(Key: LongWord; const Prior: AWRegistryTextValues): Boolean;
+var Kind, Bytes: LongWord;
+begin
+  Kind := 0; Bytes := 0;
+  Result := (Key <> 0) and
+    (AWOwnedRegistryQueryValue(Key, 'SymbolicLinkValue', 0, Kind, 0, Bytes) = 2) and
+    (AWOwnedRegistryDescriptorStatus(Key) = 'descriptor-aces') and
+    AWRegistryProductValuesMatch(Key, Prior);
+end;
+
+function AWFixtureLegacyVisible(Root: LongWord; const Prior: AWRegistryTextValues): Boolean;
+var Key: LongWord;
+begin
+  Key := 0;
+  Result := (AWOpenRegistrationComponent(Root, 'legacy', $00020119 or $0100, Key) = 0) and
+    AWFixtureLegacyMatches(Key, Prior);
+  if not AWOwnedRegistryClose(Key) then Result := False;
+end;
+
+{ This operation applies only to the synthetic legacy registration created here.
+  The installed payload and actual legacy registration require separate admission. }
+function AWFixtureStageLegacySwap(Root, Tx: LongWord;
+  const Prior, Candidate: AWRegistryTextValues; var Key: LongWord; var Deleted: Boolean): Boolean;
+var Created, Closed: Boolean;
+begin
+  Result := False; Key := 0; Deleted := False;
+  if (Tx = 0) or
+     (AWOwnedRegistryOpenInNative(Root, 'legacy', AWOwnedRegistryOpenLink,
+        AWOwnedRegistryAccess, Key, Tx, 0) <> 0) then Exit;
+  try
+    if AWFixtureLegacyMatches(Key, Prior) then Deleted := AWRegistryDeleteHeld(Key) = 0;
+  finally
+    Closed := AWOwnedRegistryClose(Key);
+  end;
+  if not Deleted or not Closed then Exit;
+  Result := AWCreateOwnedRegistryChildIn(Root, Tx, 'legacy', AWFixtureOtherTag, Key, Created) and
+    Created and AWRegistryStageProductValues(Key, Candidate);
+end;
+
+procedure AWFixtureLegacyReplacementCases(Root: LongWord);
+var Legacy, Replacement, Tx, Key, Value: LongWord; Prior, Candidate: AWRegistryTextValues;
+    Ready, Deleted, Staged, Finished, Opened, StaleRefused: Boolean;
+begin
+  Legacy := 0; Replacement := 0; Tx := 0; Key := 0;
+  Value := 1;
+  Ready := AWRegistryProductValues('1.0.0', AWFixtureDirectory, AWFixtureUninstaller, Prior) and
+    AWRegistryProductValues('2.0.0', AWFixtureDirectory, AWFixtureUninstaller, Candidate) and
+    AWFixtureRaw(Root, 'legacy', AWFixtureLegacyDescriptor, 0, Legacy) and
+    AWRegistryStageProductValues(Legacy, Prior) and
+    (AWFixtureWriteDWORD(Legacy, 'NoModify', 0, 4, Value, 4) = 0) and
+    AWFixtureLegacyMatches(Legacy, Prior) and AWFixtureLegacyVisible(Root, Prior);
+  AWFixtureCase('legacy-registration-held-with-writer', Ready);
+
+  Staged := False; Deleted := False;
+  try
+    if Ready and AWRegistryTransactionBegin(Tx) then
+      Staged := AWFixtureStageLegacySwap(Root, Tx, Prior, Candidate, Key, Deleted);
+    AWFixtureCase('legacy-deletion-staged-with-writer-held', Deleted);
+    AWFixtureCase('legacy-replacement-staged-with-prior-visible', Staged and
+      AWFixtureLegacyMatches(Legacy, Prior) and AWFixtureLegacyVisible(Root, Prior));
+  finally
+    Finished := AWRegistryTransactionFinish(Tx, Key, False);
+  end;
+  AWFixtureCase('abandoned-legacy-replacement-preserves-prior', Ready and Finished and
+    AWFixtureLegacyMatches(Legacy, Prior) and AWFixtureLegacyVisible(Root, Prior));
+
+  Staged := False;
+  try
+    if Ready and Finished and AWFixtureLegacyMatches(Legacy, Prior) and AWRegistryTransactionBegin(Tx) then
+      Staged := AWFixtureStageLegacySwap(Root, Tx, Prior, Candidate, Key, Deleted) and
+        AWFixtureLegacyMatches(Legacy, Prior) and AWFixtureLegacyVisible(Root, Prior);
+  finally
+    Finished := AWRegistryTransactionFinish(Tx, Key, Staged);
+  end;
+  Opened := Staged and Finished and AWOpenOwnedRegistryChild(Root, 'legacy', AWFixtureOtherTag, Replacement);
+  if Opened then AWFixtureRemember(Replacement);
+  AWFixtureCase('legacy-replacement-visible-protected-after-commit', Opened and
+    AWRegistryProductValuesMatch(Replacement, Candidate));
+  Value := 73;
+  StaleRefused := Opened and (AWFixtureWriteDWORD(Legacy, 'sentinel', 0, 4, Value, 4) = 1018);
+  AWFixtureCase('legacy-writer-cannot-change-replacement', StaleRefused and
+    AWRegistryProductValuesMatch(Replacement, Candidate));
+  if StaleRefused then AWFixtureCloseRetired(Legacy);
+end;
+
 procedure AWFixtureTransactionCases(Root: LongWord);
 var Tx, Key, Prior: LongWord; Created, Staged, Finished, Opened: Boolean;
 begin
@@ -414,6 +501,7 @@ begin
     if RootCreated then begin
       AWFixtureCasesRun(Root);
       AWFixtureTransactionCases(Root);
+      AWFixtureLegacyReplacementCases(Root);
     end;
   finally
     { Every deletion uses an exact handle returned by a confirmed NEW creation.

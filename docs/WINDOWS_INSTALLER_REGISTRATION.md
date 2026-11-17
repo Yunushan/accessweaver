@@ -56,6 +56,15 @@ and unknown values, and either replace the owned legacy object safely or leave
 it untouched with an actionable refusal. Neither a class tag alone nor a write
 ACE allowlist can make a legacy leaf authoritative.
 
+The disposable fixture attempts a same-name transaction with a synthetic
+legacy entry that grants Users write access. It holds the old writable handle
+through both rollback and commit and requires the old entry to remain visible
+until commit. A successful replacement must have the protected descriptor and
+complete new values, and the retained old handle must refuse a write. This
+exercises the Windows replacement boundary. The production migration still
+needs to verify the prior package, registry values, and uninstaller identity
+before it can use that operation.
+
 At source `2b875e4b698d51b650042e12f072b85268a2592c`, the
 [hosted registry run](https://github.com/Yunushan/accessweaver/actions/runs/44001985316)
 passed all 31 assertions with exact cleanup on AMD64 and ARM64 using Inno Setup
