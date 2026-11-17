@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$ReportPath,[switch]$TestEngine)
+param([Parameter(Mandatory)][string]$ReportPath,[switch]$TestEngine,[string]$ServiceController,[string]$ControllerSHA256)
 $ErrorActionPreference='Stop'
 if($env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_EVENT_NAME -cne 'workflow_dispatch' -or
    $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or $env:RUNNER_OS -cne 'Windows' -or
@@ -42,8 +42,12 @@ if($LASTEXITCODE -ne 0 -or $head.Count -ne 1 -or $source -cnotmatch '\A[a-f0-9]{
 $dirty=@(& git -C $project status --porcelain --untracked-files=no 2>$null)
 if($LASTEXITCODE -ne 0 -or $dirty.Count){throw 'DNSCrypt port probe requires clean tracked source'}
 $hashes=@{}
+if($ServiceController -and (-not $TestEngine -or $ControllerSHA256 -cnotmatch '\A[a-f0-9]{64}\z')){
+    throw 'Fixture service requires the native engine probe and a pinned controller build'
+}
 $paths=@('scripts/test-native-dnscrypt-port.ps1','.github/workflows/native-doh.yml')
 if($TestEngine){$paths+=@('scripts/test-native-doh.ps1','scripts/native-doh-scenario.ps1','scripts/native-dnscrypt-engine-probe.ps1')}
+if($ServiceController){$paths+=@('scripts/native-dnscrypt-service-probe.ps1','internal/servicehost/host_windows.go','internal/managed/guard.go')}
 foreach($path in $paths){
     $hashes[$path]=(Get-FileHash -LiteralPath (Join-Path $project $path) -Algorithm SHA256).Hash.ToLowerInvariant()
 }
@@ -145,13 +149,21 @@ try{
         $report.schemaVersion=2
         $report.engine=[ordered]@{stage='not-started';binarySHA256='';loopbackOwnersVerified=$false;loopbackOwnersConfirmedAfter=$false;
             udp4=$false;udp6=$false;tcp4=$false;tcp6=$false;processJoined=$false;privateFilesRemoved=$false;originalUDPInventoryRestored=$false}
+        if($ServiceController){
+            $report.schemaVersion=3
+            $report.engine.service=[ordered]@{controllerSHA256='';localSystemRegistration=$false;childBindingVerified=$false;
+                childBindingConfirmedAfter=$false;removalVerified=$false;tcpLoopbackReleased=$false}
+        }
         $report.stage='engine'
         if(-not $report.inventoryStable -or $report.ipv4Bind -cne 'bound' -or $report.ipv6Bind -cne 'bound' -or
             @($report.scopes | Where-Object {$_ -cin @('ipv4-loopback','ipv6-loopback')}).Count){
             throw 'Managed DNSCrypt fixture requires available loopback ports'
         }
         . (Join-Path $PSScriptRoot 'native-dnscrypt-engine-probe.ps1')
-        Invoke-FixtureDNSCryptEngine $project $architecture $report.engine
+        Invoke-FixtureDNSCryptEngine $project $architecture $report.engine $ServiceController $ControllerSHA256
+        if($ServiceController -and (-not $report.engine.service.removalVerified -or -not $report.engine.service.tcpLoopbackReleased)){
+            throw 'DNSCrypt service fixture cleanup differed'
+        }
         if(-not ($report.engine.processJoined -and $report.engine.privateFilesRemoved -and $report.engine.originalUDPInventoryRestored)){
             throw 'DNSCrypt engine fixture cleanup differed'
         }

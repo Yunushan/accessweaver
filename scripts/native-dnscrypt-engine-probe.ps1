@@ -109,8 +109,9 @@ function Test-FixtureDNSCryptOwner([uint32]$ProcessId,[string[]]$Baseline) {
         @($tcp | Where-Object {$_.owner -ne $ProcessId -or $_.localAddress -cnotin @('127.0.0.1','::1')}).Count -eq 0)
 }
 
-function Invoke-FixtureDNSCryptEngine([string]$Project,[string]$Architecture,$Evidence) {
+function Invoke-FixtureDNSCryptEngine([string]$Project,[string]$Architecture,$Evidence,[string]$ServiceController,[string]$ControllerSHA256) {
     $work=$null;$process=$null;$output=$null;$errors=$null
+    $serviceRoot=$null;$serviceRecord=$null;$boundIdentity=$null
     $baseline=@(Read-FixtureUDP53 | ForEach-Object {$_.scope+'='+$_.owner} | Sort-Object)
     try{
         $Evidence.stage='stage-bundle'
@@ -124,11 +125,18 @@ function Invoke-FixtureDNSCryptEngine([string]$Project,[string]$Architecture,$Ev
             . ([scriptblock]::Create($nodes[0].Extent.Text))
         }
         . (Join-Path $Project 'scripts\native-doh-scenario.ps1')
-        $temp=[IO.Path]::GetFullPath($env:RUNNER_TEMP)
-        Assert-NativeOrdinaryPath $temp
-        $target=Join-Path $temp ('accessweaver-dnscrypt-engine-'+[guid]::NewGuid().ToString('N'))
-        [void](New-Item -Path $target -ItemType Directory -ErrorAction Stop)
-        $work=$target
+        if($ServiceController){
+            . (Join-Path $Project 'scripts\native-dnscrypt-service-probe.ps1')
+            $serviceRoot=New-FixtureServiceRoot
+            $work=Join-Path $serviceRoot 'components'
+            [void][IO.Directory]::CreateDirectory($work)
+        }else{
+            $temp=[IO.Path]::GetFullPath($env:RUNNER_TEMP)
+            Assert-NativeOrdinaryPath $temp
+            $target=Join-Path $temp ('accessweaver-dnscrypt-engine-'+[guid]::NewGuid().ToString('N'))
+            [void](New-Item -Path $target -ItemType Directory -ErrorAction Stop)
+            $work=$target
+        }
         $component=New-NativeDNSCryptBundle $work $Architecture
         $Evidence.binarySHA256=$component.binarySHA256
         $directory=$component.directory
@@ -155,26 +163,51 @@ function Invoke-FixtureDNSCryptEngine([string]$Project,[string]$Architecture,$Ev
             throw 'Fixture port inventory changed or TCP is already occupied'
         }
         $Evidence.stage='start-engine'
-        $start=[Diagnostics.ProcessStartInfo]::new()
-        $start.FileName=$executable
-        $start.Arguments='-config listener-fixture.toml'
-        $start.WorkingDirectory=$directory
-        $start.UseShellExecute=$false
-        $start.CreateNoWindow=$true
-        $start.RedirectStandardOutput=$true
-        $start.RedirectStandardError=$true
-        $process=[Diagnostics.Process]::Start($start)
-        $output=$process.StandardOutput.BaseStream.CopyToAsync([IO.Stream]::Null)
-        $errors=$process.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
+        if($ServiceController){
+            $serviceRecord=New-FixtureServiceRecord $serviceRoot $ServiceController $ControllerSHA256 $executable $directory
+            $Evidence.service.controllerSHA256=$ControllerSHA256
+            $created=New-Service -Name $serviceRecord.name -BinaryPathName $serviceRecord.command -StartupType Manual -ErrorAction Stop
+            if($created -is [IDisposable]){$created.Dispose()}
+            $Evidence.service.localSystemRegistration=$null -ne (Get-FixtureServiceRegistration $serviceRecord)
+            if(-not $Evidence.service.localSystemRegistration){throw 'Fixture LocalSystem registration unavailable'}
+            Start-Service -Name $serviceRecord.name -ErrorAction Stop
+        }else{
+            $start=[Diagnostics.ProcessStartInfo]::new()
+            $start.FileName=$executable
+            $start.Arguments='-config listener-fixture.toml'
+            $start.WorkingDirectory=$directory
+            $start.UseShellExecute=$false
+            $start.CreateNoWindow=$true
+            $start.RedirectStandardOutput=$true
+            $start.RedirectStandardError=$true
+            $process=[Diagnostics.Process]::Start($start)
+            $output=$process.StandardOutput.BaseStream.CopyToAsync([IO.Stream]::Null)
+            $errors=$process.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
+        }
         $clock=[Diagnostics.Stopwatch]::StartNew()
         $Evidence.stage='loopback-owner'
         do{
-            if($process.HasExited){throw 'Pinned DNSCrypt fixture exited during startup'}
-            $Evidence.loopbackOwnersVerified=Test-FixtureDNSCryptOwner ([uint32]$process.Id) $baseline
+            if($serviceRecord -and $null -eq $process){
+                $child=Get-FixtureServiceChild $serviceRecord
+                if($null -ne $child){
+                    $process=[Diagnostics.Process]::GetProcessById([int]$child.id)
+                    [void]$process.Handle
+                    $boundIdentity=$child.identity
+                }
+            }
+            if($null -ne $process){
+                if($process.HasExited){throw 'Pinned DNSCrypt fixture exited during startup'}
+                $Evidence.loopbackOwnersVerified=Test-FixtureDNSCryptOwner ([uint32]$process.Id) $baseline
+            }
             if($Evidence.loopbackOwnersVerified){break}
             Start-Sleep -Milliseconds 200
         }while($clock.Elapsed.TotalSeconds -lt 15)
         if(-not $Evidence.loopbackOwnersVerified){throw 'Fixture listener ownership could not be verified'}
+        if($serviceRecord){
+            $same=(Get-FixtureServiceChild $serviceRecord).identity -ceq $boundIdentity
+            if(-not $same){throw 'Fixture service child changed before queries'}
+            $Evidence.service.childBindingVerified=$true
+        }
         $Evidence.stage='loopback-answers'
         $loopback=[Net.IPAddress]::Loopback
         $loopback6=[Net.IPAddress]::IPv6Loopback
@@ -186,14 +219,22 @@ function Invoke-FixtureDNSCryptEngine([string]$Project,[string]$Architecture,$Ev
         if(-not $process.HasExited){
             $Evidence.loopbackOwnersConfirmedAfter=Test-FixtureDNSCryptOwner ([uint32]$process.Id) $baseline
         }
+        if($serviceRecord){
+            $Evidence.service.childBindingConfirmedAfter=(Get-FixtureServiceChild $serviceRecord).identity -ceq $boundIdentity
+            if(-not $Evidence.service.childBindingConfirmedAfter){throw 'Fixture service child changed during queries'}
+        }
         if(-not ($Evidence.udp4 -and $Evidence.udp6 -and $Evidence.tcp4 -and $Evidence.tcp6 -and $Evidence.loopbackOwnersConfirmedAfter)){
             throw 'Fixture loopback answers could not be verified'
         }
         $Evidence.stage='complete'
     }finally{
+        if($serviceRecord){
+            Remove-FixtureService $serviceRecord
+            $Evidence.service.removalVerified=$true
+        }
         if($null -ne $process){
             try{
-                if(-not $process.HasExited){$process.Kill()}
+                if(-not $serviceRecord -and -not $process.HasExited){$process.Kill()}
                 if(-not $process.WaitForExit(5000)){throw 'Fixture DNSCrypt process exit was not confirmed'}
                 $Evidence.processJoined=$true
                 $tasks=@($output,$errors | Where-Object {$null -ne $_})
@@ -210,10 +251,12 @@ function Invoke-FixtureDNSCryptEngine([string]$Project,[string]$Architecture,$Ev
                 }
                 [IO.Directory]::Delete($bundle)
             }
-            [IO.Directory]::Delete($work)
+            if([IO.Directory]::Exists($work)){[IO.Directory]::Delete($work)}
+            if($serviceRoot){Remove-FixtureServiceRoot $serviceRoot}
             $Evidence.privateFilesRemoved=$true
         }
         $after=@(Read-FixtureUDP53 | ForEach-Object {$_.scope+'='+$_.owner} | Sort-Object)
         $Evidence.originalUDPInventoryRestored=($after -join ',') -ceq ($baseline -join ',')
+        if($serviceRecord){$Evidence.service.tcpLoopbackReleased=@(Read-FixtureDNSCryptTCP).Count -eq 0}
     }
 }
