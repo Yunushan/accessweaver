@@ -25,7 +25,8 @@ $selected=@('Assert-DNSCryptConfiguration','Get-DNSCryptReloadFile','Restore-DNS
 $allowed=@('Read-OwnedWireSockProfile','Remove-WireSockRefreshTask','Disconnect-OwnedWireSock','Native','Remove-ModernWireSockProfile','Restore-Drover','Get-ManagedFirewallRule','Remove-RecordedService','Remove-ManagedFirewallRule','Remove-Method','Under','Assert-DNSCryptConfiguration','Get-WorkflowFileHash','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Assert-DNSCryptServiceState','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Get-ManagedServiceCommandDigest','Get-CimInstance','Get-NetTCPConnection','Get-NetUDPEndpoint','Assert-DNSMutationAdapter','Test-DNSRecoveryUsesAdapterOwnership','Test-DNSFamilyMatchesOriginal','Read-ObservedDNSFamily','Test-DNSFamilyNeedsRollback','Get-ActiveDNSAdapters','Assert-ConfiguredDNSDohPolicy','Get-DNSDohProviders','Test-DNSRecoveryUsesDohOwnership','Get-DNSOriginalDohEntry','Test-DNSDohEntriesEqual','Test-DNSRecoveryOwnsDoh','Get-DNSClientMutationRow','Read-DNSRecoveryFileBytes','Read-DNSRecoverySnapshot','Assert-DNSRecoverySnapshotUnchanged','Get-WorkflowRecoveryJournalLimit','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Save-DNSRecoveryReceipt','Publish-WorkflowFile','No-Reparse','Get-Item','Assert-ConfiguredDNSServers','Assert-RestoredDNSFamily','Assert-RestoredDNSState','Get-StaticDNSServers','Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Assert-OriginalDNSModes','Read-OriginalDNSFamily','Read-OriginalDNSAdapter','Read-OriginalDNSNameServer','Get-DNSOverridePath','Read-DNSStaticOverride','Test-DNSAddressAnswer','Wait-OrdinaryDNSResolver','Wait-DNSCryptListeners','Get-ManagedDNSCryptListenerOwner','Wait-ManagedDNSCryptListeners','Get-EffectiveDNSCryptListeners','Assert-EffectiveDNSCryptListeners','Get-DNSCryptAdapterIdentities','Test-DNSCryptLoopbackAddress','Get-DNSCryptIndependentFamilies','Test-DNSCryptListenerNeeded','Assert-DNSCryptCanBeRemoved','Restore-DNS','Get-ItemProperty','Get-Command','Join-Path','Get-NetAdapter','Where-Object','ForEach-Object','Select-Object','Test-Path','Get-DnsClientServerAddress','Get-DnsClientDohServerAddress','Get-FileHash','Add-Member','ConvertTo-Json','Save-Journal','Ensure-Asset','Split-Path','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Get-Service','Restore-RecordedWorkflowFile','Install-EngineService','Set-Service','Start-Service','Restart-Service','Stop-Service','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress','Set-DnsClientServerAddress','Clear-DnsClientCache','Resolve-DnsName','Start-Sleep','Event','ConvertFrom-Json','Remove-Item','Remove-VerifiedDNSRecoverySnapshot')
 $selected+=@('Set-RestoredDNSFamily','Wait-RecordedServiceStopped','Assert-DNSCryptLoopbackPortsAvailable','Assert-DNSCryptListenerUnchanged')
 $allowed+=@('Assert-DNSCryptLoopbackPortsAvailable','Assert-DNSCryptListenerUnchanged')
-$allowed+=@('Set-RestoredDNSFamily','Invoke-DNSInterfaceSettings')
+$allowed+=@('Set-RestoredDNSFamily','Invoke-DNSInterfaceSettings','Test-DNSCryptUDPAnswer','Read-DNSCryptProbeName')
+$selected+=@('Read-DNSCryptProbeName','Test-DNSCryptUDPReply')
 $dohFirewallFunctions=@('Get-DNSDohPlaintextBlockID','Assert-DNSDohFirewallAvailable','Read-DNSDohPlaintextRules','Get-DNSDohPlaintextRule','Assert-DNSDohPlaintextRuleOwnership','Assert-DNSDohPlaintextBlock','Enable-DNSDohPlaintextBlock','Remove-DNSDohPlaintextBlock')
 $dnsCopyFunctions=@('ConvertFrom-DNSRecoverySnapshotBytes','Get-DNSRecoveryCopyPath','Read-DNSRecoveryCopy','Assert-DNSRecoveryCopyMatches','Publish-DNSRecoveryCopy')
 $retirementFunctions=@('Wait-DNSCryptServiceTransition','New-DNSCryptRetirementRecord','Read-DNSCryptRetirementState','Restore-DNSCryptRetirement','Rollback')
@@ -57,6 +58,8 @@ $script:closedContractCodes+=@('doh-firewall-missing-store-reason','doh-firewall
 $script:closedContractCodes+=@('dnscrypt-port-conflict-before-mutation','dnscrypt-unreadable-port-before-mutation','dnscrypt-port-inventory-observed','dnscrypt-port-drift-before-service','dnscrypt-port-drift-recovers','doh-firewall-loss-before-next-adapter-write','doh-firewall-loss-restores-applied-family')
 $script:closedContractCodes+=@('doh-firewall-loss-stops-resolver-probes','doh-probe-firewall-loss-restores-state')
 $script:closedContractCodes+=@('dnscrypt-refuses-replaced-listener-during-cutover','dnscrypt-recovers-after-cutover-owner-loss')
+$script:closedContractCodes+=@('dnscrypt-udp-compressed-positive','dnscrypt-udp-uncompressed-positive','dnscrypt-udp-rejects-id','dnscrypt-udp-rejects-truncated','dnscrypt-udp-rejects-rcode','dnscrypt-udp-rejects-question-type','dnscrypt-udp-rejects-authority','dnscrypt-udp-rejects-unrelated','dnscrypt-udp-rejects-rdata','dnscrypt-udp-rejects-mapped','dnscrypt-udp-rejects-pointer','dnscrypt-udp-rejects-trailing')
+$script:closedContractCodes+=@('dnscrypt-requires-both-transports-on-each-loopback','dnscrypt-tcp-cannot-mask-udp-failure','dnscrypt-recovery-retains-a-only-probe','dnscrypt-udp-failure-blocks-adapter-mutation')
 function Assert-DNS([bool]$Condition,[string]$Code){if(-not $Condition){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('DNS contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-DNS([scriptblock]$Operation,[string]$ExpectedMessage){
     $failed=$false
@@ -102,6 +105,7 @@ function New-DNSCase([switch]$ExistingResolver) {
     $script:listenerAAAAQueries=[Collections.Generic.List[string]]::new()
     $script:finalListenerAAAAQueries=[Collections.Generic.List[string]]::new()
     $script:listenerAAAAFault='';$script:listenerAAAAFaultServer='::1'
+    $script:listenerUDPFault='';$script:listenerTransports=[Collections.Generic.List[string]]::new()
     $script:finalListenerMissingAAAA=''
     $script:listenerOwnerFault='';$script:initialOwnerReads=0;$script:finalOwnerReads=0
     $script:ordinaryResolverWaits=0;$script:emptyOrdinaryAnswers=0;$script:resolverDrift='';$script:postRetirementFault='';$script:postRetirementQueries=0
@@ -743,8 +747,14 @@ function Clear-DnsClientCache {
         $script:appliedDNS[$key]=@{dhcp=$false;values=@('198.51.100.53')}
     }
 }
+function Test-DNSCryptUDPAnswer([string]$Server,[string]$Type) {
+    if($Server -cnotin @('127.0.0.1','::1') -or $Type -cnotin @('A','AAAA')){throw 'Unexpected direct UDP probe'}
+    $script:listenerTransports.Add("UDP/$Server/$Type")
+    return "$Server/$Type" -cne $script:listenerUDPFault
+}
 function Resolve-DnsName {
-    [CmdletBinding()]param($Name,$Server,$Type,[switch]$DnsOnly,[switch]$NoHostsFile,[switch]$QuickTimeout)
+    [CmdletBinding()]param($Name,$Server,$Type,[switch]$DnsOnly,[switch]$NoHostsFile,[switch]$QuickTimeout,[switch]$TcpOnly)
+    if($TcpOnly){$script:listenerTransports.Add("TCP/$Server/$Type")}
     if(-not $Server){
         if($Name -cne 'example.com.' -or $Type -cnotin @('A','AAAA') -or
             -not $DnsOnly -or -not $NoHostsFile -or -not $QuickTimeout -or $ErrorActionPreference -ne 'Stop'){
@@ -2135,6 +2145,52 @@ try {
         Assert-DNS (($script:listenerQueries -join ',') -ceq '::1' -and
             ($script:listenerAAAAQueries -join ',') -ceq '::1') 'dnscrypt-listener-refuses-invalid-aaaa'
     }
+    foreach($type in @(1,28)){
+        $name=[byte[]](7,101,120,97,109,112,108,101,3,110,101,116,0)
+        $query=[byte[]](@(12,34,1,0,0,1,0,0,0,0,0,0)+$name+@(0,$type,0,1))
+        $address=if($type -eq 1){[Net.IPAddress]::Parse('192.0.2.15')}else{[Net.IPAddress]::Parse('2001:db8::15')}
+        $rdata=$address.GetAddressBytes()
+        $answer=[byte[]](@(0,$type,0,1,0,0,0,30,0,$rdata.Length)+$rdata)
+        $reply=[byte[]]($query+@(192,12)+$answer)
+        $reply[2]=129;$reply[3]=128;$reply[7]=1
+        Assert-DNS (Test-DNSCryptUDPReply $reply $query $type) 'dnscrypt-udp-compressed-positive'
+        $plain=[byte[]]($reply[0..($query.Length-1)]+$name+$answer)
+        Assert-DNS (Test-DNSCryptUDPReply $plain $query $type) 'dnscrypt-udp-uncompressed-positive'
+        foreach($fault in @('id','truncated','rcode','question-type','authority','unrelated','rdata','mapped','pointer','trailing')){
+            $bad=$reply.Clone()
+            switch -CaseSensitive ($fault){
+                'id' {$bad[1]=35}
+                'truncated' {$bad[2]=131}
+                'rcode' {$bad[3]=131}
+                'question-type' {$bad[$query.Length-3]=16}
+                'authority' {$bad[7]=0;$bad[9]=1}
+                'unrelated' {$bad=$plain.Clone();$bad[$query.Length+1]=120}
+                'rdata' {$bad=[byte[]]$bad[0..($bad.Length-2)]}
+                'mapped' {
+                    if($type -eq 1){continue}
+                    [array]::Copy(([Net.IPAddress]::Parse('::ffff:192.0.2.15').GetAddressBytes()),0,$bad,$bad.Length-16,16)
+                }
+                'pointer' {$bad[$query.Length+1]=$query.Length}
+                'trailing' {$bad=[byte[]]($bad+@(0))}
+            }
+            if($fault -ceq 'mapped' -and $type -eq 1){continue}
+            $accepted=$false
+            try {$accepted=Test-DNSCryptUDPReply $bad $query $type}catch{
+                if($fault -cne 'pointer' -or $_.Exception.Message -cne 'Malformed DNSCrypt probe name'){throw}
+            }
+            Assert-DNS (-not $accepted) ('dnscrypt-udp-rejects-'+$fault)
+        }
+    }
+    New-DNSCase
+    Wait-DNSCryptListeners @('127.0.0.1','::1') -TimeoutSeconds 0 -RequireBothAddressTypes -RequireBothTransports
+    Assert-DNS (($script:listenerTransports -join ',') -ceq 'UDP/127.0.0.1/A,TCP/127.0.0.1/A,UDP/127.0.0.1/AAAA,TCP/127.0.0.1/AAAA,UDP/::1/A,TCP/::1/A,UDP/::1/AAAA,TCP/::1/AAAA') 'dnscrypt-requires-both-transports-on-each-loopback'
+    New-DNSCase;$script:listenerUDPFault='::1/AAAA'
+    Reject-DNS {Wait-DNSCryptListeners @('::1') -TimeoutSeconds 0 -RequireBothAddressTypes -RequireBothTransports}
+    Assert-DNS (($script:listenerTransports -join ',') -ceq 'UDP/::1/A,TCP/::1/A,UDP/::1/AAAA') 'dnscrypt-tcp-cannot-mask-udp-failure'
+    New-DNSCase
+    Wait-DNSCryptListeners @('::1') -TimeoutSeconds 0
+    Assert-DNS ($script:listenerTransports.Count -eq 0 -and $script:listenerQueries.Count -eq 1 -and
+        $script:listenerAAAAQueries.Count -eq 0) 'dnscrypt-recovery-retains-a-only-probe'
     foreach($conflict in @(
         @{class='MSFT_NetUDPEndpoint';address='0.0.0.0'},
         @{class='MSFT_NetTCPConnection';address='::'},
@@ -2187,6 +2243,15 @@ try {
     Assert-DNS (($script:listenerAAAAQueries -join ',') -ceq '127.0.0.1,::1' -and
         (Mutation-Count) -eq 0 -and $script:serviceStartupChanges -eq 0 -and $script:resolverQueries -eq 0 -and
         $script:journalActive -and -not $script:dnsConfigured) 'dnscrypt-listener-refuses-missing-aaaa-before-adapters'
+
+    New-DNSCase;$script:stageDNSCrypt=$true;$script:allowNewResolver=$true
+    $script:listenerUDPFault='127.0.0.1/A';$script:refuseListenerWait=$true
+    [IO.File]::WriteAllText((Join-Path $root 'components\dnscrypt\example-dnscrypt-proxy.toml'),"listen_addresses = ['192.0.2.53:53']")
+    Reject-DNS {Configure-DNS 'dnscrypt'} 'Synthetic loopback wait boundary'
+    Assert-DNS (($script:listenerTransports -contains 'UDP/127.0.0.1/A') -and
+        ($script:listenerTransports -notcontains 'TCP/127.0.0.1/A') -and (Mutation-Count) -eq 0 -and
+        $script:serviceStartupChanges -eq 0 -and $script:resolverQueries -eq 0 -and
+        $script:journalActive -and -not $script:dnsConfigured) 'dnscrypt-udp-failure-blocks-adapter-mutation'
 
     New-DNSCase;$script:stageDNSCrypt=$true;$script:allowNewResolver=$true
     $script:listenerAAAAFault='once'

@@ -2574,11 +2574,102 @@ function Wait-OrdinaryDNSResolver([int]$TimeoutSeconds,[string]$DohProtectionID,
     } while($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds)
     return $false
 }
+function Read-DNSCryptProbeName([byte[]]$Packet,[int]$Offset) {
+    $labels=[Collections.Generic.List[string]]::new()
+    $next=-1
+    $length=1
+    $pointerLimit=$Offset
+    while($Offset -lt $Packet.Length){
+        $size=[int]$Packet[$Offset]
+        if(($size -band 0xc0) -eq 0xc0){
+            if($Offset+1 -ge $Packet.Length){break}
+            $target=(($size -band 0x3f) -shl 8) -bor $Packet[$Offset+1]
+            # Compression points to an earlier name. Keeping targets in
+            # descending order also bounds pointer traversal on bad input.
+            if($target -lt 12 -or $target -ge [Math]::Min($Offset,$pointerLimit)){break}
+            if($next -lt 0){$next=$Offset+2}
+            $pointerLimit=$target
+            $Offset=$target
+            continue
+        }
+        if($size -eq 0){
+            if($next -lt 0){$next=$Offset+1}
+            return @{labels=$labels;next=$next}
+        }
+        $length+=$size+1
+        if($size -gt 63 -or $length -gt 255 -or $Offset+$size -ge $Packet.Length){break}
+        $labels.Add([Text.Encoding]::ASCII.GetString($Packet,$Offset+1,$size))
+        $Offset+=$size+1
+    }
+    throw 'Malformed DNSCrypt probe name'
+}
+function Test-DNSCryptUDPReply([byte[]]$Packet,[byte[]]$Query,[int]$Type) {
+    # A standard response with no truncation or error and exactly one question.
+    if($Packet.Length -lt $Query.Length -or $Packet.Length -gt 512 -or
+        $Packet[0] -ne $Query[0] -or $Packet[1] -ne $Query[1] -or
+        ($Packet[2] -band 0xfa) -ne 0x80 -or ($Packet[3] -band 0x4f) -ne 0 -or
+        $Packet[4] -ne 0 -or $Packet[5] -ne 1){return $false}
+    $question=Read-DNSCryptProbeName $Packet 12
+    $offset=$question.next
+    if($offset+4 -gt $Packet.Length -or $question.labels.Count -ne 2 -or
+        $question.labels[0] -ine 'example' -or $question.labels[1] -ine 'net' -or
+        $Packet[$offset] -ne 0 -or $Packet[$offset+1] -ne $Type -or
+        $Packet[$offset+2] -ne 0 -or $Packet[$offset+3] -ne 1){return $false}
+    $offset+=4
+    $answers=([int]$Packet[6] -shl 8) -bor $Packet[7]
+    $authority=([int]$Packet[8] -shl 8) -bor $Packet[9]
+    $additional=([int]$Packet[10] -shl 8) -bor $Packet[11]
+    $count=$answers+$authority+$additional
+    if($answers -eq 0 -or $count -gt [Math]::Floor(($Packet.Length-$offset)/11)){return $false}
+    $addressLength=if($Type -eq 1){4}else{16}
+    $found=$false
+    for($index=0;$index -lt $count;$index++){
+        $name=Read-DNSCryptProbeName $Packet $offset
+        $offset=$name.next
+        if($offset+10 -gt $Packet.Length){return $false}
+        $length=([int]$Packet[$offset+8] -shl 8) -bor $Packet[$offset+9]
+        $data=$offset+10
+        if($data+$length -gt $Packet.Length){return $false}
+        if($index -lt $answers -and $Packet[$offset] -eq 0 -and $Packet[$offset+1] -eq $Type -and
+            $Packet[$offset+2] -eq 0 -and $Packet[$offset+3] -eq 1 -and $length -eq $addressLength -and
+            $name.labels.Count -eq 2 -and $name.labels[0] -ieq 'example' -and $name.labels[1] -ieq 'net'){
+            $address=[Net.IPAddress]::new([byte[]]$Packet[$data..($data+$length-1)])
+            if(-not $address.IsIPv4MappedToIPv6){$found=$true}
+        }
+        $offset=$data+$length
+    }
+    return $found -and $offset -eq $Packet.Length
+}
+function Test-DNSCryptUDPAnswer([string]$Server,[ValidateSet('A','AAAA')][string]$Type) {
+    if($Server -cnotin @('127.0.0.1','::1')){throw 'Expected managed DNSCrypt loopback address'}
+    $address=[Net.IPAddress]::Parse($Server)
+    $recordType=if($Type -ceq 'A'){1}else{28}
+    $id=[byte[]]::new(2)
+    $random=[Security.Cryptography.RandomNumberGenerator]::Create()
+    try {$random.GetBytes($id)}finally{$random.Dispose()}
+    # A standard recursion-desired example.net. question with no EDNS or
+    # search suffixes. A connected socket restricts replies to this endpoint.
+    $query=[byte[]]($id+@(1,0,0,1,0,0,0,0,0,0,7)+[Text.Encoding]::ASCII.GetBytes('example')+
+        @(3)+[Text.Encoding]::ASCII.GetBytes('net')+@(0,0,$recordType,0,1))
+    $socket=[Net.Sockets.Socket]::new($address.AddressFamily,[Net.Sockets.SocketType]::Dgram,[Net.Sockets.ProtocolType]::Udp)
+    try {
+        $socket.SendTimeout=1200
+        $socket.ReceiveTimeout=1200
+        $socket.Connect([Net.IPEndPoint]::new($address,53))
+        if($socket.Send($query) -ne $query.Length){return $false}
+        $buffer=[byte[]]::new(513)
+        $received=$socket.Receive($buffer)
+        if($received -lt $query.Length -or $received -gt 512){return $false}
+        return Test-DNSCryptUDPReply ([byte[]]$buffer[0..($received-1)]) $query $recordType
+    } finally {$socket.Dispose()}
+}
 function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds=30,
         [string]$FailureMessage='DNSCrypt loopback readiness could not be verified before adapter configuration',
-        [switch]$RequireBothAddressTypes) {
+        [switch]$RequireBothAddressTypes,[switch]$RequireBothTransports) {
     $pending=@($Servers)
     $types=if($RequireBothAddressTypes){@('A','AAAA')}else{@('A')}
+    $transport=@{}
+    if($RequireBothTransports){$transport.TcpOnly=$true}
     $timer=[Diagnostics.Stopwatch]::StartNew()
     do {
         $pending=@(foreach($server in $pending){
@@ -2586,7 +2677,8 @@ function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds=30,
             try {
                 Clear-DnsClientCache -ErrorAction Stop
                 foreach($type in $types){
-                    $answers=@(Resolve-DnsName -Name 'example.net.' -Server $server -Type $type -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
+                    if($RequireBothTransports -and -not (Test-DNSCryptUDPAnswer $server $type)){$ready=$false;break}
+                    $answers=@(Resolve-DnsName -Name 'example.net.' -Server $server -Type $type -DnsOnly -NoHostsFile -QuickTimeout @transport -ErrorAction Stop)
                     $ready=Test-DNSAddressAnswer $answers 'example.net' $type
                     if(-not $ready){break}
                 }
@@ -2728,7 +2820,7 @@ function Wait-ManagedDNSCryptListeners([string[]]$Servers,[string]$Binary,$Entry
             $owner=Get-ManagedDNSCryptListenerOwner $Servers $Binary $Entry
             # Repeat all probes together when any answer or the observed owner changes.
             $script:dnsOperationStage='listener-dns-answers'
-            Wait-DNSCryptListeners $Servers -TimeoutSeconds 0 -RequireBothAddressTypes
+            Wait-DNSCryptListeners $Servers -TimeoutSeconds 0 -RequireBothAddressTypes -RequireBothTransports
             if((Get-ManagedDNSCryptListenerOwner $Servers $Binary $Entry) -ceq $owner){return $owner}
             $script:dnsOperationStage='listener-owner-changed'
         }catch{}
