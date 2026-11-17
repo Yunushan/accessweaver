@@ -2603,9 +2603,9 @@ function Read-DNSCryptProbeName([byte[]]$Packet,[int]$Offset) {
     }
     throw 'Malformed DNSCrypt probe name'
 }
-function Test-DNSCryptUDPReply([byte[]]$Packet,[byte[]]$Query,[int]$Type) {
+function Test-DNSCryptProbeReply([byte[]]$Packet,[byte[]]$Query,[int]$Type) {
     # A standard response with no truncation or error and exactly one question.
-    if($Packet.Length -lt $Query.Length -or $Packet.Length -gt 512 -or
+    if($Packet.Length -lt $Query.Length -or $Packet.Length -gt 4096 -or
         $Packet[0] -ne $Query[0] -or $Packet[1] -ne $Query[1] -or
         ($Packet[2] -band 0xfa) -ne 0x80 -or ($Packet[3] -band 0x4f) -ne 0 -or
         $Packet[4] -ne 0 -or $Packet[5] -ne 1){return $false}
@@ -2640,7 +2640,40 @@ function Test-DNSCryptUDPReply([byte[]]$Packet,[byte[]]$Query,[int]$Type) {
     }
     return $found -and $offset -eq $Packet.Length
 }
-function Test-DNSCryptUDPAnswer([string]$Server,[ValidateSet('A','AAAA')][string]$Type) {
+function Read-DNSCryptTCPBytes([Net.Sockets.NetworkStream]$Stream,[byte[]]$Buffer,[Diagnostics.Stopwatch]$Clock) {
+    $offset=0
+    while($offset -lt $Buffer.Length){
+        $remaining=1200-$Clock.ElapsedMilliseconds
+        if($remaining -le 0){return $false}
+        $Stream.ReadTimeout=[int]$remaining
+        $read=$Stream.Read($Buffer,$offset,$Buffer.Length-$offset)
+        if($read -le 0){return $false}
+        $offset+=$read
+    }
+    return $true
+}
+function Test-DNSCryptTCPAnswer([Net.IPEndPoint]$Endpoint,[byte[]]$Query,[int]$Type) {
+    $clock=[Diagnostics.Stopwatch]::StartNew()
+    $client=[Net.Sockets.TcpClient]::new($Endpoint.AddressFamily)
+    try {
+        if(-not $client.ConnectAsync($Endpoint.Address,$Endpoint.Port).Wait(1200)){return $false}
+        $remaining=1200-$clock.ElapsedMilliseconds
+        if($remaining -le 0){return $false}
+        $stream=$client.GetStream()
+        $stream.WriteTimeout=[int]$remaining
+        $request=[byte[]](@(($Query.Length -shr 8),($Query.Length -band 0xff))+$Query)
+        $stream.Write($request,0,$request.Length)
+        $prefix=[byte[]]::new(2)
+        if(-not (Read-DNSCryptTCPBytes $stream $prefix $clock)){return $false}
+        $size=([int]$prefix[0] -shl 8) -bor $prefix[1]
+        if($size -lt $Query.Length -or $size -gt 4096){return $false}
+        $packet=[byte[]]::new($size)
+        if(-not (Read-DNSCryptTCPBytes $stream $packet $clock)){return $false}
+        return Test-DNSCryptProbeReply $packet $Query $Type
+    } finally {$client.Dispose()}
+}
+function Test-DNSCryptTransportAnswer([string]$Server,[ValidateSet('A','AAAA')][string]$Type,
+        [ValidateSet('UDP','TCP')][string]$Protocol) {
     if($Server -cnotin @('127.0.0.1','::1')){throw 'Expected managed DNSCrypt loopback address'}
     $address=[Net.IPAddress]::Parse($Server)
     $recordType=if($Type -ceq 'A'){1}else{28}
@@ -2651,16 +2684,18 @@ function Test-DNSCryptUDPAnswer([string]$Server,[ValidateSet('A','AAAA')][string
     # search suffixes. A connected socket restricts replies to this endpoint.
     $query=[byte[]]($id+@(1,0,0,1,0,0,0,0,0,0,7)+[Text.Encoding]::ASCII.GetBytes('example')+
         @(3)+[Text.Encoding]::ASCII.GetBytes('net')+@(0,0,$recordType,0,1))
+    $endpoint=[Net.IPEndPoint]::new($address,53)
+    if($Protocol -ceq 'TCP'){return Test-DNSCryptTCPAnswer $endpoint $query $recordType}
     $socket=[Net.Sockets.Socket]::new($address.AddressFamily,[Net.Sockets.SocketType]::Dgram,[Net.Sockets.ProtocolType]::Udp)
     try {
         $socket.SendTimeout=1200
         $socket.ReceiveTimeout=1200
-        $socket.Connect([Net.IPEndPoint]::new($address,53))
+        $socket.Connect($endpoint)
         if($socket.Send($query) -ne $query.Length){return $false}
         $buffer=[byte[]]::new(513)
         $received=$socket.Receive($buffer)
         if($received -lt $query.Length -or $received -gt 512){return $false}
-        return Test-DNSCryptUDPReply ([byte[]]$buffer[0..($received-1)]) $query $recordType
+        return Test-DNSCryptProbeReply ([byte[]]$buffer[0..($received-1)]) $query $recordType
     } finally {$socket.Dispose()}
 }
 function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds=30,
@@ -2668,18 +2703,20 @@ function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds=30,
         [switch]$RequireBothAddressTypes,[switch]$RequireBothTransports) {
     $pending=@($Servers)
     $types=if($RequireBothAddressTypes){@('A','AAAA')}else{@('A')}
-    $transport=@{}
-    if($RequireBothTransports){$transport.TcpOnly=$true}
     $timer=[Diagnostics.Stopwatch]::StartNew()
     do {
         $pending=@(foreach($server in $pending){
             $ready=$false
             try {
-                Clear-DnsClientCache -ErrorAction Stop
+                if(-not $RequireBothTransports){Clear-DnsClientCache -ErrorAction Stop}
                 foreach($type in $types){
-                    if($RequireBothTransports -and -not (Test-DNSCryptUDPAnswer $server $type)){$ready=$false;break}
-                    $answers=@(Resolve-DnsName -Name 'example.net.' -Server $server -Type $type -DnsOnly -NoHostsFile -QuickTimeout @transport -ErrorAction Stop)
-                    $ready=Test-DNSAddressAnswer $answers 'example.net' $type
+                    if($RequireBothTransports){
+                        $ready=(Test-DNSCryptTransportAnswer $server $type 'UDP') -and
+                            (Test-DNSCryptTransportAnswer $server $type 'TCP')
+                    }else{
+                        $answers=@(Resolve-DnsName -Name 'example.net.' -Server $server -Type $type -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
+                        $ready=Test-DNSAddressAnswer $answers 'example.net' $type
+                    }
                     if(-not $ready){break}
                 }
             } catch {$ready=$false}
