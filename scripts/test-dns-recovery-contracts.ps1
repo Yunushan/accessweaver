@@ -114,6 +114,7 @@ $script:closedContractCodes+=@('dnscrypt-udp-compressed-positive','dnscrypt-udp-
 $script:closedContractCodes+=@('dnscrypt-requires-both-transports-on-each-loopback','dnscrypt-tcp-cannot-mask-udp-failure','dnscrypt-recovery-retains-a-only-probe','dnscrypt-udp-failure-blocks-adapter-mutation')
 $script:closedContractCodes+=@('doh-firewall-covers-concurrent-active-profiles','doh-firewall-refuses-profile-transitions','doh-firewall-recovers-legacy-pair','doh-firewall-migrates-legacy-pair-without-dropping-protection')
 $script:closedContractCodes+=@('dnscrypt-sharing-admits-only-verified-service','dnscrypt-sharing-renewal-stops-setup','dnscrypt-sharing-binds-owned-challenge','dnscrypt-sharing-challenge-failure-blocks-adapter-writes','dnscrypt-sharing-challenge-recovery','dnscrypt-sharing-reuses-owned-challenge','dnscrypt-sharing-challenge-needs-exact-answer')
+$script:closedContractCodes+=@('doh-transition-protects-configuration','doh-transition-creation-retains-recovery','doh-transition-removal-retains-recovery','doh-transition-foreign-rule-preserved','doh-transition-cleanup-verifies-snapshot')
 function Assert-DNS([bool]$Condition,[string]$Code){if(-not $Condition){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('DNS contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-DNS([scriptblock]$Operation,[string]$ExpectedMessage){
     $failed=$false
@@ -234,12 +235,17 @@ function New-NetFirewallRule {
     [CmdletBinding()]param($Name,$DisplayName,$Description,$PolicyStore,$Direction,$Action,$Enabled,$Profile,$Protocol,$RemotePort,$RemoteAddress,$Service)
     $saved=Read-DNSRecoverySnapshot
     $id=$saved.record.dohPlaintextBlockID
-    if(-not $id -or $Name -cne ('AccessWeaver-DoH-Plaintext-'+$Protocol+'-'+$id+'-'+$Profile) -or
+    $transition=$Name.EndsWith('-Transition',[StringComparison]::Ordinal)
+    $expectedName='AccessWeaver-DoH-Plaintext-'+$Protocol+'-'+$id+'-'+$Profile
+    if($transition){$expectedName+='-Transition'}
+    $expectedService=if($transition){'Any'}else{'Dnscache'}
+    if(-not $id -or $Name -cne $expectedName -or
         $Protocol -cnotin @('TCP','UDP') -or $Profile -cnotin @('Domain','Private','Public') -or
-        $PolicyStore -cne 'PersistentStore' -or $Service -cne 'Dnscache' -or $script:dohFirewallRules.ContainsKey($Name)){
+        $PolicyStore -cne 'PersistentStore' -or $Service -cne $expectedService -or $script:dohFirewallRules.ContainsKey($Name)){
         throw 'Unexpected firewall rule creation or missing recovery ownership'
     }
     if($script:dohFirewallFault -ceq 'second-write' -and $Protocol -ceq 'UDP'){throw 'Synthetic second DoH rule creation failure'}
+    if($transition -and $script:dohFirewallFault -ceq 'transition-write' -and $Protocol -ceq 'UDP'){throw 'Synthetic DoH transition creation failure'}
     $script:dohFirewallRules[$Name]=@{Name=$Name;Description=$Description;Direction=$Direction;Action=$Action;Enabled=$Enabled;
         Profile=$Profile;Protocol=$Protocol;RemotePort=$RemotePort;RemoteAddress=$RemoteAddress;Service=$Service;Program='Any';
         EnforcementStatus='Full';PolicyStoreSourceType='Local';LooseSourceMapping=$false;LocalOnlyMapping=$false;
@@ -293,6 +299,8 @@ function Remove-NetFirewallRule {
     [CmdletBinding()]param([Parameter(ValueFromPipeline)]$Rule)
     process {
         if(-not $script:dohFirewallRules.ContainsKey($Rule.Name)){throw 'Unexpected firewall rule removal'}
+        if($Rule.Name.EndsWith('-Transition') -and $Rule.Protocol -ceq 'UDP' -and
+            $script:dohFirewallFault -ceq 'transition-remove'){throw 'Synthetic DoH transition removal failure'}
         $script:dohFirewallRules.Remove($Rule.Name)
     }
 }
@@ -1114,7 +1122,7 @@ try {
         New-DNSCase
         $script:dohFirewallFault='enforcement-shape';$script:dohFirewallEnforcement=$representation.value
         Configure-DNS 'doh'
-        Assert-DNS ($script:dnsConfigured -and (Mutation-Count) -gt 0 -and $script:dohFirewallWrites -eq 6) 'doh-firewall-full-status-representations'
+        Assert-DNS ($script:dnsConfigured -and (Mutation-Count) -gt 0 -and $script:dohFirewallWrites -eq 12) 'doh-firewall-full-status-representations'
     }
     $nonFull=@(
         @{value=$null},@{value=[uint16[]]@()},@{value=[uint16[]]@(1,2)},
@@ -1254,14 +1262,14 @@ try {
     foreach($mask in @(1,2,5,7)){
         New-DNSCase;$script:dohFirewallActiveMask=$mask
         Configure-DNS 'doh'
-        Assert-DNS ($script:dnsConfigured -and $script:dohFirewallWrites -eq 6 -and
+        Assert-DNS ($script:dnsConfigured -and $script:dohFirewallWrites -eq 12 -and
             (Mutation-Count) -gt 0) 'doh-firewall-covers-concurrent-active-profiles'
     }
     foreach($fault in @('profile-changed','inactive-profile-drift')){
         New-DNSCase;$script:dohFirewallFault=$fault
         $expected=if($fault -ceq 'profile-changed'){'Active Windows Firewall profiles changed during managed DoH verification'}else{'Managed DoH plaintext protection is missing from effective Windows Firewall policy: inactive profile status differs'}
         Reject-DNS {Configure-DNS 'doh'} $expected
-        Assert-DNS ((Mutation-Count) -eq 0 -and $script:dohFirewallRules.Count -eq 6 -and
+        Assert-DNS ((Mutation-Count) -eq 0 -and $script:dohFirewallRules.Count -eq 12 -and
             [IO.File]::Exists($snapshot)) 'doh-firewall-refuses-profile-transitions'
         $script:dohFirewallFault=''
         Restore-DNS
@@ -1290,9 +1298,9 @@ try {
     New-DNSCase
     Configure-DNS 'doh'
     $id=(Read-DNSRecoverySnapshot).record.dohPlaintextBlockID
-    Assert-DNS ($id -cmatch '\A[a-f0-9]{32}\z' -and $script:dohFirewallRules.Count -eq 6 -and $script:dohFirewallWrites -eq 6) 'doh-firewall-owned-protection'
+    Assert-DNS ($id -cmatch '\A[a-f0-9]{32}\z' -and $script:dohFirewallRules.Count -eq 6 -and $script:dohFirewallWrites -eq 12) 'doh-firewall-owned-protection'
     Configure-DNS 'doh'
-    Assert-DNS ((Read-DNSRecoverySnapshot).record.dohPlaintextBlockID -ceq $id -and $script:dohFirewallWrites -eq 6) 'doh-firewall-keeps-identity'
+    Assert-DNS ((Read-DNSRecoverySnapshot).record.dohPlaintextBlockID -ceq $id -and $script:dohFirewallWrites -eq 18) 'doh-firewall-keeps-identity'
     $tcp='AccessWeaver-DoH-Plaintext-TCP-'+$id+'-Public'
     $script:dohFirewallRules[$tcp].RemoteAddress=@('8.8.8.8/255.255.255.255','9.9.9.9/32','2001:4860:4860:0:0:0:0:8888/128','2620:fe::fe')
     Assert-DNS ($null -ne (Get-DNSDohPlaintextRule $id 'TCP' 'ActiveStore' -Profile Public)) 'doh-firewall-normalizes-host-addresses'
@@ -1316,7 +1324,7 @@ try {
         Reject-DNS {Configure-DNS 'doh'} 'Managed DoH plaintext protection rule changed independently'
         Reject-DNS {Restore-DNS} 'Managed DoH plaintext protection rule changed independently'
         Assert-DNS ((Snapshot-Hash) -ceq $hash -and (Mutation-Count) -eq 0 -and
-            $script:dohFirewallWrites -eq 6 -and $script:dohFirewallRules.Count -eq 6 -and
+            $script:dohFirewallWrites -eq 18 -and $script:dohFirewallRules.Count -eq 6 -and
             $rule[$edit.field] -ceq $edit.value) 'doh-firewall-preserves-filter-drift'
         $rule[$edit.field]=$originalValue
     }
@@ -1334,7 +1342,7 @@ try {
         New-DNSCase
         $script:dohFirewallFault=$fault
         Reject-DNS {Configure-DNS 'doh'}
-        $expectedCount=if($fault -ceq 'inactive'){6}else{3}
+        $expectedCount=if($fault -ceq 'inactive'){12}else{3}
         Assert-DNS ((Mutation-Count) -eq 0 -and $script:dohFirewallRules.Count -eq $expectedCount -and [IO.File]::Exists($snapshot)) 'doh-firewall-refusal-keeps-recovery'
         $script:dohFirewallFault=''
         Restore-DNS
@@ -1352,7 +1360,7 @@ try {
     Reject-DNS {Configure-DNS 'doh'} $conflict
     Reject-DNS {Restore-DNS} $conflict
     Assert-DNS ((Snapshot-Hash) -ceq $before -and (Mutation-Count) -eq 0 -and
-        $script:dohFirewallWrites -eq 6 -and $script:dohFirewallRules.Count -eq 7) 'doh-firewall-unmatched-rule-preserved'
+        $script:dohFirewallWrites -eq 12 -and $script:dohFirewallRules.Count -eq 7) 'doh-firewall-unmatched-rule-preserved'
     $script:dohFirewallRules.Remove($orphan)
     $savedPath=Join-Path $root 'profiles/fixture-retained-snapshot.json'
     $savedCopy=Join-Path $root 'profiles/fixture-retained-snapshot.copy'
@@ -1361,7 +1369,7 @@ try {
     foreach($operation in @({Configure-DNS 'doh'},{Configure-DNS 'dnscrypt'},{Restore-DNS},{Remove-All})){
         Reject-DNS $operation $conflict
         Assert-DNS (-not [IO.File]::Exists($snapshot) -and (Get-FileHash -LiteralPath $savedPath -Algorithm SHA256).Hash -ceq $before -and
-            (Mutation-Count) -eq 0 -and $script:dohFirewallWrites -eq 6 -and $script:dohFirewallRules.Count -eq 6) 'doh-firewall-missing-snapshot-preserved'
+            (Mutation-Count) -eq 0 -and $script:dohFirewallWrites -eq 12 -and $script:dohFirewallRules.Count -eq 6) 'doh-firewall-missing-snapshot-preserved'
     }
     [IO.File]::Move($savedCopy,$script:copyPath)
     Reject-DNS {Configure-DNS 'doh'} 'Original DNS snapshot is missing; use dns-restore'
@@ -2271,9 +2279,9 @@ try {
     New-DNSCase;$script:emptyOrdinaryAAAAAnswers=1
     & {
         $probe=${function:Wait-OrdinaryDNSResolver}
-        function Wait-OrdinaryDNSResolver([int]$TimeoutSeconds,[string]$DohProtectionID,$DNSCryptListener) {
+        function Wait-OrdinaryDNSResolver([int]$TimeoutSeconds,[string]$DohProtectionID,$DNSCryptListener,[switch]$DohTransition) {
             Assert-DNS ($TimeoutSeconds -eq 90) 'configure-restores-when-aaaa-is-missing'
-            & $probe 0 -DohProtectionID $DohProtectionID -DNSCryptListener $DNSCryptListener
+            & $probe 0 -DohProtectionID $DohProtectionID -DNSCryptListener $DNSCryptListener -DohTransition:$DohTransition
         }
         Reject-DNS {Configure-DNS 'doh'} 'Resolver verification failed; original DNS settings restored'
     }
@@ -3258,6 +3266,56 @@ try {
         $script:resolverQueries -eq ($queries+1)) 'doh-reapply-verifies-without-redundant-setters'
     Assert-DNS ($script:undo.Count -eq 1 -and $firstDigest -cne $script:undo[0].snapshotSHA256 -and
         $script:undo[0].snapshotSHA256 -ceq (Snapshot-Hash)) 'reconfiguration-rotates-recovery-identity'
+    New-DNSCase
+    & {
+        $ordinaryProbe=$ExecutionContext.InvokeCommand.GetCommand('Test-OrdinaryDNSAddress',[Management.Automation.CommandTypes]::Function).ScriptBlock
+        function Test-OrdinaryDNSAddress([string]$Type) {
+            $temporary=@($script:dohFirewallRules.Values | Where-Object {$_.Name.EndsWith('-Transition')})
+            $permanent=@($script:dohFirewallRules.Values | Where-Object {-not $_.Name.EndsWith('-Transition')})
+            Assert-DNS ($temporary.Count -eq 6 -and $permanent.Count -eq 6 -and
+                @($temporary | Where-Object {$_.Service -cne 'Any'}).Count -eq 0 -and
+                @($permanent | Where-Object {$_.Service -cne 'Dnscache'}).Count -eq 0) 'doh-transition-protects-configuration'
+            & $ordinaryProbe $Type
+        }
+        Configure-DNS 'doh'
+    }
+    Assert-DNS ($script:dnsConfigured -and $script:dohFirewallRules.Count -eq 6 -and
+        @($script:dohFirewallRules.Values | Where-Object {$_.Name.EndsWith('-Transition')}).Count -eq 0) 'doh-transition-protects-configuration'
+    Restore-DNS
+    Assert-DNS ($script:dohFirewallRules.Count -eq 0 -and -not [IO.File]::Exists($snapshot)) 'doh-transition-cleanup-verifies-snapshot'
+
+    foreach($fault in @('transition-write','transition-remove')){
+        New-DNSCase
+        $script:dohFirewallFault=$fault
+        Reject-DNS {Configure-DNS 'doh'}
+        $code=if($fault -ceq 'transition-write'){'doh-transition-creation-retains-recovery'}else{'doh-transition-removal-retains-recovery'}
+        Assert-DNS (-not $script:dnsConfigured -and $script:dohFirewallRules.Count -eq 9 -and
+            [IO.File]::Exists($snapshot) -and [IO.File]::Exists($script:copyPath)) $code
+        if($fault -ceq 'transition-write'){Assert-DNS ((Mutation-Count) -eq 0) $code}
+        $hash=Snapshot-Hash
+        Assert-SnapshotRetained $hash
+        $script:dohFirewallFault=''
+        Restore-DNS
+        Assert-DNS ($script:dohFirewallRules.Count -eq 0 -and -not [IO.File]::Exists($snapshot)) 'doh-transition-cleanup-verifies-snapshot'
+    }
+    New-DNSCase
+    Configure-DNS 'doh'
+    $id=(Read-DNSRecoverySnapshot).record.dohPlaintextBlockID
+    $hash=Snapshot-Hash
+    Enable-DNSDohPlaintextBlock $id $hash
+    $script:calls.Clear()
+    Reject-DNS {Assert-DNSDohPlaintextRuleOwnership $id -TransitionRemoved} 'Managed DoH firewall rules do not match the current DNS recovery snapshot'
+    Assert-DNS ((Mutation-Count) -eq 0 -and $script:dohFirewallRules.Count -eq 12 -and
+        (Snapshot-Hash) -ceq $hash) 'doh-transition-foreign-rule-preserved'
+    $temporaryName=Get-DNSDohPlaintextRuleName $id 'UDP' 'Public' -Transition
+    $script:dohFirewallRules[$temporaryName].Service='Dnscache'
+    $script:calls.Clear()
+    Reject-DNS {Restore-DNS} 'Managed DoH plaintext protection rule changed independently'
+    Assert-DNS ((Mutation-Count) -eq 0 -and $script:dohFirewallRules.Count -eq 12 -and
+        (Snapshot-Hash) -ceq $hash) 'doh-transition-foreign-rule-preserved'
+    $script:dohFirewallRules[$temporaryName].Service='Any'
+    Restore-DNS
+    Assert-DNS ($script:dohFirewallRules.Count -eq 0 -and -not [IO.File]::Exists($snapshot)) 'doh-transition-cleanup-verifies-snapshot'
     $script:contractOutcome='passed';$script:contractCode='none'
     Write-Output ('DNS contracts passed: '+$script:checks+'; PowerShell '+$PSVersionTable.PSVersion.ToString()+' '+$PSVersionTable.PSEdition+'; source '+$sourceHash.ToLowerInvariant())
 } finally {

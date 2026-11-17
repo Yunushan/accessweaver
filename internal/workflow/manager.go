@@ -212,7 +212,7 @@ func (m *Manager) Preview(r Request) (Plan, error) {
 		p.Warnings = append(p.Warnings, "Generating WARP credentials uses wgcf and Cloudflare's service. Existing configPath avoids registration. Vendor terms apply.")
 	}
 	if r.DNS == "doh" && (r.Action == "dns" || r.Action == "install" || r.Action == "scan" || r.Action == "auto-install") {
-		p.Warnings = append(p.Warnings, "Windows DoH requires Windows Firewall. AccessWeaver blocks plaintext DNS Client traffic to Google and Quad9 until you restore DNS or switch to DNSCrypt.")
+		p.Warnings = append(p.Warnings, "Windows DoH requires Windows Firewall. AccessWeaver blocks plaintext DNS Client traffic to Google and Quad9 until you restore DNS or switch to DNSCrypt. During configuration, plaintext DNS to these providers is temporarily blocked for all applications.")
 	}
 	if r.Action == "app-remove" || r.Action == "app-reinstall" || r.Action == "app-repair" || r.Clean {
 		p.Warnings = append(p.Warnings, "Application removal or reinstall can sign you out.")
