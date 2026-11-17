@@ -62,3 +62,36 @@ begin
     if not AWOwnedRegistryClose(Parent) then Result := False;
   end;
 end;
+
+
+function AWProductRegistrationAbsent(View: LongWord): Boolean;
+var Found: Boolean; Version, Location: String;
+begin
+  Result := (AWReadRegistration(View, False, '', Found, Version, Location) = '') and not Found;
+end;
+
+function AWRetirePublishedRegistration(const Destination, Uninstaller: String): Boolean;
+var Parent, Transaction, Key: LongWord;
+    Fields: AWRegistryTextValues; Staged, Finished: Boolean;
+begin
+  Result := False; Parent := 0; Transaction := 0; Key := 0; Staged := False;
+  if not AWLifecycleOwned or not AWPendingInstallMatches(Destination) then Exit;
+  if not AWProductRegistrationAbsent($0200) then Exit;
+  if not AWRegistryProductValues('{#ReleaseVersion}', Destination, Uninstaller, Fields) then Exit;
+  if AWOpenMachineUninstallParent($0100, 0, Parent) <> 0 then Exit;
+  try
+    if not AWRegistryTransactionBegin(Transaction) then Exit;
+    try
+      Staged := AWRegistryStageProductRetirement(Parent, Transaction, AWMachineUninstallLeaf,
+        AWProductRegistrationClass, Fields) and AWPendingInstallMatches(Destination);
+    finally
+      Finished := AWRegistryTransactionFinish(Transaction, Key, Staged);
+    end;
+    if not Staged or not Finished then Exit;
+    Result := (AWFlushRegistryKey(Parent) = 0) and
+      AWProductRegistrationAbsent($0100) and AWProductRegistrationAbsent($0200) and
+      AWPendingInstallMatches(Destination);
+  finally
+    if not AWOwnedRegistryClose(Parent) then Result := False;
+  end;
+end;

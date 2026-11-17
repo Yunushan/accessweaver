@@ -174,8 +174,19 @@ The record also supplies Inno's previous installation directory for repeat Setup
 
 The native registry fixture exercises the same staging routine under a
 disposable key. The release builder still uses the existing Inno registration.
-The candidate needs end-to-end Setup execution, migration of older
-registrations and recoverable retirement during uninstall before release use.
+
+The qualification uninstaller writes and flushes a repair record after verified
+system restoration, then retires only the exact protected product record in
+KTM. After Inno processes the uninstall log, the uninstaller checks that the
+shipped files, uninstaller, uninstall data and both registry views are absent
+before clearing the repair record. Interrupted or incomplete removal retains the
+directory and version for approved Setup recovery. Managed verification checks
+the record because the Inno completion callback runs after its deletion log.
+
+The manual protected-publication workflow exercises real Setup rollback before
+publication, retry, same-version repair using the previous directory, controller
+binding and owned uninstall. Migration of older registrations, process termination,
+reboot recovery, and signed installed-product acceptance remain open.
 
 
 The [first publication fixture run](https://github.com/Yunushan/accessweaver/actions/runs/44009212448)

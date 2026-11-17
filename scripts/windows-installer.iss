@@ -638,6 +638,7 @@ end;
 #define AWStagedResult
 #define AWStagedVerify False
 #define AWStagedFingerprint False
+#define AWStagedRemoval False
 #sub AWEmitStagedFileCheck
   #define AWStagedRelative AWStagedPrefix + FindGetFileName(AWStagedFind)
   #define AWStagedName LowerCase(AWStagedRelative)
@@ -645,6 +646,8 @@ end;
   #define AWStagedPath AddBackslash(BuildRoot) + AWStagedRelative
   #if AWStagedFingerprint
     Entries.Add('{#AWStagedLiteral}|{#FileSize(AWStagedPath)}|{#GetSHA256OfFile(AWStagedPath)}');
+  #elif AWStagedRemoval
+    if not AWInstalledPathAbsent(Destination + '\{#AWStagedLiteral}') then Exit;
   #elif AWStagedName != "accessweaver.exe" && AWStagedName != "build-info.json" && AWStagedName != "sbom.cdx.json" && AWStagedName != "licenses\inno-setup-license.txt"
     #if AWStagedVerify
       if not AWVerifyAndHoldPackageFile(Destination + '\{#AWStagedLiteral}', '{#GetSHA256OfFile(AWStagedPath)}', {#FileSize(AWStagedPath)}, Held) then Exit;
@@ -1068,11 +1071,57 @@ begin
   end;
 end;
 
+#ifdef ProtectedRegistrationQualification
+var AWOwnedRemovalStarted: Boolean;
+
+function AWInstalledPathAbsent(const Path: String): Boolean;
+var Code: LongWord;
+begin
+  Result := False;
+  if AWPathAttributes(Path) <> $FFFFFFFF then Exit;
+  Code := DLLGetLastError;
+  Result := (Code = 2) or (Code = 3);
+end;
+
+function AWVerifyOwnedRemoval(const Destination, Uninstaller: String): Boolean;
+begin
+  Result := False;
+  if (AWInstallationPathPreflight(Destination, True) <> '') or
+     (AWPackageDirectoryPreflight(Destination) <> '') then Exit;
+  #expr AWStagedRemoval = True
+  #for {AWStagedDirectoryIndex = 0; AWStagedDirectoryIndex < DimOf(AWStagedDirectories); AWStagedDirectoryIndex++} AWEmitStagedDirectoryChecks
+  #expr AWStagedRemoval = False
+  Result := AWInstalledPathAbsent(Uninstaller) and
+    AWInstalledPathAbsent(ChangeFileExt(Uninstaller, '.dat')) and
+    AWInstalledPathAbsent(ChangeFileExt(Uninstaller, '.msg')) and
+    AWProductRegistrationAbsent($0100) and AWProductRegistrationAbsent($0200);
+end;
+
+function AWBeginOwnedRemoval(const Destination, Uninstaller: String): Boolean;
+begin
+  { Once the entry is retired, a stopped or incomplete removal can be
+    recovered by running the approved Setup in the recorded directory. }
+  Result := AWLifecycleOwned and AWPendingInstallAbsent and
+    AWWriteLifecycleString(AWPendingInstall, AWPendingInstallValue(Destination), True) and
+    AWRetirePublishedRegistration(Destination, Uninstaller);
+end;
+#endif
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var ResultCode, Controller: LongWord; Failure, Executable, Destination: String;
     Held: AWNativeHandles; I: Integer;
     Verified, Restored, HandlesClosed: Boolean;
 begin
+#ifdef ProtectedRegistrationQualification
+  if (CurUninstallStep = usPostUninstall) and AWOwnedRemovalStarted then begin
+    Destination := ExpandConstant('{app}');
+    if AWVerifyOwnedRemoval(Destination, ExpandConstant('{uninstallexe}')) and
+       AWRetirePendingInstall(Destination) then
+      Log('AccessWeaver protected removal and registration absence verified.')
+    else
+      Log('AccessWeaver could not verify protected removal. Use the approved installer to recover.');
+  end;
+#endif
   if CurUninstallStep <> usUninstall then Exit;
   { Inno reaches this step after confirmation and app-mutex checks, before
     processing its deletion log. Keep lifecycle ownership until deinitialization. }
@@ -1120,7 +1169,16 @@ begin
     if Failure <> '' then Log(Failure);
     Failure := 'AccessWeaver restoration file handle cleanup could not be confirmed.';
   end;
-  if Restored and HandlesClosed and (Failure = '') then Exit;
+  if Restored and HandlesClosed and (Failure = '') then begin
+#ifdef ProtectedRegistrationQualification
+    AWOwnedRemovalStarted := AWBeginOwnedRemoval(Destination, ExpandConstant('{uninstallexe}'));
+    if not AWOwnedRemovalStarted then begin
+      Failure := 'Cannot retire the protected AccessWeaver registration. Use the approved installer to recover.';
+    end else Exit;
+#else
+    Exit;
+#endif
+  end;
   Log(Failure);
   if not UninstallSilent then
     MsgBox('AccessWeaver could not restore its system changes. Review the recovery journal in ProgramData\AccessWeaver\logs, then retry uninstalling.', mbError, MB_OK);

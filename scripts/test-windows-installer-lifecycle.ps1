@@ -1,8 +1,9 @@
 # Actual driver-free installer acceptance, exclusively on disposable hosted Windows.
 [CmdletBinding()]
-param([Parameter(Mandatory=$true)][ValidateSet('amd64','arm64')][string]$Architecture)
+param([Parameter(Mandatory=$true)][ValidateSet('amd64','arm64')][string]$Architecture,[switch]$ProtectedRegistrationPublication)
 $ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue'
 if($env:OS -ne 'Windows_NT' -or $env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or $env:ACCESSWEAVER_DISPOSABLE_INSTALLER_ACCEPTANCE -cne '1' -or $env:GITHUB_REPOSITORY -cne 'Yunushan/accessweaver'){throw 'Installer execution requires explicit disposable hosted Windows opt-in'}
+if($ProtectedRegistrationPublication -and $env:GITHUB_EVENT_NAME -cne 'workflow_dispatch'){throw 'Protected registration acceptance requires manual disposable dispatch'}
 $source=$env:GITHUB_SHA;$sourceRef=$env:GITHUB_REF;$run=$env:GITHUB_RUN_ID;$runAttempt=$env:GITHUB_RUN_ATTEMPT
 if($source -cnotmatch '^[a-f0-9]{40}$' -or $sourceRef -cnotmatch '^refs/heads/[A-Za-z0-9_./-]+$' -or $run -notmatch '^[0-9]+$' -or $runAttempt -cnotmatch '\A[1-9][0-9]{0,19}\z'){throw 'Missing source-bound hosted context'}
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
@@ -379,6 +380,11 @@ function Assert-SuccessfulRestorationJournal([string]$Path) {
 }
 $detector=Join-Path $PSScriptRoot 'detect-windows-installer.ps1'
 $script:detectionCases=@()
+if($ProtectedRegistrationPublication){
+    . (Join-Path $PSScriptRoot 'test-windows-installer-protected-publication.ps1')
+    Invoke-ProtectedRegistrationAcceptance
+    return
+}
 $reportDirectory=Join-Path $project 'build\installer-lifecycle-checks';[void][IO.Directory]::CreateDirectory($reportDirectory)
 $reportPath=Join-Path $reportDirectory ($Architecture+'.json')
 $script:firewallEventWindowStartUtc=[datetime]::MinValue;
