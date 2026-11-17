@@ -62,4 +62,6 @@ roundtrip, visibility, rollback and complete commit assertions. The interrupted
 transaction case closes the last transaction handle without committing; process
 termination and reboot still require separate acceptance. Full production
 metadata, legacy upgrade and uninstall retirement remain to be integrated and
-qualified. The product installer and its registration checks are unchanged.
+qualified. The installer registration reader now opens each fixed registry
+component without following symbolic links. A linked or unreadable path blocks
+setup and uninstall, while an absent registration remains distinguishable.

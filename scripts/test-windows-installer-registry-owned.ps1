@@ -54,7 +54,9 @@ $known=@('new-owned-fixture-parent','protected-child-created','creation-descript
     'atomic-class-roundtrip','existing-not-adopted-or-mutated','owned-partial-retry-opens','wrong-class-refused',
     'foreign-writer-descriptor-refused','nested-name-refused','invalid-tag-refused','link-to-existing-target-refused',
     'create-does-not-adopt-link','link-to-missing-target-refused','missing-link-target-not-created',
-    'existing-link-target-preserved','new-transacted-registration-staged','abandoned-registration-invisible',
+    'existing-link-target-preserved','registration-reader-opens-real-key','registration-reader-refuses-existing-link',
+    'registration-reader-refuses-dangling-link','registration-reader-distinguishes-absence',
+    'new-transacted-registration-staged','abandoned-registration-invisible',
     'complete-registration-visible-after-commit','staged-upgrade-preserves-visible-prior',
     'abandoned-upgrade-preserves-prior','complete-upgrade-visible-after-commit',
     'transaction-rejects-existing-link','exact-owned-cleanup')

@@ -170,6 +170,21 @@ begin
   if not AWOwnedRegistryClose(Opened) then AWFixtureCleanup := False;
   AWFixtureCase('missing-link-target-not-created', OK and (Status = 2));
   AWFixtureCase('existing-link-target-preserved', AWFixtureSentinel(Target));
+  Status := AWOpenRegistrationComponent(Root, 'target', $0100, Opened);
+  AWFixtureCase('registration-reader-opens-real-key', (Status = 0) and AWFixtureSentinel(Opened));
+  if not AWOwnedRegistryClose(Opened) then AWFixtureCleanup := False;
+  Status := AWOpenRegistrationComponent(Root, 'link', $0100, Opened);
+  AWFixtureCase('registration-reader-refuses-existing-link', LinkReady and
+    (Status = AWRegistrationUnsafe) and (Opened = 0));
+  if not AWOwnedRegistryClose(Opened) then AWFixtureCleanup := False;
+  Status := AWOpenRegistrationComponent(Root, 'missing-link', $0100, Opened);
+  AWFixtureCase('registration-reader-refuses-dangling-link', MissingLinkReady and
+    (Status = AWRegistrationUnsafe) and (Opened = 0));
+  if not AWOwnedRegistryClose(Opened) then AWFixtureCleanup := False;
+  Status := AWOpenRegistrationComponent(Root, 'not-present', $0100, Opened);
+  AWFixtureCase('registration-reader-distinguishes-absence', (Status = 2) and (Opened = 0));
+  if not AWOwnedRegistryClose(Opened) then AWFixtureCleanup := False;
+
 end;
 
 
@@ -314,7 +329,7 @@ begin
     '"scope":"disposable-protected-registry-ownership-contract","cases":[' + AWFixtureCases + '],' +
     '"descriptorResult":"' + AWFixtureDescriptorResult + '","cleanupResult":"' + AWFixtureCleanupResult + '",' +
     '"cleanupComplete":' + AWFixtureBool(AWFixtureCleanup) + ',"passed":' +
-    AWFixtureBool(AWFixturePassed and (AWFixtureCaseCount = 24)) +
+    AWFixtureBool(AWFixturePassed and (AWFixtureCaseCount = 28)) +
     ',"productionRegistrationChanged":false,"productionQualificationComplete":false}' + #10;
   Result := SaveStringToFile('{#EvidenceRoot}\registry-owned-{#TargetArch}.json', RecordText, False);
 end;
