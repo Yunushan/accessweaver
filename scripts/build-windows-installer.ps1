@@ -7,15 +7,25 @@ param(
     [string]$SigningTool,
     [string]$PublisherCertificateSHA256,
     [string]$PayloadSigningTool,
-    [string]$PayloadPublisherCertificateSHA256
+    [string]$PayloadPublisherCertificateSHA256,
+    [switch]$ProtectedRegistrationQualification,
+    [string]$PreviousPayloadInventory,
+    [string]$PreviousPayloadInventorySHA256
 )
 $ErrorActionPreference='Stop'
 $project=Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'windows-installer-common.ps1')
 Assert-InstallerReleaseVersion $Version
+if(($PreviousPayloadInventory -or $PreviousPayloadInventorySHA256) -and
+   (-not $ProtectedRegistrationQualification -or -not $PreviousPayloadInventory -or -not $PreviousPayloadInventorySHA256)){
+    throw 'An approved prior payload inventory and digest require a protected registration qualification build'
+}
+if($PreviousPayloadInventory){$PreviousPayloadInventory=(Resolve-Path -LiteralPath $PreviousPayloadInventory).ProviderPath}
 $callback=Join-Path $PSScriptRoot 'sign-windows-installer-artifact.ps1'
 $setupScript=Join-Path $PSScriptRoot 'windows-installer.iss'
 $signingArguments=@()
+$setupModeArguments=@()
+if($ProtectedRegistrationQualification){$setupModeArguments+='/DProtectedRegistrationQualification=1'}
 $payloadSigning=Get-InstallerPayloadSigning $SigningTool $PublisherCertificateSHA256 $PayloadSigningTool $PayloadPublisherCertificateSHA256
 $organizationSigning=[bool]($SigningTool -or $PublisherCertificateSHA256)
 if($organizationSigning){
@@ -113,8 +123,13 @@ try {
     [void](New-Item -ItemType Directory -Force -Path $evidence)
     $preprocessed=Join-Path $evidence 'setup-preprocessed.iss'
     Assert-InstallerPackageDirectories $stage $setupScript
+    if($PreviousPayloadInventory){
+        $include=$stage+'.retirement.iss'
+        $digest=New-InstallerRetiredPayloadPlan $stage $PreviousPayloadInventory $PreviousPayloadInventorySHA256 $include
+        $setupModeArguments+=@('/DRetiredPayloadInclude='+$include,'/DRetiredPayloadIncludeSHA256='+$digest)
+    }
     $compile={
-        & $Compiler ('/DBuildRoot='+$stage) ('/DReleaseVersion='+$Version) ('/DTargetArch='+$TargetArch) ('/DEvidenceOutput='+$preprocessed) '/DRequireInnoRuntimeNotice' @signingArguments $setupScript
+        & $Compiler ('/DBuildRoot='+$stage) ('/DReleaseVersion='+$Version) ('/DTargetArch='+$TargetArch) ('/DEvidenceOutput='+$preprocessed) '/DRequireInnoRuntimeNotice' @setupModeArguments @signingArguments $setupScript
         if($LASTEXITCODE -ne 0){throw 'Installer compilation failed'}
     }
     $noticeGuard=[IO.File]::Open($runtimeNoticePath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
@@ -130,8 +145,15 @@ try {
         }
     } finally {$noticeGuard.Dispose()}
     $null=Assert-InstallerSetupScript $preprocessed $TargetArch $Version -OrganizationSigning:$organizationSigning
-    $payloadFingerprint=''
-    Assert-InstallerPackageDirectories $stage $setupScript $preprocessed ([ref]$payloadFingerprint)
+    if($ProtectedRegistrationQualification){
+        $expanded=[IO.File]::ReadAllText($preprocessed)
+        if($expanded -cnotmatch '(?m)^CreateUninstallRegKey=no\s*$' -or
+           $expanded -cnotmatch '(?m)^UninstallLogMode=overwrite\s*$'){
+            throw 'Compiled Setup did not select the protected registration lifecycle'
+        }
+    }
+    $payloadFingerprint='';$payloadInventory=''
+    Assert-InstallerPackageDirectories $stage $setupScript $preprocessed ([ref]$payloadFingerprint) ([ref]$payloadInventory)
     $compilerOutput | Write-Output
     $actualVersion=[regex]::Match(($compilerOutput -join "`n"),'(?im)^Compiler engine version:\s*Inno Setup\s+(\d+\.\d+\.\d+)\b')
     if(-not $actualVersion.Success){throw 'Could not identify installer compiler version'}
@@ -148,6 +170,7 @@ try {
     }
     & $validator --schemas (Join-Path $project 'scripts\sbom\schema') ($artifact+'.cdx.json')
     if($LASTEXITCODE -ne 0){throw 'Installer SBOM validation failed'}
+    [IO.File]::WriteAllText((Join-Path $evidence 'payload-files.txt'),$payloadInventory,[Text.UTF8Encoding]::new($false))
     Copy-Item -LiteralPath $payloadSBOM -Destination (Join-Path $evidence 'payload-SBOM.cdx.json') -Force
     Copy-Item -LiteralPath (Join-Path $stage 'BUILD-INFO.json') -Destination (Join-Path $evidence 'payload-BUILD-INFO.json') -Force
     $evidencePayload=Join-Path $evidence 'payload.exe'

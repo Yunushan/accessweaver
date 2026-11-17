@@ -21,6 +21,15 @@ $probes=@(foreach($scriptAst in @($ast,$controllerAst)){
 if($probes.Count -ne 2 -or $probes[0].Extent.Text -cne $probes[1].Extent.Text){
     throw 'Standalone detector and embedded controller recovery probes differ'
 }
+$nativeReaders=@(foreach($scriptAst in @($ast,$controllerAst)){
+    $scriptAst.EndBlock.Statements | Where-Object {
+        $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $_.Name -ceq 'Initialize-AccessWeaverInstallerRecoveryRegistry'
+    }
+})
+if($nativeReaders.Count -ne 2 -or $nativeReaders[0].Extent.Text -cne $nativeReaders[1].Extent.Text){
+    throw 'Standalone detector and embedded controller registry readers differ'
+}
 $setupProbes=@(foreach($scriptAst in @($ast,$controllerAst)){
     $scriptAst.EndBlock.Statements | Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq 'Assert-NoAccessWeaverSetup'
@@ -46,6 +55,8 @@ try {
     $hash=(Get-FileHash -LiteralPath $payload -Algorithm SHA256).Hash
     [IO.File]::WriteAllText($uninstaller,'inert uninstaller fixture')
     $uninstallerHash=(Get-FileHash -LiteralPath $uninstaller -Algorithm SHA256).Hash
+    [IO.File]::WriteAllText($uninstallData,'inert uninstall data fixture')
+    $uninstallDataHash=(Get-FileHash -LiteralPath $uninstallData -Algorithm SHA256).Hash
     $noticeBytes=[Text.Encoding]::UTF8.GetBytes('Inert fixture license notice')
     [IO.File]::WriteAllBytes($notice,$noticeBytes)
     $noticeDigest=(Get-FileHash -LiteralPath $notice -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -112,7 +123,7 @@ function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
     $mocked=$original.Substring(0,$node.StartOffset)+$mock+$original.Substring($node.EndOffset)
     # Keep the production status mapping and detector assertion. Replace only
     # the native call in the isolated child with fixed Win32 result codes.
-    $nativeCall='[AccessWeaver.InstallerRecoveryRegistry]::QueryStatus()'
+    $nativeCall='[AccessWeaver.InstallerLifecycleRecoveryRegistry]::QueryStatus()'
     $fixtureStatus=@'
 $(switch -CaseSensitive ($env:AW_DETECTION_FIXTURE){
     'pending' {0}
@@ -128,22 +139,35 @@ $(switch -CaseSensitive ($env:AW_DETECTION_FIXTURE){
     $probe=$probes[0].Extent.Text
     if(-not $probe.Contains($nativeCall)){throw 'Missing fixed native recovery query'}
     $mocked=$mocked.Replace($probe,$probe.Replace($nativeCall,$fixtureStatus))
-    $nativeRecord='[AccessWeaver.InstallerPendingRecord]::ReadValue()'
+    $nativeRecord='[AccessWeaver.InstallerLifecycleRecoveryRegistry]::ReadValue()'
     $fixtureRecord=@'
 $(switch -CaseSensitive ($env:AW_DETECTION_FIXTURE){
-    'managed-pending-wrong-version' {'0.1.1-alpha|'+$PSScriptRoot+'|'+('a'*64)}
-    'managed-pending-wrong-path' {$Version+'|'+$PSScriptRoot+'-other|'+('a'*64)}
-    'managed-pending-unmanaged' {$Version+'|'+$PSScriptRoot}
-    'managed-pending-invalid-pin' {$Version+'|'+$PSScriptRoot+'|'+('z'*64)}
+    'managed-pending-wrong-version' {'0.1.1-alpha|'+$PSScriptRoot+'|'+('a'*64);break}
+    'managed-pending-wrong-path' {$Version+'|'+$PSScriptRoot+'-other|'+('a'*64);break}
+    'managed-pending-unmanaged' {$Version+'|'+$PSScriptRoot;break}
+    'managed-pending-invalid-pin' {$Version+'|'+$PSScriptRoot+'|'+('z'*64);break}
+    'managed-pending-legacy-unknown-phase' {$Version+'|'+$PSScriptRoot+'|'+('a'*64)+'|unknown-phase';break}
+    {$_ -clike 'managed-pending-legacy-*'} {$Version+'|'+$PSScriptRoot+'|'+('a'*64)+'|legacy-retirement';break}
     'managed-pending-changed' {
         $pin=if($script:mockReads -eq 0){'a'*64}else{'b'*64}
-        $Version+'|'+$PSScriptRoot+'|'+$pin
+        $Version+'|'+$PSScriptRoot+'|'+$pin;break
     }
     {$_ -clike 'managed-pending-*'} {$Version+'|'+$PSScriptRoot+'|'+('a'*64)}
 })
 '@
     if(([regex]::Matches($mocked,[regex]::Escape($nativeRecord))).Count -ne 2){throw 'Missing bounded registry marker probes'}
     $mocked=$mocked.Replace($nativeRecord,$fixtureRecord)
+    $nativeProduct='[AccessWeaver.InstallerLifecycleRecoveryRegistry]::QueryProductRegistration()'
+    if(([regex]::Matches($mocked,[regex]::Escape($nativeProduct))).Count -ne 1){throw 'Missing no-follow product registration probe'}
+    $fixtureProduct=@'
+$(switch -CaseSensitive ($env:AW_DETECTION_FIXTURE){
+    'managed-pending-legacy-unavailable' {5;break}
+    'managed-pending-legacy-registered' {0;break}
+    {$_ -clike 'managed-pending-legacy-*'} {2;break}
+    default {throw 'Unexpected no-follow product probe'}
+})
+'@
+    $mocked=$mocked.Replace($nativeProduct,$fixtureProduct)
     $signatureCall='Microsoft.PowerShell.Security\Get-AuthenticodeSignature -LiteralPath $Path -ErrorAction Stop'
     if(-not $mocked.Contains($signatureCall)){throw 'Missing installed publisher verification boundary'}
     $fixtureSignature=@'
@@ -179,6 +203,13 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             @{mode='managed-pending-invalid-pin';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
             @{mode='managed-pending-unregistered';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true;registered=$true},
             @{mode='managed-pending-alternate';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true;registered=$true},
+            @{mode='managed-pending-legacy-absent';code=1;count=1;hash=$hash;reportRecovery=$true;matchingPendingStatus=$true},
+            @{mode='managed-pending-legacy-absent';code=1;count=1;hash=$hash;reportRecovery=$true;matchingPendingStatus=$true;registered=$true},
+            @{mode='managed-pending-legacy-registered';code=1;count=1;hash=$hash;reportRecovery=$true;matchingPendingStatus=$true},
+            @{mode='managed-pending-legacy-absent';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true;otherDirectory=$true},
+            @{mode='managed-pending-legacy-absent';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true;approval=('b'*64)},
+            @{mode='managed-pending-legacy-unavailable';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true;registered=$true},
+            @{mode='managed-pending-legacy-unknown-phase';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
             @{mode='managed-pending-changed';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
             @{mode='managed-pending-match';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true;otherDirectory=$true},
             @{mode='marker-becomes-pending';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
@@ -240,6 +271,10 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             @{mode='publisher-no-certificate';code=0;count=0;hash=$hash;publisher=$publisherHash},
             @{mode='approved';code=0;count=1;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true},
             @{mode='approved';code=0;count=1;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true;buildInfo=$buildInfoHash},
+            @{mode='approved';code=0;count=1;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true;buildInfo=$buildInfoHash;uninstaller=$uninstallerHash;uninstallData=$uninstallDataHash;label='legacy inventory'},
+            @{mode='approved';code=0;count=0;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true;buildInfo=$buildInfoHash;uninstaller=$uninstallerHash;uninstallData=('0'*64);label='wrong uninstall data'},
+            @{mode='approved';code=1;count=0;hash=$hash;uninstallData=$uninstallDataHash;label='uninstall data without executable'},
+            @{mode='approved';code=1;count=0;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true;uninstaller=$uninstallerHash;uninstallData=$uninstallDataHash;label='uninstall inventory without build metadata'},
             @{mode='approved';code=0;count=0;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true;buildInfo=$buildInfoHash;changedBuildInfo=$true},
             @{mode='approved';code=0;count=0;hash=$hash;sbom=$sbomHash;publisher=('0'*64);inventory=$true},
             @{mode='approved';code=1;count=0;hash=$hash;sbom=$sbomHash;inventory=$true},
@@ -268,6 +303,7 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             elseif($case.otherDirectory){$arguments+=@('-InstallDirectory',($testRoot+'-other'))}
             else{$arguments+=@('-InstallDirectory',$testRoot)}
             if($case.uninstaller){$arguments+=@('-UninstallerSHA256',$case.uninstaller)}
+            if($case.uninstallData){$arguments+=@('-UninstallDataSHA256',$case.uninstallData)}
             if($case.sbom){$arguments+=@('-PayloadSBOMSHA256',$case.sbom)}
             if($case.buildInfo){$arguments+=@('-BuildInfoSHA256',$case.buildInfo)}
             if($case.publisher){$arguments+=@('-PayloadPublisherSHA256',$case.publisher)}
@@ -283,14 +319,17 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             }
             if($case.count -eq 1){
                 if($case.matchingPendingStatus){
-                    if($output[0] -cne 'AccessWeaver managed upgrade pending'){throw 'Unexpected matching recovery status'}
+                    if($output[0] -cne 'AccessWeaver managed upgrade pending'){throw ('Unexpected matching recovery status: '+$case.mode)}
                 }elseif($case.pendingStatus){
-                    if($output[0] -cne 'AccessWeaver installation pending'){throw 'Unexpected opt-in recovery status'}
+                    if($output[0] -cne 'AccessWeaver installation pending'){throw ('Unexpected opt-in recovery status: '+$case.mode)}
                 }elseif($case.inventory){
                     $record=$output[0] | ConvertFrom-Json
-                    $schema=if($case.buildInfo){2}else{1}
-                    if(@($record.PSObject.Properties).Count -ne (5+$schema) -or $record.schemaVersion -ne $schema -or
-                       ($schema -eq 2 -and $record.buildInfoSHA256 -cne $buildInfoHash.ToLowerInvariant()) -or
+                    $schema=if($case.uninstallData){3}elseif($case.buildInfo){2}else{1}
+                    $fieldCount=if($schema -eq 3){9}else{5+$schema}
+                    if(@($record.PSObject.Properties).Count -ne $fieldCount -or $record.schemaVersion -ne $schema -or
+                       ($schema -ge 2 -and $record.buildInfoSHA256 -cne $buildInfoHash.ToLowerInvariant()) -or
+                       ($schema -eq 3 -and ($record.uninstallerSHA256 -cne $uninstallerHash.ToLowerInvariant() -or
+                           $record.uninstallDataSHA256 -cne $uninstallDataHash.ToLowerInvariant())) -or
                        $record.target -cne ('windows/'+$arch) -or $record.version -cne '0.1.0-alpha' -or
                        $record.payloadSHA256 -cne $hash.ToLowerInvariant() -or
                        $record.payloadSBOMSHA256 -cne $sbomHash.ToLowerInvariant() -or

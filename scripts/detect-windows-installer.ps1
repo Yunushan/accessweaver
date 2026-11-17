@@ -11,7 +11,8 @@ param(
     [switch]$UpgradeInventory,
     [string]$BuildInfoSHA256 = '',
     [switch]$UseRegisteredDirectory,
-    [string]$PendingApprovalSHA256 = ''
+    [string]$PendingApprovalSHA256 = '',
+    [string]$UninstallDataSHA256 = ''
 )
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
@@ -244,76 +245,129 @@ namespace AccessWeaver
     }
 }
 
-function Get-AccessWeaverInstallerRecoveryState {
-    # The detector ships standalone. Its source fixture checks both copies.
-    try {
-        if(-not ('AccessWeaver.InstallerRecoveryRegistry' -as [type])){
-            Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-
-namespace AccessWeaver
-{
-    public static class InstallerRecoveryRegistry
-    {
-        private static readonly IntPtr LocalMachine = new IntPtr(unchecked((int)0x80000002));
-        private const uint QueryFlags = 0x1001ffff; // RRF_NOEXPAND | RRF_SUBKEY_WOW6464KEY | RRF_RT_ANY
-
-        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
-        private static extern int RegGetValueW(IntPtr key, string subKey, string value,
-            uint flags, IntPtr type, IntPtr data, out uint size);
-
-        public static int QueryStatus()
-        {
-            uint size;
-            return RegGetValueW(LocalMachine, @"SOFTWARE\AccessWeaver\Installer", "PendingInstall",
-                QueryFlags, IntPtr.Zero, IntPtr.Zero, out size);
-        }
-    }
-}
-'@
-        }
-        # Only explicit key/path or value absence permits uninstall or detection.
-        switch ([AccessWeaver.InstallerRecoveryRegistry]::QueryStatus()) {
-            0 {return 'pending'}
-            2 {return 'clear'} # ERROR_FILE_NOT_FOUND
-            3 {return 'clear'} # ERROR_PATH_NOT_FOUND
-            default {return 'unavailable'}
-        }
-    } catch {
-        return 'unavailable'
-    }
-}
-
-function Test-AccessWeaverManagedUpgradePending([string]$directory) {
-    if(-not $PendingApprovalSHA256){return $false}
-    try {
-        if(-not ('AccessWeaver.InstallerPendingRecord' -as [type])){
-            Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
+function Initialize-AccessWeaverInstallerRecoveryRegistry {
+    if('AccessWeaver.InstallerLifecycleRecoveryRegistry' -as [type]){return}
+    Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
 namespace AccessWeaver
 {
-    public static class InstallerPendingRecord
+    public static class InstallerLifecycleRecoveryRegistry
     {
         private static readonly IntPtr LocalMachine = new IntPtr(unchecked((int)0x80000002));
-        private const uint QueryFlags = 0x10010002; // RRF_NOEXPAND | RRF_SUBKEY_WOW6464KEY | RRF_RT_REG_SZ
+        private static readonly string[] Components = { "SOFTWARE", "AccessWeaver", "Installer" };
+        private static readonly string[] ProductRegistration = {
+            "SOFTWARE", "Microsoft", "Windows", "CurrentVersion", "Uninstall",
+            "{B13D4677-4660-4E63-B3DB-03077ACBB092}_is1"
+        };
+        private const int NotFound = 2;
+        private const int Unsafe = 5;
+        private const uint NoExpand = 0x10000000;
+        private const uint QueryAny = NoExpand | 0xffff;
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern int RegOpenKeyExW(IntPtr parent, string name, uint options, uint access, out IntPtr key);
+
+        [DllImport("advapi32.dll", ExactSpelling = true)]
+        private static extern int RegCloseKey(IntPtr key);
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern int RegQueryValueExW(IntPtr key, string value,
+            IntPtr reserved, IntPtr type, IntPtr data, out uint size);
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern int RegGetValueW(IntPtr key, string subKey, string value,
+            uint flags, IntPtr type, IntPtr data, out uint size);
 
         [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
         private static extern int RegGetValueW(IntPtr key, string subKey, string value,
             uint flags, out uint type, [Out] byte[] data, ref uint size);
 
+        private static int OpenPath(string[] components, uint view, int firstAllowedMissing, out IntPtr key)
+        {
+            key = IntPtr.Zero;
+            IntPtr parent = LocalMachine;
+            int status = 0;
+            for (int index = 0; index < components.Length; index++)
+            {
+                IntPtr child;
+                status = RegOpenKeyExW(parent, components[index], 8, view | 1, out child);
+                if (status != 0)
+                {
+                    if (index < firstAllowedMissing)
+                        status = Unsafe;
+                    break;
+                }
+
+                uint size;
+                if (RegQueryValueExW(child, "SymbolicLinkValue", IntPtr.Zero,
+                    IntPtr.Zero, IntPtr.Zero, out size) != NotFound)
+                {
+                    RegCloseKey(child);
+                    status = Unsafe;
+                    break;
+                }
+                if (parent != LocalMachine && RegCloseKey(parent) != 0)
+                {
+                    RegCloseKey(child);
+                    return Unsafe;
+                }
+                parent = child;
+            }
+
+            if (status == 0)
+            {
+                key = parent;
+                return 0;
+            }
+            if (parent != LocalMachine && RegCloseKey(parent) != 0)
+                return Unsafe;
+            return status;
+        }
+
+        private static int ReadProductView(uint view)
+        {
+            IntPtr key;
+            int status = OpenPath(ProductRegistration, view, 4, out key);
+            if (status == 0 && RegCloseKey(key) != 0)
+                return Unsafe;
+            return status == 3 ? NotFound : status;
+        }
+
+        public static int QueryProductRegistration()
+        {
+            if (ReadProductView(0x0200) != NotFound)
+                return Unsafe;
+            return ReadProductView(0x0100);
+        }
+
+        public static int QueryStatus()
+        {
+            IntPtr key;
+            int status = OpenPath(Components, 0x0100, 1, out key);
+            if (status != 0)
+                return status;
+
+            uint size;
+            status = RegGetValueW(key, null, "PendingInstall", QueryAny, IntPtr.Zero, IntPtr.Zero, out size);
+            return RegCloseKey(key) == 0 ? status : Unsafe;
+        }
+
         public static string ReadValue()
         {
-            // Match Setup's bound for the version, directory, approval pin and terminator.
-            byte[] buffer = new byte[1166];
+            IntPtr key;
+            if (OpenPath(Components, 0x0100, 1, out key) != 0)
+                return null;
+
+            // Match Setup's bound including the optional legacy retirement phase.
+            byte[] buffer = new byte[1202];
             uint size = (uint)buffer.Length;
             uint type;
-            int status = RegGetValueW(LocalMachine, @"SOFTWARE\AccessWeaver\Installer", "PendingInstall",
-                QueryFlags, out type, buffer, ref size);
-            if (status != 0 || type != 1 || size < 4 || size > buffer.Length || size % 2 != 0)
+            int status = RegGetValueW(key, null, "PendingInstall", NoExpand | 2, out type, buffer, ref size);
+            if (RegCloseKey(key) != 0 || status != 0 || type != 1 || size < 4 ||
+                size > buffer.Length || size % 2 != 0)
                 return null;
 
             int contentBytes = (int)size - 2;
@@ -326,23 +380,56 @@ namespace AccessWeaver
     }
 }
 '@
+}
+
+function Get-AccessWeaverInstallerRecoveryState {
+    try {
+        Initialize-AccessWeaverInstallerRecoveryRegistry
+        # Only explicit component or value absence clears the recovery guard.
+        switch ([AccessWeaver.InstallerLifecycleRecoveryRegistry]::QueryStatus()) {
+            0 {return 'pending'}
+            2 {return 'clear'}
+            3 {return 'clear'}
+            default {return 'unavailable'}
         }
-        $record=[AccessWeaver.InstallerPendingRecord]::ReadValue()
+    } catch {
+        return 'unavailable'
+    }
+}
+
+function Test-AccessWeaverManagedUpgradePending([string]$directory) {
+    if(-not $PendingApprovalSHA256){return $false}
+    try {
+        Initialize-AccessWeaverInstallerRecoveryRegistry
+        $record=[AccessWeaver.InstallerLifecycleRecoveryRegistry]::ReadValue()
         if(-not $record){return $false}
 
         $fields=$record.Split('|')
-        if($fields.Count -ne 3 -or -not [string]::Equals($fields[0],$Version,[StringComparison]::Ordinal) -or
+        $legacyRetirement=$fields.Count -eq 4 -and $fields[3] -ceq 'legacy-retirement'
+        if(($fields.Count -ne 3 -and -not $legacyRetirement) -or
+           -not [string]::Equals($fields[0],$Version,[StringComparison]::Ordinal) -or
            $fields[2] -cne $PendingApprovalSHA256){return $false}
 
-        $registration=Read-AccessWeaverRegistration Registry64
-        if($null -eq $registration -or $null -ne (Read-AccessWeaverRegistration Registry32)){return $false}
-        $registeredDirectory=Get-AccessWeaverLocalDirectory $registration.location
+        # A missing leaf is an expected state only for an explicitly recorded
+        # legacy retirement. Do not treat a link or unreadable key as absent.
+        $registrationStatus=0
+        if($legacyRetirement){
+            $registrationStatus=[AccessWeaver.InstallerLifecycleRecoveryRegistry]::QueryProductRegistration()
+            if($registrationStatus -notin @(0,2)){return $false}
+        }
+        if($registrationStatus -eq 2){
+            $registeredDirectory=Get-AccessWeaverLocalDirectory $fields[1]
+        } else {
+            $registration=Read-AccessWeaverRegistration Registry64
+            if($null -eq $registration -or $null -ne (Read-AccessWeaverRegistration Registry32)){return $false}
+            $registeredDirectory=Get-AccessWeaverLocalDirectory $registration.location
+        }
         if(-not [string]::Equals($registeredDirectory,$fields[1],[StringComparison]::OrdinalIgnoreCase) -or
            (-not $UseRegisteredDirectory -and
             -not [string]::Equals($registeredDirectory,$directory,[StringComparison]::OrdinalIgnoreCase))){
             return $false
         }
-        return [string]::Equals($record,[AccessWeaver.InstallerPendingRecord]::ReadValue(),[StringComparison]::Ordinal)
+        return [string]::Equals($record,[AccessWeaver.InstallerLifecycleRecoveryRegistry]::ReadValue(),[StringComparison]::Ordinal)
     } catch {
         return $false
     }
@@ -466,6 +553,8 @@ function Test-AccessWeaverInstallation([string]$directory) {
             if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $uninstaller -Algorithm SHA256).Hash -ine $UninstallerSHA256){return $false}
             $dataPath=[IO.Path]::ChangeExtension($path,'.dat')
             $uninstallData=[AccessWeaver.InstallerFileAccess]::OpenFile($dataPath,512MB,$true)
+            if($UninstallDataSHA256 -and
+                (Microsoft.PowerShell.Utility\Get-FileHash -InputStream $uninstallData -Algorithm SHA256).Hash -ine $UninstallDataSHA256){return $false}
         }
         $confirmed=Read-AccessWeaverRegistration Registry64
         if($null -eq $confirmed -or $confirmed.version -cne $registration.version -or
@@ -511,7 +600,10 @@ try {
        ($PayloadPublisherSHA256 -and $PayloadPublisherSHA256 -notmatch '\A[a-fA-F0-9]{64}\z') -or
        ($PendingApprovalSHA256 -and $PendingApprovalSHA256 -cnotmatch '\A[a-f0-9]{64}\z') -or
        ($UpgradeInventory -and (-not $PayloadSBOMSHA256 -or -not $PayloadPublisherSHA256)) -or
-       ($UninstallerSHA256 -and $UninstallerSHA256 -notmatch '\A[a-fA-F0-9]{64}\z')){
+       ($UninstallerSHA256 -and $UninstallerSHA256 -notmatch '\A[a-fA-F0-9]{64}\z') -or
+       ($UninstallDataSHA256 -and (
+           $UninstallDataSHA256 -notmatch '\A[a-fA-F0-9]{64}\z' -or -not $UninstallerSHA256 -or
+           ($UpgradeInventory -and -not $BuildInfoSHA256)))){
         throw 'Expected pinned Windows payload identity and a matching 64-bit host'
     }
     if($UseRegisteredDirectory -and $InstallDirectory){throw 'Specify either a directory or registered location detection'}
@@ -539,6 +631,11 @@ try {
         if($BuildInfoSHA256){
             $inventory.schemaVersion=2
             $inventory.buildInfoSHA256=$BuildInfoSHA256.ToLowerInvariant()
+        }
+        if($UninstallDataSHA256){
+            $inventory.schemaVersion=3
+            $inventory.uninstallerSHA256=$UninstallerSHA256.ToLowerInvariant()
+            $inventory.uninstallDataSHA256=$UninstallDataSHA256.ToLowerInvariant()
         }
         $inventory | Microsoft.PowerShell.Utility\ConvertTo-Json -Compress
     } else {Microsoft.PowerShell.Utility\Write-Output 'AccessWeaver detected'}

@@ -1,8 +1,9 @@
 # Actual driver-free installer acceptance, exclusively on disposable hosted Windows.
 [CmdletBinding()]
-param([Parameter(Mandatory=$true)][ValidateSet('amd64','arm64')][string]$Architecture)
+param([Parameter(Mandatory=$true)][ValidateSet('amd64','arm64')][string]$Architecture,[switch]$ProtectedRegistrationPublication)
 $ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue'
 if($env:OS -ne 'Windows_NT' -or $env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or $env:ACCESSWEAVER_DISPOSABLE_INSTALLER_ACCEPTANCE -cne '1' -or $env:GITHUB_REPOSITORY -cne 'Yunushan/accessweaver'){throw 'Installer execution requires explicit disposable hosted Windows opt-in'}
+if($ProtectedRegistrationPublication -and $env:GITHUB_EVENT_NAME -cne 'workflow_dispatch'){throw 'Protected registration acceptance requires manual disposable dispatch'}
 $source=$env:GITHUB_SHA;$sourceRef=$env:GITHUB_REF;$run=$env:GITHUB_RUN_ID;$runAttempt=$env:GITHUB_RUN_ATTEMPT
 if($source -cnotmatch '^[a-f0-9]{40}$' -or $sourceRef -cnotmatch '^refs/heads/[A-Za-z0-9_./-]+$' -or $run -notmatch '^[0-9]+$' -or $runAttempt -cnotmatch '\A[1-9][0-9]{0,19}\z'){throw 'Missing source-bound hosted context'}
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
@@ -25,7 +26,7 @@ $workflow=Join-Path $project 'internal\workflow\windows.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($workflow,[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Product workflow parse failed'}
 foreach($name in @('No-Reparse','Quote-Arg','Native-Argument','New-ToolCapture','Receive-ToolCapture','Wait-ToolCapture','Stop-ToolTreeWithHelper','Stop-ToolTree','Run-Tool','Native','Get-DriverServiceControllers','Get-ServiceInspection','Under','Get-PEMachine',
-        'Read-WorkflowUninstallRegistration','Get-WorkflowUninstallPath','Assert-WorkflowUninstallACL','Assert-WorkflowUninstallProtection','Get-AccessWeaverInstallerRecoveryState','Assert-NoPendingWorkflowInstallation','Assert-NoAccessWeaverSetup','Open-WorkflowUninstallBinding','Close-WorkflowUninstallBinding')){
+        'Read-WorkflowUninstallRegistration','Get-WorkflowUninstallPath','Assert-WorkflowUninstallACL','Assert-WorkflowUninstallProtection','Initialize-AccessWeaverInstallerRecoveryRegistry','Get-AccessWeaverInstallerRecoveryState','Assert-NoPendingWorkflowInstallation','Assert-NoAccessWeaverSetup','Open-WorkflowUninstallBinding','Close-WorkflowUninstallBinding')){
     $nodes=@($ast.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
     if($nodes.Count -ne 1){throw 'Expected one fixed product process/inspection helper'}
     . ([scriptblock]::Create($nodes[0].Extent.Text))
@@ -306,9 +307,11 @@ function Assert-ManagedDetection([string]$Phase,$Expected,[bool]$Detected,[strin
     }
     $script:detectionCases+=,@{phase=$Phase;detected=$Detected}
 }
-function Assert-DetectorRefusal([string]$Phase,[switch]$VerifyMatchingPendingStatus){
+function Assert-DetectorRefusal([string]$Phase,[switch]$VerifyMatchingPendingStatus,[switch]$UseRegisteredDirectory){
     $expected=$builds[1]
-    $arguments=@('-Version',$expected.version,'-Architecture',$Architecture,'-PayloadSHA256',$expected.payloadSha256,'-InstallDirectory',$install)
+    $arguments=@{Version=$expected.version;Architecture=$Architecture;PayloadSHA256=$expected.payloadSha256}
+    if($UseRegisteredDirectory){$arguments.UseRegisteredDirectory=$true}
+    else{$arguments.InstallDirectory=$install}
     $observation=@{phase=$Phase;detected=$false;inspectionRefused=$true}
     $previous=$env:ACCESSWEAVER_REPORT_INSTALLER_RECOVERY
     try {
@@ -317,11 +320,16 @@ function Assert-DetectorRefusal([string]$Phase,[switch]$VerifyMatchingPendingSta
         Require ($LASTEXITCODE -eq 1 -and $output.Count -eq 0) 'Managed detection reported a result during a lifecycle inspection refusal'
         if($VerifyMatchingPendingStatus){
             $env:ACCESSWEAVER_REPORT_INSTALLER_RECOVERY='1'
-            $sidecar=Join-Path $project ('build\'+$expected.installerName+'.cdx.json')
-            $sbom=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($sidecar))
-            $fingerprint=@($sbom.metadata.component.properties | Where-Object name -CEQ 'accessweaver:windows-staged-payload-sha256')
-            Require ($fingerprint.Count -eq 1 -and $fingerprint[0].value -cmatch '\A[a-f0-9]{64}\z') 'Installer SBOM has no compiled payload fingerprint'
-            $material=$baselineArgument.Substring('/AWUpgradeFrom='.Length)+'|'+$Architecture+'|'+$fingerprint[0].value
+            $fingerprint=$expected.stagedPayloadSHA256
+            if(-not $fingerprint){
+                $sidecar=Join-Path $project ('build\'+$expected.installerName+'.cdx.json')
+                $sbom=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($sidecar))
+                $property=@($sbom.metadata.component.properties | Where-Object name -CEQ 'accessweaver:windows-staged-payload-sha256')
+                Require ($property.Count -eq 1) 'Installer SBOM has no unique compiled payload fingerprint'
+                $fingerprint=$property[0].value
+            }
+            Require ($fingerprint -cmatch '\A[a-f0-9]{64}\z') 'Installer has no verified compiled payload fingerprint'
+            $material=$baselineArgument.Substring('/AWUpgradeFrom='.Length)+'|'+$Architecture+'|'+$fingerprint
             $sha=[Security.Cryptography.SHA256]::Create()
             try {$pin=([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::ASCII.GetBytes($material)))).Replace('-','').ToLowerInvariant()}
             finally {$sha.Dispose()}
@@ -379,6 +387,11 @@ function Assert-SuccessfulRestorationJournal([string]$Path) {
 }
 $detector=Join-Path $PSScriptRoot 'detect-windows-installer.ps1'
 $script:detectionCases=@()
+if($ProtectedRegistrationPublication){
+    . (Join-Path $PSScriptRoot 'test-windows-installer-protected-publication.ps1')
+    Invoke-ProtectedRegistrationAcceptance
+    return
+}
 $reportDirectory=Join-Path $project 'build\installer-lifecycle-checks';[void][IO.Directory]::CreateDirectory($reportDirectory)
 $reportPath=Join-Path $reportDirectory ($Architecture+'.json')
 $script:firewallEventWindowStartUtc=[datetime]::MinValue;
@@ -1291,12 +1304,13 @@ end;
     } finally {$heldTemp.Dispose()}
 
     $stage='managed-upgrade-retirement-flush-failure'
-    $flushPoint='  if AWFlushLifecycleRecord then begin'
+    $flushPoint='    if Result and Flush then Flushed := AWFlushRegistryKey(Key) = 0;'
     Require ([regex]::Matches($productSetup,[regex]::Escape($flushPoint)).Count -eq 1) 'Expected one Setup retirement flush boundary'
     $flushFault=@"
-  if not AWPendingInstallAbsent then RaiseException('Retirement flush fixture did not observe the deleted record.');
-  Log('AccessWeaver retirement flush failure injected after verified deletion.');
-  if False then begin
+    if Result and Flush then begin
+      Log('AccessWeaver retirement flush failure injected after verified deletion.');
+      Flushed := False;
+    end;
 "@
     [IO.File]::WriteAllText($faultSetup,$productSetup.Replace($flushPoint,$flushFault))
     $null=@(& $compiler ('/DBuildRoot='+$upgradePayload) ('/DReleaseVersion='+$builds[1].version) ('/DTargetArch='+$Architecture) $faultSetup)

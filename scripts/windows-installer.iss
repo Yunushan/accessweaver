@@ -14,6 +14,22 @@
 #else
   #error TargetArch must be amd64 or arm64
 #endif
+#ifdef RetiredPayloadInclude
+  #if !Defined(ProtectedRegistrationQualification) || !Defined(RetiredPayloadIncludeSHA256)
+    #error The retirement plan requires protected registration and a pinned include
+  #endif
+  #if GetSHA256OfFile(RetiredPayloadInclude) != RetiredPayloadIncludeSHA256
+    #error The compiled retirement plan differs from the pinned plan
+  #endif
+  #define RetiredPayloadRecordHandle FileOpen(BuildRoot + "\docs\windows-retired-payload.sha256")
+  #if !RetiredPayloadRecordHandle
+    #error The retirement plan has no staged fingerprint record
+  #endif
+  #if FileRead(RetiredPayloadRecordHandle) != "retirement-plan-sha256=" + RetiredPayloadIncludeSHA256
+    #error The staged fingerprint record does not bind the retirement plan
+  #endif
+  #call FileClose(RetiredPayloadRecordHandle)
+#endif
 #define PayloadPath BuildRoot + "\accessweaver.exe"
 #define BuildInfoPath BuildRoot + "\BUILD-INFO.json"
 #define PayloadSBOMPath BuildRoot + "\SBOM.cdx.json"
@@ -48,7 +64,11 @@ AppName=AccessWeaver
 AppVersion={#ReleaseVersion}
 AppPublisher=AccessWeaver contributors
 AppPublisherURL=https://github.com/Yunushan/accessweaver
+#ifdef ProtectedRegistrationQualification
+DefaultDirName={code:AWProtectedDefaultDirectory}
+#else
 DefaultDirName={autopf}\AccessWeaver
+#endif
 DefaultGroupName=AccessWeaver
 AllowNoIcons=yes
 ArchitecturesAllowed={#InstallArchitecture}
@@ -65,6 +85,11 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\accessweaver.exe
+#ifdef ProtectedRegistrationQualification
+CreateUninstallRegKey=no
+; A legacy Inno log contains a path-based deletion of the registration.
+UninstallLogMode=overwrite
+#endif
 CloseApplications=yes
 RestartApplications=no
 SetupLogging=yes
@@ -82,10 +107,10 @@ Name: "{group}\AccessWeaver"; Filename: "{app}\accessweaver.exe"; Parameters: "u
 #include "windows-installer-restore.iss"
 
 const
-  AWLifecycleRegistry = 'SOFTWARE\AccessWeaver\Installer';
   AWPendingInstall = 'PendingInstall';
+  AWLegacyRetirementMarker = 'legacy-retirement';
 
-var AWInstallFinished, AWPendingRetirementFailed: Boolean;
+var AWInstallFinished, AWPendingRetirementFailed, AWPendingLegacyRetirement: Boolean;
     AWPendingApprovalPin: String;
 
 function AWFlushRegistryKey(Key: LongWord): LongWord;
@@ -102,21 +127,21 @@ begin
   Result := True;
 end;
 
-function AWReadPendingVersion(var Version, Directory, ApprovalPin: String): String;
+function AWReadPendingVersion(var Version, Directory, ApprovalPin: String; var LegacyRetirement: Boolean): String;
 var Key, Status, Kind, Bytes: LongWord;
     Buffer, RecordValue: String; Units, Separator: Integer;
 begin
-  Result := ''; Version := ''; Directory := ''; ApprovalPin := '';
-  Status := AWOpenRegistrationKey($80000002, AWLifecycleRegistry, 0, $0101, Key);
+  Result := ''; Version := ''; Directory := ''; ApprovalPin := ''; LegacyRetirement := False;
+  Status := AWOpenLifecycleRegistry($0001, False, Key);
   if (Status = 2) or (Status = 3) then Exit;
   Result := 'Cannot verify the AccessWeaver pending installation record.';
   if Status <> 0 then Exit;
   try
-    { Version, directory, optional approval pin, separators and terminator. }
-    SetLength(Buffer, 583); Bytes := 1166; Kind := 0;
+    { Version, directory, optional approval pin and legacy retirement phase. }
+    SetLength(Buffer, 601); Bytes := 1202; Kind := 0;
     Status := AWGetRegistrationValue(Key, '', AWPendingInstall, $30000002, Kind, Buffer, Bytes);
     if Status = 2 then begin Result := ''; Exit; end;
-    if (Status <> 0) or (Kind <> 1) or (Bytes < 4) or (Bytes > 1166) or ((Bytes mod 2) <> 0) then Exit;
+    if (Status <> 0) or (Kind <> 1) or (Bytes < 4) or (Bytes > 1202) or ((Bytes mod 2) <> 0) then Exit;
     Units := Bytes div 2;
     if Buffer[Units] <> #0 then Exit;
     RecordValue := Copy(Buffer, 1, Units - 1);
@@ -127,24 +152,82 @@ begin
     Separator := Pos('|', Directory);
     if Separator <> 0 then begin
       ApprovalPin := Copy(Directory, Separator + 1, Length(Directory));
-      if not AWSha256Pin(ApprovalPin) then Exit;
       SetLength(Directory, Separator - 1);
+      Separator := Pos('|', ApprovalPin);
+      if Separator <> 0 then begin
+        if AWOrdinal(Copy(ApprovalPin, Separator + 1, Length(ApprovalPin)), AWLegacyRetirementMarker) <> 0 then Exit;
+        LegacyRetirement := True;
+        SetLength(ApprovalPin, Separator - 1);
+      end;
+      if not AWSha256Pin(ApprovalPin) then Exit;
     end;
     if (Directory <> '') and (Length(Directory) <= 260) then Result := '';
   finally
-    AWCloseRegistrationKey(Key);
+    if AWCloseRegistrationKey(Key) <> 0 then
+      Result := 'Cannot verify the AccessWeaver pending installation record.';
   end;
 end;
 
-function AWFlushLifecycleRecord: Boolean;
+#ifdef ProtectedRegistrationQualification
+function AWProtectedDefaultDirectory(Param: String): String;
+var Version, Directory, ApprovalPin: String; LegacyRetirement: Boolean;
+begin
+  Result := ExpandConstant('{autopf}\AccessWeaver');
+  if (AWReadPendingVersion(Version, Directory, ApprovalPin, LegacyRetirement) = '') and
+     LegacyRetirement then Result := Directory;
+end;
+#endif
+
+function AWSetLifecycleStringNative(Key: LongWord; const Name: String;
+  Reserved, Kind: LongWord; const Data: String; Bytes: LongWord): LongWord;
+  external 'RegSetValueExW@advapi32.dll stdcall';
+
+function AWDeleteLifecycleValueNative(Key: LongWord; const Name: String): LongWord;
+  external 'RegDeleteValueW@advapi32.dll stdcall';
+
+function AWWriteLifecycleString(const Name, Value: String; Flush: Boolean): Boolean;
 var Key: LongWord;
 begin
   Result := False;
-  if AWOpenRegistrationKey($80000002, AWLifecycleRegistry, 0, $0101, Key) <> 0 then Exit;
+  if not AWLifecycleOwned or (Length(Value) > 10000) or (Pos(#0, Value) <> 0) then Exit;
+  if AWOpenLifecycleRegistry($0002, True, Key) <> 0 then Exit;
   try
-    Result := AWFlushRegistryKey(Key) = 0;
+    Result := AWSetLifecycleStringNative(Key, Name, 0, 1, Value, (Length(Value) + 1) * 2) = 0;
+    if Result and Flush then Result := AWFlushRegistryKey(Key) = 0;
   finally
-    AWCloseRegistrationKey(Key);
+    if AWCloseRegistrationKey(Key) <> 0 then Result := False;
+  end;
+end;
+
+function AWReadLifecycleString(const Name: String; Maximum: LongWord; var Value: String): Boolean;
+var Key: LongWord;
+begin
+  Result := False; Value := '';
+  if AWOpenLifecycleRegistry($0001, False, Key) <> 0 then Exit;
+  try
+    Result := AWReadRegistrationString(Key, Name, $30000002, Maximum, Value);
+  finally
+    if AWCloseRegistrationKey(Key) <> 0 then Result := False;
+  end;
+end;
+
+function AWDeleteLifecycleValue(const Name: String; Flush: Boolean; var Flushed: Boolean): Boolean;
+var Key, Kind, Bytes: LongWord;
+begin
+  Result := False; Flushed := False;
+  if not AWLifecycleOwned or (AWOpenLifecycleRegistry($0002, False, Key) <> 0) then Exit;
+  try
+    Result := AWDeleteLifecycleValueNative(Key, Name) = 0;
+    Kind := 0; Bytes := 0;
+    if Result then Result := AWRegistrationQueryValue(Key, Name, 0, Kind, 0, Bytes) = 2;
+    if Result and Flush then Flushed := AWFlushRegistryKey(Key) = 0;
+  finally
+    if AWCloseRegistrationKey(Key) <> 0 then begin
+      Flushed := False;
+      { A confirmed pending deletion with uncertain cleanup follows the same
+        guarded restoration path as a failed retirement flush. }
+      if not Flush then Result := False;
+    end;
   end;
 end;
 
@@ -162,38 +245,47 @@ begin
 end;
 
 function AWPendingInstallMatches(const Destination: String): Boolean;
-var Version, Directory, ApprovalPin: String;
+var Version, Directory, ApprovalPin: String; LegacyRetirement: Boolean;
 begin
   Result := False;
-  if AWReadPendingVersion(Version, Directory, ApprovalPin) <> '' then Exit;
+  if AWReadPendingVersion(Version, Directory, ApprovalPin, LegacyRetirement) <> '' then Exit;
   Result := (AWOrdinal(Version, '{#ReleaseVersion}') = 0) and
-    (AWOrdinal(Directory, Destination) = 0) and (ApprovalPin = AWPendingApprovalPin);
+    (AWOrdinal(Directory, Destination) = 0) and (ApprovalPin = AWPendingApprovalPin) and
+    (LegacyRetirement = AWPendingLegacyRetirement);
 end;
+
+#ifdef ProtectedRegistrationQualification
+#include "windows-installer-registry-owned.iss"
+#include "windows-installer-registry-transaction.iss"
+#include "windows-installer-registry-legacy.iss"
+#endif
 
 function AWPendingInstallValue(const Destination: String): String;
 begin
   Result := '{#ReleaseVersion}|' + Destination;
   if AWPendingApprovalPin <> '' then Result := Result + '|' + AWPendingApprovalPin;
+  if AWPendingLegacyRetirement then Result := Result + '|' + AWLegacyRetirementMarker;
 end;
 
 function AWPendingInstallAbsent: Boolean;
-var Version, Directory, ApprovalPin: String;
+var Version, Directory, ApprovalPin: String; LegacyRetirement: Boolean;
 begin
-  Result := (AWReadPendingVersion(Version, Directory, ApprovalPin) = '') and (Version = '');
+  Result := (AWReadPendingVersion(Version, Directory, ApprovalPin, LegacyRetirement) = '') and (Version = '');
 end;
 
 function AWRetirePendingInstall(const Destination: String): Boolean;
+var Flushed: Boolean;
 begin
   Result := False;
   if not AWLifecycleOwned or not AWPendingInstallMatches(Destination) then begin
     Log('AccessWeaver pending installation record changed or could not be verified. Setup did not clear it.');
     Exit;
   end;
-  if not RegDeleteValue(HKLM64, AWLifecycleRegistry, AWPendingInstall) then begin
+  if not AWDeleteLifecycleValue(AWPendingInstall, True, Flushed) then begin
     Log('Cannot delete the AccessWeaver pending installation record.');
     Exit;
   end;
-  if AWFlushLifecycleRecord then begin
+  if Flushed then begin
     Result := AWPendingInstallAbsent;
     if not Result then Log('AccessWeaver could not verify absence of the pending installation record after retirement.');
     Exit;
@@ -206,12 +298,8 @@ begin
     Log('AccessWeaver pending installation record changed or could not be verified. Setup did not replace it.');
     Exit;
   end;
-  if not RegWriteStringValue(HKLM64, AWLifecycleRegistry, AWPendingInstall, AWPendingInstallValue(Destination)) then begin
+  if not AWWriteLifecycleString(AWPendingInstall, AWPendingInstallValue(Destination), True) then begin
     Log('Cannot restore the AccessWeaver pending installation record after the failed flush.');
-    Exit;
-  end;
-  if not AWFlushLifecycleRecord then begin
-    Log('Cannot flush the restored AccessWeaver pending installation record.');
     Exit;
   end;
   if not AWPendingInstallMatches(Destination) then begin
@@ -222,9 +310,13 @@ begin
 end;
 
 function AWPendingSetupPreflight(const Destination: String): String;
-var Version, Directory, ApprovalPin: String; Ordering: Integer;
+var Version, Directory, ApprovalPin: String; Ordering: Integer; LegacyRetirement: Boolean;
 begin
-  Result := AWReadPendingVersion(Version, Directory, ApprovalPin);
+  Result := AWReadPendingVersion(Version, Directory, ApprovalPin, LegacyRetirement);
+#ifndef ProtectedRegistrationQualification
+  if (Result = '') and LegacyRetirement then
+    Result := 'Finish the incomplete AccessWeaver migration with its original approved installer.';
+#endif
   if (Result <> '') or (Version = '') then Exit;
   if not AWCompare('{#ReleaseVersion}', Version, Ordering) then
     Result := 'The AccessWeaver pending installation version is invalid.'
@@ -419,11 +511,12 @@ begin
     if AWPendingInstallAbsent then begin
       Value := '';
       if AWCollectSetupTempNames(Destination, Current) then Value := Binding + Current.Text;
-      Result := RegWriteStringValue(HKLM64, AWLifecycleRegistry, AWManagedTempBaseline, Value);
+      if Length(Value) > 10000 then Value := '';
+      Result := AWWriteLifecycleString(AWManagedTempBaseline, Value, False);
       Exit;
     end;
     if not AWPendingInstallMatches(Destination) then begin Result := False; Exit; end;
-    if not RegQueryStringValue(HKLM64, AWLifecycleRegistry, AWManagedTempBaseline, Value) then Exit;
+    if not AWReadLifecycleString(AWManagedTempBaseline, 10000, Value) then Exit;
     if (Length(Value) > 10000) or (Copy(Value, 1, Length(Binding)) <> Binding) then Exit;
     Baseline := TStringList.Create;
     try
@@ -452,11 +545,18 @@ function AWQueryFileStreams(Handle, InfoClass: LongWord; var Info: AWFileStreamI
   Bytes: LongWord): Integer;
   external 'GetFileInformationByHandleEx@kernel32.dll stdcall';
 
-function AWOnlyDefaultDataStream(Handle: LongWord): Boolean;
-var Info: AWFileStreamInfo; I: Integer; DefaultName: String;
+function AWOnlyDefaultDataStream(Handle: LongWord; var Inspected: Boolean): Boolean;
+var Info: AWFileStreamInfo; I: Integer; DefaultName: String; Code: LongWord;
 begin
   Result := False;
-  if AWQueryFileStreams(Handle, 7, Info, SizeOf(Info)) = 0 then Exit;
+  if AWQueryFileStreams(Handle, 7, Info, SizeOf(Info)) = 0 then begin
+    Code := DLLGetLastError;
+    { This fixed buffer has space for the default data stream. A larger
+      enumeration cannot prove the file contains only that stream. }
+    Inspected := (Code = 122) or (Code = 234);
+    Exit;
+  end;
+  Inspected := True;
   DefaultName := '::$DATA';
   if (Info.NextEntryOffset <> 0) or (Info.NameBytes <> 2 * Length(DefaultName)) then Exit;
   for I := 1 to Length(DefaultName) do
@@ -468,9 +568,10 @@ function AWSetFileDisposition(Handle, InfoClass: LongWord; var DeleteFile: Byte;
   Bytes: LongWord): Integer;
   external 'SetFileInformationByHandle@kernel32.dll stdcall';
 
-function AWRemoveTemporaryUninstaller(const Path, Identity: String; ExpectedSize: Int64): Boolean;
+function AWRemoveMatchingInstallationFile(const Path, Identity: String; ExpectedSize: Int64;
+  RequireInspection: Boolean): Boolean;
 var Handle, Code: LongWord; Info: AWFileInfo; Subject: THandleStream; DeleteFile: Byte;
-    CanDelete, Deleted: Boolean;
+    CanDelete, Deleted, StreamsInspected: Boolean;
 begin
   Result := True;
   Deleted := False;
@@ -481,10 +582,17 @@ begin
     { A reader can deny DELETE while still allowing us to identify the file.
       Preserve unrelated files without delaying managed recovery. }
     Handle := AWOpenReplaceProbe(Path, $80000000, 1, 0, 3, $00200000, 0);
-    if Handle = $FFFFFFFF then Exit;
+    if Handle = $FFFFFFFF then begin
+      Code := DLLGetLastError;
+      Result := not RequireInspection or (Code = 2) or (Code = 3);
+      Exit;
+    end;
   end;
   try
-    if AWGetFileInfo(Handle, Info) = 0 then Exit;
+    if AWGetFileInfo(Handle, Info) = 0 then begin
+      Result := not RequireInspection;
+      Exit;
+    end;
     if ((Info.Attributes and ($00000400 or $00000010)) <> 0) or (Info.Links <> 1) then Exit;
     Subject := THandleStream.Create(Handle);
     try
@@ -493,7 +601,10 @@ begin
     finally
       Subject.Free;
     end;
-    if not AWOnlyDefaultDataStream(Handle) then Exit;
+    if not AWOnlyDefaultDataStream(Handle, StreamsInspected) then begin
+      Result := StreamsInspected or not RequireInspection;
+      Exit;
+    end;
     if not CanDelete then begin Result := False; Exit; end;
     DeleteFile := 1;
     Deleted := AWSetFileDisposition(Handle, 4, DeleteFile, 1) <> 0;
@@ -529,8 +640,8 @@ begin
       Subject.Free;
     end;
     for I := 0 to AWManagedTempCandidates.Count - 1 do
-      if not AWRemoveTemporaryUninstaller(AddBackslash(Destination) + AWManagedTempCandidates[I],
-        Identity, UninstallerSize) then Exit;
+      if not AWRemoveMatchingInstallationFile(AddBackslash(Destination) + AWManagedTempCandidates[I],
+        Identity, UninstallerSize, False) then Exit;
     Result := True;
   except
     Result := False;
@@ -590,6 +701,7 @@ end;
 #define AWStagedResult
 #define AWStagedVerify False
 #define AWStagedFingerprint False
+#define AWStagedRemoval False
 #sub AWEmitStagedFileCheck
   #define AWStagedRelative AWStagedPrefix + FindGetFileName(AWStagedFind)
   #define AWStagedName LowerCase(AWStagedRelative)
@@ -597,6 +709,8 @@ end;
   #define AWStagedPath AddBackslash(BuildRoot) + AWStagedRelative
   #if AWStagedFingerprint
     Entries.Add('{#AWStagedLiteral}|{#FileSize(AWStagedPath)}|{#GetSHA256OfFile(AWStagedPath)}');
+  #elif AWStagedRemoval
+    if not AWInstalledPathAbsent(Destination + '\{#AWStagedLiteral}') then Exit;
   #elif AWStagedName != "accessweaver.exe" && AWStagedName != "build-info.json" && AWStagedName != "sbom.cdx.json" && AWStagedName != "licenses\inno-setup-license.txt"
     #if AWStagedVerify
       if not AWVerifyAndHoldPackageFile(Destination + '\{#AWStagedLiteral}', '{#GetSHA256OfFile(AWStagedPath)}', {#FileSize(AWStagedPath)}, Held) then Exit;
@@ -615,6 +729,52 @@ end;
     #call FindClose(AWStagedFind)
   #endif
 #endsub
+
+#ifdef ProtectedRegistrationQualification
+#include "windows-installer-registry-publication.iss"
+#endif
+
+#ifdef RetiredPayloadInclude
+function AWRetirePackageFile(const Path, Digest: String; Size: Int64): Boolean;
+var Parent: String; Held: AWNativeHandles; Attributes, Code: LongWord; I: Integer;
+begin
+  Result := False;
+  Parent := ExtractFileDir(Path);
+  Attributes := AWPathAttributes(Parent);
+  if Attributes = $FFFFFFFF then begin
+    Code := DLLGetLastError;
+    Result := (Code = 2) or (Code = 3);
+    Exit;
+  end;
+  try
+    if not AWLockInstallationDirectory(Parent, Held) then Exit;
+    Attributes := AWPathAttributes(Path);
+    if (Attributes <> $FFFFFFFF) and ((Attributes and ($00000400 or $00000010)) <> 0) then begin
+      Result := True;
+      Exit;
+    end;
+    Result := AWRemoveMatchingInstallationFile(Path, Digest, Size, True);
+  finally
+    for I := GetArrayLength(Held) - 1 downto 0 do
+      if AWCloseNativeHandle(Held[I]) = 0 then Result := False;
+  end;
+end;
+
+#include RetiredPayloadInclude
+
+function AWCleanupRetiredPackageFiles(const Destination: String): Boolean;
+begin
+  Result := True;
+  if not AWPendingLegacyRetirement then Exit;
+  Result := False;
+  if not AWPendingInstallMatches(Destination) or not AWRetiredPayloadMatchesApproval then Exit;
+  try
+    Result := AWRetireApprovedPackageFiles(Destination);
+  except
+    Result := False;
+  end;
+end;
+#endif
 
 function AWVerifyCompletedInstall(const Destination: String; var Held: AWNativeHandles;
   var Executable, BuildInfo, SBOM, RuntimeNotice, Uninstaller, UninstallData: LongWord): Boolean;
@@ -637,6 +797,9 @@ begin
   if not AWIsInstallationDirectory(Destination, ExtractFileDir(UninstallerPath)) then Exit;
   if not AWOpenUninstallSubject(UninstallerPath, Uninstaller) then Exit;
   if not AWOpenUninstallSubject(ChangeFileExt(UninstallerPath, '.dat'), UninstallData) then Exit;
+#ifdef ProtectedRegistrationQualification
+  if not AWPublishOwnedProductRegistration(Destination, UninstallerPath) then Exit;
+#endif
   if AWReadRegistration($0100, True, UninstallerPath, Found64, Version, Location) <> '' then Exit;
   if AWReadRegistration($0200, False, '', Found32, Version32, Location32) <> '' then Exit;
   Result := Found64 and not Found32 and (Version = '{#ReleaseVersion}') and
@@ -767,11 +930,15 @@ end;
 function AWApprovedUpgradePreflight(const Destination: String; var ApprovalPin: String): String;
 var I, Ordering: Integer; Argument, Approval, Version, PayloadPin, SBOMPin, BuildPin,
     Installed, Location, OtherVersion, OtherLocation, PendingVersion, PendingDirectory, PendingPin: String;
-    Present, Found64, Found32: Boolean;
+    Present, Found64, Found32, PendingLegacyRetirement: Boolean;
     Held: AWNativeHandles; Executable, BuildInfo, SBOM: LongWord;
 begin
   ApprovalPin := '';
-  Result := AWReadPendingVersion(PendingVersion, PendingDirectory, PendingPin);
+#ifdef ProtectedRegistrationQualification
+  AWLegacyApproval.Version := '';
+#endif
+  AWPendingLegacyRetirement := False;
+  Result := AWReadPendingVersion(PendingVersion, PendingDirectory, PendingPin, PendingLegacyRetirement);
   if Result <> '' then Exit;
   Result := 'Invalid AccessWeaver managed upgrade approval.';
   Present := False;
@@ -788,18 +955,46 @@ begin
     else Result := 'Finish the incomplete AccessWeaver managed upgrade with its original approved installer and baseline argument.';
     Exit;
   end;
+#ifdef ProtectedRegistrationQualification
+  if Length(Approval) > 581 then Exit;
+#else
   if Length(Approval) > 451 then Exit;
-  { Commas cannot occur in the four fields. AWCompare validates SemVer. }
+#endif
+  { Commas delimit the approved version and file digests. AWCompare validates SemVer. }
   I := Pos(',', Approval);
   if I = 0 then Exit;
   Version := Copy(Approval, 1, I - 1);
   Delete(Approval, 1, I);
   if not AWCompare('{#ReleaseVersion}', Version, Ordering) or (Ordering <= 0) then Exit;
-  if (Length(Approval) <> 194) or (Approval[65] <> ',') or (Approval[130] <> ',') then Exit;
+#ifdef ProtectedRegistrationQualification
+  if (Length(Approval) <> 194) and (Length(Approval) <> 324) then Exit;
+#else
+  if Length(Approval) <> 194 then Exit;
+#endif
+  if (Approval[65] <> ',') or (Approval[130] <> ',') then Exit;
   PayloadPin := Copy(Approval, 1, 64);
   SBOMPin := Copy(Approval, 66, 64);
   BuildPin := Copy(Approval, 131, 64);
   if not AWSha256Pin(PayloadPin) or not AWSha256Pin(SBOMPin) or not AWSha256Pin(BuildPin) then Exit;
+#ifdef ProtectedRegistrationQualification
+  if Length(Approval) = 324 then begin
+    if (Approval[195] <> ',') or (Approval[260] <> ',') then Exit;
+    AWLegacyApproval.Uninstaller := Copy(Approval, 196, 64);
+    AWLegacyApproval.UninstallData := Copy(Approval, 261, 64);
+    if not AWSha256Pin(AWLegacyApproval.Uninstaller) or not AWSha256Pin(AWLegacyApproval.UninstallData) then Exit;
+    AWLegacyApproval.Version := Version;
+    AWLegacyApproval.Payload := PayloadPin;
+    AWLegacyApproval.SBOM := SBOMPin;
+    AWLegacyApproval.BuildInfo := BuildPin;
+#ifdef RetiredPayloadInclude
+    if not AWRetiredPayloadMatchesApproval then begin
+      Log('AccessWeaver upgrade approval does not match the compiled prior package retirement plan.');
+      Result := 'The installed AccessWeaver release differs from the approved upgrade baseline.';
+      Exit;
+    end;
+#endif
+  end;
+#endif
 
   { The pin binds the baseline argument and all staged payload files.
     The separate record fields bind its exact new version and destination. }
@@ -822,6 +1017,7 @@ begin
           if Found32 then Exit;
           if Found64 and (not AWIsInstallationDirectory(Destination, Location) or
              ((AWOrdinal(Version, Installed) <> 0) and (AWOrdinal('{#ReleaseVersion}', Installed) <> 0))) then Exit;
+          AWPendingLegacyRetirement := PendingLegacyRetirement;
           Result := '';
           Log('AccessWeaver approved upgrade resumed from its pending installation record.');
         except
@@ -865,7 +1061,7 @@ end;
 
 procedure AWCompleteInstallation(const Destination: String);
 var Held: AWNativeHandles; Executable, BuildInfo, SBOM, RuntimeNotice, Uninstaller, UninstallData: LongWord; I: Integer;
-    Verified: Boolean;
+    Verified, BaselineFlushed: Boolean;
 begin
   Executable := $FFFFFFFF; BuildInfo := $FFFFFFFF; SBOM := $FFFFFFFF;
   RuntimeNotice := $FFFFFFFF; Uninstaller := $FFFFFFFF; UninstallData := $FFFFFFFF;
@@ -878,11 +1074,15 @@ begin
     AWPendingRetirementFailed := True;
     if not Verified then
       Log('AccessWeaver installed payload or registration verification failed. Pending installation record retained.')
+#ifdef RetiredPayloadInclude
+    else if not AWCleanupRetiredPackageFiles(Destination) then
+      Log('AccessWeaver could not retire a verified prior package file. Pending installation record retained.')
+#endif
     else if not AWCleanupManagedTemporaryUninstallers(Destination, Uninstaller) then
       Log('AccessWeaver could not retire a verified temporary uninstaller. Pending installation record retained.')
     else if AWRetirePendingInstall(Destination) then begin
       AWPendingRetirementFailed := False;
-      if AWPendingApprovalPin <> '' then RegDeleteValue(HKLM64, AWLifecycleRegistry, AWManagedTempBaseline);
+      if AWPendingApprovalPin <> '' then AWDeleteLifecycleValue(AWManagedTempBaseline, False, BaselineFlushed);
       Log('AccessWeaver installed payload and registration verified. Pending installation record retired.');
     end;
   finally
@@ -899,6 +1099,9 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var Failure, Destination: String;
+#ifdef ProtectedRegistrationQualification
+    LegacyHeld: AWNativeHandles; LegacyClosed: Boolean; I: Integer;
+#endif
 begin
   if CurStep = ssInstall then begin
     if not AWLifecycleOwned then RaiseException('The AccessWeaver installation lock is not held.');
@@ -912,13 +1115,31 @@ begin
     if Failure = '' then Failure := AWPayloadReplacementPreflight(Destination);
     if Failure = '' then Failure := AWApprovedUpgradePreflight(Destination, AWPendingApprovalPin);
     if Failure <> '' then RaiseException(Failure);
-    if not AWPrepareManagedTempRecovery(Destination) then
-      RaiseException('Cannot persist the AccessWeaver temporary file baseline.');
-    if not RegWriteStringValue(HKLM64, AWLifecycleRegistry, AWPendingInstall, AWPendingInstallValue(Destination)) or
-      not AWFlushLifecycleRecord then
-      RaiseException('Cannot persist the AccessWeaver pending installation record.');
-    if not AWPendingInstallMatches(Destination) then
-      RaiseException('Cannot verify the AccessWeaver pending installation record after writing it.');
+#ifdef ProtectedRegistrationQualification
+    LegacyClosed := True;
+    try
+      if not AWPrepareOwnedProductRegistration(Destination, LegacyHeld) then begin
+        Log('AccessWeaver protected registration or legacy approval refused.');
+        RaiseException('Cannot verify AccessWeaver registration. Migration requires the approved prior installer files and registration.');
+      end;
+      if AWLegacyPriorInventory <> '' then AWPendingLegacyRetirement := True;
+#endif
+      if not AWPrepareManagedTempRecovery(Destination) then
+        RaiseException('Cannot persist the AccessWeaver temporary file baseline.');
+      if not AWWriteLifecycleString(AWPendingInstall, AWPendingInstallValue(Destination), True) then
+        RaiseException('Cannot persist the AccessWeaver pending installation record.');
+      if not AWPendingInstallMatches(Destination) then
+        RaiseException('Cannot verify the AccessWeaver pending installation record after writing it.');
+#ifdef ProtectedRegistrationQualification
+      if not AWRetireApprovedLegacyRegistration(Destination) then
+        RaiseException('Cannot retire the approved legacy AccessWeaver registration. Retry the matching approved installer.');
+    finally
+      for I := GetArrayLength(LegacyHeld) - 1 downto 0 do
+        if AWCloseNativeHandle(LegacyHeld[I]) = 0 then LegacyClosed := False;
+    end;
+    if not LegacyClosed then
+      RaiseException('Cannot release the approved legacy installation files.');
+#endif
   end else if CurStep = ssPostInstall then begin
     AWInstallFinished := True;
   end else if (CurStep = ssDone) and AWInstallFinished then
@@ -985,12 +1206,12 @@ begin
 end;
 
 function AWUninstallPreflight: String;
-var PendingVersion, PendingDirectory, PendingPin: String;
+var PendingVersion, PendingDirectory, PendingPin: String; PendingLegacyRetirement: Boolean;
 begin
   if not AWLifecycleOwned then begin
     Result := 'The AccessWeaver installation lock is not held. Retry uninstalling.'; Exit;
   end;
-  Result := AWReadPendingVersion(PendingVersion, PendingDirectory, PendingPin);
+  Result := AWReadPendingVersion(PendingVersion, PendingDirectory, PendingPin, PendingLegacyRetirement);
   if (Result = '') and (PendingVersion <> '') then
     Result := 'An AccessWeaver installation is incomplete. Retry the approved installer before uninstalling.';
   if Result = '' then Result := AWUninstallDirectoryPreflight(ExpandConstant('{app}'));
@@ -1014,11 +1235,57 @@ begin
   end;
 end;
 
+#ifdef ProtectedRegistrationQualification
+var AWOwnedRemovalStarted: Boolean;
+
+function AWInstalledPathAbsent(const Path: String): Boolean;
+var Code: LongWord;
+begin
+  Result := False;
+  if AWPathAttributes(Path) <> $FFFFFFFF then Exit;
+  Code := DLLGetLastError;
+  Result := (Code = 2) or (Code = 3);
+end;
+
+function AWVerifyOwnedRemoval(const Destination, Uninstaller: String): Boolean;
+begin
+  Result := False;
+  if (AWInstallationPathPreflight(Destination, True) <> '') or
+     (AWPackageDirectoryPreflight(Destination) <> '') then Exit;
+  #expr AWStagedRemoval = True
+  #for {AWStagedDirectoryIndex = 0; AWStagedDirectoryIndex < DimOf(AWStagedDirectories); AWStagedDirectoryIndex++} AWEmitStagedDirectoryChecks
+  #expr AWStagedRemoval = False
+  Result := AWInstalledPathAbsent(Uninstaller) and
+    AWInstalledPathAbsent(ChangeFileExt(Uninstaller, '.dat')) and
+    AWInstalledPathAbsent(ChangeFileExt(Uninstaller, '.msg')) and
+    AWProductRegistrationAbsent($0100) and AWProductRegistrationAbsent($0200);
+end;
+
+function AWBeginOwnedRemoval(const Destination, Uninstaller: String): Boolean;
+begin
+  { Once the entry is retired, a stopped or incomplete removal can be
+    recovered by running the approved Setup in the recorded directory. }
+  Result := AWLifecycleOwned and AWPendingInstallAbsent and
+    AWWriteLifecycleString(AWPendingInstall, AWPendingInstallValue(Destination), True) and
+    AWRetirePublishedRegistration(Destination, Uninstaller);
+end;
+#endif
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var ResultCode, Controller: LongWord; Failure, Executable, Destination: String;
     Held: AWNativeHandles; I: Integer;
     Verified, Restored, HandlesClosed: Boolean;
 begin
+#ifdef ProtectedRegistrationQualification
+  if (CurUninstallStep = usPostUninstall) and AWOwnedRemovalStarted then begin
+    Destination := ExpandConstant('{app}');
+    if AWVerifyOwnedRemoval(Destination, ExpandConstant('{uninstallexe}')) and
+       AWRetirePendingInstall(Destination) then
+      Log('AccessWeaver protected removal and registration absence verified.')
+    else
+      Log('AccessWeaver could not verify protected removal. Use the approved installer to recover.');
+  end;
+#endif
   if CurUninstallStep <> usUninstall then Exit;
   { Inno reaches this step after confirmation and app-mutex checks, before
     processing its deletion log. Keep lifecycle ownership until deinitialization. }
@@ -1066,7 +1333,16 @@ begin
     if Failure <> '' then Log(Failure);
     Failure := 'AccessWeaver restoration file handle cleanup could not be confirmed.';
   end;
-  if Restored and HandlesClosed and (Failure = '') then Exit;
+  if Restored and HandlesClosed and (Failure = '') then begin
+#ifdef ProtectedRegistrationQualification
+    AWOwnedRemovalStarted := AWBeginOwnedRemoval(Destination, ExpandConstant('{uninstallexe}'));
+    if not AWOwnedRemovalStarted then begin
+      Failure := 'Cannot retire the protected AccessWeaver registration. Use the approved installer to recover.';
+    end else Exit;
+#else
+    Exit;
+#endif
+  end;
   Log(Failure);
   if not UninstallSilent then
     MsgBox('AccessWeaver could not restore its system changes. Review the recovery journal in ProgramData\AccessWeaver\logs, then retry uninstalling.', mbError, MB_OK);

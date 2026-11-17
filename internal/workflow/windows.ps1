@@ -6703,40 +6703,151 @@ namespace AccessWeaver
     }
 }
 
-function Get-AccessWeaverInstallerRecoveryState {
-    # The detector ships standalone. Its source fixture checks both copies.
-    try {
-        if(-not ('AccessWeaver.InstallerRecoveryRegistry' -as [type])){
-            Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
+function Initialize-AccessWeaverInstallerRecoveryRegistry {
+    if('AccessWeaver.InstallerLifecycleRecoveryRegistry' -as [type]){return}
+    Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace AccessWeaver
 {
-    public static class InstallerRecoveryRegistry
+    public static class InstallerLifecycleRecoveryRegistry
     {
         private static readonly IntPtr LocalMachine = new IntPtr(unchecked((int)0x80000002));
-        private const uint QueryFlags = 0x1001ffff; // RRF_NOEXPAND | RRF_SUBKEY_WOW6464KEY | RRF_RT_ANY
+        private static readonly string[] Components = { "SOFTWARE", "AccessWeaver", "Installer" };
+        private static readonly string[] ProductRegistration = {
+            "SOFTWARE", "Microsoft", "Windows", "CurrentVersion", "Uninstall",
+            "{B13D4677-4660-4E63-B3DB-03077ACBB092}_is1"
+        };
+        private const int NotFound = 2;
+        private const int Unsafe = 5;
+        private const uint NoExpand = 0x10000000;
+        private const uint QueryAny = NoExpand | 0xffff;
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern int RegOpenKeyExW(IntPtr parent, string name, uint options, uint access, out IntPtr key);
+
+        [DllImport("advapi32.dll", ExactSpelling = true)]
+        private static extern int RegCloseKey(IntPtr key);
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern int RegQueryValueExW(IntPtr key, string value,
+            IntPtr reserved, IntPtr type, IntPtr data, out uint size);
 
         [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
         private static extern int RegGetValueW(IntPtr key, string subKey, string value,
             uint flags, IntPtr type, IntPtr data, out uint size);
 
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern int RegGetValueW(IntPtr key, string subKey, string value,
+            uint flags, out uint type, [Out] byte[] data, ref uint size);
+
+        private static int OpenPath(string[] components, uint view, int firstAllowedMissing, out IntPtr key)
+        {
+            key = IntPtr.Zero;
+            IntPtr parent = LocalMachine;
+            int status = 0;
+            for (int index = 0; index < components.Length; index++)
+            {
+                IntPtr child;
+                status = RegOpenKeyExW(parent, components[index], 8, view | 1, out child);
+                if (status != 0)
+                {
+                    if (index < firstAllowedMissing)
+                        status = Unsafe;
+                    break;
+                }
+
+                uint size;
+                if (RegQueryValueExW(child, "SymbolicLinkValue", IntPtr.Zero,
+                    IntPtr.Zero, IntPtr.Zero, out size) != NotFound)
+                {
+                    RegCloseKey(child);
+                    status = Unsafe;
+                    break;
+                }
+                if (parent != LocalMachine && RegCloseKey(parent) != 0)
+                {
+                    RegCloseKey(child);
+                    return Unsafe;
+                }
+                parent = child;
+            }
+
+            if (status == 0)
+            {
+                key = parent;
+                return 0;
+            }
+            if (parent != LocalMachine && RegCloseKey(parent) != 0)
+                return Unsafe;
+            return status;
+        }
+
+        private static int ReadProductView(uint view)
+        {
+            IntPtr key;
+            int status = OpenPath(ProductRegistration, view, 4, out key);
+            if (status == 0 && RegCloseKey(key) != 0)
+                return Unsafe;
+            return status == 3 ? NotFound : status;
+        }
+
+        public static int QueryProductRegistration()
+        {
+            if (ReadProductView(0x0200) != NotFound)
+                return Unsafe;
+            return ReadProductView(0x0100);
+        }
+
         public static int QueryStatus()
         {
+            IntPtr key;
+            int status = OpenPath(Components, 0x0100, 1, out key);
+            if (status != 0)
+                return status;
+
             uint size;
-            return RegGetValueW(LocalMachine, @"SOFTWARE\AccessWeaver\Installer", "PendingInstall",
-                QueryFlags, IntPtr.Zero, IntPtr.Zero, out size);
+            status = RegGetValueW(key, null, "PendingInstall", QueryAny, IntPtr.Zero, IntPtr.Zero, out size);
+            return RegCloseKey(key) == 0 ? status : Unsafe;
+        }
+
+        public static string ReadValue()
+        {
+            IntPtr key;
+            if (OpenPath(Components, 0x0100, 1, out key) != 0)
+                return null;
+
+            // Match Setup's bound including the optional legacy retirement phase.
+            byte[] buffer = new byte[1202];
+            uint size = (uint)buffer.Length;
+            uint type;
+            int status = RegGetValueW(key, null, "PendingInstall", NoExpand | 2, out type, buffer, ref size);
+            if (RegCloseKey(key) != 0 || status != 0 || type != 1 || size < 4 ||
+                size > buffer.Length || size % 2 != 0)
+                return null;
+
+            int contentBytes = (int)size - 2;
+            if (buffer[contentBytes] != 0 || buffer[contentBytes + 1] != 0)
+                return null;
+
+            string value = new UnicodeEncoding(false, false, true).GetString(buffer, 0, contentBytes);
+            return value.IndexOf('\0') < 0 ? value : null;
         }
     }
 }
 '@
-        }
-        # Only explicit key/path or value absence permits uninstall or detection.
-        switch ([AccessWeaver.InstallerRecoveryRegistry]::QueryStatus()) {
+}
+
+function Get-AccessWeaverInstallerRecoveryState {
+    try {
+        Initialize-AccessWeaverInstallerRecoveryRegistry
+        # Only explicit component or value absence clears the recovery guard.
+        switch ([AccessWeaver.InstallerLifecycleRecoveryRegistry]::QueryStatus()) {
             0 {return 'pending'}
-            2 {return 'clear'} # ERROR_FILE_NOT_FOUND
-            3 {return 'clear'} # ERROR_PATH_NOT_FOUND
+            2 {return 'clear'}
+            3 {return 'clear'}
             default {return 'unavailable'}
         }
     } catch {

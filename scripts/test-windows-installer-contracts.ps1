@@ -141,7 +141,7 @@ $prepare=[regex]::Match($installerSource,'(?ms)^function PrepareToInstall\(.*?^e
 $copy=[regex]::Match($installerSource,'(?ms)^procedure CurStepChanged\(.*?^end;').Value
 $uninstallPreflight=[regex]::Match($installerSource,'(?ms)^function AWUninstallPreflight: String;.*?^end;').Value
 Assert ($prepare -cmatch "(?s)AWInstallationPathPreflight\(ExpandConstant\('\{app\}'\), True\).*AWPayloadReplacementPreflight") 'Setup must check the destination before probing the payload'
-Assert ($copy -cmatch '(?s)AWInstallationPathPreflight\(Destination, True\).*AWPayloadReplacementPreflight\(Destination\).*RaiseException\(Failure\).*RegWriteStringValue') 'Setup must recheck the destination and release files before recording pending installation'
+Assert ($copy -cmatch '(?s)AWInstallationPathPreflight\(Destination, True\).*AWPayloadReplacementPreflight\(Destination\).*RaiseException\(Failure\).*AWWriteLifecycleString') 'Setup must recheck the destination and release files before recording pending installation'
 $replaceProbe=[regex]::Match($installerSource,'(?ms)^function AWCanReplaceInstalledFile\(.*?^end;').Value
 Assert ($replaceProbe.Contains('AWOpenReplaceProbe(Path, $00010080, $00000007, 0, 3, $00200000, 0)') -and
     $replaceProbe -cmatch '(?s)AWGetFileInfo\(Handle, Info\).*Info.Attributes and \(\$00000400 or \$00000010 or \$00000001\).*Info.Links = 1.*finally.*AWCloseNativeHandle') 'Setup must refuse read-only, aliased or redirected files before replacement'
@@ -175,13 +175,19 @@ $verifiedFile=[regex]::Match($installerSource,'(?ms)^function AWVerifyInstalledF
 $retirement=[regex]::Match($installerSource,'(?ms)^procedure AWCompleteInstallation\(.*?^end;').Value
 $directoryLock=[regex]::Match($installerSource,'(?ms)^function AWLockInstallationDirectory\(.*?^end;').Value
 $retireMarker=[regex]::Match($installerSource,'(?ms)^function AWRetirePendingInstall\(.*?^end;').Value
-Assert ($retireMarker -cmatch '(?s)not AWLifecycleOwned or not AWPendingInstallMatches\(Destination\).*not RegDeleteValue.*if AWFlushLifecycleRecord then begin.*Result := AWPendingInstallAbsent') 'Setup must retire only its owned marker and verify its absence after flushing'
-Assert ($retireMarker -cmatch '(?s)if not AWPendingInstallAbsent then begin.*Setup did not replace it.*Exit;.*RegWriteStringValue\(HKLM64, AWLifecycleRegistry, AWPendingInstall, AWPendingInstallValue\(Destination\)\).*not AWFlushLifecycleRecord.*not AWPendingInstallMatches\(Destination\)') 'Setup must restore and verify its exact original marker only after explicit absence'
+Assert ($retireMarker -cmatch '(?s)not AWLifecycleOwned or not AWPendingInstallMatches\(Destination\).*not AWDeleteLifecycleValue\(AWPendingInstall, True, Flushed\).*if Flushed then begin.*Result := AWPendingInstallAbsent') 'Setup must retire only its owned marker and verify its absence after flushing'
+Assert ($retireMarker -cmatch '(?s)if not AWPendingInstallAbsent then begin.*Setup did not replace it.*Exit;.*AWWriteLifecycleString\(AWPendingInstall, AWPendingInstallValue\(Destination\), True\).*not AWPendingInstallMatches\(Destination\)') 'Setup must restore and verify its exact original marker only after explicit absence'
+$lifecycleWrite=[regex]::Match($installerSource,'(?ms)^function AWWriteLifecycleString\(.*?^end;').Value
+$lifecycleDelete=[regex]::Match($installerSource,'(?ms)^function AWDeleteLifecycleValue\(.*?^end;').Value
+Assert ($lifecycleWrite -cmatch '(?s)AWOpenLifecycleRegistry\(\x240002, True, Key\).*AWSetLifecycleStringNative\(Key, Name.*Flush then Result := AWFlushRegistryKey\(Key\).*AWCloseRegistrationKey\(Key\)' -and
+    $lifecycleDelete -cmatch '(?s)AWOpenLifecycleRegistry\(\x240002, False, Key\).*AWDeleteLifecycleValueNative\(Key, Name\).*AWRegistrationQueryValue\(Key, Name.*Flush then Flushed := AWFlushRegistryKey\(Key\).*AWCloseRegistrationKey\(Key\)') 'Recovery changes and flushes must use the same no-follow registry key'
 $pendingValue=[regex]::Match($installerSource,'(?ms)^function AWPendingInstallValue\(.*?^end;').Value
 Assert ($pendingValue -cmatch "(?s)Result := '\{#ReleaseVersion\}\|' \+ Destination;.*if AWPendingApprovalPin <> '' then Result := Result \+ '\|' \+ AWPendingApprovalPin") 'Original and restored pending markers must bind the same release, destination, and optional approval'
+Assert ($pendingValue -cmatch "(?s)if AWPendingLegacyRetirement then Result := Result \+ '\|' \+ AWLegacyRetirementMarker" -and
+    $installerSource -cmatch '(?s)AWLegacyPriorInventory <> '''' then AWPendingLegacyRetirement := True.*AWWriteLifecycleString.*AWRetireApprovedLegacyRegistration') 'Setup must persist the verified legacy-retirement phase before removing the prior record'
 $absence=[regex]::Match($installerSource,'(?ms)^function AWPendingInstallAbsent:.*?^end;').Value
-Assert ($absence -cmatch "\(AWReadPendingVersion\(Version, Directory, ApprovalPin\) = ''\) and \(Version = ''\)") 'Only a successful registry read with explicit absence can release the recovery guard'
-Assert ($copy -cmatch "(?s)ssInstall.*AWRegistrationPreflight\(Destination\).*RegWriteStringValue.*AWFlushLifecycleRecord.*AWPendingInstallMatches\(Destination\).*ssPostInstall.*ssDone.*AWCompleteInstallation") 'Setup must recheck registration and bind the pending record before copy'
+Assert ($absence -cmatch "\(AWReadPendingVersion\(Version, Directory, ApprovalPin, LegacyRetirement\) = ''\) and \(Version = ''\)") 'Only a successful registry read with explicit absence can release the recovery guard'
+Assert ($copy -cmatch "(?s)ssInstall.*AWRegistrationPreflight\(Destination\).*AWWriteLifecycleString.*AWPendingInstallMatches\(Destination\).*ssPostInstall.*ssDone.*AWCompleteInstallation") 'Setup must recheck registration and bind the pending record before copy'
 Assert ($retirement -cmatch "(?s)AWVerifyCompletedInstall.*Pending installation record retained\..*else if AWRetirePendingInstall\(Destination\).*AWPendingRetirementFailed := False.*finally.*AWCloseNativeHandle\(UninstallData\).*AWCloseNativeHandle\(Uninstaller\).*AWCloseNativeHandle\(SBOM\).*AWCloseNativeHandle\(BuildInfo\).*AWCloseNativeHandle\(Executable\).*AWCloseNativeHandle\(Held\[I\]\)") 'Setup must hold the verified subjects and directories through pending record retirement'
 Assert ($directoryLock.Contains('AWOpenReplaceProbe(Copy(Target, 1, I - 1), 1, 3, 0, 3, $02200000, 0)') -and $directoryLock.Contains('AWGetFileInfo(Handle, Info)')) 'Directory guards must enforce sharing and inspect each native handle'
 Assert ($verifiedFile.Contains('AWOpenReplaceProbe(Path, $80000000, 1, 0, 3, $00200000, 0)') -and $verifiedFile -cmatch '(?s)AWGetFileInfo\(Held, Info\).*SingleLink and \(Info\.Links <> 1\).*THandleStream\.Create\(Held\).*Payload\.Size <> Size.*GetSHA256OfStream\(Payload\)') 'Installed files must be inspected and hashed through the held no-follow handles'
@@ -255,27 +261,38 @@ Assert ($installerSource -cmatch '(?m)^UninstallLogging=no\r?$' -and
     $registrySource -cmatch "(?s)'UninstallString', \x2430000002, 300, Command.*'QuietUninstallString', \x2430000002, 300, QuietCommand.*AWOrdinal\(Command, Expected\).*AWOrdinal\(QuietCommand, Expected \+ ' /SILENT'\)") 'Setup must bind both uninstall commands to the installed uninstaller'
 $approvedUpgrade=[regex]::Match($installerSource,'(?ms)^function AWApprovedUpgradePreflight\(.*?^end;').Value
 Assert ($prepare.Contains("AWApprovedUpgradePreflight(ExpandConstant('{app}'), ApprovalPin)") -and
-    $copy -cmatch '(?s)AWApprovedUpgradePreflight\(Destination, AWPendingApprovalPin\).*RaiseException\(Failure\).*RegWriteStringValue\(HKLM64, AWLifecycleRegistry, AWPendingInstall, AWPendingInstallValue\(Destination\)\)') 'Managed upgrades must recheck the baseline before pending record publication'
+    $copy -cmatch '(?s)AWApprovedUpgradePreflight\(Destination, AWPendingApprovalPin\).*RaiseException\(Failure\).*AWWriteLifecycleString\(AWPendingInstall, AWPendingInstallValue\(Destination\), True\)') 'Managed upgrades must recheck the baseline before pending record publication'
 Assert ($approvedUpgrade -cmatch '(?s)ParamCount.*if Present then Exit.*AWCompare.*Ordering <= 0.*AWLockInstallationDirectory.*AWVerifyInstalledFile.*PayloadPin.*AWVerifyInstalledFile.*SBOMPin.*AWVerifyInstalledFile.*BuildPin.*AWOrdinal\(Version, Installed\)') 'Managed upgrade baseline must verify one strict prior version and all three installed pins'
 $fingerprint=[regex]::Match($installerSource,'(?ms)^function AWStagedPayloadDigest:.*?^end;').Value
 Assert ($fingerprint -cmatch '(?s)AWEmitStagedDirectoryChecks.*AWOrdinal\(Entries\[J - 1\], Entry\).*Entries\[J\] := Entry.*GetSHA256OfString\(Utf8Encode\(Entries.Text\)\)' -and
     $installerSource.Contains("Entries.Add('{#AWStagedLiteral}|{#FileSize(AWStagedPath)}|{#GetSHA256OfFile(AWStagedPath)}');") -and
     $approvedUpgrade -cmatch '(?s)\{#TargetArch\}.*AWStagedPayloadDigest.*GetSHA256OfString.*PendingPin = ApprovalPin.*AWOrdinal\(PendingVersion.*AWIsInstallationDirectory\(Destination, PendingDirectory\).*resumed from its pending installation record') 'Managed retry must match the committed approval, entire staged payload and destination'
 $tempRecovery=[regex]::Match($installerSource,'(?ms)^function AWPrepareManagedTempRecovery\(.*?^end;').Value
-$tempRemoval=[regex]::Match($installerSource,'(?ms)^function AWRemoveTemporaryUninstaller\(.*?^end;').Value
-Assert ($tempRecovery -cmatch '(?s)GetSHA256OfString\(AWPendingInstallValue\(Destination\)\).*AWPendingInstallAbsent.*RegWriteStringValue.*not AWPendingInstallMatches.*RegQueryStringValue.*not AWSetupTempName.*Baseline.IndexOf\(Current\[I\]\) < 0') 'Managed temporary cleanup must restrict recovery to new names from the bound original attempt'
-Assert ($tempRemoval -cmatch '(?s)AWOpenReplaceProbe\(Path, \x2480010000, 1, 0, 3, \x2400200000, 0\).*Info.Links <> 1.*Subject.Size <> ExpectedSize.*GetSHA256OfStream\(Subject\) <> Identity.*AWOnlyDefaultDataStream\(Handle\).*AWSetFileDisposition\(Handle, 4, DeleteFile, 1\).*AWCloseNativeHandle\(Handle\).*AWPathAttributes\(Path\).*Code = 2.*Code = 3') 'Temporary uninstaller removal must verify the exact stream through the no-follow delete handle and confirm absence'
-Assert ($tempRemoval -cmatch '(?s)CanDelete := Handle <> \x24FFFFFFFF.*if not CanDelete.*AWOpenReplaceProbe\(Path, \x2480000000, 1, 0, 3, \x2400200000, 0\).*GetSHA256OfStream\(Subject\) <> Identity.*AWOnlyDefaultDataStream\(Handle\).*if not CanDelete then begin Result := False; Exit; end;.*AWSetFileDisposition\(Handle, 4, DeleteFile, 1\)') 'Only an identified default-stream temporary uninstaller may block cleanup when the delete handle is unavailable'
-Assert ($copy -cmatch '(?s)AWPrepareManagedTempRecovery\(Destination\).*RegWriteStringValue\(HKLM64, AWLifecycleRegistry, AWPendingInstall' -and
+$tempRemoval=[regex]::Match($installerSource,'(?ms)^function AWRemoveMatchingInstallationFile\(.*?^end;').Value
+Assert ($tempRecovery -cmatch '(?s)GetSHA256OfString\(AWPendingInstallValue\(Destination\)\).*AWPendingInstallAbsent.*AWWriteLifecycleString.*not AWPendingInstallMatches.*AWReadLifecycleString.*not AWSetupTempName.*Baseline.IndexOf\(Current\[I\]\) < 0') 'Managed temporary cleanup must restrict recovery to new names from the bound original attempt'
+Assert ($tempRemoval -cmatch '(?s)AWOpenReplaceProbe\(Path, \x2480010000, 1, 0, 3, \x2400200000, 0\).*Info.Links <> 1.*Subject.Size <> ExpectedSize.*GetSHA256OfStream\(Subject\) <> Identity.*AWOnlyDefaultDataStream\(Handle, StreamsInspected\).*AWSetFileDisposition\(Handle, 4, DeleteFile, 1\).*AWCloseNativeHandle\(Handle\).*AWPathAttributes\(Path\).*Code = 2.*Code = 3') 'Temporary uninstaller removal must verify the exact stream through the no-follow delete handle and confirm absence'
+Assert ($tempRemoval -cmatch '(?s)CanDelete := Handle <> \x24FFFFFFFF.*if not CanDelete.*AWOpenReplaceProbe\(Path, \x2480000000, 1, 0, 3, \x2400200000, 0\).*GetSHA256OfStream\(Subject\) <> Identity.*AWOnlyDefaultDataStream\(Handle, StreamsInspected\).*if not CanDelete then begin Result := False; Exit; end;.*AWSetFileDisposition\(Handle, 4, DeleteFile, 1\)') 'Only an identified default-stream temporary uninstaller may block cleanup when the delete handle is unavailable'
+Assert ($copy -cmatch '(?s)AWPrepareManagedTempRecovery\(Destination\).*AWWriteLifecycleString\(AWPendingInstall' -and
     $retirement -cmatch '(?s)AWVerifyCompletedInstall.*AWCleanupManagedTemporaryUninstallers\(Destination, Uninstaller\).*AWRetirePendingInstall') 'Setup must persist the baseline before copy and retire verified temporary uninstallers before clearing recovery'
 $resumeFile=[regex]::Match($installerSource,'(?ms)^function AWVerifyUpgradeResumeFile\(.*?^end;').Value
 Assert ($resumeFile -cmatch '(?s)AWPathAttributes.*Code = 2.*Code = 3.*AWVerifyInstalledFileDigests\(Path, BeforeDigest, AfterDigest, -MaximumSize, True, Held\)') 'Managed retry must admit only a missing file or verified old or new bytes'
 Assert ($approvedUpgrade -cmatch '(?s)PendingPin = ApprovalPin.*AWVerifyUpgradeResumeFile.*PayloadPin.*AWVerifyUpgradeResumeFile.*SBOMPin.*AWVerifyUpgradeResumeFile.*BuildPin.*AWReadRegistration.*if Found32 then Exit.*AWOrdinal\(Version, Installed\).*AWOrdinal.*resumed from its pending installation record') 'Managed retry must check all present releases and the registered version before resuming'
+$lifecycleHarness=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-windows-installer-lifecycle.ps1'))
+Assert ($lifecycleHarness -cmatch "(?s)foreach\(\x24name in @\(.*?'Initialize-AccessWeaverInstallerRecoveryRegistry','Get-AccessWeaverInstallerRecoveryState'.*?\)\)\{") 'Native lifecycle controller binding must import the recovery registry initializer and reader together'
+$legacyPublication=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'windows-installer-registry-publication.iss'))
+Assert ($approvedUpgrade -cmatch '(?s)Length\(Approval\) = 324.*AWLegacyApproval.Uninstaller := Copy\(Approval, 196, 64\).*AWLegacyApproval.UninstallData := Copy\(Approval, 261, 64\).*AWSha256Pin\(AWLegacyApproval.Uninstaller\).*AWSha256Pin\(AWLegacyApproval.UninstallData\).*Argument := Version \+ '','' \+ Approval') 'Legacy approval must validate and bind both prior uninstaller file hashes'
+Assert ($installerSource -cmatch '(?s)CreateUninstallRegKey=no.*UninstallLogMode=overwrite' -and
+    $installerSource -cmatch '(?s)AWPrepareOwnedProductRegistration\(Destination, LegacyHeld\).*AWWriteLifecycleString\(AWPendingInstall, AWPendingInstallValue\(Destination\), True\).*AWRetireApprovedLegacyRegistration\(Destination\).*finally.*AWCloseNativeHandle\(LegacyHeld\[I\]\)') 'Legacy retirement must replace the old uninstall log and retain approved files until durable retirement'
+Assert ($legacyPublication -cmatch '(?s)AWLockInstallationDirectory\(Destination, Held\).*AWLegacyApproval.Payload.*AWLegacyApproval.SBOM.*AWLegacyApproval.BuildInfo.*AWLegacyApproval.Uninstaller.*AWLegacyApproval.UninstallData' -and
+    $legacyPublication -cmatch '(?s)function AWRetireApprovedLegacyRegistration.*AWPendingInstallMatches.*AWStageLegacyRegistrationRetirement.*AWRegistryTransactionFinish.*AWProductRegistrationAbsent.*SetArrayLength\(AWPriorRegistration, 0\)') 'Legacy retirement must bind all prior files and commit verified absence before creating a protected registration'
 $uninstallStep=[regex]::Match($installerSource,'(?ms)^procedure CurUninstallStepChanged\(CurUninstallStep: TUninstallStep\);.*?^end;').Value
 Assert ($initialize.Contains('AWUninstallPreflight') -and -not $initialize.Contains('AWRunBoundedRestoration')) 'Uninstall initialization must validate without restoring machine state'
-Assert ($uninstallStep -cmatch '(?s)if CurUninstallStep <> usUninstall then Exit;.*Failure := AWUninstallPreflight;.*AWRunBoundedRestoration.*then Exit;.*\bAbort;\s*end;') 'Uninstall must restore only after confirmation and abort deletion on failure'
+Assert ($uninstallStep -cmatch '(?s)if CurUninstallStep <> usUninstall then Exit;.*Failure := AWUninstallPreflight;.*AWRunBoundedRestoration.*#else\s+Exit;\s+#endif.*\bAbort;\s*end;') 'Uninstall must restore only after confirmation and abort deletion on failure'
 Assert ($uninstallStep -cmatch "(?s)AWLockInstallationDirectory\(Destination, Held\).*AWVerifyInstalledFile\(Executable, '\{#PayloadDigest\}', \{#PayloadBytes\}, True, Controller\).*if Verified then begin.*AWUninstallPreflight.*AWRunBoundedRestoration\(Executable.*finally.*AWCloseNativeHandle\(Controller\).*AWCloseNativeHandle\(Held\[I\]\)") 'Uninstall must hold the verified release controller and directory handles through restoration'
-Assert ($uninstallStep -cmatch "(?s)Restored := AWRunBoundedRestoration.*else begin\s+Failure := AWUninstallPreflight;.*finally.*if AWCloseNativeHandle\(Controller\) = 0 then HandlesClosed := False;.*if AWCloseNativeHandle\(Held\[I\]\) = 0 then HandlesClosed := False;.*if Restored and HandlesClosed and \(Failure = ''\) then Exit;") 'Uninstall must recheck registration and confirm handle cleanup before deletion'
+Assert ($uninstallStep -cmatch "(?s)Restored := AWRunBoundedRestoration.*else begin\s+Failure := AWUninstallPreflight;.*finally.*if AWCloseNativeHandle\(Controller\) = 0 then HandlesClosed := False;.*if AWCloseNativeHandle\(Held\[I\]\) = 0 then HandlesClosed := False;.*if Restored and HandlesClosed and \(Failure = ''\) then begin\s+#ifdef ProtectedRegistrationQualification\s+AWOwnedRemovalStarted := AWBeginOwnedRemoval") 'Uninstall must recheck registration and confirm handle cleanup before deletion'
+$beginOwnedRemoval=[regex]::Match($installerSource,'(?ms)^function AWBeginOwnedRemoval\(.*?^end;').Value
+Assert ($beginOwnedRemoval -cmatch '(?s)AWLifecycleOwned and AWPendingInstallAbsent.*AWWriteLifecycleString\(AWPendingInstall, AWPendingInstallValue\(Destination\), True\).*AWRetirePublishedRegistration') 'Protected uninstall must flush its repair record before retiring registration'
+Assert ($uninstallStep -cmatch "(?s)CurUninstallStep = usPostUninstall.*AWOwnedRemovalStarted.*AWVerifyOwnedRemoval.*AWRetirePendingInstall.*AWBeginOwnedRemoval.*if not AWOwnedRemovalStarted.*end else Exit;") 'Protected uninstall must refuse unverified registration retirement and clear recovery only after verified removal'
 Assert ([regex]::Matches($installerSource,'\bAWRunBoundedRestoration\(').Count -eq 1) 'Restoration has another installer entry point'
 $fixture=Join-Path $project ('build\installer-contracts-'+[guid]::NewGuid().ToString('N'))
 [void](New-Item -ItemType Directory -Path $fixture)
@@ -333,11 +350,52 @@ try {
         ("  Entries.Add('docs\assets\a.txt|9|"+('0'*64)+"');"),
         ("  Entries.Add('docs\assets\B.txt|0|"+('f'*64)+"');")
     ) -join $nl
-    Assert ((Get-InstallerCompiledPayloadFingerprint $fingerprintVector) -ceq '3d04356a3fe4532832d311d4cfd0ce8dc89f84eec2b89e04b75ed3b84c024630') 'Compiled fingerprint must match Setup ordinal ordering and CRLF bytes'
+    $inventory=''
+    Assert ((Get-InstallerCompiledPayloadFingerprint $fingerprintVector ([ref]$inventory)) -ceq '3d04356a3fe4532832d311d4cfd0ce8dc89f84eec2b89e04b75ed3b84c024630') 'Compiled fingerprint must match Setup ordinal ordering and CRLF bytes'
+    $inventoryPath=Join-Path $fixture 'payload-files.txt'
+    [IO.File]::WriteAllText($inventoryPath,$inventory,[Text.UTF8Encoding]::new($false))
+    Assert ((Get-FileHash -LiteralPath $inventoryPath -Algorithm SHA256).Hash -ieq '3d04356a3fe4532832d311d4cfd0ce8dc89f84eec2b89e04b75ed3b84c024630') 'Exported payload list differs from the installer fingerprint'
     $localizedFixture="  Entries.Add('docs\qualification\"+[char]0x130+"stanbul.md|4|"+('a'*64)+"');"
     Assert ((Get-InstallerCompiledPayloadFingerprint $localizedFixture) -ceq '280f5d3166a0ec511eaf280d3d3a0b9230de59912bb6e1eef69c1db938b36a03') 'Localized staged paths must be fingerprinted as UTF-8'
     [IO.File]::WriteAllText($compiled,([IO.File]::ReadAllText($compiled).Replace('; BeforeInstall: AWCheckPackageCopyDestination','')))
     Reject {Assert-InstallerPackageDirectories $layout $setupScript $compiled} 'Compiled installer without a per-file copy guard was accepted'
+
+    $retiredInventory=Join-Path $fixture 'prior-payload-files.txt'
+    $planInclude=Join-Path $fixture 'retirement.iss'
+    foreach($core in @('accessweaver.exe','BUILD-INFO.json','SBOM.cdx.json')){
+        [IO.File]::WriteAllText((Join-Path $layout $core),'{}')
+    }
+    $entries=@(
+        'accessweaver.exe|2|'+('1'*64)
+        'BUILD-INFO.json|2|'+('2'*64)
+        'SBOM.cdx.json|2|'+('3'*64)
+        "docs\qualification\Fixture's report.json|2|"+('4'*64)
+        "docs\qualification\retired file's report.json|2|"+('5'*64)
+    )
+    $writeInventory={
+        param([string[]]$Rows)
+        [Array]::Sort($Rows,[StringComparer]::Ordinal)
+        [IO.File]::WriteAllText($retiredInventory,($Rows -join "`r`n")+"`r`n",[Text.UTF8Encoding]::new($false,$true))
+        return (Get-FileHash -LiteralPath $retiredInventory).Hash.ToLowerInvariant()
+    }
+    $priorDigest=& $writeInventory $entries
+    Reject {New-InstallerRetiredPayloadPlan $layout $retiredInventory ('f'*64) $planInclude} 'Unapproved prior payload inventory was accepted'
+    $paths=@('..\foreign.exe','docs\old.txt:stream','docs\NUL .txt','docs\short~1.txt','docs\old{#Injected}.txt',
+        'unins000.dat','docs\unknown\old.txt',"docs\qualification\fixture's report.json")
+    foreach($invalid in $paths){
+        $invalidDigest=& $writeInventory ($entries+($invalid+'|2|'+('6'*64)))
+        Reject {New-InstallerRetiredPayloadPlan $layout $retiredInventory $invalidDigest $planInclude} 'Unsafe or ambiguous prior package entry was accepted'
+    }
+    $null=& $writeInventory $entries
+    $planDigest=New-InstallerRetiredPayloadPlan $layout $retiredInventory $priorDigest $planInclude
+    $retirementPlan=[IO.File]::ReadAllText($planInclude)
+    $retirementRecord=[IO.File]::ReadAllText((Join-Path $layout 'docs\windows-retired-payload.sha256'))
+    Assert ($retirementRecord.StartsWith("retirement-plan-sha256=$planDigest`r`n") -and
+        $retirementRecord.Contains("prior-payload-sha256=$priorDigest`r`n") -and
+        [regex]::Matches($retirementPlan,'AWRetirePackageFile\(').Count -eq 1 -and
+        $retirementPlan.Contains("retired file''s report.json") -and -not $retirementPlan.Contains("Fixture''s report.json")
+    ) 'Retirement plan must bind the exact approved old list and preserve current paths'
+
     $uncovered=Join-Path $layout 'docs\qualification\new'
     [void][IO.Directory]::CreateDirectory($uncovered)
     Reject {Assert-InstallerPackageDirectories $layout $setupScript} 'Unprotected staged documentation directory was accepted'
