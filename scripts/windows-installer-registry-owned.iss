@@ -113,26 +113,48 @@ begin
   end;
 end;
 
-function AWOwnedRegistryDescriptor(Key: LongWord): Boolean;
+function AWOwnedRegistryDescriptorStatus(Key: LongWord): String;
 var Actual, Expected, Owner, Group, DACL, SACL, Bytes: LongWord;
-    ActualText, ExpectedText: String;
+    ActualText, ExpectedText, Flags: String; ActualACE, ExpectedACE: Integer;
 begin
-  Result := False; Actual := 0; Expected := 0; Bytes := 0;
+  Result := 'descriptor-read'; Actual := 0; Expected := 0; Bytes := 0;
   Owner := 0; Group := 0; DACL := 0; SACL := 0;
   try
     if AWOwnedRegistryGetSecurity(Key, 4, $00000005, Owner, Group, DACL, SACL, Actual) <> 0 then Exit;
     if (Owner = 0) or (DACL = 0) or (Actual = 0) then Exit;
+    Result := 'descriptor-format';
     if AWOwnedRegistryParseSD(AWOwnedRegistrySDDL, 1, Expected, Bytes) = 0 then Exit;
     if Expected = 0 then Exit;
-    { Both descriptors use the same native formatter: compare protected DACL,
-      owner, exact principals/rights and ACE order without interpreting display
-      names, expanding groups or accepting an inherited writer. }
-    Result := AWOwnedRegistrySDText(Actual, ActualText) and
-      AWOwnedRegistrySDText(Expected, ExpectedText) and (ActualText = ExpectedText);
+    if not AWOwnedRegistrySDText(Actual, ActualText) or
+       not AWOwnedRegistrySDText(Expected, ExpectedText) then Exit;
+
+    Result := 'descriptor-owner';
+    if (Pos('D:', ActualText) <> 5) or (Pos('D:', ExpectedText) <> 5) or
+       (Copy(ActualText, 1, 4) <> 'O:BA') or (Copy(ExpectedText, 1, 4) <> 'O:BA') then Exit;
+
+    Result := 'descriptor-protection';
+    ActualACE := Pos('(', ActualText);
+    ExpectedACE := Pos('(', ExpectedText);
+    if (ActualACE <= 7) or (ExpectedACE <= 7) then Exit;
+    Flags := Copy(ActualText, 7, ActualACE - 7);
+    { AI describes automatic ACL propagation. P and exact uninherited ACEs
+      still have to match. Reject requests to reapply inheritance (AR). }
+    if ((Flags <> 'P') and (Flags <> 'PAI')) or
+       (Copy(ExpectedText, 7, ExpectedACE - 7) <> 'P') then Exit;
+
+    Result := 'descriptor-aces';
+    if Copy(ActualText, ActualACE, Length(ActualText)) <>
+       Copy(ExpectedText, ExpectedACE, Length(ExpectedText)) then Exit;
+    Result := 'pass';
   finally
-    if not AWOwnedRegistryFree(Actual) then Result := False;
-    if not AWOwnedRegistryFree(Expected) then Result := False;
+    if not AWOwnedRegistryFree(Actual) then Result := 'descriptor-release';
+    if not AWOwnedRegistryFree(Expected) then Result := 'descriptor-release';
   end;
+end;
+
+function AWOwnedRegistryDescriptor(Key: LongWord): Boolean;
+begin
+  Result := (Key <> 0) and (AWOwnedRegistryDescriptorStatus(Key) = 'pass');
 end;
 
 function AWOwnedRegistryHeld(Key: LongWord; const ClassTag: String): Boolean;

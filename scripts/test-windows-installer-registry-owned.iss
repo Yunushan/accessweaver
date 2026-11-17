@@ -40,7 +40,7 @@ const AWFixtureTag = 'AWReg-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
       AWFixtureParentSDDL = 'O:BAD:P(A;CI;KA;;;SY)(A;CI;KA;;;BA)(A;CI;KA;;;BU)';
 var AWFixtureOwned: array of LongWord;
     AWFixturePassed, AWFixtureCleanup: Boolean;
-    AWFixtureCases: String; AWFixtureCaseCount: Integer;
+    AWFixtureCases, AWFixtureDescriptorResult, AWFixtureCleanupResult: String; AWFixtureCaseCount: Integer;
 
 function AWFixtureDeleteHeld(Key: LongWord): LongWord;
   external 'NtDeleteKey@ntdll.dll stdcall';
@@ -109,14 +109,25 @@ begin
     (Kind = 4) and (Bytes = 4) and (Data = 73);
 end;
 
+function AWFixtureCreateRefused(Root: LongWord; const Name: String): Boolean;
+var Key: LongWord; Created, Accepted: Boolean;
+begin
+  Accepted := AWCreateOwnedRegistryChild(Root, Name, AWFixtureTag, Key, Created);
+  { Even a mistakenly created key belongs to this creation attempt. Retain the
+    handle for exact cleanup and keep the refusal test failed. }
+  if Created and (Key <> 0) then AWFixtureRemember(Key);
+  Result := not Accepted and not Created and (Key = 0);
+end;
+
 procedure AWFixtureCasesRun(Root: LongWord);
 var Fresh, BadACL, Target, Link, MissingLink, Opened, Flags, Value, Status: LongWord;
-    Created, OK: Boolean; NativeTarget: String;
+    Created, OK, LinkReady, MissingLinkReady: Boolean; NativeTarget: String;
 begin
   Fresh := 0; Opened := 0; Target := 0; BadACL := 0; Link := 0; MissingLink := 0;
   OK := AWFixtureNew(Root, 'fresh', Fresh);
   AWFixtureCase('protected-child-created', OK);
-  AWFixtureCase('creation-descriptor-exact', (Fresh <> 0) and AWOwnedRegistryDescriptor(Fresh));
+  if Fresh <> 0 then AWFixtureDescriptorResult := AWOwnedRegistryDescriptorStatus(Fresh);
+  AWFixtureCase('creation-descriptor-exact', AWFixtureDescriptorResult = 'pass');
   Flags := $FFFFFFFF;
   AWFixtureCase('handle-not-inheritable', (AWFixtureHandleFlags(Fresh, Flags) <> 0) and ((Flags and 1) = 0));
   AWFixtureCase('atomic-class-roundtrip', AWOwnedRegistryHeld(Fresh, AWFixtureTag));
@@ -141,21 +152,23 @@ begin
   OK := AWFixtureNew(Root, 'target', Target);
   Value := 73; OK := OK and (AWFixtureWriteDWORD(Target, 'sentinel', 0, 4, Value, 4) = 0);
   NativeTarget := '\REGISTRY\MACHINE\SOFTWARE\{#FixtureRootName}\target';
-  OK := OK and AWFixtureRaw(Root, 'link', AWOwnedRegistrySDDL, 2, Link);
-  OK := OK and (AWFixtureWriteText(Link, 'SymbolicLinkValue', 0, 6, NativeTarget, Length(NativeTarget) * 2) = 0);
-  OK := OK and not AWOpenOwnedRegistryChild(Root, 'link', AWFixtureTag, Opened) and (Opened = 0);
-  AWFixtureCase('link-to-existing-target-refused', OK);
-  OK := not AWCreateOwnedRegistryChild(Root, 'link', AWFixtureTag, Opened, Created);
-  AWFixtureCase('create-does-not-adopt-link', OK and not Created and (Opened = 0) and AWFixtureSentinel(Target));
+  LinkReady := AWFixtureRaw(Root, 'link', AWOwnedRegistrySDDL, 2, Link);
+  LinkReady := LinkReady and (AWFixtureWriteText(Link, 'SymbolicLinkValue', 0, 6, NativeTarget, Length(NativeTarget) * 2) = 0);
+  AWFixtureCase('link-to-existing-target-refused', OK and LinkReady and
+    not AWOpenOwnedRegistryChild(Root, 'link', AWFixtureTag, Opened) and (Opened = 0));
+  if not AWOwnedRegistryClose(Opened) then AWFixtureCleanup := False;
+  AWFixtureCase('create-does-not-adopt-link', LinkReady and AWFixtureCreateRefused(Root, 'link') and
+    AWFixtureSentinel(Target));
   NativeTarget := '\REGISTRY\MACHINE\SOFTWARE\{#FixtureRootName}\missing';
-  OK := AWFixtureRaw(Root, 'missing-link', AWOwnedRegistrySDDL, 2, MissingLink);
-  OK := OK and (AWFixtureWriteText(MissingLink, 'SymbolicLinkValue', 0, 6, NativeTarget, Length(NativeTarget) * 2) = 0);
-  OK := OK and not AWOpenOwnedRegistryChild(Root, 'missing-link', AWFixtureTag, Opened) and (Opened = 0);
-  AWFixtureCase('link-to-missing-target-refused', OK);
-  OK := not AWCreateOwnedRegistryChild(Root, 'missing-link', AWFixtureTag, Opened, Created);
+  MissingLinkReady := AWFixtureRaw(Root, 'missing-link', AWOwnedRegistrySDDL, 2, MissingLink);
+  MissingLinkReady := MissingLinkReady and (AWFixtureWriteText(MissingLink, 'SymbolicLinkValue', 0, 6, NativeTarget, Length(NativeTarget) * 2) = 0);
+  AWFixtureCase('link-to-missing-target-refused', MissingLinkReady and
+    not AWOpenOwnedRegistryChild(Root, 'missing-link', AWFixtureTag, Opened) and (Opened = 0));
+  if not AWOwnedRegistryClose(Opened) then AWFixtureCleanup := False;
+  OK := MissingLinkReady and AWFixtureCreateRefused(Root, 'missing-link');
   Status := AWOwnedRegistryOpenNative(Root, 'missing', AWOwnedRegistryOpenLink, $00020119, Opened);
-  if Status = 0 then AWOwnedRegistryClose(Opened);
-  AWFixtureCase('missing-link-target-not-created', OK and not Created and (Status = 2));
+  if not AWOwnedRegistryClose(Opened) then AWFixtureCleanup := False;
+  AWFixtureCase('missing-link-target-not-created', OK and (Status = 2));
   AWFixtureCase('existing-link-target-preserved', AWFixtureSentinel(Target));
 end;
 
@@ -261,6 +274,7 @@ begin
      (GetEnv('GITHUB_RUN_ID') <> '{#RunID}') or
      (GetEnv('GITHUB_RUN_ATTEMPT') <> '{#RunAttempt}') or not IsWin64 then Exit;
   AWFixturePassed := True; AWFixtureCleanup := True; AWFixtureCases := ''; AWFixtureCaseCount := 0;
+  AWFixtureDescriptorResult := 'not-run'; AWFixtureCleanupResult := 'pass';
   Software := 0; Root := 0; Probe := 0; RootCreated := False;
   try
     if AWOwnedRegistryOpenNative($80000002, 'SOFTWARE', 0, $00020104, Software) = 0 then
@@ -274,21 +288,31 @@ begin
     { Every deletion uses an exact handle returned by a confirmed NEW creation.
       No recursive traversal, path-based link deletion, or adoption for cleanup. }
     for I := GetArrayLength(AWFixtureOwned) - 1 downto 0 do begin
-      if AWFixtureDeleteHeld(AWFixtureOwned[I]) <> 0 then AWFixtureCleanup := False;
+      if AWFixtureDeleteHeld(AWFixtureOwned[I]) <> 0 then begin
+        if AWFixtureCleanupResult = 'pass' then AWFixtureCleanupResult := 'held-delete';
+        AWFixtureCleanup := False;
+      end;
       if not AWOwnedRegistryClose(AWFixtureOwned[I]) then AWFixtureCleanup := False;
     end;
     if RootCreated then begin
       if AWOwnedRegistryOpenNative(Software, '{#FixtureRootName}', AWOwnedRegistryOpenLink,
-           $00020119, Probe) <> 2 then AWFixtureCleanup := False;
+           $00020119, Probe) <> 2 then begin
+        if AWFixtureCleanupResult = 'pass' then AWFixtureCleanupResult := 'root-present-or-unreadable';
+        AWFixtureCleanup := False;
+      end;
       if not AWOwnedRegistryClose(Probe) then AWFixtureCleanup := False;
     end;
     if not AWOwnedRegistryClose(Software) then AWFixtureCleanup := False;
     if AWOwnedRegistryCleanupUncertain then AWFixtureCleanup := False;
-    AWFixtureCase('exact-owned-cleanup', AWFixtureCleanup and RootCreated);
+    AWFixtureCleanup := AWFixtureCleanup and RootCreated;
+    if not AWFixtureCleanup and (AWFixtureCleanupResult = 'pass') then
+      AWFixtureCleanupResult := 'fixture-or-handle-close';
+    AWFixtureCase('exact-owned-cleanup', AWFixtureCleanup);
   end;
   RecordText := '{"schemaVersion":1,"sourceCommit":"{#SourceCommit}","runID":"{#RunID}",' +
     '"runAttempt":"{#RunAttempt}","architecture":"{#TargetArch}","compilerVersion":"6.7.1",' +
     '"scope":"disposable-protected-registry-ownership-contract","cases":[' + AWFixtureCases + '],' +
+    '"descriptorResult":"' + AWFixtureDescriptorResult + '","cleanupResult":"' + AWFixtureCleanupResult + '",' +
     '"cleanupComplete":' + AWFixtureBool(AWFixtureCleanup) + ',"passed":' +
     AWFixtureBool(AWFixturePassed and (AWFixtureCaseCount = 24)) +
     ',"productionRegistrationChanged":false,"productionQualificationComplete":false}' + #10;

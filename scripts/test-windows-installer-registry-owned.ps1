@@ -62,6 +62,9 @@ if($result.schemaVersion -ne 1 -or $result.sourceCommit -cne $env:GITHUB_SHA -or
     $result.runID -cne $env:GITHUB_RUN_ID -or $result.runAttempt -cne $env:GITHUB_RUN_ATTEMPT -or
     $result.architecture -cne $Architecture -or $result.compilerVersion -cne '6.7.1' -or
     $result.scope -cne 'disposable-protected-registry-ownership-contract' -or
+    $result.descriptorResult -cnotin @('not-run','pass','descriptor-read','descriptor-format','descriptor-owner','descriptor-protection','descriptor-aces','descriptor-release') -or
+    $result.cleanupResult -cnotin @('pass','held-delete','root-present-or-unreadable','fixture-or-handle-close') -or
+    ($result.cleanupResult -ceq 'pass') -ne $result.cleanupComplete -or
     $result.productionRegistrationChanged -isnot [bool] -or $result.productionRegistrationChanged -or
     $result.productionQualificationComplete -isnot [bool] -or $result.productionQualificationComplete -or
     $result.cleanupComplete -isnot [bool] -or $result.passed -isnot [bool] -or $result.cases.Count -gt $known.Count){
@@ -88,6 +91,7 @@ $report=[ordered]@{
     compilerSHA256=(Get-FileHash -LiteralPath $compiler -Algorithm SHA256).Hash.ToLowerInvariant()
     fixtureSHA256=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
     sourceSHA256=$pins;cases=$rows;cleanupComplete=$result.cleanupComplete;passed=[bool]$passed
+    descriptorResult=$result.descriptorResult;cleanupResult=$result.cleanupResult
     productionRegistrationChanged=$false;productionQualificationComplete=$false
 }
 [IO.File]::WriteAllText((Join-Path $receiptDir ($Architecture+'.json')),($report | ConvertTo-Json -Depth 6),[Text.UTF8Encoding]::new($false))
