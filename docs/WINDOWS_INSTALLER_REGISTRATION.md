@@ -317,3 +317,13 @@ The ARM64 receipt is artifact `14302885293` with ZIP SHA-256
 `a6b6be934a98bd4fb73107dbb50f3783f3ad89eabe25d7ada115a964c6a0b282`.
 Organization-signed release qualification and migration of shortcuts outside
 the application directory remain open.
+
+The [PR integration fixture](https://github.com/Yunushan/accessweaver/actions/runs/44031623746)
+passed protected publication, interrupted migration, exact retry and uninstall
+on x64 and Arm64 at `9d6760f17a4aee1a398658fb4a4a94d6f5d1054b`.
+Each run verified retired-file removal, preservation of user files and unchanged
+selected service, firewall and DNS settings. The x64 receipt is artifact
+`14306675808` with ZIP SHA-256
+`e67d913a3c8d310f1e316143deba49d0619217963c036a14739438413df27368`. The Arm64 receipt is artifact
+`14306477555` with ZIP SHA-256
+`7dc9d62ecc7b90905644287456924a044650f5b618725cb50d710820ce065dc2`.

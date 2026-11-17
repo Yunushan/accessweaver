@@ -255,6 +255,7 @@
             "scripts/test_vulnerability_report.py",
             "docs/qualification/5be8ae093e4d-vulnerability-matrix.json",
             "docs/qualification/9d6760f17a4a-go-vulnerability-matrix.json",
+            "docs/qualification/ca713f51184e-go-package-coverage.json",
             "scripts/security-tools/go.mod",
             ".github/workflows/ci.yml",
             ".github/workflows/release.yml",
