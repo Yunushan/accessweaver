@@ -84,8 +84,13 @@
     {
       "target": "openbsd/arm64",
       "job": 133920601193,
-      "status": "in_progress",
-      "conclusion": null
+      "artifact": 14314254014,
+      "artifactArchiveSHA256": "fd0835a5db6e7c600a2d3766e28575966e2e93c5859a21c55d8d1bacebd7e74c",
+      "binarySHA256": "7afc93136ed0d1b830d9a0775595c0d52e41aea807b39516b7dfe29000cfdd3d",
+      "archiveSHA256": "bc0ec5cbee655f3d2496370b7da34fa74c33a3f60fa513bb9e5f5251d3779ebb",
+      "packageAttestationBundleSHA256": "6ef92b7c75513f8af1c261e559f289947f274c5b0f191735248035f62e3e88bb",
+      "qualificationBundleSHA256": "c0f9360fec227476a9da79ba178974f43b4e4b4b6eaeec9834d3d99817229c69",
+      "signedExecutionEvidenceVerified": true
     }
   ],
   "windows": [
@@ -109,5 +114,7 @@
     "scripts/verify_release_provenance.py": "615133a0ac1739d9327b8a6412b2be213185b27f488d138900425834e7edd2ac",
     "scripts/check-packaged-evidence.cjs": "a7313ddf3daaa8969103a3b5afcbeb1f895ba003f2747b645bccbe9a360017d3",
     "scripts/stage_packaged_native.py": "d24afb21bcff96f8aedc7bdc66abadf2a8b8566627354c10853a4ec5bbaad2dd"
-  }
+  },
+  "workflowConclusion": "failure",
+  "publicationVerification": "skipped"
 }
