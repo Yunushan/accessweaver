@@ -55,7 +55,7 @@ function Assert-InstallerPEArchitecture([string]$Binary, [string]$Arch) {
     if($machine -ne $expectedMachine){throw 'Installer payload PE machine does not match its requested architecture'}
 }
 
-function Get-InstallerCompiledPayloadFingerprint([string]$CompiledFingerprint) {
+function Get-InstallerCompiledPayloadFingerprint([string]$CompiledFingerprint,[ref]$PayloadInventory) {
     $entries=[Collections.Generic.List[string]]::new()
     foreach($line in [regex]::Matches($CompiledFingerprint,"(?m)^[ \t]*Entries\.Add\('((?:[^'\r\n]|'')+)'\);[ \t]*\r?$")){
         $entry=$line.Groups[1].Value.Replace("''","'")
@@ -70,12 +70,13 @@ function Get-InstallerCompiledPayloadFingerprint([string]$CompiledFingerprint) {
     # Setup hashes the ordinal list as UTF-8 with a trailing Windows line break.
     $entries.Sort([StringComparer]::Ordinal)
     $contents=($entries -join "`r`n")+"`r`n"
+    if($PayloadInventory){$PayloadInventory.Value=$contents}
     $sha=[Security.Cryptography.SHA256]::Create()
     try {return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($contents)))).Replace('-','').ToLowerInvariant()}
     finally {$sha.Dispose()}
 }
 
-function Assert-InstallerPackageDirectories([string]$Root,[string]$SetupScript,[string]$PreprocessedScript,[ref]$PayloadFingerprint) {
+function Assert-InstallerPackageDirectories([string]$Root,[string]$SetupScript,[string]$PreprocessedScript,[ref]$PayloadFingerprint,[ref]$PayloadInventory) {
     $source=[IO.File]::ReadAllText($SetupScript)
     $preflight=[regex]::Match($source,'(?ms)^function AWCheckPackageDirectories\(.*?^end;')
     if(-not $preflight.Success){throw 'Installer package directory preflight is missing'}
@@ -143,7 +144,10 @@ function Assert-InstallerPackageDirectories([string]$Root,[string]$SetupScript,[
             }
         }
     }
-    if($PayloadFingerprint){$PayloadFingerprint.Value=Get-InstallerCompiledPayloadFingerprint $compiledFingerprint.Value}
+    if($PayloadFingerprint -or $PayloadInventory){
+        $fingerprint=Get-InstallerCompiledPayloadFingerprint $compiledFingerprint.Value $PayloadInventory
+        if($PayloadFingerprint){$PayloadFingerprint.Value=$fingerprint}
+    }
 }
 
 function Assert-InstallerSetupScript([string]$Path, [string]$TargetArch, [string]$Version, [switch]$OrganizationSigning) {

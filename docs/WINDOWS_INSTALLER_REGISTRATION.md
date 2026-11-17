@@ -56,6 +56,13 @@ and unknown values, and either replace the owned legacy object safely or leave
 it untouched with an actionable refusal. Neither a class tag alone nor a write
 ACE allowlist can make a legacy leaf authoritative.
 
+Windows Setup builds preserve `payload-files.txt` in their build evidence.
+It records the relative path, byte count and SHA-256 of each compiled package
+file in the exact order and encoding covered by the Setup SBOM’s
+`accessweaver:windows-staged-payload-sha256` property. Retain the list with the
+independently approved prior Setup and SBOM so later upgrades can identify
+files shipped only by that package.
+
 The [same-name replacement run](https://github.com/Yunushan/accessweaver/actions/runs/44003554389)
 at `7bf36162cfd5a916f3bbb92ba5c8536bff3020e3` passed 40 of 43 cases on AMD64 and ARM64 and confirmed exact cleanup.
 Both architectures staged deletion and restored the legacy entry on rollback.

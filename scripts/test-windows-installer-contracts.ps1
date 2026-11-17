@@ -350,7 +350,11 @@ try {
         ("  Entries.Add('docs\assets\a.txt|9|"+('0'*64)+"');"),
         ("  Entries.Add('docs\assets\B.txt|0|"+('f'*64)+"');")
     ) -join $nl
-    Assert ((Get-InstallerCompiledPayloadFingerprint $fingerprintVector) -ceq '3d04356a3fe4532832d311d4cfd0ce8dc89f84eec2b89e04b75ed3b84c024630') 'Compiled fingerprint must match Setup ordinal ordering and CRLF bytes'
+    $inventory=''
+    Assert ((Get-InstallerCompiledPayloadFingerprint $fingerprintVector ([ref]$inventory)) -ceq '3d04356a3fe4532832d311d4cfd0ce8dc89f84eec2b89e04b75ed3b84c024630') 'Compiled fingerprint must match Setup ordinal ordering and CRLF bytes'
+    $inventoryPath=Join-Path $fixture 'payload-files.txt'
+    [IO.File]::WriteAllText($inventoryPath,$inventory,[Text.UTF8Encoding]::new($false))
+    Assert ((Get-FileHash -LiteralPath $inventoryPath -Algorithm SHA256).Hash -ieq '3d04356a3fe4532832d311d4cfd0ce8dc89f84eec2b89e04b75ed3b84c024630') 'Exported payload list differs from the installer fingerprint'
     $localizedFixture="  Entries.Add('docs\qualification\"+[char]0x130+"stanbul.md|4|"+('a'*64)+"');"
     Assert ((Get-InstallerCompiledPayloadFingerprint $localizedFixture) -ceq '280f5d3166a0ec511eaf280d3d3a0b9230de59912bb6e1eef69c1db938b36a03') 'Localized staged paths must be fingerprinted as UTF-8'
     [IO.File]::WriteAllText($compiled,([IO.File]::ReadAllText($compiled).Replace('; BeforeInstall: AWCheckPackageCopyDestination','')))

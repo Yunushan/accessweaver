@@ -140,8 +140,8 @@ try {
             throw 'Compiled Setup did not select the protected registration lifecycle'
         }
     }
-    $payloadFingerprint=''
-    Assert-InstallerPackageDirectories $stage $setupScript $preprocessed ([ref]$payloadFingerprint)
+    $payloadFingerprint='';$payloadInventory=''
+    Assert-InstallerPackageDirectories $stage $setupScript $preprocessed ([ref]$payloadFingerprint) ([ref]$payloadInventory)
     $compilerOutput | Write-Output
     $actualVersion=[regex]::Match(($compilerOutput -join "`n"),'(?im)^Compiler engine version:\s*Inno Setup\s+(\d+\.\d+\.\d+)\b')
     if(-not $actualVersion.Success){throw 'Could not identify installer compiler version'}
@@ -158,6 +158,7 @@ try {
     }
     & $validator --schemas (Join-Path $project 'scripts\sbom\schema') ($artifact+'.cdx.json')
     if($LASTEXITCODE -ne 0){throw 'Installer SBOM validation failed'}
+    [IO.File]::WriteAllText((Join-Path $evidence 'payload-files.txt'),$payloadInventory,[Text.UTF8Encoding]::new($false))
     Copy-Item -LiteralPath $payloadSBOM -Destination (Join-Path $evidence 'payload-SBOM.cdx.json') -Force
     Copy-Item -LiteralPath (Join-Path $stage 'BUILD-INFO.json') -Destination (Join-Path $evidence 'payload-BUILD-INFO.json') -Force
     $evidencePayload=Join-Path $evidence 'payload.exe'
