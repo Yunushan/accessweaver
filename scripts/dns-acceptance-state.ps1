@@ -70,11 +70,15 @@ function Read-DNSAcceptanceState([ref]$Stage,[ref]$Progress) {
             }
             $key=([string]$adapter.ifIndex)+'/'+$family
             if(-not $clientIndex.ContainsKey($key)){
+                if($null -ne $Stage){$Stage.Value='registry-hash-'+$family.ToLowerInvariant()}
                 $families[$family]=@{mode='not-exposed';servers=@();registryHash=(Get-DNSAcceptanceRegistryHash $registry)}
                 continue
             }
             $exposed=$true
-            if(-not $registry.present){throw 'DNS acceptance exposed-family registry state is missing'}
+            if(-not $registry.present){
+                if($null -ne $Stage){$Stage.Value='registry-missing-'+$family.ToLowerInvariant()}
+                throw 'DNS acceptance exposed-family registry state is missing'
+            }
             if($null -ne $Stage){$Stage.Value='registry-mode-'+$family.ToLowerInvariant()}
             $value=$registry.value
             if($null -ne $value -and $value -isnot [string]){throw 'DNS acceptance registry mode is malformed'}

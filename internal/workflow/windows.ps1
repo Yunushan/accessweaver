@@ -2619,20 +2619,35 @@ function Get-ManagedDNSCryptListenerOwner([string[]]$Servers,[string]$Binary,$En
             $address=$null
             if($endpoint.LocalPort -ne 53 -or $endpoint.LocalAddress -isnot [string] -or
                 -not [Net.IPAddress]::TryParse($endpoint.LocalAddress,[ref]$address)){
+                $script:dnsOperationStage='listener-endpoint-row'
                 throw 'DNSCrypt port ownership could not be verified'
             }
             if($address.IsIPv4MappedToIPv6){$address=$address.MapToIPv4()}
             $local=$address.ToString()
-            if($local -cin @('0.0.0.0','::')){throw 'Wildcard DNS listener makes loopback ownership ambiguous'}
+            if($local -cin @('0.0.0.0','::')){
+                $script:dnsOperationStage='listener-endpoint-wildcard'
+                throw 'Wildcard DNS listener makes loopback ownership ambiguous'
+            }
             if($local -cnotin $Servers){continue}
             $processID=$endpoint.OwningProcess
-            if(-not $seen.Add($local) -or $processID -isnot [uint32] -or $processID -eq 0 -or
-                ($listenerID -ne 0 -and $listenerID -ne $processID)){
+            if(-not $seen.Add($local)){
+                $script:dnsOperationStage='listener-endpoint-duplicate'
+                throw 'Managed DNSCrypt listeners do not have one observable process owner'
+            }
+            if($processID -isnot [uint32] -or $processID -eq 0){
+                $script:dnsOperationStage='listener-endpoint-owner'
+                throw 'Managed DNSCrypt listeners do not have one observable process owner'
+            }
+            if($listenerID -ne 0 -and $listenerID -ne $processID){
+                $script:dnsOperationStage='listener-endpoint-conflict'
                 throw 'Managed DNSCrypt listeners do not have one observable process owner'
             }
             $listenerID=$processID
         }
-        if($seen.Count -ne $Servers.Count){throw 'Expected TCP and UDP on every required DNSCrypt loopback address'}
+        if($seen.Count -ne $Servers.Count){
+            $script:dnsOperationStage='listener-endpoint-missing'
+            throw 'Expected TCP and UDP on every required DNSCrypt loopback address'
+        }
     }
 
     $script:dnsOperationStage='listener-child-identity'

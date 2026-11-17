@@ -288,6 +288,14 @@ try {
     New-ACase;$script:registryFailure='IPv6';$capturePhase='';$refused=$false
     try{[void](Read-DNSAcceptanceState ([ref]$capturePhase))}catch{$refused=$true}
     Assert-A ($refused -and $capturePhase -ceq 'registry-error-ipv6') 'capture-stage-refusal'
+    foreach($family in @('IPv4','IPv6')){
+        New-ACase
+        $script:registryAbsent[$script:g1+'/'+$family]=$true
+        $capturePhase='';$refused=$false
+        try{[void](Read-DNSAcceptanceState ([ref]$capturePhase))}
+        catch{$refused=$_.Exception.Message -ceq 'DNS acceptance exposed-family registry state is missing'}
+        Assert-A ($refused -and $capturePhase -ceq ('registry-missing-'+$family.ToLowerInvariant())) 'capture-stage-refusal'
+    }
     foreach($method in @('doh','dnscrypt')){
     foreach($failure in @('none','baseline','capability','selected','configuration','configured-state','ordinary-resolver','restoration','restored-state','restored-resolver','drift-after-query','dual')){
         New-ACase;$script:nativeBefore=Read-DNSAcceptanceState;Set-AConfigured $method;$script:nativeConfigured=Read-DNSAcceptanceState;$script:nativeAfter=Clone-A $script:nativeBefore

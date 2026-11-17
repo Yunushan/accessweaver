@@ -1235,7 +1235,13 @@ try {
                 default {throw 'Unexpected ownership process identity'}
             }
         }
-        foreach($fault in @('','missing-udp','missing-ipv6','wildcard','mapped-wildcard','duplicate','mixed-pids','unknown-pid',
+        $endpointFailures=@{
+            'missing-udp'='listener-endpoint-missing';'missing-ipv6'='listener-endpoint-missing'
+            'wildcard'='listener-endpoint-wildcard';'mapped-wildcard'='listener-endpoint-wildcard'
+            'duplicate'='listener-endpoint-duplicate';'mixed-pids'='listener-endpoint-conflict'
+            'unknown-pid'='listener-endpoint-owner';'invalid-row'='listener-endpoint-row'
+        }
+        foreach($fault in @('','missing-udp','missing-ipv6','wildcard','mapped-wildcard','duplicate','mixed-pids','unknown-pid','invalid-row',
                 'wrong-host','wrong-child','wrong-parent','reused-parent-pid','host-disappeared','child-disappeared','changed-command','service-stopped')){
             $service=[pscustomobject]@{PathName=$command;State='Running';ProcessId=[uint32]42}
             $hostProcess=[pscustomobject]@{ProcessId=[uint32]42;ExecutablePath=$hostPath;CreationDate=$started}
@@ -1250,6 +1256,7 @@ try {
                 'duplicate' {$tcpRows+=[pscustomobject]@{LocalAddress='::ffff:127.0.0.1';LocalPort=53;OwningProcess=[uint32]43}}
                 'mixed-pids' {$udpRows[1].OwningProcess=[uint32]99}
                 'unknown-pid' {$udpRows[1].OwningProcess=[uint32]0}
+                'invalid-row' {$udpRows[1].LocalAddress='invalid'}
                 'wrong-host' {$hostProcess.ExecutablePath=$binary}
                 'wrong-child' {$child.ExecutablePath=$hostPath}
                 'wrong-parent' {$child.ParentProcessId=[uint32]99}
@@ -1262,9 +1269,12 @@ try {
             if($fault){
                 $refused=$false
                 try{& $readFixtureListenerOwner $addresses $binary $entry | Out-Null}catch{
-                    $refused=$_.Exception.Message -match '^(Managed DNSCrypt|Running DNSCrypt|DNSCrypt listener|Expected TCP and UDP|Wildcard DNS)'
+                    $refused=$_.Exception.Message -match '^(Managed DNSCrypt|Running DNSCrypt|DNSCrypt listener|DNSCrypt port|Expected TCP and UDP|Wildcard DNS)'
                 }
                 Assert-DNS $refused 'dnscrypt-managed-listener-owner'
+                if($endpointFailures.ContainsKey($fault)){
+                    Assert-DNS ($script:dnsOperationStage -ceq $endpointFailures[$fault]) 'dnscrypt-managed-listener-owner'
+                }
             }else{
                 $udpRows+=[pscustomobject]@{LocalAddress='192.0.2.53';LocalPort=53;OwningProcess=[uint32]99}
                 $identity=& $readFixtureListenerOwner $addresses $binary $entry
