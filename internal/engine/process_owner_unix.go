@@ -7,9 +7,11 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 )
 
 type exitObserver interface {
@@ -46,6 +48,7 @@ type ownedProcess struct {
 	finalBlocked    bool
 	retryAuthorized bool
 	exitObserved    bool
+	observationDone chan struct{}
 	lifecycleErr    error
 	onFault         func(error)
 	// Private per-instance native/test seams, fixed before Start. Neither can
@@ -64,7 +67,11 @@ func prepareProcessLifetime(cmd *exec.Cmd) (processLifetime, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ownedProcess{cmd: cmd, observer: observer, faulted: make(chan struct{}), signalClosed: make(chan struct{}), retryReady: make(chan struct{}), nativeSignal: nativeGroupSignal}, nil
+	return &ownedProcess{
+		cmd: cmd, observer: observer, nativeSignal: nativeGroupSignal,
+		faulted: make(chan struct{}), signalClosed: make(chan struct{}),
+		retryReady: make(chan struct{}), observationDone: make(chan struct{}),
+	}, nil
 }
 func (o *ownedProcess) setFaultHandler(handler func(error)) { o.onFault = handler }
 func (o *ownedProcess) pendingError() error {
@@ -209,6 +216,34 @@ func (o *ownedProcess) retryCleanup() error {
 		}
 		return err
 	})
+	if runtime.GOOS == "darwin" && !o.exitObserved && errors.Is(err, syscall.EPERM) && o.observationDone != nil {
+		// Darwin can reject a signal while its original child is exiting but
+		// has yet to become waitable. Let the existing non-consuming observer
+		// publish, then repeat the exact owned group check. The pending fault
+		// preserves identity and excludes normal dispatch while we wait.
+		o.mu.Unlock()
+		deadline := time.NewTimer(time.Second)
+		defer deadline.Stop()
+		select {
+		case <-o.observationDone:
+		case <-deadline.C:
+			return ErrProcessCleanupPending
+		}
+		o.mu.Lock()
+		if o.phase == ownerLost {
+			o.mu.Unlock()
+			return ErrProcessOwnershipLost
+		}
+		if o.phase != ownerRunning {
+			o.mu.Unlock()
+			return os.ErrProcessDone
+		}
+		if !o.exitObserved {
+			o.mu.Unlock()
+			return ErrProcessCleanupPending
+		}
+		err = o.callSignalLocked(func() error { return o.nativeSignal(o.pid, syscall.SIGKILL, true) })
+	}
 	if err != nil && !ownedProcessGone(err) {
 		if errors.Is(err, ErrProcessOwnershipLost) || errors.Is(err, syscall.ECHILD) {
 			o.faultLocked(ErrProcessOwnershipLost)
@@ -264,6 +299,9 @@ func (o *ownedProcess) wait(ctx context.Context) (waitErr, lifecycleErr error) {
 		// still retained, so force the original private group before the sole
 		// consuming wait, and retain lifecycle uncertainty in its result.
 		o.lifecycleErr = ErrProcessLifecycle
+	}
+	if o.observationDone != nil {
+		close(o.observationDone)
 	}
 	if o.phase == ownerLost {
 		o.mu.Unlock()

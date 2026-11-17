@@ -1,7 +1,10 @@
 package engine
 
 import (
+	"os"
+	"syscall"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -62,5 +65,49 @@ func TestDarwinRetryRequiresExactWaitableChild(t *testing.T) {
 	info.Proc.P_stat = 2
 	if darwinWaitableGroupLeader(&info, leader, parent) {
 		t.Fatal("live child was accepted as waitable")
+	}
+}
+
+func TestDarwinCleanupRetryWaitsForExistingObserver(t *testing.T) {
+	attempted := make(chan struct{})
+	owner := &ownedProcess{
+		pid:             os.Getpid(), // The injected signal function never signals this process.
+		faulted:         make(chan struct{}),
+		signalClosed:    make(chan struct{}),
+		retryReady:      make(chan struct{}),
+		observationDone: make(chan struct{}),
+		nativeSignal: func(_ int, _ syscall.Signal, observed bool) error {
+			if !observed {
+				close(attempted)
+				return syscall.EPERM
+			}
+			return os.ErrProcessDone
+		},
+	}
+	owner.faultLocked(ErrProcessCleanupPending)
+	finished := make(chan error, 1)
+	go func() { finished <- owner.retryCleanup() }()
+	select {
+	case <-attempted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("cleanup retry did not attempt the owned group")
+	}
+	owner.mu.Lock()
+	owner.exitObserved = true
+	owner.finalBlocked = true
+	close(owner.observationDone)
+	owner.mu.Unlock()
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatal("cleanup retry returned before its exact exit observation", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("cleanup retry did not consume the existing observation")
+	}
+	select {
+	case <-owner.retryReady:
+	default:
+		t.Fatal("verified cleanup did not release the consuming wait")
 	}
 }

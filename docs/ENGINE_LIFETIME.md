@@ -23,6 +23,14 @@ confirm the exact direct child as waitable through the kernel before the exit
 observer publishes its result. It still requires the same sole-member snapshot
 and retains ownership through the consuming wait.
 
+The [focused macOS race run](https://github.com/Yunushan/accessweaver/actions/runs/44015576744)
+passed 193 root tests on Intel. On Apple Silicon, its only failed root was
+`TestTrackedRunResolvesSignalsBeforePublishingImmediateExit` at the explicit
+cleanup retry, with 192 other roots passed. On Darwin, an explicit retry that
+receives `EPERM` before exit observation now gives the existing observer up to
+one second to publish. A retry then rechecks the original group under the
+owner lock. Unconfirmed exit or group membership retains the cleanup fault.
+
 This contract relies on exclusive child-status ownership: AccessWeaver must not install automatic child reaping or introduce another component that consumes this child's wait status. The session prevents an unrelated process from joining the original group. An engine can move descendants into another group or session, change privileges or create persistent external state. Those effects need stronger OS containment or the vendor's recovery procedure and are outside original-group cleanup.
 
 If final cleanup cannot be confirmed while ownership is retained, the manager exposes a fixed pending error and refuses a replacement launch. The exact handle remains pending. The desktop shows “Shutdown unconfirmed” and disables launch controls while profile editing, logs and support inspection remain available. The in-process `Manager.RetryCleanup` operation requires that same current handle and explicitly retries cleanup only while the original identity remains owned. The CLI does not retry automatically. If exclusive ownership is lost, numeric process identity cannot safely be recovered: no further signals, consuming waits, releases or cleanup retries are issued for that identity.
