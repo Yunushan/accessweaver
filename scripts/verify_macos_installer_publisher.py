@@ -201,7 +201,20 @@ def verify_packaged_deployment(package, team, architecture, application_pin, *,
     return expanded
 
 
-def stage_detector(expanded, team, architecture, approved_sha256, destination, parent_info, application_pin=None):
+def detector_destination(directory, output):
+    require(output.name == "accessweaver-installer", "Expected the managed detector filename")
+    parent = output.parent
+    parent_info = parent.lstat()
+    require(stat.S_ISDIR(parent_info.st_mode), "Expected a real detector output directory")
+    parent = parent.resolve(strict=True)
+    require(not parent.is_relative_to(directory.resolve()),
+            "Stage the detector outside the release input directory")
+    require(os.path.samestat(parent.lstat(), parent_info), "Detector output directory changed during resolution")
+    return parent / output.name, parent_info
+
+
+def stage_detector(expanded, team, architecture, approved_sha256, destination, parent_info, application_pin=None,
+                   *, check_approval=None):
     parent = destination.parent
 
     def check_parent():
@@ -223,6 +236,8 @@ def stage_detector(expanded, team, architecture, approved_sha256, destination, p
         check_helper_publisher(staged, team, application_pin)
         verify_detector_bytes(staged, approved_sha256)
         check_parent()
+        if check_approval is not None:
+            check_approval()
         try:
             publish_staged_file(staged, destination)
         except FileExistsError:
@@ -231,6 +246,8 @@ def stage_detector(expanded, team, architecture, approved_sha256, destination, p
     check_parent()
     verify_detector_bytes(destination, approved_sha256)
     check_parent()
+    if check_approval is not None:
+        check_approval()
 
 
 def verify(directory, artifact_sha256, team, certificate_sha256, *,
@@ -246,14 +263,9 @@ def verify(directory, artifact_sha256, team, certificate_sha256, *,
                 "Developer ID Application certificate pin requires an approved architecture and SHA-256")
         application_certificate_sha256 = application_certificate_sha256.lower()
     if detector_output is not None or detector_sha256 is not None:
-        require(detector_output is not None and detector_output.name == "accessweaver-installer"
-                and not detector_output.parent.resolve().is_relative_to(directory.resolve())
-                and detector_sha256 is not None and FINGERPRINT.fullmatch(detector_sha256)
+        require(detector_output is not None and detector_sha256 is not None and FINGERPRINT.fullmatch(detector_sha256)
                 and architecture is not None, "Invalid managed detector staging inputs")
-        parent = detector_output.parent
-        parent_info = parent.lstat()
-        require(stat.S_ISDIR(parent_info.st_mode), "Expected a real detector output directory")
-        detector_output = parent.resolve(strict=True) / detector_output.name
+        detector_output, parent_info = detector_destination(directory, detector_output)
         detector_sha256 = detector_sha256.lower()
     if deployment_release is not None:
         require(detector_output is not None and application_certificate_sha256 is not None,

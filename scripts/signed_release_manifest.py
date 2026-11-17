@@ -19,7 +19,9 @@ import tempfile
 from macos_deployment import DETACHED_MANIFEST
 from macos_installer import parse_release_version, version_parts
 from sbom import WINDOWS_BUILD_INFO_PROPERTY, WINDOWS_PAYLOAD_FINGERPRINT_PROPERTY, prop_map, validate_digest
-from verify_macos_installer_publisher import check_package_publisher, verify_packaged_deployment
+from verify_macos_installer_publisher import (
+    check_package_publisher, detector_destination, stage_detector, verify_packaged_deployment,
+)
 from verify_release import publish_staged_file as publish_staged_installer, release_file, require
 from verify_release_provenance import REPOSITORY, regular_file, validate_identity
 from verify_release_rebuild import MAX_FILE, digest, snapshot
@@ -1377,7 +1379,15 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
            detect_installed_windows_upgrade=False, windows_upgrade_attempt_id=None, windows_upgrade_start_receipt=None,
            windows_setup_wait_seconds=None, windows_upgrade_result_receipt=None, require_windows_lifecycle=False,
            verify_lifecycle_publishers=False, retry_windows_upgrade_after_reboot=False,
-           require_windows_legacy_footprint_sha256=None, intune_detection=None):
+           require_windows_legacy_footprint_sha256=None, intune_detection=None, macos_detection=None):
+    if macos_detection is not None:
+        detection_arch, detection_path = macos_detection
+        require(detection_arch in ("amd64", "arm64") and macos_publisher is not None,
+                "macOS detector export requires an architecture and approved Apple publisher pins")
+        require(current_version is None and target is None and stage_directory is None
+                and windows_upgrade_inventory is None and not launch_staged_windows_setup
+                and not detect_installed_windows_upgrade and intune_detection is None,
+                "macOS detector export is separate from staging and evaluating or running an upgrade")
     if intune_detection is not None:
         arch, evidence_pin, _ = intune_detection
         require(arch in ("amd64", "arm64") and re.fullmatch(SHA256, evidence_pin),
@@ -1511,13 +1521,16 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
         windows_publisher = windows_publisher.lower()
         payload_publisher = (windows_payload_publisher or windows_publisher).lower()
     if macos_publisher is not None:
-        require(sys.platform == "darwin" and target in ("darwin/amd64", "darwin/arm64") and current_version is not None,
-                "Native publisher verification requires macOS and a macOS managed update target")
+        require(sys.platform == "darwin" and (macos_detection is not None or (
+                    target in ("darwin/amd64", "darwin/arm64") and current_version is not None
+                )), "Native publisher verification requires macOS and a macOS assignment or managed update target")
         team, installer_pin, application_pin = macos_publisher
         require(re.fullmatch(r"[A-Z0-9]{10}", team) and all(
             re.fullmatch(r"[a-fA-F0-9]{64}", pin) for pin in (installer_pin, application_pin)
         ), "Expected the approved macOS team and both publisher certificate digests")
         installer_pin, application_pin = installer_pin.lower(), application_pin.lower()
+        if macos_detection is not None:
+            detector_output, detector_parent = detector_destination(directory, detection_path)
     if stage_directory is not None:
         require(target is not None, "Managed update staging requires an installed version and target")
         stage_directory = stage_directory.absolute()
@@ -1688,29 +1701,47 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                 update["nativePublisherVerification"][WINDOWS_PAYLOAD_PUBLISHER] = payload_publisher
             report["nativePublisherChecksPerformed"] = True
         if macos_publisher is not None:
-            update = report["managedUpdate"]
-            require(update["updateAvailable"], "Candidate is not an eligible managed upgrade")
+            update = None
+            if macos_detection is None:
+                update = report["managedUpdate"]
+                require(update["updateAvailable"], "Candidate is not an eligible managed upgrade")
+                package_name, package_pin = update["installer"], update["installerSHA256"]
+                package_target = target
+            else:
+                package_target = "darwin/" + detection_arch
+                installer = next(item for item in files if item["target"] == package_target and item["role"] == "installer")
+                package_name, package_pin = installer["file"], installer["sha256"]
             require(not revoked_subjects.intersection((installer_pin, application_pin)),
                     "macOS publisher certificate is revoked")
-            package = root / update["installer"]
-            architecture = target.split("/")[1]
-            detectors = [entry for entry in macos_detectors if entry["target"] == target
-                         and entry["packageSHA256"] == update["installerSHA256"]]
-            require(len(detectors) == 1, "Managed macOS upgrade requires approved deployment digests")
+            package = root / package_name
+            architecture = package_target.split("/")[1]
+            detectors = [entry for entry in macos_detectors if entry["target"] == package_target
+                         and entry["packageSHA256"] == package_pin]
+            require(len(detectors) == 1, "Managed macOS package requires approved deployment digests")
             approved_package = detectors[0]
             check_package_publisher(package, team, installer_pin)
-            verify_packaged_deployment(package, team, architecture, application_pin,
-                                       commit=commit, version=approved_package["version"],
-                                       helper_sha256=approved_package["detectorSHA256"],
-                                       manifest_sha256=approved_package["manifestSHA256"],
-                                       payload_sha256=approved_package["payloadSHA256"])
-            require(digest(package) == update["installerSHA256"], "macOS package changed during publisher verification")
-            update["nativePublisherVerification"] = {
+            expanded = verify_packaged_deployment(
+                package, team, architecture, application_pin, commit=commit, version=approved_package["version"],
+                helper_sha256=approved_package["detectorSHA256"], manifest_sha256=approved_package["manifestSHA256"],
+                payload_sha256=approved_package["payloadSHA256"],
+            )
+            require(digest(package) == package_pin, "macOS package changed during publisher verification")
+            native_checks = {
                 "developerTeamID": team, "installerCertificateSHA256": installer_pin,
                 "applicationCertificateSHA256": application_pin, "gatekeeperAccepted": True,
                 "packagedInstallationHelperVerified": True, "packagedPayloadSBOMVerified": True,
                 "stapledTicketValidated": True,
             }
+            if update is not None:
+                update["nativePublisherVerification"] = native_checks
+            else:
+                stage_detector(
+                    expanded, team, architecture, approved_package["detectorSHA256"], detector_output,
+                    detector_parent, application_pin, check_approval=lambda: require_current_revocation_policy(policy),
+                )
+                report["macosManagedDetector"] = {
+                    **approved_package, "file": detector_output.name, "nativePublisherVerification": native_checks,
+                }
             report["nativePublisherChecksPerformed"] = True
         if policy["schemaVersion"] == 2:
             # Candidate authentication and native publisher verification can take time.
@@ -1911,6 +1942,8 @@ def main():
                              help="approved Windows payload leaf SHA-256 when it differs from the setup signer")
     verify_args.add_argument("--macos-publisher", nargs=3, metavar=("TEAM_ID", "INSTALLER_SHA256", "APPLICATION_SHA256"),
                              help="require native macOS package and app publisher checks before staging")
+    verify_args.add_argument("--write-macos-detector", nargs=2, metavar=("ARCH", "OUTPUT"),
+                             help="export the verified native helper for an authenticated macOS assignment")
     verify_args.add_argument("--stage-directory", type=Path,
                              help="existing trusted directory for the authenticated eligible installer")
     verify_args.add_argument("--windows-upgrade-start-receipt", nargs=2, metavar=("PATH", "SHA256"),
@@ -1954,6 +1987,10 @@ def main():
             if intune_detection is not None:
                 arch, pin, output = intune_detection
                 intune_detection = (arch, pin, Path(output))
+            macos_detection = args.write_macos_detector
+            if macos_detection is not None:
+                arch, output = macos_detection
+                macos_detection = (arch, Path(output))
             report = verify(args.directory, args.approval_certificate, args.approval_certificate_sha256,
                                     args.source_commit, args.source_ref, args.openssl,
                                     revocation_list=args.revocation_list,
@@ -1982,7 +2019,7 @@ def main():
                                     verify_lifecycle_publishers=args.verify_windows_lifecycle_publishers,
                                     retry_windows_upgrade_after_reboot=args.retry_windows_upgrade_after_reboot,
                                     require_windows_legacy_footprint_sha256=args.require_windows_legacy_footprint_sha256,
-                                    intune_detection=intune_detection)
+                                    intune_detection=intune_detection, macos_detection=macos_detection)
             print(json.dumps(report))
             if args.launch_staged_windows_setup:
                 update = report["managedUpdate"]

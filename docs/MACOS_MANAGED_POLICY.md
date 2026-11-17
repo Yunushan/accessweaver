@@ -104,19 +104,22 @@ Actual replacement must bind the validated state to the publication operation an
 
 ### Detect the approved active macOS deployment
 
-Verify the signed package and current revocation list through the release-control procedure. Select the entry matching the assignment architecture and version from the signed release verifier's `macosDetection` result. Use its `packageSHA256`, `detectorSHA256`, `manifestSHA256`, and `payloadSHA256` values and the approved source commit and version. Supply the independently approved Apple Team ID and both certificate fingerprints. On a trusted Mac, place the approved package alone in a private directory and stage its detector in a separate trusted output directory. [Signed release verification](RELEASE_PROVENANCE.md#approve-the-final-signed-desktop-artifacts).
+On a trusted Mac, verify the complete signed release using its approval certificate, revocation list and source pins. Supply the independently approved Apple Team ID and both Developer ID certificate fingerprints. Select the architecture for the assignment and place the detector in a separate trusted output directory. [Signed release verification](RELEASE_PROVENANCE.md#approve-the-final-signed-desktop-artifacts).
 
 ```sh
-python3 scripts/verify_macos_installer_publisher.py PRIVATE_PACKAGE_DIRECTORY \
-  --artifact-sha256 APPROVED_PKG_SHA256 --team-id APPROVED_TEAM_ID \
-  --publisher-certificate-sha256 APPROVED_INSTALLER_CERTIFICATE_SHA256 \
-  --application-certificate-sha256 APPROVED_APPLICATION_CERTIFICATE_SHA256 \
-  --architecture arm64 --detector-sha256 APPROVED_HELPER_SHA256 \
-  --deployment-release APPROVED_COMMIT APPROVED_VERSION APPROVED_MANIFEST_SHA256 APPROVED_PAYLOAD_SHA256 \
-  --detector-output TRUSTED_OUTPUT_DIRECTORY/accessweaver-installer
+python3 scripts/signed_release_manifest.py verify PRIVATE_CANDIDATE \
+  --approval-certificate APPROVAL_CERTIFICATE_DER \
+  --approval-certificate-sha256 APPROVED_APPROVAL_CERTIFICATE_SHA256 \
+  --revocation-list CURRENT_REVOCATION_LIST \
+  --revocation-list-sha256 CURRENT_REVOCATION_LIST_SHA256 \
+  --source-commit FULL_APPROVED_COMMIT --source-ref refs/tags/APPROVED_TAG \
+  --macos-publisher APPROVED_TEAM_ID APPROVED_INSTALLER_CERTIFICATE_SHA256 APPROVED_APPLICATION_CERTIFICATE_SHA256 \
+  --write-macos-detector arm64 TRUSTED_OUTPUT_DIRECTORY/accessweaver-installer
 ```
 
-Use `amd64` for the Intel assignment. The verifier checks the package digest, installer certificate, Gatekeeper assessment and stapled ticket before expansion. Before creating the output, it checks the exact Developer ID Application leaf for the app and helper. It binds the expanded controller, install manifest, package phase metadata, bundle inventory, and both phase executables to the approved deployment. It also checks that the detached payload SBOM describes the exact controller and source identity and that its license references match the sealed app files. The verifier publishes the detector after these checks pass and reports `payloadSBOMVerified`. It publishes the detector in one exclusive rename within the verified output directory. A retry can reuse the published detector after an interruption if the digest, executable mode and single-link file checks pass. A conflict stays in place for review. Distribute that helper through endpoint management in a protected directory, retaining the package and helper digests with the assignment. The staging command runs neither the package nor the helper. [Apple Developer ID and notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
+Use `amd64` for the Intel assignment. The verifier authenticates the release and selects the package and deployment digests for that architecture. It checks the installer certificate, Gatekeeper assessment and stapled ticket before expansion. It verifies the Developer ID Application certificate for the app and helper and binds the controller, install manifest, phase metadata, bundle inventory, and both phase executables to the approval. It also verifies the detached payload SBOM and sealed license files.
+
+The verifier publishes the detector with one exclusive rename and rechecks the current revocation policy before publication and after readback. A retry can reuse an existing detector if its digest, mode and single-link checks pass. A conflicting file stays in place. The `macosManagedDetector` result records the package, manifest, controller and helper digests for the assignment. Distribute the helper through endpoint management in a protected directory. The staging command does not execute the package or helper. [Apple Developer ID and notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution) · [Managed package distribution](https://support.apple.com/guide/deployment/distribute-packages-to-mac-computers-dep873c25ac4/web).
 
 Run `accessweaver-installer detect-deployment` under the management agent's context. Exit 0 with JSON confirms that the active protected copy matches the helper's compiled build identity, complete manifest and payload digest. A refused check exits 1 without a result on stdout. An absent or inactive deployment, a superseded helper, changed files or an in-progress installation can produce a refusal. Review the installed state and deployment history before applying remediation. Retire the older assignment when rolling forward.
 

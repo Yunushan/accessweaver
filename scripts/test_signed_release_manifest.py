@@ -1172,6 +1172,59 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 })
                 self.assertEqual((macos_staging / pkg_name).read_bytes(), (self.candidate / pkg_name).read_bytes())
 
+                output = macos_staging / "accessweaver-installer"
+                export = {"macos_publisher": macos_options["macos_publisher"],
+                          "macos_detection": ("arm64", output)}
+                with patch.object(release, "stage_detector") as stage:
+                    with self.assertRaisesRegex(ValueError, "requires an architecture and approved Apple publisher pins"):
+                        self.verify(approved, pin, **{**export, "macos_publisher": None})
+                    with self.assertRaisesRegex(ValueError, "outside the release input directory"):
+                        self.verify(approved, pin, **{**export, "macos_detection": ("arm64", self.candidate / output.name)})
+                    revoked_pin = self.write_policy({**self.policy, "subjectSHA256": [helper_pin]})
+                    with self.assertRaisesRegex(ValueError, "macOS detector is revoked"):
+                        self.verify(approved, pin, policy_pin=revoked_pin, **export)
+                    self.write_policy(self.policy)
+                    stage.assert_not_called()
+
+                    for arch in ("amd64", "arm64"):
+                        stage.reset_mock()
+                        output_target = "darwin/" + arch
+                        entry, = [record for record in native_report["macosDetection"]
+                                  if record["target"] == output_target]
+                        arguments = [
+                            "signed_release_manifest.py", "verify", str(self.candidate),
+                            "--approval-certificate", str(approved), "--approval-certificate-sha256", pin,
+                            "--revocation-list", str(self.revocation_list), "--revocation-list-sha256", self.policy_pin,
+                            "--source-commit", COMMIT, "--source-ref", REF,
+                            "--macos-publisher", *export["macos_publisher"],
+                            "--write-macos-detector", arch, str(output),
+                        ]
+                        deployment_check.side_effect = lambda package, *_, **__: package.parent / "expanded"
+                        stdout = io.StringIO()
+                        with patch.object(sys, "argv", arguments), redirect_stdout(stdout):
+                            self.assertEqual(release.main(), 0)
+                        detector_report = json.loads(stdout.getvalue())
+                        self.assertNotIn("managedUpdate", detector_report)
+                        self.assertTrue(detector_report["nativePublisherChecksPerformed"])
+                        self.assertEqual(detector_report["macosManagedDetector"], {
+                            **entry, "file": output.name,
+                            "nativePublisherVerification": native_update["nativePublisherVerification"],
+                        })
+                        pkg = deployment_check.call_args.args[0]
+                        self.assertEqual(pkg.name, f"accessweaver-{VERSION}-darwin-{arch}-deployment-experimental.pkg")
+                        self.assertNotEqual(pkg.parent, self.candidate)
+                        self.assertEqual(package_check.call_args.args, (pkg, team, installer_pin))
+                        self.assertEqual(deployment_check.call_args.args, (pkg, team, arch, application_pin))
+                        stage.assert_called_once()
+                        self.assertEqual(stage.call_args.args[:5],
+                                         (pkg.parent / "expanded", team, arch, entry["detectorSHA256"], output.resolve()))
+                        self.assertEqual(stage.call_args.args[-1], application_pin)
+                        with patch.object(release, "require_current_revocation_policy",
+                                          side_effect=ValueError("approval expired")):
+                            with self.assertRaisesRegex(ValueError, "approval expired"):
+                                stage.call_args.kwargs["check_approval"]()
+
+
         real_stage = release.stage_managed_update
         def replace_input_after_verification(snapshot, directory, decision, policy, **binding):
             input_file.write_bytes(b"replacement after verification")

@@ -346,6 +346,35 @@ with patch.object(publisher, "tool"), patch.object(publisher, "publish_staged_fi
             self.assertEqual(list(parent.iterdir()), [])
             self.assertEqual((displaced / destination.name).read_bytes(), content)
 
+    def test_detector_rechecks_approval_before_publication_and_on_retry(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            expanded = root / "expanded"
+            scripts = expanded / "Scripts"
+            scripts.mkdir(parents=True)
+            content = image("arm64")
+            for phase in ("preinstall", "postinstall"):
+                (scripts / phase).write_bytes(content)
+            digest = hashlib.sha256(content).hexdigest()
+            output = root / "accessweaver-installer"
+            parameters = (expanded, TEAM, "arm64", digest, output, root.lstat())
+            with patch.object(publisher, "tool"):
+                denied = MagicMock(side_effect=ValueError("approval expired"))
+                with self.assertRaisesRegex(ValueError, "approval expired"):
+                    publisher.stage_detector(*parameters, check_approval=denied)
+                self.assertFalse(output.exists())
+                self.assertEqual(list(root.iterdir()), [expanded])
+                approved = MagicMock()
+                publisher.stage_detector(*parameters, check_approval=approved)
+                self.assertEqual(approved.call_count, 2)
+                original = output.stat()
+                on_readback = MagicMock(side_effect=[None, ValueError("approval expired")])
+                with self.assertRaisesRegex(ValueError, "approval expired"):
+                    publisher.stage_detector(*parameters, check_approval=on_readback)
+                self.assertEqual(on_readback.call_count, 2)
+                self.assertTrue(os.path.samestat(original, output.stat()))
+                self.assertEqual(output.read_bytes(), content)
+
     def test_detector_export_verifies_release_binding_before_publication(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(publisher.sys, "platform", "darwin"):
             root = Path(temporary)
