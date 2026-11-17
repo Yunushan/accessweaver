@@ -37,6 +37,7 @@ import (
 	"github.com/Yunushan/accessweaver/internal/fileidentity"
 	"github.com/Yunushan/accessweaver/internal/filelock"
 	"github.com/Yunushan/accessweaver/internal/managed"
+	"github.com/Yunushan/accessweaver/internal/nativepath"
 	"github.com/Yunushan/accessweaver/internal/profile"
 	"github.com/Yunushan/accessweaver/internal/wintrust"
 	"golang.org/x/sys/windows"
@@ -1942,6 +1943,16 @@ func windowsRunJobMismatch(w *windowsCommandWorker, active uint32) windowsRunRel
 			}
 		default:
 			if live {
+				system, err := nativepath.SystemDirectory()
+				if err != nil {
+					return 31
+				}
+				// Path categories are diagnostic only, never a trust grant.
+				for index, relative := range []string{"conhost.exe", "WindowsPowerShell" + string(filepath.Separator) + "v1.0" + string(filepath.Separator) + "powershell.exe", "cmd.exe"} {
+					if strings.EqualFold(path, filepath.Join(system, relative)) {
+						return windowsRunReleaseStage(33 + index)
+					}
+				}
 				return 29
 			}
 			return 30
