@@ -1291,12 +1291,13 @@ end;
     } finally {$heldTemp.Dispose()}
 
     $stage='managed-upgrade-retirement-flush-failure'
-    $flushPoint='  if AWFlushLifecycleRecord then begin'
+    $flushPoint='    if Result and Flush then Flushed := AWFlushRegistryKey(Key) = 0;'
     Require ([regex]::Matches($productSetup,[regex]::Escape($flushPoint)).Count -eq 1) 'Expected one Setup retirement flush boundary'
     $flushFault=@"
-  if not AWPendingInstallAbsent then RaiseException('Retirement flush fixture did not observe the deleted record.');
-  Log('AccessWeaver retirement flush failure injected after verified deletion.');
-  if False then begin
+    if Result and Flush then begin
+      Log('AccessWeaver retirement flush failure injected after verified deletion.');
+      Flushed := False;
+    end;
 "@
     [IO.File]::WriteAllText($faultSetup,$productSetup.Replace($flushPoint,$flushFault))
     $null=@(& $compiler ('/DBuildRoot='+$upgradePayload) ('/DReleaseVersion='+$builds[1].version) ('/DTargetArch='+$Architecture) $faultSetup)

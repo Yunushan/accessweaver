@@ -72,6 +72,13 @@ record to the exact candidate setup and independently verified prior package.
 An interruption between transactions leaves the registration absent and the
 durable install recovery record present.
 
+Setup, the standalone managed detector, and the embedded Windows controller
+open each recovery registry component without following links. Setup mutates
+the recovery values and flushes pending-state changes on the same held key.
+The existing version, destination, and approval-pin format remains compatible
+with the detector. The disposable registry fixture checks ordinary marker
+creation and refusal of a linked parent, including when creation is requested.
+
 The [two-transaction recovery run](https://github.com/Yunushan/accessweaver/actions/runs/44004076267)
 passed all 46 assertions and confirmed exact fixture cleanup on AMD64 and ARM64
 at `7d6833963933598a0cc84106f83d09f7c8505f91`. Recovery refused a mismatched

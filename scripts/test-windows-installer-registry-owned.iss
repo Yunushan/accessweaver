@@ -530,6 +530,31 @@ begin
   AWFixtureRetirementCases(Root, Prior);
 end;
 
+procedure AWFixtureLifecycleRegistryCases(Root: LongWord);
+var Product, Marker, Readback, AliasRoot, Alias: LongWord; Status, Value: LongWord;
+    Recorded, AliasReady: Boolean; NativeTarget: String;
+begin
+  Product := 0; Marker := 0; Readback := 0; AliasRoot := 0; Alias := 0;
+  Recorded := AWFixtureRaw(Root, 'AccessWeaver', AWOwnedRegistrySDDL, 0, Product) and
+    (AWOpenLifecycleRegistryUnderSoftware(Root, $00010003, True, Marker) = 0);
+  if Recorded then AWFixtureRemember(Marker);
+  Value := 73;
+  Recorded := Recorded and (AWFixtureWriteDWORD(Marker, 'sentinel', 0, 4, Value, 4) = 0) and
+    (AWOpenLifecycleRegistryUnderSoftware(Root, $0001, False, Readback) = 0) and AWFixtureSentinel(Readback);
+  if not AWOwnedRegistryClose(Readback) then AWFixtureCleanup := False;
+  AWFixtureCase('lifecycle-marker-creates-and-reads-real-key', Recorded);
+
+  NativeTarget := '\REGISTRY\MACHINE\SOFTWARE\{#FixtureRootName}\AccessWeaver';
+  AliasReady := AWFixtureNew(Root, 'lifecycle-alias-root', AliasRoot) and
+    AWFixtureRaw(AliasRoot, 'AccessWeaver', AWOwnedRegistrySDDL, 2, Alias) and
+    (AWFixtureWriteText(Alias, 'SymbolicLinkValue', 0, 6, NativeTarget, Length(NativeTarget) * 2) = 0);
+  Status := AWRegistrationUnsafe;
+  if AliasReady then Status := AWOpenLifecycleRegistryUnderSoftware(AliasRoot, $0003, True, Readback);
+  AWFixtureCase('lifecycle-marker-refuses-linked-parent', Recorded and AliasReady and
+    (Status = AWRegistrationUnsafe) and (Readback = 0) and AWFixtureSentinel(Marker));
+  if not AWOwnedRegistryClose(Readback) then AWFixtureCleanup := False;
+end;
+
 function InitializeSetup: Boolean;
 var Software, Root, Probe: LongWord; I: Integer; RecordText: String; RootCreated: Boolean;
 begin
@@ -554,6 +579,7 @@ begin
       AWFixtureCasesRun(Root);
       AWFixtureTransactionCases(Root);
       AWFixtureLegacyReplacementCases(Root);
+      AWFixtureLifecycleRegistryCases(Root);
     end;
   finally
     { Every deletion uses an exact handle returned by a confirmed NEW creation.

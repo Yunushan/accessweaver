@@ -21,6 +21,15 @@ $probes=@(foreach($scriptAst in @($ast,$controllerAst)){
 if($probes.Count -ne 2 -or $probes[0].Extent.Text -cne $probes[1].Extent.Text){
     throw 'Standalone detector and embedded controller recovery probes differ'
 }
+$nativeReaders=@(foreach($scriptAst in @($ast,$controllerAst)){
+    $scriptAst.EndBlock.Statements | Where-Object {
+        $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $_.Name -ceq 'Initialize-AccessWeaverInstallerRecoveryRegistry'
+    }
+})
+if($nativeReaders.Count -ne 2 -or $nativeReaders[0].Extent.Text -cne $nativeReaders[1].Extent.Text){
+    throw 'Standalone detector and embedded controller registry readers differ'
+}
 $setupProbes=@(foreach($scriptAst in @($ast,$controllerAst)){
     $scriptAst.EndBlock.Statements | Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq 'Assert-NoAccessWeaverSetup'
@@ -112,7 +121,7 @@ function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
     $mocked=$original.Substring(0,$node.StartOffset)+$mock+$original.Substring($node.EndOffset)
     # Keep the production status mapping and detector assertion. Replace only
     # the native call in the isolated child with fixed Win32 result codes.
-    $nativeCall='[AccessWeaver.InstallerRecoveryRegistry]::QueryStatus()'
+    $nativeCall='[AccessWeaver.InstallerLifecycleRecoveryRegistry]::QueryStatus()'
     $fixtureStatus=@'
 $(switch -CaseSensitive ($env:AW_DETECTION_FIXTURE){
     'pending' {0}
@@ -128,7 +137,7 @@ $(switch -CaseSensitive ($env:AW_DETECTION_FIXTURE){
     $probe=$probes[0].Extent.Text
     if(-not $probe.Contains($nativeCall)){throw 'Missing fixed native recovery query'}
     $mocked=$mocked.Replace($probe,$probe.Replace($nativeCall,$fixtureStatus))
-    $nativeRecord='[AccessWeaver.InstallerPendingRecord]::ReadValue()'
+    $nativeRecord='[AccessWeaver.InstallerLifecycleRecoveryRegistry]::ReadValue()'
     $fixtureRecord=@'
 $(switch -CaseSensitive ($env:AW_DETECTION_FIXTURE){
     'managed-pending-wrong-version' {'0.1.1-alpha|'+$PSScriptRoot+'|'+('a'*64)}

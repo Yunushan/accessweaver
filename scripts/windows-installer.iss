@@ -82,7 +82,6 @@ Name: "{group}\AccessWeaver"; Filename: "{app}\accessweaver.exe"; Parameters: "u
 #include "windows-installer-restore.iss"
 
 const
-  AWLifecycleRegistry = 'SOFTWARE\AccessWeaver\Installer';
   AWPendingInstall = 'PendingInstall';
 
 var AWInstallFinished, AWPendingRetirementFailed: Boolean;
@@ -107,7 +106,7 @@ var Key, Status, Kind, Bytes: LongWord;
     Buffer, RecordValue: String; Units, Separator: Integer;
 begin
   Result := ''; Version := ''; Directory := ''; ApprovalPin := '';
-  Status := AWOpenRegistrationKey($80000002, AWLifecycleRegistry, 0, $0101, Key);
+  Status := AWOpenLifecycleRegistry($0001, False, Key);
   if (Status = 2) or (Status = 3) then Exit;
   Result := 'Cannot verify the AccessWeaver pending installation record.';
   if Status <> 0 then Exit;
@@ -132,19 +131,61 @@ begin
     end;
     if (Directory <> '') and (Length(Directory) <= 260) then Result := '';
   finally
-    AWCloseRegistrationKey(Key);
+    if AWCloseRegistrationKey(Key) <> 0 then
+      Result := 'Cannot verify the AccessWeaver pending installation record.';
   end;
 end;
 
-function AWFlushLifecycleRecord: Boolean;
+function AWSetLifecycleStringNative(Key: LongWord; const Name: String;
+  Reserved, Kind: LongWord; const Data: String; Bytes: LongWord): LongWord;
+  external 'RegSetValueExW@advapi32.dll stdcall';
+
+function AWDeleteLifecycleValueNative(Key: LongWord; const Name: String): LongWord;
+  external 'RegDeleteValueW@advapi32.dll stdcall';
+
+function AWWriteLifecycleString(const Name, Value: String; Flush: Boolean): Boolean;
 var Key: LongWord;
 begin
   Result := False;
-  if AWOpenRegistrationKey($80000002, AWLifecycleRegistry, 0, $0101, Key) <> 0 then Exit;
+  if not AWLifecycleOwned or (Length(Value) > 10000) or (Pos(#0, Value) <> 0) then Exit;
+  if AWOpenLifecycleRegistry($0002, True, Key) <> 0 then Exit;
   try
-    Result := AWFlushRegistryKey(Key) = 0;
+    Result := AWSetLifecycleStringNative(Key, Name, 0, 1, Value, (Length(Value) + 1) * 2) = 0;
+    if Result and Flush then Result := AWFlushRegistryKey(Key) = 0;
   finally
-    AWCloseRegistrationKey(Key);
+    if AWCloseRegistrationKey(Key) <> 0 then Result := False;
+  end;
+end;
+
+function AWReadLifecycleString(const Name: String; Maximum: LongWord; var Value: String): Boolean;
+var Key: LongWord;
+begin
+  Result := False; Value := '';
+  if AWOpenLifecycleRegistry($0001, False, Key) <> 0 then Exit;
+  try
+    Result := AWReadRegistrationString(Key, Name, $30000002, Maximum, Value);
+  finally
+    if AWCloseRegistrationKey(Key) <> 0 then Result := False;
+  end;
+end;
+
+function AWDeleteLifecycleValue(const Name: String; Flush: Boolean; var Flushed: Boolean): Boolean;
+var Key, Kind, Bytes: LongWord;
+begin
+  Result := False; Flushed := False;
+  if not AWLifecycleOwned or (AWOpenLifecycleRegistry($0002, False, Key) <> 0) then Exit;
+  try
+    Result := AWDeleteLifecycleValueNative(Key, Name) = 0;
+    Kind := 0; Bytes := 0;
+    if Result then Result := AWRegistrationQueryValue(Key, Name, 0, Kind, 0, Bytes) = 2;
+    if Result and Flush then Flushed := AWFlushRegistryKey(Key) = 0;
+  finally
+    if AWCloseRegistrationKey(Key) <> 0 then begin
+      Flushed := False;
+      { A confirmed pending deletion with uncertain cleanup follows the same
+        guarded restoration path as a failed retirement flush. }
+      if not Flush then Result := False;
+    end;
   end;
 end;
 
@@ -183,17 +224,18 @@ begin
 end;
 
 function AWRetirePendingInstall(const Destination: String): Boolean;
+var Flushed: Boolean;
 begin
   Result := False;
   if not AWLifecycleOwned or not AWPendingInstallMatches(Destination) then begin
     Log('AccessWeaver pending installation record changed or could not be verified. Setup did not clear it.');
     Exit;
   end;
-  if not RegDeleteValue(HKLM64, AWLifecycleRegistry, AWPendingInstall) then begin
+  if not AWDeleteLifecycleValue(AWPendingInstall, True, Flushed) then begin
     Log('Cannot delete the AccessWeaver pending installation record.');
     Exit;
   end;
-  if AWFlushLifecycleRecord then begin
+  if Flushed then begin
     Result := AWPendingInstallAbsent;
     if not Result then Log('AccessWeaver could not verify absence of the pending installation record after retirement.');
     Exit;
@@ -206,12 +248,8 @@ begin
     Log('AccessWeaver pending installation record changed or could not be verified. Setup did not replace it.');
     Exit;
   end;
-  if not RegWriteStringValue(HKLM64, AWLifecycleRegistry, AWPendingInstall, AWPendingInstallValue(Destination)) then begin
+  if not AWWriteLifecycleString(AWPendingInstall, AWPendingInstallValue(Destination), True) then begin
     Log('Cannot restore the AccessWeaver pending installation record after the failed flush.');
-    Exit;
-  end;
-  if not AWFlushLifecycleRecord then begin
-    Log('Cannot flush the restored AccessWeaver pending installation record.');
     Exit;
   end;
   if not AWPendingInstallMatches(Destination) then begin
@@ -419,11 +457,12 @@ begin
     if AWPendingInstallAbsent then begin
       Value := '';
       if AWCollectSetupTempNames(Destination, Current) then Value := Binding + Current.Text;
-      Result := RegWriteStringValue(HKLM64, AWLifecycleRegistry, AWManagedTempBaseline, Value);
+      if Length(Value) > 10000 then Value := '';
+      Result := AWWriteLifecycleString(AWManagedTempBaseline, Value, False);
       Exit;
     end;
     if not AWPendingInstallMatches(Destination) then begin Result := False; Exit; end;
-    if not RegQueryStringValue(HKLM64, AWLifecycleRegistry, AWManagedTempBaseline, Value) then Exit;
+    if not AWReadLifecycleString(AWManagedTempBaseline, 10000, Value) then Exit;
     if (Length(Value) > 10000) or (Copy(Value, 1, Length(Binding)) <> Binding) then Exit;
     Baseline := TStringList.Create;
     try
@@ -865,7 +904,7 @@ end;
 
 procedure AWCompleteInstallation(const Destination: String);
 var Held: AWNativeHandles; Executable, BuildInfo, SBOM, RuntimeNotice, Uninstaller, UninstallData: LongWord; I: Integer;
-    Verified: Boolean;
+    Verified, BaselineFlushed: Boolean;
 begin
   Executable := $FFFFFFFF; BuildInfo := $FFFFFFFF; SBOM := $FFFFFFFF;
   RuntimeNotice := $FFFFFFFF; Uninstaller := $FFFFFFFF; UninstallData := $FFFFFFFF;
@@ -882,7 +921,7 @@ begin
       Log('AccessWeaver could not retire a verified temporary uninstaller. Pending installation record retained.')
     else if AWRetirePendingInstall(Destination) then begin
       AWPendingRetirementFailed := False;
-      if AWPendingApprovalPin <> '' then RegDeleteValue(HKLM64, AWLifecycleRegistry, AWManagedTempBaseline);
+      if AWPendingApprovalPin <> '' then AWDeleteLifecycleValue(AWManagedTempBaseline, False, BaselineFlushed);
       Log('AccessWeaver installed payload and registration verified. Pending installation record retired.');
     end;
   finally
@@ -914,8 +953,7 @@ begin
     if Failure <> '' then RaiseException(Failure);
     if not AWPrepareManagedTempRecovery(Destination) then
       RaiseException('Cannot persist the AccessWeaver temporary file baseline.');
-    if not RegWriteStringValue(HKLM64, AWLifecycleRegistry, AWPendingInstall, AWPendingInstallValue(Destination)) or
-      not AWFlushLifecycleRecord then
+    if not AWWriteLifecycleString(AWPendingInstall, AWPendingInstallValue(Destination), True) then
       RaiseException('Cannot persist the AccessWeaver pending installation record.');
     if not AWPendingInstallMatches(Destination) then
       RaiseException('Cannot verify the AccessWeaver pending installation record after writing it.');

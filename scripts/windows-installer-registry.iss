@@ -34,6 +34,77 @@ begin
   end;
 end;
 
+function AWCreateLifecycleComponentNative(Parent: LongWord; const Name: String;
+  Reserved, ClassName, Options, Access, Attributes: LongWord;
+  var Key, Disposition: LongWord): LongWord;
+  external 'RegCreateKeyExW@advapi32.dll stdcall';
+
+function AWOpenLifecycleComponent(Parent: LongWord; const Name: String;
+  Access: LongWord; CreateMissing: Boolean; var Key: LongWord): LongWord;
+var Disposition, Kind, Bytes: LongWord;
+begin
+  Result := AWOpenRegistrationComponent(Parent, Name, Access, Key);
+  if not CreateMissing or ((Result <> 2) and (Result <> 3)) then Exit;
+  Disposition := 0;
+  Result := AWCreateLifecycleComponentNative(Parent, Name, 0, 0, $0008,
+    Access or $0001, 0, Key, Disposition);
+  if Result <> 0 then Exit;
+  if (Key = 0) or (Disposition <> 1) then begin
+    { Another creator or a linked entry raced the absence check. Reopen only
+      through the no-follow reader after closing the ambiguous create result. }
+    if (Key <> 0) and (AWCloseRegistrationKey(Key) <> 0) then begin
+      Key := 0; Result := AWRegistrationUnsafe; Exit;
+    end;
+    Result := AWOpenRegistrationComponent(Parent, Name, Access, Key);
+    Exit;
+  end;
+  Kind := 0; Bytes := 0;
+  if AWRegistrationQueryValue(Key, 'SymbolicLinkValue', 0, Kind, 0, Bytes) <> 2 then begin
+    AWCloseRegistrationKey(Key);
+    Key := 0; Result := AWRegistrationUnsafe;
+  end;
+end;
+
+function AWOpenLifecycleRegistryUnderSoftware(Software, Access: LongWord;
+  CreateMissing: Boolean; var Key: LongWord): LongWord;
+var Product, ParentAccess: LongWord;
+begin
+  Key := 0; Product := 0;
+  ParentAccess := $0108; { KEY_WOW64_64KEY | KEY_ENUMERATE_SUB_KEYS }
+  if CreateMissing then ParentAccess := ParentAccess or $0004;
+  Result := AWOpenLifecycleComponent(Software, 'AccessWeaver', ParentAccess, CreateMissing, Product);
+  if (Result = 2) or (Result = 3) then begin Result := 2; Exit; end;
+  if Result <> 0 then Exit;
+  try
+    Result := AWOpenLifecycleComponent(Product, 'Installer', Access or $0100, CreateMissing, Key);
+    if Result = 3 then Result := 2;
+  finally
+    if AWCloseRegistrationKey(Product) <> 0 then begin
+      if Key <> 0 then AWCloseRegistrationKey(Key);
+      Key := 0; Result := AWRegistrationUnsafe;
+    end;
+  end;
+end;
+
+function AWOpenLifecycleRegistry(Access: LongWord; CreateMissing: Boolean;
+  var Key: LongWord): LongWord;
+var Software, ParentAccess: LongWord;
+begin
+  Key := 0; Software := 0;
+  ParentAccess := $0108;
+  if CreateMissing then ParentAccess := ParentAccess or $0004;
+  Result := AWOpenRegistrationComponent($80000002, 'SOFTWARE', ParentAccess, Software);
+  if Result <> 0 then begin Result := AWRegistrationUnsafe; Exit; end;
+  try
+    Result := AWOpenLifecycleRegistryUnderSoftware(Software, Access, CreateMissing, Key);
+  finally
+    if AWCloseRegistrationKey(Software) <> 0 then begin
+      if Key <> 0 then AWCloseRegistrationKey(Key);
+      Key := 0; Result := AWRegistrationUnsafe;
+    end;
+  end;
+end;
+
 function AWRegistrationAncestor(Index: Integer): String;
 begin
   case Index of

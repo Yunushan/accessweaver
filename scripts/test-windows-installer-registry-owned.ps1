@@ -43,7 +43,10 @@ if((Test-Path -LiteralPath $build) -or (Test-Path -LiteralPath $receiptDir)){thr
 [void](New-Item -ItemType Directory -Path $receiptDir)
 $producer=@('scripts/test-windows-installer-registry-owned.iss','scripts/windows-installer-registry-owned.iss',
     'scripts/windows-installer-registry-transaction.iss','scripts/windows-installer-registry.iss','scripts/windows-installer-version.iss',
-    'scripts/test-windows-installer-registry-owned.ps1','scripts/windows-installer-common.ps1','.github/workflows/installer-lifecycle.yml')
+    'scripts/test-windows-installer-registry-owned.ps1','scripts/windows-installer-common.ps1',
+    'scripts/windows-installer.iss','scripts/detect-windows-installer.ps1','internal/workflow/windows.ps1',
+    'scripts/test-windows-installer-contracts.ps1','scripts/test-windows-installer-detection.ps1',
+    '.github/workflows/installer-lifecycle.yml')
 $pins=[ordered]@{}
 foreach($name in $producer){$pins[$name]=(Get-FileHash -LiteralPath (Join-Path $project $name) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $receiptPath=Join-Path $receiptDir ($Architecture+'.json')

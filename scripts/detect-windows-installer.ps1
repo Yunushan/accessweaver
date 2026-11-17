@@ -244,76 +244,109 @@ namespace AccessWeaver
     }
 }
 
-function Get-AccessWeaverInstallerRecoveryState {
-    # The detector ships standalone. Its source fixture checks both copies.
-    try {
-        if(-not ('AccessWeaver.InstallerRecoveryRegistry' -as [type])){
-            Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-
-namespace AccessWeaver
-{
-    public static class InstallerRecoveryRegistry
-    {
-        private static readonly IntPtr LocalMachine = new IntPtr(unchecked((int)0x80000002));
-        private const uint QueryFlags = 0x1001ffff; // RRF_NOEXPAND | RRF_SUBKEY_WOW6464KEY | RRF_RT_ANY
-
-        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
-        private static extern int RegGetValueW(IntPtr key, string subKey, string value,
-            uint flags, IntPtr type, IntPtr data, out uint size);
-
-        public static int QueryStatus()
-        {
-            uint size;
-            return RegGetValueW(LocalMachine, @"SOFTWARE\AccessWeaver\Installer", "PendingInstall",
-                QueryFlags, IntPtr.Zero, IntPtr.Zero, out size);
-        }
-    }
-}
-'@
-        }
-        # Only explicit key/path or value absence permits uninstall or detection.
-        switch ([AccessWeaver.InstallerRecoveryRegistry]::QueryStatus()) {
-            0 {return 'pending'}
-            2 {return 'clear'} # ERROR_FILE_NOT_FOUND
-            3 {return 'clear'} # ERROR_PATH_NOT_FOUND
-            default {return 'unavailable'}
-        }
-    } catch {
-        return 'unavailable'
-    }
-}
-
-function Test-AccessWeaverManagedUpgradePending([string]$directory) {
-    if(-not $PendingApprovalSHA256){return $false}
-    try {
-        if(-not ('AccessWeaver.InstallerPendingRecord' -as [type])){
-            Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
+function Initialize-AccessWeaverInstallerRecoveryRegistry {
+    if('AccessWeaver.InstallerLifecycleRecoveryRegistry' -as [type]){return}
+    Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
 namespace AccessWeaver
 {
-    public static class InstallerPendingRecord
+    public static class InstallerLifecycleRecoveryRegistry
     {
         private static readonly IntPtr LocalMachine = new IntPtr(unchecked((int)0x80000002));
-        private const uint QueryFlags = 0x10010002; // RRF_NOEXPAND | RRF_SUBKEY_WOW6464KEY | RRF_RT_REG_SZ
+        private static readonly string[] Components = { "SOFTWARE", "AccessWeaver", "Installer" };
+        private const int NotFound = 2;
+        private const int Unsafe = 5;
+        private const uint NoExpand = 0x10000000;
+        private const uint QueryAny = NoExpand | 0xffff;
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern int RegOpenKeyExW(IntPtr parent, string name, uint options, uint access, out IntPtr key);
+
+        [DllImport("advapi32.dll", ExactSpelling = true)]
+        private static extern int RegCloseKey(IntPtr key);
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern int RegQueryValueExW(IntPtr key, string value,
+            IntPtr reserved, IntPtr type, IntPtr data, out uint size);
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern int RegGetValueW(IntPtr key, string subKey, string value,
+            uint flags, IntPtr type, IntPtr data, out uint size);
 
         [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
         private static extern int RegGetValueW(IntPtr key, string subKey, string value,
             uint flags, out uint type, [Out] byte[] data, ref uint size);
 
+        private static int OpenInstallerKey(out IntPtr key)
+        {
+            key = IntPtr.Zero;
+            IntPtr parent = LocalMachine;
+            int status = 0;
+            foreach (string component in Components)
+            {
+                IntPtr child;
+                status = RegOpenKeyExW(parent, component, 8, 0x0101, out child);
+                if (status != 0)
+                {
+                    if (parent == LocalMachine)
+                        status = Unsafe;
+                    break;
+                }
+
+                uint size;
+                if (RegQueryValueExW(child, "SymbolicLinkValue", IntPtr.Zero,
+                    IntPtr.Zero, IntPtr.Zero, out size) != NotFound)
+                {
+                    RegCloseKey(child);
+                    status = Unsafe;
+                    break;
+                }
+                if (parent != LocalMachine && RegCloseKey(parent) != 0)
+                {
+                    RegCloseKey(child);
+                    return Unsafe;
+                }
+                parent = child;
+            }
+
+            if (status == 0)
+            {
+                key = parent;
+                return 0;
+            }
+            if (parent != LocalMachine && RegCloseKey(parent) != 0)
+                return Unsafe;
+            return status;
+        }
+
+        public static int QueryStatus()
+        {
+            IntPtr key;
+            int status = OpenInstallerKey(out key);
+            if (status != 0)
+                return status;
+
+            uint size;
+            status = RegGetValueW(key, null, "PendingInstall", QueryAny, IntPtr.Zero, IntPtr.Zero, out size);
+            return RegCloseKey(key) == 0 ? status : Unsafe;
+        }
+
         public static string ReadValue()
         {
-            // Match Setup's bound for the version, directory, approval pin and terminator.
+            IntPtr key;
+            if (OpenInstallerKey(out key) != 0)
+                return null;
+
+            // Match Setup's bound for version, directory, approval pin and terminator.
             byte[] buffer = new byte[1166];
             uint size = (uint)buffer.Length;
             uint type;
-            int status = RegGetValueW(LocalMachine, @"SOFTWARE\AccessWeaver\Installer", "PendingInstall",
-                QueryFlags, out type, buffer, ref size);
-            if (status != 0 || type != 1 || size < 4 || size > buffer.Length || size % 2 != 0)
+            int status = RegGetValueW(key, null, "PendingInstall", NoExpand | 2, out type, buffer, ref size);
+            if (RegCloseKey(key) != 0 || status != 0 || type != 1 || size < 4 ||
+                size > buffer.Length || size % 2 != 0)
                 return null;
 
             int contentBytes = (int)size - 2;
@@ -326,8 +359,28 @@ namespace AccessWeaver
     }
 }
 '@
+}
+
+function Get-AccessWeaverInstallerRecoveryState {
+    try {
+        Initialize-AccessWeaverInstallerRecoveryRegistry
+        # Only explicit component or value absence clears the recovery guard.
+        switch ([AccessWeaver.InstallerLifecycleRecoveryRegistry]::QueryStatus()) {
+            0 {return 'pending'}
+            2 {return 'clear'}
+            3 {return 'clear'}
+            default {return 'unavailable'}
         }
-        $record=[AccessWeaver.InstallerPendingRecord]::ReadValue()
+    } catch {
+        return 'unavailable'
+    }
+}
+
+function Test-AccessWeaverManagedUpgradePending([string]$directory) {
+    if(-not $PendingApprovalSHA256){return $false}
+    try {
+        Initialize-AccessWeaverInstallerRecoveryRegistry
+        $record=[AccessWeaver.InstallerLifecycleRecoveryRegistry]::ReadValue()
         if(-not $record){return $false}
 
         $fields=$record.Split('|')
@@ -342,7 +395,7 @@ namespace AccessWeaver
             -not [string]::Equals($registeredDirectory,$directory,[StringComparison]::OrdinalIgnoreCase))){
             return $false
         }
-        return [string]::Equals($record,[AccessWeaver.InstallerPendingRecord]::ReadValue(),[StringComparison]::Ordinal)
+        return [string]::Equals($record,[AccessWeaver.InstallerLifecycleRecoveryRegistry]::ReadValue(),[StringComparison]::Ordinal)
     } catch {
         return $false
     }

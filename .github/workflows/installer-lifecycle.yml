@@ -64,6 +64,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Verify recovery marker and detector contracts
+        shell: pwsh
+        run: |
+          ./scripts/test-windows-installer-contracts.ps1
+          ./scripts/test-windows-installer-detection.ps1
       - name: Exercise owned registry creation, retry and link refusal
         shell: pwsh
         env:
