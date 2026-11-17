@@ -2,7 +2,7 @@ name: Native Windows DoH wire controls
 
 on:
   push:
-    branches: ['main', 'codex/dns-adapter-coverage']
+    branches: ['main', 'codex/dns-adapter-coverage', 'codex/doh-wire-server-2022']
     paths:
       - 'cmd/**'
       - 'internal/**'
@@ -65,14 +65,12 @@ env:
 jobs:
   native:
     name: Native DoH wire (windows/${{ matrix.goarch }})
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.goarch == 'arm64' && 'windows-11-arm' || (github.ref_name == 'codex/doh-wire-server-2022' && 'windows-2022' || 'windows-latest') }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - {goarch: amd64, os: windows-latest, sdkarch: x64, method: doh, scenario: roundtrip}
-          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: doh, scenario: roundtrip}
+        goarch: ${{ fromJSON(github.ref_name == 'codex/doh-wire-server-2022' && '["amd64"]' || '["amd64","arm64"]') }}
     defaults:
       run:
         shell: pwsh
@@ -86,12 +84,12 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
-          architecture: ${{ matrix.sdkarch }}
+          architecture: ${{ matrix.goarch == 'arm64' && 'arm64' || 'x64' }}
           cache: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '26.8.2'
-          architecture: ${{ matrix.sdkarch }}
+          architecture: ${{ matrix.goarch == 'arm64' && 'arm64' || 'x64' }}
           package-manager-cache: false
       - name: Verify hosted native SDK and machine identity
         run: node scripts/check-native-environment.cjs
@@ -158,7 +156,7 @@ jobs:
           $queryBinary=(Resolve-Path 'build/native-doh/query.exe').Path
           $queryDigest=(Get-FileHash -LiteralPath $queryBinary -Algorithm SHA256).Hash.ToLowerInvariant()
           $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
-          & $stock -NoProfile -NonInteractive -File ./scripts/test-native-doh.ps1 -Binary $binary -BinarySHA256 $digest -Method ${{ matrix.method }} -ScenarioKind ${{ matrix.scenario }} -WireTransport -QueryBinary $queryBinary -QueryBinarySHA256 $queryDigest -ReportPath (Join-Path $evidence 'status.json')
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-native-doh.ps1 -Binary $binary -BinarySHA256 $digest -Method doh -ScenarioKind roundtrip -WireTransport -QueryBinary $queryBinary -QueryBinarySHA256 $queryDigest -ReportPath (Join-Path $evidence 'status.json')
           if($LASTEXITCODE -ne 0){throw 'Native encrypted DNS acceptance failed; fixed metadata retained'}
       - name: Retain fixed native DNS metadata only
         if: always() && env.ACCESSWEAVER_NATIVE_DOH_EVIDENCE != ''
