@@ -470,19 +470,19 @@ try {
     $checks.installCompleted=$installed.passed -and -not $installed.restart -and (Test-Path -LiteralPath $owned -PathType Leaf)
     $cli=Join-Path $env:ProgramFiles $cliPaths[0]
     if(-not $checks.installCompleted){
-        if($connectionRecovery.observed){
-            # Snapshot the independent peer before the fixture retries recovery.
-            $failedConnectionPeer.observed=$true
-            if(-not $peer.HasExited){
-                $sample=Observe-PeerEvidence (Join-Path $state 'traffic.json') -WaitForTraffic
-                if($sample -and -not $peer.HasExited){
-                    $failedConnectionPeer.statsReadable=$true
-                    $failedConnectionPeer.initiationReceived=$sample.initiationReceived
-                    $failedConnectionPeer.handshake=$sample.handshake
-                    $failedConnectionPeer.receivedBytes=$sample.receivedBytes
-                    $failedConnectionPeer.sentBytes=$sample.sentBytes
-                }
+        # Snapshot the independent peer on every failed install before further vendor commands.
+        $failedConnectionPeer.observed=$true
+        if(-not $peer.HasExited){
+            $sample=Observe-PeerEvidence (Join-Path $state 'traffic.json') -WaitForTraffic
+            if($sample -and -not $peer.HasExited){
+                $failedConnectionPeer.statsReadable=$true
+                $failedConnectionPeer.initiationReceived=$sample.initiationReceived
+                $failedConnectionPeer.handshake=$sample.handshake
+                $failedConnectionPeer.receivedBytes=$sample.receivedBytes
+                $failedConnectionPeer.sentBytes=$sample.sentBytes
             }
+        }
+        if($connectionRecovery.observed){
             $connectionRecovery.ownership=if(Test-Path -LiteralPath $owned -ErrorAction Stop){'present'}else{'absent'}
             $inventory=Read-ManagedVendorProfileList $cli
             $connectionRecovery.profileList=$inventory.status
