@@ -3521,6 +3521,8 @@ function Configure-DNS([string]$method) {
                 Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
                 if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before startup'}
             }
+            # Component staging can outlast the earlier port inventory.
+            if(-not $existingResolver){Assert-DNSCryptLoopbackPortsAvailable}
             $script:dnsOperationStage='resolver-configuration'
             if($configChanged){Publish-WorkflowFile $config $updatedConfig -Recorded -BeforeHash $configBefore}
             $servers=@('127.0.0.1','::1')
@@ -3614,6 +3616,7 @@ function Configure-DNS([string]$method) {
                 }
                 Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
                 if($method -ceq 'dnscrypt'){Assert-DNSCryptConfiguration $config $publishedConfigSHA256}
+                else{Assert-DNSDohPlaintextBlock $plaintextBlockID}
                 Assert-DNSMutationAdapter $record.guid $dns.InterfaceIndex -RequireUp
                 $script:externalEffectsPending=$true
                 $adapterMutationAttempted=$true

@@ -54,7 +54,7 @@ $script:closedContractCodes+=@('restore-refuses-legacy-sibling-reset','restore-s
 $script:closedContractCodes+=@('doh-firewall-full-status-representations','doh-firewall-nonfull-status-refused')
 $script:closedContractCodes+=@('doh-firewall-cim-raw-status','doh-firewall-cim-format-not-authority')
 $script:closedContractCodes+=@('doh-firewall-missing-store-reason','doh-firewall-diagnostic-does-not-mutate','doh-firewall-known-enforcement-reason','doh-firewall-status-diagnostic-does-not-mutate','doh-firewall-unavailable-or-unsupported-reason','doh-firewall-malformed-diagnostic-does-not-mutate')
-$script:closedContractCodes+=@('dnscrypt-port-conflict-before-mutation','dnscrypt-unreadable-port-before-mutation','dnscrypt-port-inventory-observed')
+$script:closedContractCodes+=@('dnscrypt-port-conflict-before-mutation','dnscrypt-unreadable-port-before-mutation','dnscrypt-port-inventory-observed','dnscrypt-port-drift-before-service','dnscrypt-port-drift-recovers','doh-firewall-loss-before-next-adapter-write','doh-firewall-loss-restores-applied-family')
 function Assert-DNS([bool]$Condition,[string]$Code){if(-not $Condition){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('DNS contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-DNS([scriptblock]$Operation,[string]$ExpectedMessage){
     $failed=$false
@@ -70,10 +70,10 @@ function New-DNSCase([switch]$ExistingResolver) {
     $script:copyPath=Get-DNSRecoveryCopyPath
     $script:DNSCryptPortRows=@{}
     $script:DNSCryptPortReads=[Collections.Generic.List[string]]::new()
-    $script:failDNSCryptPortRead=$false
+    $script:failDNSCryptPortRead=$false;$script:portConflictOnStaging=$false
     $script:failCopyPublication=$false;$script:failCopyRetirement=$false
     $script:dohFirewallRules=@{};$script:dohFirewallWrites=0;$script:dohFirewallFault=''
-    $script:firewallOnRetirementJournal=''
+    $script:firewallOnRetirementJournal='';$script:firewallAfterAdapterWrite=''
     $script:present=@{'Get-DnsClientDohServerAddress'=$true;'Set-DnsClientDohServerAddress'=$true;'Add-DnsClientDohServerAddress'=$true;'Remove-DnsClientDohServerAddress'=$true}
     $script:adapters=@([pscustomobject]@{Status='Up';InterfaceDescription='Fixture adapter';InterfaceGuid='{00000000-0000-0000-0000-000000000001}';ifIndex=77})
     $script:mode4='192.0.2.53';$script:mode6='absent';$script:registryFailure='';$script:emptyDnsRead=$false;$script:failDohRead=0;$script:dohReads=0
@@ -400,6 +400,10 @@ function Set-DnsClientServerAddress {
         if($family -ceq $script:failDNSSetterFamily -or
             ($script:failRestoreAdapterAfterResolverQuery -and $script:resolverQueries -gt 0)){throw 'source-dns-setter-failed'}
         $script:calls.Add(@{kind='dns';index=$index;family=$family;servers=@($ServerAddresses);reset=[bool]$ResetServerAddresses})
+        if($script:firewallAfterAdapterWrite){
+            $script:dohFirewallFault=$script:firewallAfterAdapterWrite
+            $script:firewallAfterAdapterWrite=''
+        }
         if($script:changeDohAfterAdapterWrite){
             switch ($script:changeDohAfterAdapterWrite){
                 'add' {$script:currentDoh['8.8.8.8']=Old-DohFixture;$script:currentDoh['8.8.8.8'].DohTemplate='https://independent.invalid/dns-query'}
@@ -859,6 +863,9 @@ function Start-Sleep {
 }
 function Ensure-Asset([string]$Engine){
     if(-not $script:stageDNSCrypt -or $Engine -cne 'dnscrypt'){throw 'Native component access is forbidden in DNS contracts'}
+    if($script:portConflictOnStaging){
+        $script:DNSCryptPortRows.MSFT_NetUDPEndpoint=[pscustomobject]@{LocalPort=[uint16]53;LocalAddress='0.0.0.0'}
+    }
     return Join-Path $root 'components\dnscrypt\dnscrypt-proxy.exe'
 }
 function Install-EngineService([string]$Engine,[string]$Binary,[string[]]$Arguments,[switch]$DeferAutomaticStartup){
@@ -1507,6 +1514,20 @@ try {
     Configure-DNS 'doh'
     Assert-DNS ($script:postRetirementQueries -eq 2 -and $script:ordinaryResolverWaits -eq 1 -and
         $script:dnsConfigured) 'doh-verifies-after-stopping-dnscrypt'
+    New-DNSCase
+    $script:firewallAfterAdapterWrite='inactive'
+    Reject-DNS {Configure-DNS 'doh'} 'Managed DoH plaintext protection is missing from effective Windows Firewall policy'
+    $writes=@($script:calls | Where-Object {$_.kind -ceq 'dns'})
+    Assert-DNS ($writes.Count -eq 1 -and $writes[0].family -ceq 'IPv4' -and $script:journalActive -and
+        $script:resolverQueries -eq 0 -and -not $script:dnsConfigured) 'doh-firewall-loss-before-next-adapter-write'
+    Assert-SnapshotRetained $script:journalDigest
+    $errors=@(Rollback)
+    $writes=@($script:calls | Where-Object {$_.kind -ceq 'dns'})
+    Assert-DNS ($errors.Count -eq 0 -and $writes.Count -eq 2 -and $writes[1].family -ceq 'IPv4' -and
+        ($writes[1].servers -join ',') -ceq '192.0.2.53' -and $script:currentDoh.Count -eq 0 -and
+        $script:dohFirewallRules.Count -eq 0 -and -not [IO.File]::Exists($snapshot) -and
+        -not [IO.File]::Exists($copyPath)) 'doh-firewall-loss-restores-applied-family'
+
     foreach($guardLoss in @('first-probe','journal','second-probe')){
         New-DNSCase -ExistingResolver
         switch -CaseSensitive ($guardLoss){
@@ -2106,14 +2127,28 @@ try {
             -not $script:journalActive -and -not $script:newResolverRegistered -and (Mutation-Count) -eq 0) 'dnscrypt-unreadable-port-before-mutation'
     }
 
+    New-DNSCase;$script:stageDNSCrypt=$true;$script:allowNewResolver=$true;$script:portConflictOnStaging=$true
+    $example=Join-Path $root 'components\dnscrypt\example-dnscrypt-proxy.toml'
+    $config=Join-Path $root 'components\dnscrypt\dnscrypt-proxy.toml'
+    [IO.File]::WriteAllText($example,"listen_addresses = ['192.0.2.53:53']")
+    Reject-DNS {Configure-DNS 'dnscrypt'} 'DNSCrypt requires TCP and UDP port 53'
+    Assert-DNS ($script:dnsOperationStage -ceq 'configuration-port-in-use' -and
+        @($script:DNSCryptPortReads | Where-Object {$_ -ceq 'MSFT_NetUDPEndpoint'}).Count -eq 2 -and
+        -not [IO.File]::Exists($config) -and -not $script:newResolverRegistered -and
+        $script:serviceStartupChanges -eq 0 -and $script:resolverQueries -eq 0 -and (Mutation-Count) -eq 0) 'dnscrypt-port-drift-before-service'
+    Assert-SnapshotRetained $script:journalDigest
+    $errors=@(Rollback)
+    Assert-DNS ($errors.Count -eq 0 -and (Mutation-Count) -eq 0 -and
+        -not [IO.File]::Exists($snapshot) -and -not [IO.File]::Exists($copyPath)) 'dnscrypt-port-drift-recovers'
+
     New-DNSCase;$script:stageDNSCrypt=$true;$script:allowNewResolver=$true
     $script:DNSCryptPortRows.MSFT_NetUDPEndpoint=[pscustomobject]@{LocalPort=[uint16]53;LocalAddress='192.0.2.53'}
     $script:listenerAAAAFault='empty';$script:refuseListenerWait=$true
     [IO.File]::WriteAllText((Join-Path $root 'components\dnscrypt\example-dnscrypt-proxy.toml'),"listen_addresses = ['192.0.2.53:53']")
     Reject-DNS {Configure-DNS 'dnscrypt'} 'Synthetic loopback wait boundary'
-    Assert-DNS ($script:DNSCryptPortReads.Count -eq 2 -and
-        $script:DNSCryptPortReads.Contains('MSFT_NetTCPConnection') -and
-        $script:DNSCryptPortReads.Contains('MSFT_NetUDPEndpoint')) 'dnscrypt-port-inventory-observed'
+    Assert-DNS ($script:DNSCryptPortReads.Count -eq 4 -and
+        @($script:DNSCryptPortReads | Where-Object {$_ -ceq 'MSFT_NetTCPConnection'}).Count -eq 2 -and
+        @($script:DNSCryptPortReads | Where-Object {$_ -ceq 'MSFT_NetUDPEndpoint'}).Count -eq 2) 'dnscrypt-port-inventory-observed'
     Assert-DNS (($script:listenerAAAAQueries -join ',') -ceq '127.0.0.1,::1' -and
         (Mutation-Count) -eq 0 -and $script:serviceStartupChanges -eq 0 -and $script:resolverQueries -eq 0 -and
         $script:journalActive -and -not $script:dnsConfigured) 'dnscrypt-listener-refuses-missing-aaaa-before-adapters'
