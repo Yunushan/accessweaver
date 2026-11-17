@@ -19,6 +19,7 @@ function Invoke-ProtectedRegistrationAcceptance {
         'scripts/windows-installer-registry.iss',
         'scripts/windows-installer-registry-owned.iss',
         'scripts/windows-installer-registry-transaction.iss',
+        'scripts/windows-installer-registry-legacy.iss',
         'scripts/windows-installer-registry-publication.iss',
         'scripts/detect-windows-installer.ps1',
         'internal/workflow/windows.ps1'

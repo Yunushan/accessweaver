@@ -185,8 +185,9 @@ the record because the Inno completion callback runs after its deletion log.
 
 The manual protected-publication workflow exercises real Setup rollback before
 publication, retry, same-version repair using the previous directory, controller
-binding and owned uninstall. Migration of older registrations, process termination,
-reboot recovery, and signed installed-product acceptance remain open.
+binding and owned uninstall. Native verification of managed migration, process
+termination, reboot recovery, and signed installed-product acceptance remain
+open.
 
 
 The [first publication fixture run](https://github.com/Yunushan/accessweaver/actions/runs/44009212448)
@@ -203,3 +204,30 @@ is artifact `14296072039` with ZIP SHA-256
 `0843f21b38d5627939887529cbc6f8cb1940e4fea93aad502575b455dcb8c314`.
 The ARM64 receipt is artifact `14296376305` with ZIP SHA-256
 `563572f69d5f4f585272ac1db3dd5348f379b80c6e34a6331e80b04f310fb1c5`.
+
+
+## Approved legacy migration candidate
+
+The protected qualification build accepts an extended `/AWUpgradeFrom` argument
+for the supported legacy Inno 6.7.1 record. Append the independently approved
+SHA-256 values of the prior uninstaller executable and uninstall data to the
+existing version, payload, SBOM and build metadata fields. The standard release
+builder retains its existing four-field argument format.
+
+Setup verifies the legacy App Path, both uninstall commands, version, publisher
+and other expected product values, and refuses a foreign value or child key.
+It checks the supported compiler and captures the remaining typed Inno metadata
+without recording its contents in logs or receipts. The approved payload,
+SBOM, build metadata, uninstaller and uninstall data stay held through registry
+retirement. Inside the delete transaction, Setup compares the exact inventory
+again and rejects changes before committing. Only after the existing pending
+record is durable can Setup retire the old leaf. Publication after file
+verification uses a separate transaction. A retry in the original directory
+requires the same extended argument and can resume after the old leaf is gone.
+
+The qualification build overwrites the legacy Inno uninstall log to discard
+its original path-based registry deletion command. Its ownership test covers
+opaque metadata changes, a foreign value, a held legacy writer and the
+separate replacement transaction. Native migration of real older packages must
+still verify retained files and shortcuts that the current package no longer
+ships. [Inno registration and log source](https://github.com/jrsoftware/issrc/blob/is-6_7_1/Projects/Src/Setup.Install.pas#L263-L367) · [Uninstall log modes](https://jrsoftware.org/ishelp/topic_setup_uninstalllogmode.htm)

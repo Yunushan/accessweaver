@@ -124,8 +124,19 @@ begin
     (Kind = 4) and (Bytes = 4) and (Data = 1);
 end;
 
+function AWRegistryProductTextValuesMatch(Key: LongWord; const Fields: AWRegistryTextValues): Boolean;
+var Actual: String; I: Integer;
+begin
+  Result := False;
+  if (Key = 0) or (GetArrayLength(Fields) <> AWRegistryProductTextCount) then Exit;
+  for I := 0 to GetArrayLength(Fields) - 1 do
+    if not AWReadRegistrationString(Key, Fields[I].Name, $30000002, Fields[I].Maximum, Actual) or
+       (AWOrdinal(Actual, Fields[I].Value) <> 0) then Exit;
+  Result := True;
+end;
+
 function AWRegistryProductValuesMatch(Key: LongWord; const Fields: AWRegistryTextValues): Boolean;
-var Actual: String; I: Integer; ClassBuffer: String;
+var ClassBuffer: String;
     Characters, Children, Values: LongWord;
 begin
   Result := False;
@@ -134,10 +145,8 @@ begin
   if AWOwnedRegistryQueryInfo(Key, ClassBuffer, Characters, 0, Children, 0, 0,
        Values, 0, 0, 0, 0) <> 0 then Exit;
   if (Children <> 0) or (Values <> AWRegistryProductTextCount + 2) then Exit;
-  for I := 0 to GetArrayLength(Fields) - 1 do
-    if not AWReadRegistrationString(Key, Fields[I].Name, $30000002, Fields[I].Maximum, Actual) or
-       (AWOrdinal(Actual, Fields[I].Value) <> 0) then Exit;
-  Result := AWRegistryDWORDIsOne(Key, 'NoModify') and AWRegistryDWORDIsOne(Key, 'NoRepair');
+  Result := AWRegistryProductTextValuesMatch(Key, Fields) and
+    AWRegistryDWORDIsOne(Key, 'NoModify') and AWRegistryDWORDIsOne(Key, 'NoRepair');
 end;
 
 function AWRegistryStageProductValues(Key: LongWord; const Fields: AWRegistryTextValues): Boolean;
@@ -172,11 +181,21 @@ begin
   Result := AWRegistryStageProductValues(Key, Candidate);
 end;
 
+function AWRegistryTransactedProductAbsent(Parent, Transaction: LongWord; const Name: String): Boolean;
+var Key, Status: LongWord;
+begin
+  Key := 0;
+  Status := AWOwnedRegistryOpenInNative(Parent, Name, AWOwnedRegistryOpenLink,
+    $00020119 or $0100, Key, Transaction, 0);
+  Result := (Status = 2) and (Key = 0);
+  if not AWOwnedRegistryClose(Key) then Result := False;
+end;
+
 { Stage removal only on the exact transacted handle. The caller must abort
   the transaction on any refusal, including unexpected post-delete readback. }
 function AWRegistryStageProductRetirement(Parent, Transaction: LongWord;
   const Name, ClassTag: String; const Fields: AWRegistryTextValues): Boolean;
-var Key, Status: LongWord;
+var Key: LongWord;
 begin
   Result := False; Key := 0;
   if Transaction = 0 then Exit;
@@ -187,10 +206,5 @@ begin
   finally
     if not AWOwnedRegistryClose(Key) then Result := False;
   end;
-  if not Result then Exit;
-
-  Status := AWOwnedRegistryOpenInNative(Parent, Name, AWOwnedRegistryOpenLink,
-    $00020119 or $0100, Key, Transaction, 0);
-  Result := (Status = 2) and (Key = 0);
-  if not AWOwnedRegistryClose(Key) then Result := False;
+  if Result then Result := AWRegistryTransactedProductAbsent(Parent, Transaction, Name);
 end;

@@ -67,6 +67,8 @@ WizardStyle=modern
 UninstallDisplayIcon={app}\accessweaver.exe
 #ifdef ProtectedRegistrationQualification
 CreateUninstallRegKey=no
+; A legacy Inno log contains a path-based deletion of the registration.
+UninstallLogMode=overwrite
 #endif
 CloseApplications=yes
 RestartApplications=no
@@ -217,7 +219,7 @@ end;
 #ifdef ProtectedRegistrationQualification
 #include "windows-installer-registry-owned.iss"
 #include "windows-installer-registry-transaction.iss"
-#include "windows-installer-registry-publication.iss"
+#include "windows-installer-registry-legacy.iss"
 #endif
 
 function AWPendingInstallValue(const Destination: String): String;
@@ -667,6 +669,10 @@ end;
   #endif
 #endsub
 
+#ifdef ProtectedRegistrationQualification
+#include "windows-installer-registry-publication.iss"
+#endif
+
 function AWVerifyCompletedInstall(const Destination: String; var Held: AWNativeHandles;
   var Executable, BuildInfo, SBOM, RuntimeNotice, Uninstaller, UninstallData: LongWord): Boolean;
 var Found64, Found32: Boolean;
@@ -825,6 +831,9 @@ var I, Ordering: Integer; Argument, Approval, Version, PayloadPin, SBOMPin, Buil
     Held: AWNativeHandles; Executable, BuildInfo, SBOM: LongWord;
 begin
   ApprovalPin := '';
+#ifdef ProtectedRegistrationQualification
+  AWLegacyApproval.Version := '';
+#endif
   Result := AWReadPendingVersion(PendingVersion, PendingDirectory, PendingPin);
   if Result <> '' then Exit;
   Result := 'Invalid AccessWeaver managed upgrade approval.';
@@ -842,18 +851,39 @@ begin
     else Result := 'Finish the incomplete AccessWeaver managed upgrade with its original approved installer and baseline argument.';
     Exit;
   end;
+#ifdef ProtectedRegistrationQualification
+  if Length(Approval) > 581 then Exit;
+#else
   if Length(Approval) > 451 then Exit;
-  { Commas cannot occur in the four fields. AWCompare validates SemVer. }
+#endif
+  { Commas delimit the approved version and file digests. AWCompare validates SemVer. }
   I := Pos(',', Approval);
   if I = 0 then Exit;
   Version := Copy(Approval, 1, I - 1);
   Delete(Approval, 1, I);
   if not AWCompare('{#ReleaseVersion}', Version, Ordering) or (Ordering <= 0) then Exit;
-  if (Length(Approval) <> 194) or (Approval[65] <> ',') or (Approval[130] <> ',') then Exit;
+#ifdef ProtectedRegistrationQualification
+  if (Length(Approval) <> 194) and (Length(Approval) <> 324) then Exit;
+#else
+  if Length(Approval) <> 194 then Exit;
+#endif
+  if (Approval[65] <> ',') or (Approval[130] <> ',') then Exit;
   PayloadPin := Copy(Approval, 1, 64);
   SBOMPin := Copy(Approval, 66, 64);
   BuildPin := Copy(Approval, 131, 64);
   if not AWSha256Pin(PayloadPin) or not AWSha256Pin(SBOMPin) or not AWSha256Pin(BuildPin) then Exit;
+#ifdef ProtectedRegistrationQualification
+  if Length(Approval) = 324 then begin
+    if (Approval[195] <> ',') or (Approval[260] <> ',') then Exit;
+    AWLegacyApproval.Uninstaller := Copy(Approval, 196, 64);
+    AWLegacyApproval.UninstallData := Copy(Approval, 261, 64);
+    if not AWSha256Pin(AWLegacyApproval.Uninstaller) or not AWSha256Pin(AWLegacyApproval.UninstallData) then Exit;
+    AWLegacyApproval.Version := Version;
+    AWLegacyApproval.Payload := PayloadPin;
+    AWLegacyApproval.SBOM := SBOMPin;
+    AWLegacyApproval.BuildInfo := BuildPin;
+  end;
+#endif
 
   { The pin binds the baseline argument and all staged payload files.
     The separate record fields bind its exact new version and destination. }
@@ -953,6 +983,9 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var Failure, Destination: String;
+#ifdef ProtectedRegistrationQualification
+    LegacyHeld: AWNativeHandles; LegacyClosed: Boolean; I: Integer;
+#endif
 begin
   if CurStep = ssInstall then begin
     if not AWLifecycleOwned then RaiseException('The AccessWeaver installation lock is not held.');
@@ -967,15 +1000,27 @@ begin
     if Failure = '' then Failure := AWApprovedUpgradePreflight(Destination, AWPendingApprovalPin);
     if Failure <> '' then RaiseException(Failure);
 #ifdef ProtectedRegistrationQualification
-    if not AWPrepareOwnedProductRegistration(Destination) then
-      RaiseException('Cannot verify a protected AccessWeaver registration or an empty registration slot.');
+    LegacyClosed := True;
+    try
+      if not AWPrepareOwnedProductRegistration(Destination, LegacyHeld) then
+        RaiseException('Cannot verify AccessWeaver registration. Migration requires the approved prior installer files and registration.');
 #endif
-    if not AWPrepareManagedTempRecovery(Destination) then
-      RaiseException('Cannot persist the AccessWeaver temporary file baseline.');
-    if not AWWriteLifecycleString(AWPendingInstall, AWPendingInstallValue(Destination), True) then
-      RaiseException('Cannot persist the AccessWeaver pending installation record.');
-    if not AWPendingInstallMatches(Destination) then
-      RaiseException('Cannot verify the AccessWeaver pending installation record after writing it.');
+      if not AWPrepareManagedTempRecovery(Destination) then
+        RaiseException('Cannot persist the AccessWeaver temporary file baseline.');
+      if not AWWriteLifecycleString(AWPendingInstall, AWPendingInstallValue(Destination), True) then
+        RaiseException('Cannot persist the AccessWeaver pending installation record.');
+      if not AWPendingInstallMatches(Destination) then
+        RaiseException('Cannot verify the AccessWeaver pending installation record after writing it.');
+#ifdef ProtectedRegistrationQualification
+      if not AWRetireApprovedLegacyRegistration(Destination) then
+        RaiseException('Cannot retire the approved legacy AccessWeaver registration. Retry the matching approved installer.');
+    finally
+      for I := GetArrayLength(LegacyHeld) - 1 downto 0 do
+        if AWCloseNativeHandle(LegacyHeld[I]) = 0 then LegacyClosed := False;
+    end;
+    if not LegacyClosed then
+      RaiseException('Cannot release the approved legacy installation files.');
+#endif
   end else if CurStep = ssPostInstall then begin
     AWInstallFinished := True;
   end else if (CurStep = ssDone) and AWInstallFinished then

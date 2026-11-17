@@ -8,7 +8,7 @@ function Get-RegistryFixtureCaseIDs([string]$Source){
     # This is the checked-in, source-pinned fixture. Refuse nonliteral declarations.
     $calls=[regex]::Matches($Source,'(?m)^[ \t]*AWFixtureCase\(')
     $records=[regex]::Matches($Source,"(?m)^[ \t]*AWFixtureCase\('([a-z][a-z0-9-]{0,63})',")
-    if($calls.Count -ne $records.Count -or $records.Count -lt 1 -or $records.Count -gt 50){
+    if($calls.Count -ne $records.Count -or $records.Count -lt 1 -or $records.Count -gt 52){
         throw 'Registry ownership fixture case catalog is invalid'
     }
     $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -42,7 +42,7 @@ if((Test-Path -LiteralPath $build) -or (Test-Path -LiteralPath $receiptDir)){thr
 [void](New-Item -ItemType Directory -Path $build)
 [void](New-Item -ItemType Directory -Path $receiptDir)
 $producer=@('scripts/test-windows-installer-registry-owned.iss','scripts/windows-installer-registry-owned.iss',
-    'scripts/windows-installer-registry-transaction.iss','scripts/windows-installer-registry.iss','scripts/windows-installer-version.iss',
+    'scripts/windows-installer-registry-transaction.iss','scripts/windows-installer-registry-legacy.iss','scripts/windows-installer-registry.iss','scripts/windows-installer-version.iss',
     'scripts/test-windows-installer-registry-owned.ps1','scripts/windows-installer-common.ps1',
     'scripts/windows-installer.iss','scripts/windows-installer-registry-publication.iss','scripts/detect-windows-installer.ps1','internal/workflow/windows.ps1',
     'scripts/test-windows-installer-contracts.ps1','scripts/test-windows-installer-detection.ps1',

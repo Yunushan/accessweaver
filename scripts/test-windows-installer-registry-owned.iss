@@ -38,6 +38,7 @@ OutputBaseFilename=registry-owned-contracts-{#TargetArch}
 #include "windows-installer-version.iss"
 #include "windows-installer-registry.iss"
 #include "windows-installer-registry-transaction.iss"
+#include "windows-installer-registry-legacy.iss"
 const AWFixtureTag = 'AWReg-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
       AWFixtureOtherTag = 'AWReg-v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
       AWFixtureParentSDDL = 'O:BAD:P(A;CI;KA;;;SY)(A;CI;KA;;;BA)(A;CI;KA;;;BU)';
@@ -51,6 +52,8 @@ function AWFixtureWriteDWORD(Key: LongWord; const Name: String; Reserved, Kind: 
 function AWFixtureWriteText(Key: LongWord; const Name: String; Reserved, Kind: LongWord;
   const Data: String; Bytes: LongWord): LongWord;
   external 'RegSetValueExW@advapi32.dll stdcall';
+function AWFixtureDeleteValue(Key: LongWord; const Name: String): LongWord;
+  external 'RegDeleteValueW@advapi32.dll stdcall';
 function AWFixtureReadDWORD(Key: LongWord; const Name: String; Reserved: LongWord;
   var Kind, Data, Bytes: LongWord): LongWord;
   external 'RegQueryValueExW@advapi32.dll stdcall';
@@ -89,7 +92,7 @@ begin
   AWFixtureCleanup := False;
 end;
 
-function AWFixtureRaw(Parent: LongWord; const Name, SDDL: String;
+function AWFixtureRawWithClass(Parent: LongWord; const Name, SDDL, ClassTag: String;
   Options: LongWord; var Key: LongWord): Boolean;
 var Descriptor, Bytes, Disposition: LongWord; Attributes: AWOwnedRegistrySecurity;
 begin
@@ -97,7 +100,7 @@ begin
   try
     if AWOwnedRegistryParseSD(SDDL, 1, Descriptor, Bytes) = 0 then Exit;
     Attributes.Length := 12; Attributes.Descriptor := Descriptor; Attributes.Inherit := 0;
-    if AWOwnedRegistryCreateNative(Parent, Name, 0, AWFixtureTag,
+    if AWOwnedRegistryCreateNative(Parent, Name, 0, ClassTag,
        Options or AWOwnedRegistryOpenLink, AWOwnedRegistryAccess,
        Attributes, Key, Disposition) <> 0 then Exit;
     if (Disposition <> 1) or (Key = 0) then begin AWOwnedRegistryClose(Key); Exit; end;
@@ -105,6 +108,12 @@ begin
   finally
     if not AWOwnedRegistryFree(Descriptor) then Result := False;
   end;
+end;
+
+function AWFixtureRaw(Parent: LongWord; const Name, SDDL: String;
+  Options: LongWord; var Key: LongWord): Boolean;
+begin
+  Result := AWFixtureRawWithClass(Parent, Name, SDDL, AWFixtureTag, Options, Key);
 end;
 
 function AWFixtureNew(Parent: LongWord; const Name: String; var Key: LongWord): Boolean;
@@ -297,14 +306,28 @@ end;
 
 const AWFixtureLegacyDescriptor = 'O:BAD:P(A;;KA;;;SY)(A;;KA;;;BA)(A;;KA;;;BU)';
 
-function AWFixtureLegacyMatches(Key: LongWord; const Prior: AWRegistryTextValues): Boolean;
-var Kind, Bytes: LongWord;
+function AWFixtureLegacyText(Key: LongWord; const Name, Value: String): Boolean;
 begin
-  Kind := 0; Bytes := 0;
-  Result := (Key <> 0) and
-    (AWOwnedRegistryQueryValue(Key, 'SymbolicLinkValue', 0, Kind, 0, Bytes) = 2) and
-    (AWOwnedRegistryDescriptorStatus(Key) = 'descriptor-aces') and
-    AWRegistryProductValuesMatch(Key, Prior);
+  Result := AWFixtureWriteText(Key, Name, 0, 1, Value, (Length(Value) + 1) * 2) = 0;
+end;
+
+function AWFixtureLegacyMetadata(Key: LongWord): Boolean;
+var EstimatedSize: LongWord;
+begin
+  EstimatedSize := 12;
+  Result := AWFixtureLegacyText(Key, 'Inno Setup: Setup Version', '6.7.1') and
+    AWFixtureLegacyText(Key, 'Inno Setup: Icon Group', 'Fixture') and
+    AWFixtureLegacyText(Key, 'Inno Setup: User', 'fixture-user') and
+    AWFixtureLegacyText(Key, 'Inno Setup: Language', 'default') and
+    AWFixtureLegacyText(Key, 'InstallDate', '20261117') and
+    (AWFixtureWriteDWORD(Key, 'EstimatedSize', 0, 4, EstimatedSize, 4) = 0);
+end;
+
+function AWFixtureLegacyMatches(Key: LongWord; const Prior: AWRegistryTextValues): Boolean;
+var Inventory: String;
+begin
+  Result := (Key <> 0) and (AWOwnedRegistryDescriptorStatus(Key) = 'descriptor-aces') and
+    AWLegacyRegistrationInventory(Key, Prior, Inventory);
 end;
 
 function AWFixtureLegacyVisible(Root: LongWord; const Prior: AWRegistryTextValues): Boolean;
@@ -314,20 +337,6 @@ begin
   Result := (AWOpenRegistrationComponent(Root, 'legacy', $00020119 or $0100, Key) = 0) and
     AWFixtureLegacyMatches(Key, Prior);
   if not AWOwnedRegistryClose(Key) then Result := False;
-end;
-
-function AWFixtureStageLegacyDelete(Root, Tx: LongWord; const Prior: AWRegistryTextValues): Boolean;
-var Key: LongWord;
-begin
-  Result := False; Key := 0;
-  if Tx = 0 then Exit;
-  try
-    if AWOwnedRegistryOpenInNative(Root, 'legacy', AWOwnedRegistryOpenLink,
-       AWOwnedRegistryAccess, Key, Tx, 0) <> 0 then Exit;
-    if AWFixtureLegacyMatches(Key, Prior) then Result := AWRegistryDeleteHeld(Key) = 0;
-  finally
-    if not AWOwnedRegistryClose(Key) then Result := False;
-  end;
 end;
 
 function AWFixtureFlushKey(Key: LongWord): LongWord;
@@ -357,22 +366,39 @@ end;
 
 procedure AWFixtureLegacyReplacementCases(Root: LongWord);
 var Legacy, Replacement, Pending, Tx, Key, Value: LongWord; Prior, Candidate: AWRegistryTextValues;
-    Ready, Staged, Finished, Retired, Opened: Boolean;
+    Ready, Staged, Finished, Retired, Opened: Boolean; Inventory, RefusedInventory: String;
 begin
   Legacy := 0; Replacement := 0; Pending := 0; Tx := 0; Key := 0;
   Value := 1;
   Ready := AWRegistryProductValues('1.0.0', AWFixtureDirectory, AWFixtureUninstaller, Prior) and
     AWRegistryProductValues('2.0.0', AWFixtureDirectory, AWFixtureUninstaller, Candidate) and
-    AWFixtureRaw(Root, 'legacy', AWFixtureLegacyDescriptor, 0, Legacy) and
-    AWRegistryStageProductValues(Legacy, Prior) and
+    AWFixtureRawWithClass(Root, 'legacy', AWFixtureLegacyDescriptor, '', 0, Legacy) and
+    AWRegistryStageProductValues(Legacy, Prior) and AWFixtureLegacyMetadata(Legacy) and
     (AWFixtureWriteDWORD(Legacy, 'NoModify', 0, 4, Value, 4) = 0) and
-    AWFixtureLegacyMatches(Legacy, Prior) and AWFixtureLegacyVisible(Root, Prior);
+    AWFixtureLegacyMatches(Legacy, Prior) and AWFixtureLegacyVisible(Root, Prior) and
+    AWLegacyRegistrationInventory(Legacy, Prior, Inventory);
   AWFixtureCase('legacy-registration-held-with-writer', Ready);
+
+  Staged := Ready and AWRegistrySetString(Legacy, 'unexpected', 'foreign') and
+    not AWLegacyRegistrationInventory(Legacy, Prior, RefusedInventory);
+  AWFixtureCase('legacy-inventory-refuses-foreign-value', Staged and
+    (AWFixtureDeleteValue(Legacy, 'unexpected') = 0) and AWFixtureLegacyVisible(Root, Prior));
+
+  Staged := False;
+  try
+    if Ready and AWFixtureLegacyText(Legacy, 'Inno Setup: Icon Group', 'Different') and
+       AWRegistryTransactionBegin(Tx) then
+      Staged := not AWStageLegacyRegistrationRetirement(Root, Tx, 'legacy', Prior, Inventory);
+  finally
+    Finished := AWRegistryTransactionFinish(Tx, Key, False);
+  end;
+  AWFixtureCase('legacy-retirement-refuses-inventory-drift', Staged and Finished and
+    AWFixtureLegacyVisible(Root, Prior) and AWFixtureLegacyText(Legacy, 'Inno Setup: Icon Group', 'Fixture'));
 
   Staged := False;
   try
     if Ready and AWRegistryTransactionBegin(Tx) then
-      Staged := AWFixtureStageLegacyDelete(Root, Tx, Prior);
+      Staged := AWStageLegacyRegistrationRetirement(Root, Tx, 'legacy', Prior, Inventory);
     AWFixtureCase('staged-legacy-retirement-keeps-prior-visible', Staged and
       AWFixtureLegacyMatches(Legacy, Prior) and AWFixtureLegacyVisible(Root, Prior));
   finally
@@ -390,7 +416,7 @@ begin
   Staged := False;
   try
     if Ready and AWFixtureMigrationPending(Root) and AWRegistryTransactionBegin(Tx) then
-      Staged := AWFixtureStageLegacyDelete(Root, Tx, Prior) and
+      Staged := AWStageLegacyRegistrationRetirement(Root, Tx, 'legacy', Prior, Inventory) and
         AWFixtureLegacyMatches(Legacy, Prior) and AWFixtureLegacyVisible(Root, Prior);
   finally
     Finished := AWRegistryTransactionFinish(Tx, Key, Staged);
