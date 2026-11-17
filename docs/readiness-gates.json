@@ -70,7 +70,8 @@
             "docs/qualification/520a3053b245-doh-refusal-diagnostics.json",
             "docs/qualification/7a963d7c64d9-doh-raw-cim.json",
             "docs/qualification/7a963d7c64d9-native-doh-typed-status.json",
-          "docs/qualification/4ac16aaf7b17-dnscrypt-port-admission.json"
+            "docs/qualification/4ac16aaf7b17-dnscrypt-port-admission.json",
+            "docs/qualification/4296e45911c1-native-dns-matrix.json"
           ]
         },
         {
