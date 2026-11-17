@@ -309,9 +309,9 @@ function Assert-ManagedDetection([string]$Phase,$Expected,[bool]$Detected,[strin
 }
 function Assert-DetectorRefusal([string]$Phase,[switch]$VerifyMatchingPendingStatus,[switch]$UseRegisteredDirectory){
     $expected=$builds[1]
-    $arguments=@('-Version',$expected.version,'-Architecture',$Architecture,'-PayloadSHA256',$expected.payloadSha256)
-    if($UseRegisteredDirectory){$arguments+='-UseRegisteredDirectory'}
-    else{$arguments+=@('-InstallDirectory',$install)}
+    $arguments=@{Version=$expected.version;Architecture=$Architecture;PayloadSHA256=$expected.payloadSha256}
+    if($UseRegisteredDirectory){$arguments.UseRegisteredDirectory=$true}
+    else{$arguments.InstallDirectory=$install}
     $observation=@{phase=$Phase;detected=$false;inspectionRefused=$true}
     $previous=$env:ACCESSWEAVER_REPORT_INSTALLER_RECOVERY
     try {
