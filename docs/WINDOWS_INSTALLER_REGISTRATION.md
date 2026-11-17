@@ -56,13 +56,20 @@ and unknown values, and either replace the owned legacy object safely or leave
 it untouched with an actionable refusal. Neither a class tag alone nor a write
 ACE allowlist can make a legacy leaf authoritative.
 
-The creation and transaction contracts compile for both Windows target runners
-with Inno Setup 6.7.1. Hosted results are required for the exact ACL and class
-roundtrip, visibility, rollback and complete commit assertions. The interrupted
-transaction case closes the last transaction handle without committing; process
-termination and reboot still require separate acceptance. Full production
-metadata, legacy upgrade and uninstall retirement remain to be integrated and
-qualified. The installer registration reader now opens each fixed registry
+At source `2b875e4b698d51b650042e12f072b85268a2592c`, the
+[hosted registry run](https://github.com/Yunushan/accessweaver/actions/runs/44001985316)
+passed all 31 assertions with exact cleanup on AMD64 and ARM64 using Inno Setup
+6.7.1. This covers ACL and class roundtrip, no-follow registry access, and
+visibility, rollback and commit of typed registration values. The AMD64 receipt
+is artifact `14292996503` with ZIP SHA-256
+`0a69f22be7f7b65017e8aad786bffd4806e3d51b51cbe92cd48b3fb89c31e4bd`.
+The ARM64 receipt is artifact `14293001337` with ZIP SHA-256
+`229b25be8d412ad072bdfa701b54b56e7a231076e738a770a5d7251be91684fe`.
+
+The interrupted transaction case closes the last transaction handle without
+committing. Process termination and reboot still require separate acceptance.
+Production publication, legacy upgrade and uninstall retirement still need
+integration. The installer registration reader now opens each fixed registry
 component without following symbolic links. A linked or unreadable path blocks
 setup and uninstall, while an absent registration remains distinguishable.
 
