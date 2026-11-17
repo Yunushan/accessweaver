@@ -24,7 +24,8 @@ if($parseErrors.Count){throw 'DNS workflow source did not parse'}
 $selected=@('Assert-DNSCryptConfiguration','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Assert-DNSCryptServiceState','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Get-ManagedServiceCommandDigest','Assert-DNSMutationAdapter','Test-DNSRecoveryUsesAdapterOwnership','Test-DNSFamilyMatchesOriginal','Read-ObservedDNSFamily','Test-DNSFamilyNeedsRollback','Get-ActiveDNSAdapters','Assert-ConfiguredDNSDohPolicy','Get-DNSDohProviders','Test-DNSRecoveryUsesDohOwnership','Get-DNSOriginalDohEntry','Test-DNSDohEntriesEqual','Test-DNSRecoveryOwnsDoh','Get-DNSClientMutationRow','Read-DNSRecoveryFileBytes','Read-DNSRecoverySnapshot','Assert-DNSRecoverySnapshotUnchanged','Get-WorkflowRecoveryJournalLimit','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Assert-ConfiguredDNSServers','Assert-RestoredDNSFamily','Assert-RestoredDNSState','Get-StaticDNSServers','Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Assert-OriginalDNSModes','Read-OriginalDNSFamily','Read-OriginalDNSAdapter','Read-OriginalDNSNameServer','Get-DNSOverridePath','Read-DNSStaticOverride','Test-DNSAddressAnswer','Wait-OrdinaryDNSResolver','Wait-DNSCryptListeners','Get-ManagedDNSCryptListenerOwner','Wait-ManagedDNSCryptListeners','Get-EffectiveDNSCryptListeners','Assert-EffectiveDNSCryptListeners','Get-DNSCryptAdapterIdentities','Test-DNSCryptLoopbackAddress','Get-DNSCryptIndependentFamilies','Test-DNSCryptListenerNeeded','Assert-DNSCryptCanBeRemoved','Configure-DNS','Restore-DNS','Remove-Method','Remove-All')
 $allowed=@('Read-OwnedWireSockProfile','Remove-WireSockRefreshTask','Disconnect-OwnedWireSock','Native','Remove-ModernWireSockProfile','Restore-Drover','Get-ManagedFirewallRule','Remove-RecordedService','Remove-ManagedFirewallRule','Remove-Method','Under','Assert-DNSCryptConfiguration','Get-WorkflowFileHash','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Assert-DNSCryptServiceState','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Get-ManagedServiceCommandDigest','Get-CimInstance','Get-NetTCPConnection','Get-NetUDPEndpoint','Assert-DNSMutationAdapter','Test-DNSRecoveryUsesAdapterOwnership','Test-DNSFamilyMatchesOriginal','Read-ObservedDNSFamily','Test-DNSFamilyNeedsRollback','Get-ActiveDNSAdapters','Assert-ConfiguredDNSDohPolicy','Get-DNSDohProviders','Test-DNSRecoveryUsesDohOwnership','Get-DNSOriginalDohEntry','Test-DNSDohEntriesEqual','Test-DNSRecoveryOwnsDoh','Get-DNSClientMutationRow','Read-DNSRecoveryFileBytes','Read-DNSRecoverySnapshot','Assert-DNSRecoverySnapshotUnchanged','Get-WorkflowRecoveryJournalLimit','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Save-DNSRecoveryReceipt','Publish-WorkflowFile','No-Reparse','Get-Item','Assert-ConfiguredDNSServers','Assert-RestoredDNSFamily','Assert-RestoredDNSState','Get-StaticDNSServers','Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Assert-OriginalDNSModes','Read-OriginalDNSFamily','Read-OriginalDNSAdapter','Read-OriginalDNSNameServer','Get-DNSOverridePath','Read-DNSStaticOverride','Test-DNSAddressAnswer','Wait-OrdinaryDNSResolver','Wait-DNSCryptListeners','Get-ManagedDNSCryptListenerOwner','Wait-ManagedDNSCryptListeners','Get-EffectiveDNSCryptListeners','Assert-EffectiveDNSCryptListeners','Get-DNSCryptAdapterIdentities','Test-DNSCryptLoopbackAddress','Get-DNSCryptIndependentFamilies','Test-DNSCryptListenerNeeded','Assert-DNSCryptCanBeRemoved','Restore-DNS','Get-ItemProperty','Get-Command','Join-Path','Get-NetAdapter','Where-Object','ForEach-Object','Select-Object','Test-Path','Get-DnsClientServerAddress','Get-DnsClientDohServerAddress','Get-FileHash','Add-Member','ConvertTo-Json','Save-Journal','Ensure-Asset','Split-Path','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Get-Service','Restore-RecordedWorkflowFile','Install-EngineService','Set-Service','Start-Service','Restart-Service','Stop-Service','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress','Set-DnsClientServerAddress','Clear-DnsClientCache','Resolve-DnsName','Start-Sleep','Event','ConvertFrom-Json','Remove-Item','Remove-VerifiedDNSRecoverySnapshot')
 $selected+=@('Set-RestoredDNSFamily','Wait-RecordedServiceStopped','Assert-DNSCryptLoopbackPortsAvailable','Assert-DNSCryptListenerUnchanged')
-$allowed+=@('Assert-DNSCryptLoopbackPortsAvailable','Assert-DNSCryptListenerUnchanged')
+$allowed+=@('Assert-DNSCryptLoopbackPortsAvailable','Assert-DNSCryptListenerUnchanged','Get-DNSCryptConnectionSharingIdentity','Test-DNSCryptExclusiveUDPBind','Get-DNSCryptSharingProbe','Assert-DNSCryptSharingProbe')
+$selected+=@('Get-DNSCryptConnectionSharingIdentity','Get-DNSCryptSharingProbe','Assert-DNSCryptSharingProbe')
 $allowed+=@('Set-RestoredDNSFamily','Invoke-DNSInterfaceSettings','Test-DNSCryptTransportAnswer','Read-DNSCryptProbeName')
 $selected+=@('Read-DNSCryptProbeName','Test-DNSCryptProbeReply')
 $dohFirewallFunctions=@('Get-DNSDohPlaintextBlockID','Assert-DNSDohFirewallAvailable','Read-DNSDohPlaintextRules','Get-DNSDohPlaintextRule','Assert-DNSDohPlaintextRuleOwnership','Assert-DNSDohPlaintextBlock','Enable-DNSDohPlaintextBlock','Remove-DNSDohPlaintextBlock')
@@ -63,6 +64,7 @@ $script:closedContractCodes+=@('dnscrypt-refuses-replaced-listener-during-cutove
 $script:closedContractCodes+=@('dnscrypt-udp-compressed-positive','dnscrypt-udp-uncompressed-positive','dnscrypt-udp-rejects-id','dnscrypt-udp-rejects-truncated','dnscrypt-udp-rejects-rcode','dnscrypt-udp-rejects-question-type','dnscrypt-udp-rejects-authority','dnscrypt-udp-rejects-unrelated','dnscrypt-udp-rejects-rdata','dnscrypt-udp-rejects-mapped','dnscrypt-udp-rejects-pointer','dnscrypt-udp-rejects-trailing')
 $script:closedContractCodes+=@('dnscrypt-requires-both-transports-on-each-loopback','dnscrypt-tcp-cannot-mask-udp-failure','dnscrypt-recovery-retains-a-only-probe','dnscrypt-udp-failure-blocks-adapter-mutation')
 $script:closedContractCodes+=@('doh-firewall-covers-concurrent-active-profiles','doh-firewall-refuses-profile-transitions','doh-firewall-recovers-legacy-pair','doh-firewall-migrates-legacy-pair-without-dropping-protection')
+$script:closedContractCodes+=@('dnscrypt-sharing-admits-only-verified-service','dnscrypt-sharing-renewal-stops-setup','dnscrypt-sharing-binds-owned-challenge','dnscrypt-sharing-challenge-failure-blocks-adapter-writes','dnscrypt-sharing-challenge-recovery','dnscrypt-sharing-reuses-owned-challenge','dnscrypt-sharing-challenge-needs-exact-answer')
 function Assert-DNS([bool]$Condition,[string]$Code){if(-not $Condition){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('DNS contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-DNS([scriptblock]$Operation,[string]$ExpectedMessage){
     $failed=$false
@@ -79,6 +81,9 @@ function New-DNSCase([switch]$ExistingResolver) {
     $script:DNSCryptPortRows=@{}
     $script:DNSCryptPortReads=[Collections.Generic.List[string]]::new()
     $script:failDNSCryptPortRead=$false;$script:portConflictOnStaging=$false
+    $script:sharingMode='';$script:sharingBindFailure='';$script:sharingQueries=0
+    $script:sharingBinds=[Collections.Generic.List[string]]::new()
+    $script:sharingProbePath=$null;$script:sharingProbeReads=0;$script:sharingChallengeFailure=$false
     $script:failCopyPublication=$false;$script:failCopyRetirement=$false
     $script:dohFirewallRules=@{};$script:dohFirewallWrites=0;$script:dohFirewallFault=''
     $script:dohFirewallActiveMask=4;$script:dohFirewallMaskReads=0
@@ -511,6 +516,7 @@ function Set-DnsClientDohServerAddress {[CmdletBinding()]param($ServerAddress,$D
 function Remove-DnsClientDohServerAddress {[CmdletBinding()]param($ServerAddress);Set-DNSFixtureDoh 'remove' $ServerAddress '' $false $false}
 function Assert-DNSFixturePath([string]$LiteralPath){if([IO.Path]::GetFullPath($LiteralPath) -cne [IO.Path]::GetFullPath($snapshot)){throw 'Unexpected fixture filesystem path'}}
 function No-Reparse([string]$Path){
+    if($script:sharingProbePath -and $Path -ceq $script:sharingProbePath){return}
     if($script:stageDNSCrypt -and $Path -cin @((Join-Path $root 'components\dnscrypt\dnscrypt-proxy.toml'),(Join-Path $root 'components\dnscrypt\example-dnscrypt-proxy.toml'))){
         $script:dnscryptConfigReads++
         return
@@ -534,6 +540,19 @@ function Backup-File([string]$Path){
 function Publish-WorkflowFile([string]$Path,[byte[]]$Bytes,[string]$BeforeHash,[switch]$Recorded){
     if($Recorded){
         $text=[Text.UTF8Encoding]::new($false,$true).GetString($Bytes)
+        $marker=[regex]::Match([IO.Path]::GetFileName($Path),'\Aaccessweaver-loopback-([a-f0-9]{32})\.txt\z')
+        if($marker.Success){
+            $expected=Join-Path $root ('components\dnscrypt\'+$marker.Value)
+            $answer='accessweaver-'+$marker.Groups[1].Value+".invalid 192.0.2.42`n"
+            if($Path -cne $expected -or $BeforeHash -or [IO.File]::Exists($Path) -or $answer -cne $text){
+                throw 'Unexpected DNSCrypt challenge file publication'
+            }
+            $script:sharingProbePath=$Path
+            $script:undo.Add(@{kind='file';path=$Path;backup='';expectedHash=(Get-WorkflowBytesSHA256 $Bytes)})
+            Save-Journal
+            [IO.File]::WriteAllBytes($Path,$Bytes)
+            return
+        }
         if(-not $script:stageDNSCrypt -or $Path -cne (Join-Path $root 'components\dnscrypt\dnscrypt-proxy.toml') -or
             $text -cnotmatch '127\.0\.0\.1:53' -or $text -cnotmatch '\[::1\]:53' -or
             -not $PSBoundParameters.ContainsKey('BeforeHash')){throw 'Unexpected DNS fixture write'}
@@ -679,6 +698,19 @@ function Get-CimInstance {
         if($script:DNSCryptPortRows.ContainsKey($ClassName)){return $script:DNSCryptPortRows[$ClassName]}
         return
     }
+    if($script:sharingMode -and $Filter -ceq "ProcessId=4242 AND State='Running'" -and $ClassName -ceq 'Win32_Service'){
+        $name=if($script:sharingMode -ceq 'foreign'){'Unrelated'}else{'SharedAccess'}
+        [pscustomobject]@{Name=$name;ProcessId=[uint32]4242;State='Running'}
+        if($script:sharingMode -ceq 'shared') {[pscustomobject]@{Name='Unrelated';ProcessId=[uint32]4242;State='Running'}}
+        return
+    }
+    if($script:sharingMode -and $Filter -ceq 'ProcessId=4242' -and $ClassName -ceq 'Win32_Process'){
+        $script:sharingQueries++
+        $time=[datetime]::new(2025,1,1,0,0,0,[DateTimeKind]::Utc)
+        if($script:sharingMode -ceq 'changed' -and $script:sharingQueries -gt 2){$time=$time.AddSeconds(1)}
+        $image=if($script:sharingMode -ceq 'wrong-image'){Join-Path $root 'svchost.exe'}else{[IO.Path]::Combine([Environment]::SystemDirectory,'svchost.exe')}
+        return [pscustomobject]@{ExecutablePath=$image;ProcessId=[uint32]4242;CreationDate=$time}
+    }
     if($ClassName -cne 'Win32_Service' -or $Filter -cne "Name='AccessWeaver-dnscrypt'" -or
         $PSBoundParameters['ErrorAction'] -ne 'Stop' -or -not $script:resolverServicePresent -or
         $script:expectedResolverStartup -cnotin @('Automatic','Manual')){throw 'Unexpected DNS service readback'}
@@ -697,14 +729,24 @@ function Get-CimInstance {
     }
     return $row
 }
+function Test-DNSCryptExclusiveUDPBind([Net.IPAddress]$Address) {
+    $literal=$Address.ToString()
+    if($literal -cnotin @('127.0.0.1','::1')){throw 'Unexpected exclusive loopback bind'}
+    $script:sharingBinds.Add($literal)
+    return $literal -cne $script:sharingBindFailure
+}
 # Exercise the exact ownership reader against private providers in the
 # focused cases below. Configuration cases supply a synthetic identity.
 $readFixtureListenerOwner=(Microsoft.PowerShell.Core\Get-Command -Name Get-ManagedDNSCryptListenerOwner -CommandType Function).ScriptBlock
-function Get-ManagedDNSCryptListenerOwner([string[]]$Servers,[string]$Binary,$Entry){
+function Get-ManagedDNSCryptListenerOwner([string[]]$Servers,[string]$Binary,$Entry,$SharingProbe){
     if($Binary -cne (Join-Path $root 'components\dnscrypt\dnscrypt-proxy.exe') -or
         -not $Servers.Count -or $Entry.name -cne 'AccessWeaver-dnscrypt' -or
         $Entry.commandSHA256 -cne $script:resolverDigest -or -not $script:resolverServicePresent){
         throw 'Unexpected DNSCrypt listener ownership verification'
+    }
+    if($SharingProbe){
+        if($Servers -cnotcontains '127.0.0.1'){throw 'Expected the IPv4 DNSCrypt challenge endpoint'}
+        Assert-DNSCryptSharingProbe $SharingProbe
     }
     if($script:resolverQueries){
         $script:finalOwnerReads++
@@ -761,7 +803,13 @@ function Clear-DnsClientCache {
         $script:appliedDNS[$key]=@{dhcp=$false;values=@('198.51.100.53')}
     }
 }
-function Test-DNSCryptTransportAnswer([string]$Server,[string]$Type,[string]$Protocol) {
+function Test-DNSCryptTransportAnswer([string]$Server,[string]$Type,[string]$Protocol,[string]$Challenge) {
+    if($Challenge){
+        $script:sharingProbeReads++
+        if($Server -cne '127.0.0.1' -or $Type -cne 'A' -or $Protocol -cne 'UDP' -or
+            $Challenge -cnotmatch '\Aaccessweaver-[a-f0-9]{32}\.invalid\z'){throw 'Unexpected managed challenge query'}
+        return -not $script:sharingChallengeFailure
+    }
     if($Server -cnotin @('127.0.0.1','::1') -or $Type -cnotin @('A','AAAA') -or $Protocol -cnotin @('UDP','TCP')){
         throw 'Unexpected direct DNSCrypt probe'
     }
@@ -942,6 +990,13 @@ function Get-WorkflowFileHash([string]$Path) {
     if([IO.File]::Exists($Path)){return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash}
 }
 function Restore-RecordedWorkflowFile($Record) {
+    if($script:sharingProbePath -and $Record.path -ceq $script:sharingProbePath){
+        if($Record.expectedHash -cne (Get-FileHash -LiteralPath $Record.path -Algorithm SHA256).Hash){
+            throw 'DNSCrypt challenge ownership changed during rollback'
+        }
+        [IO.File]::Delete($Record.path)
+        return
+    }
     $path=Join-Path $root 'components\dnscrypt\dnscrypt-proxy.toml'
     if(-not $script:restartRecoveryOriginal -or $Record.path -cne $path -or
        $Record.originalHash -cne (Get-WorkflowBytesSHA256 $script:restartRecoveryOriginal) -or
@@ -1330,6 +1385,9 @@ try {
                 default {throw 'Unexpected ownership process identity'}
             }
         }
+        function Get-DNSCryptConnectionSharingIdentity([uint32]$Owner){
+            if($Owner -eq 99){return $sharingOwner}
+        }
         $endpointFailures=@{
             'missing-udp'='listener-endpoint-missing';'missing-ipv6'='listener-endpoint-missing'
             'wildcard'='listener-udp-other-owner';'mapped-wildcard'='listener-udp-other-owner'
@@ -1382,6 +1440,21 @@ try {
                 Assert-DNS ($identity -ceq ('42:{0}:43:{1}' -f $started.Ticks,$child.CreationDate.Ticks)) 'dnscrypt-managed-listener-owner'
                 $child.CreationDate=$child.CreationDate.AddSeconds(1)
                 Assert-DNS ((& $readFixtureListenerOwner $addresses $binary $entry) -cne $identity) 'dnscrypt-managed-listener-owner'
+                New-DNSCase
+                $script:sharingProbePath=Join-Path $root 'sharing-probe.txt'
+                $data=[Text.Encoding]::ASCII.GetBytes('synthetic protected probe')
+                [IO.File]::WriteAllBytes($script:sharingProbePath,$data)
+                $sharingOwner='99:123'
+                $probe=@{path=$script:sharingProbePath;hash=(Get-WorkflowBytesSHA256 $data);expectedSharing=$sharingOwner}
+                $sharingRow=[pscustomobject]@{LocalAddress='0.0.0.0';LocalPort=53;OwningProcess=[uint32]99}
+                $udpRows+=@($sharingRow)
+                $withSharing=& $readFixtureListenerOwner $addresses $binary $entry $probe
+                Assert-DNS ($withSharing.EndsWith('|99:123',[StringComparison]::Ordinal)) 'dnscrypt-sharing-binds-owned-challenge'
+                $sharingOwner='99:124'
+                Reject-DNS {& $readFixtureListenerOwner $addresses $binary $entry $probe} 'Internet Connection Sharing changed after DNSCrypt admission'
+                $sharingOwner='99:123'
+                $udpRows+=@($sharingRow)
+                Reject-DNS {& $readFixtureListenerOwner $addresses $binary $entry $probe} 'Wildcard DNS listener makes loopback ownership ambiguous'
             }
         }
     }
@@ -2240,6 +2313,58 @@ try {
     Wait-DNSCryptListeners @('::1') -TimeoutSeconds 0
     Assert-DNS ($script:listenerTransports.Count -eq 0 -and $script:listenerQueries.Count -eq 1 -and
         $script:listenerAAAAQueries.Count -eq 0) 'dnscrypt-recovery-retains-a-only-probe'
+    foreach($reason in @('foreign','shared','wrong-image','bind-failure','duplicate')){
+        New-DNSCase
+        $script:sharingMode=$reason
+        $wildcard=[pscustomobject]@{LocalPort=[uint16]53;LocalAddress='0.0.0.0';OwningProcess=[uint32]4242}
+        $script:DNSCryptPortRows.MSFT_NetUDPEndpoint=if($reason -ceq 'duplicate'){@($wildcard,$wildcard)}else{$wildcard}
+        if($reason -ceq 'bind-failure'){$script:sharingBindFailure='::1'}
+        Reject-DNS {Assert-DNSCryptLoopbackPortsAvailable} 'DNSCrypt requires TCP and UDP port 53'
+        Assert-DNS (-not [IO.File]::Exists($snapshot) -and (Mutation-Count) -eq 0) 'dnscrypt-sharing-admits-only-verified-service'
+    }
+    foreach($mode in @('stable','changed','challenge-failed')){
+        New-DNSCase
+        $script:stageDNSCrypt=$true;$script:allowNewResolver=$true
+        $script:sharingMode=$mode;$script:sharingChallengeFailure=$mode -ceq 'challenge-failed'
+        $script:DNSCryptPortRows.MSFT_NetUDPEndpoint=[pscustomobject]@{LocalPort=[uint16]53;LocalAddress='0.0.0.0';OwningProcess=[uint32]4242}
+        $directory=Join-Path $root 'components\dnscrypt'
+        $config=Join-Path $directory 'dnscrypt-proxy.toml'
+        [IO.File]::WriteAllText((Join-Path $directory 'example-dnscrypt-proxy.toml'),"listen_addresses = ['192.0.2.53:53']")
+        if($mode -ceq 'changed'){
+            Reject-DNS {Configure-DNS 'dnscrypt'} 'DNSCrypt port ownership changed during setup'
+            Assert-DNS (-not $script:sharingProbePath -and -not $script:newResolverRegistered -and
+                (Mutation-Count) -eq 0) 'dnscrypt-sharing-renewal-stops-setup'
+        }elseif($mode -ceq 'challenge-failed'){
+            $script:refuseListenerWait=$true
+            Reject-DNS {Configure-DNS 'dnscrypt'} 'Synthetic loopback wait boundary'
+            Assert-DNS ($script:sharingProbeReads -eq 1 -and $script:sharingProbePath -and
+                [IO.File]::Exists($script:sharingProbePath) -and (Mutation-Count) -eq 0) 'dnscrypt-sharing-challenge-failure-blocks-adapter-writes'
+            $record=@($script:undo | Where-Object {$_.path -ceq $script:sharingProbePath})
+            Assert-DNS ($record.Count -eq 1 -and $record[0].kind -ceq 'file' -and
+                $record[0].expectedHash -ceq (Get-FileHash -LiteralPath $script:sharingProbePath -Algorithm SHA256).Hash) 'dnscrypt-sharing-challenge-recovery'
+            $errors=@(Rollback)
+            Assert-DNS ($errors.Count -eq 0 -and -not [IO.File]::Exists($script:sharingProbePath)) 'dnscrypt-sharing-challenge-recovery'
+        }else{
+            Configure-DNS 'dnscrypt'
+            Assert-DNS ($script:dnsConfigured -and $script:sharingProbeReads -eq 2 -and
+                ($script:sharingBinds -join ',') -ceq '127.0.0.1,::1,127.0.0.1,::1' -and
+                $script:sharingProbePath -and [IO.File]::Exists($script:sharingProbePath)) 'dnscrypt-sharing-binds-owned-challenge'
+            $configuration=[IO.File]::ReadAllText($config)
+            $probe=Get-DNSCryptSharingProbe $configuration $directory ''
+            Assert-DNS (-not $probe.create -and $probe.path -ceq $script:sharingProbePath) 'dnscrypt-sharing-reuses-owned-challenge'
+            [IO.File]::AppendAllText($script:sharingProbePath,'tampered')
+            Reject-DNS {Get-DNSCryptSharingProbe $configuration $directory ''} 'DNSCrypt loopback challenge file changed independently'
+        }
+    }
+    New-DNSCase
+    $label='accessweaver-'+('a'*32)
+    $query=[byte[]](@(12,34,0,0,0,1,0,0,0,0,0,0,$label.Length)+[Text.Encoding]::ASCII.GetBytes($label)+
+        @(7)+[Text.Encoding]::ASCII.GetBytes('invalid')+@(0,0,1,0,1))
+    $reply=[byte[]]($query+@(192,12,0,1,0,1,0,0,0,30,0,4,192,0,2,42))
+    $reply[2]=128;$reply[7]=1
+    Assert-DNS ((Test-DNSCryptProbeReply $reply $query 1 ($label+'.invalid') '192.0.2.42') -and
+        -not (Test-DNSCryptProbeReply $reply $query 1 ($label+'.invalid') '192.0.2.43') -and
+        -not (Test-DNSCryptProbeReply $reply $query 1 ('accessweaver-'+('b'*32)+'.invalid') '192.0.2.42')) 'dnscrypt-sharing-challenge-needs-exact-answer'
     foreach($conflict in @(
         @{class='MSFT_NetUDPEndpoint';address='0.0.0.0'},
         @{class='MSFT_NetTCPConnection';address='::'},

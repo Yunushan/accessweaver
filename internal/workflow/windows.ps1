@@ -2603,7 +2603,9 @@ function Read-DNSCryptProbeName([byte[]]$Packet,[int]$Offset) {
     }
     throw 'Malformed DNSCrypt probe name'
 }
-function Test-DNSCryptProbeReply([byte[]]$Packet,[byte[]]$Query,[int]$Type) {
+function Test-DNSCryptProbeReply([byte[]]$Packet,[byte[]]$Query,[int]$Type,[string]$Name='example.net',[string]$ExpectedAddress) {
+    $labels=$Name.Split('.')
+    if($labels.Count -ne 2){return $false}
     # A standard response with no truncation or error and exactly one question.
     if($Packet.Length -lt $Query.Length -or $Packet.Length -gt 4096 -or
         $Packet[0] -ne $Query[0] -or $Packet[1] -ne $Query[1] -or
@@ -2612,7 +2614,7 @@ function Test-DNSCryptProbeReply([byte[]]$Packet,[byte[]]$Query,[int]$Type) {
     $question=Read-DNSCryptProbeName $Packet 12
     $offset=$question.next
     if($offset+4 -gt $Packet.Length -or $question.labels.Count -ne 2 -or
-        $question.labels[0] -ine 'example' -or $question.labels[1] -ine 'net' -or
+        $question.labels[0] -ine $labels[0] -or $question.labels[1] -ine $labels[1] -or
         $Packet[$offset] -ne 0 -or $Packet[$offset+1] -ne $Type -or
         $Packet[$offset+2] -ne 0 -or $Packet[$offset+3] -ne 1){return $false}
     $offset+=4
@@ -2624,17 +2626,17 @@ function Test-DNSCryptProbeReply([byte[]]$Packet,[byte[]]$Query,[int]$Type) {
     $addressLength=if($Type -eq 1){4}else{16}
     $found=$false
     for($index=0;$index -lt $count;$index++){
-        $name=Read-DNSCryptProbeName $Packet $offset
-        $offset=$name.next
+        $owner=Read-DNSCryptProbeName $Packet $offset
+        $offset=$owner.next
         if($offset+10 -gt $Packet.Length){return $false}
         $length=([int]$Packet[$offset+8] -shl 8) -bor $Packet[$offset+9]
         $data=$offset+10
         if($data+$length -gt $Packet.Length){return $false}
         if($index -lt $answers -and $Packet[$offset] -eq 0 -and $Packet[$offset+1] -eq $Type -and
             $Packet[$offset+2] -eq 0 -and $Packet[$offset+3] -eq 1 -and $length -eq $addressLength -and
-            $name.labels.Count -eq 2 -and $name.labels[0] -ieq 'example' -and $name.labels[1] -ieq 'net'){
+            $owner.labels.Count -eq 2 -and $owner.labels[0] -ieq $labels[0] -and $owner.labels[1] -ieq $labels[1]){
             $address=[Net.IPAddress]::new([byte[]]$Packet[$data..($data+$length-1)])
-            if(-not $address.IsIPv4MappedToIPv6){$found=$true}
+            if(-not $address.IsIPv4MappedToIPv6 -and (-not $ExpectedAddress -or $address.ToString() -ceq $ExpectedAddress)){$found=$true}
         }
         $offset=$data+$length
     }
@@ -2673,17 +2675,24 @@ function Test-DNSCryptTCPAnswer([Net.IPEndPoint]$Endpoint,[byte[]]$Query,[int]$T
     } finally {$client.Dispose()}
 }
 function Test-DNSCryptTransportAnswer([string]$Server,[ValidateSet('A','AAAA')][string]$Type,
-        [ValidateSet('UDP','TCP')][string]$Protocol) {
+        [ValidateSet('UDP','TCP')][string]$Protocol,[string]$Challenge) {
+    if($Challenge -and ($Challenge -cnotmatch '\Aaccessweaver-[a-f0-9]{32}\.invalid\z' -or
+        $Server -cne '127.0.0.1' -or $Type -cne 'A' -or $Protocol -cne 'UDP')){
+        throw 'Invalid DNSCrypt loopback challenge'
+    }
     if($Server -cnotin @('127.0.0.1','::1')){throw 'Expected managed DNSCrypt loopback address'}
     $address=[Net.IPAddress]::Parse($Server)
     $recordType=if($Type -ceq 'A'){1}else{28}
     $id=[byte[]]::new(2)
     $random=[Security.Cryptography.RandomNumberGenerator]::Create()
     try {$random.GetBytes($id)}finally{$random.Dispose()}
-    # A standard recursion-desired example.net. question with no EDNS or
-    # search suffixes. A connected socket restricts replies to this endpoint.
-    $query=[byte[]]($id+@(1,0,0,1,0,0,0,0,0,0,7)+[Text.Encoding]::ASCII.GetBytes('example')+
-        @(3)+[Text.Encoding]::ASCII.GetBytes('net')+@(0,0,$recordType,0,1))
+    # A DNS question with no EDNS or search suffixes. Ask for recursion only
+    # for the public readiness name. A connected socket fixes the peer.
+    $name=if($Challenge){$Challenge}else{'example.net'}
+    $flags=if($Challenge){0}else{1}
+    $labels=$name.Split('.')
+    $query=[byte[]]($id+@($flags,0,0,1,0,0,0,0,0,0,$labels[0].Length)+[Text.Encoding]::ASCII.GetBytes($labels[0])+
+        @($labels[1].Length)+[Text.Encoding]::ASCII.GetBytes($labels[1])+@(0,0,$recordType,0,1))
     $endpoint=[Net.IPEndPoint]::new($address,53)
     if($Protocol -ceq 'TCP'){return Test-DNSCryptTCPAnswer $endpoint $query $recordType}
     $socket=[Net.Sockets.Socket]::new($address.AddressFamily,[Net.Sockets.SocketType]::Dgram,[Net.Sockets.ProtocolType]::Udp)
@@ -2695,7 +2704,8 @@ function Test-DNSCryptTransportAnswer([string]$Server,[ValidateSet('A','AAAA')][
         $buffer=[byte[]]::new(513)
         $received=$socket.Receive($buffer)
         if($received -lt $query.Length -or $received -gt 512){return $false}
-        return Test-DNSCryptProbeReply ([byte[]]$buffer[0..($received-1)]) $query $recordType
+        $expected=if($Challenge){'192.0.2.42'}else{''}
+        return Test-DNSCryptProbeReply ([byte[]]$buffer[0..($received-1)]) $query $recordType $name $expected
     } finally {$socket.Dispose()}
 }
 function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds=30,
@@ -2728,6 +2738,31 @@ function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds=30,
     } while($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds)
     throw $FailureMessage
 }
+function Get-DNSCryptConnectionSharingIdentity([uint32]$Owner) {
+    if(-not $Owner){return}
+    try{
+        $warnings=@()
+        $services=@(Get-CimInstance -ClassName Win32_Service -Filter ("ProcessId="+$Owner+" AND State='Running'") -ErrorAction Stop -WarningAction SilentlyContinue -WarningVariable +warnings |
+            Select-Object -First 2)
+        if($warnings.Count -or $services.Count -ne 1 -or $services[0].Name -cne 'SharedAccess' -or
+            $services[0].ProcessId -ne $Owner -or $services[0].State -cne 'Running'){return}
+        $process=@(Get-CimInstance -ClassName Win32_Process -Filter ("ProcessId="+$Owner) -ErrorAction Stop -WarningAction SilentlyContinue -WarningVariable +warnings | Select-Object -First 2)
+        $systemHost=[IO.Path]::Combine([Environment]::SystemDirectory,'svchost.exe')
+        if($warnings.Count -or $process.Count -ne 1 -or $process[0].ProcessId -ne $Owner -or
+            $process[0].CreationDate -isnot [datetime] -or $process[0].ExecutablePath -ine $systemHost){return}
+        return '{0}:{1}' -f $Owner,$process[0].CreationDate.ToUniversalTime().Ticks
+    }catch{return}
+}
+function Test-DNSCryptExclusiveUDPBind([Net.IPAddress]$Address) {
+    $socket=[Net.Sockets.Socket]::new($Address.AddressFamily,[Net.Sockets.SocketType]::Dgram,[Net.Sockets.ProtocolType]::Udp)
+    try{
+        $socket.ExclusiveAddressUse=$true
+        if($Address.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetworkV6){$socket.DualMode=$false}
+        $socket.Bind([Net.IPEndPoint]::new($Address,53))
+        return $true
+    }catch{return $false}
+    finally{$socket.Dispose()}
+}
 function Assert-DNSCryptLoopbackPortsAvailable {
     $script:dnsOperationStage='configuration-port-inventory'
     # A WQL query can return zero rows successfully on a clean machine.
@@ -2736,6 +2771,7 @@ function Assert-DNSCryptLoopbackPortsAvailable {
         MSFT_NetTCPConnection='LocalPort = 53 AND State = 2'
         MSFT_NetUDPEndpoint='LocalPort = 53'
     }
+    $sharing=''
     foreach($class in $queries.Keys){
         try{
             $endpoints=@(Get-CimInstance -Namespace 'root/StandardCimv2' -ClassName $class `
@@ -2752,13 +2788,51 @@ function Assert-DNSCryptLoopbackPortsAvailable {
             }
             if($address.IsIPv4MappedToIPv6){$address=$address.MapToIPv4()}
             if($address.ToString().Split('%')[0] -cin @('0.0.0.0','::','127.0.0.1','::1')){
+                if(-not $sharing -and $class -ceq 'MSFT_NetUDPEndpoint' -and $endpoint.LocalAddress -ceq '0.0.0.0' -and
+                    $endpoint.OwningProcess -is [uint32]){
+                    $candidate=Get-DNSCryptConnectionSharingIdentity $endpoint.OwningProcess
+                    if($candidate -and (Test-DNSCryptExclusiveUDPBind ([Net.IPAddress]::Loopback)) -and
+                        (Test-DNSCryptExclusiveUDPBind ([Net.IPAddress]::IPv6Loopback)) -and
+                        (Get-DNSCryptConnectionSharingIdentity $endpoint.OwningProcess) -ceq $candidate){
+                        $sharing=$candidate
+                        continue
+                    }
+                }
                 $script:dnsOperationStage='configuration-port-in-use'
                 throw 'DNSCrypt requires TCP and UDP port 53 on both loopback addresses. An existing listener owns a required address.'
             }
         }
     }
+    return $sharing
 }
-function Get-ManagedDNSCryptListenerOwner([string[]]$Servers,[string]$Binary,$Entry) {
+function Assert-DNSCryptSharingProbe($Probe) {
+    $bytes=Read-DNSRecoveryFileBytes $Probe.path 128
+    if($null -eq $bytes -or (Get-WorkflowBytesSHA256 $bytes) -cne $Probe.hash){
+        throw 'DNSCrypt loopback challenge file changed independently'
+    }
+}
+function Get-DNSCryptSharingProbe([string]$Configuration,[string]$Directory,[string]$Admission) {
+    $directives=[regex]::Matches($Configuration,'(?m)^[ 	]*cloaking_rules[ 	]*=[^
+]*')
+    $owned=[regex]::Match($Configuration,"(?m)^cloaking_rules = 'accessweaver-loopback-([a-f0-9]{32})\.txt'\r?$")
+    $create=$false
+    if($owned.Success -and $directives.Count -eq 1){
+        $token=$owned.Groups[1].Value
+    }elseif($Admission){
+        if($directives.Count){throw 'DNSCrypt already has a cloaking configuration and cannot verify coexistence with Internet Connection Sharing'}
+        $token=[guid]::NewGuid().ToString('N')
+        $create=$true
+    }else{return}
+    $name='accessweaver-'+$token+'.invalid'
+    $leaf='accessweaver-loopback-'+$token+'.txt'
+    $path=Join-Path $Directory $leaf
+    $data=[Text.Encoding]::ASCII.GetBytes($name+" 192.0.2.42`n")
+    $probe=@{name=$name;path=$path;hash=(Get-WorkflowBytesSHA256 $data);expectedSharing=$Admission;data=$data;
+        directive=("cloaking_rules = '"+$leaf+"'");create=$create}
+    if(-not $create){Assert-DNSCryptSharingProbe $probe}
+    return $probe
+}
+function Get-ManagedDNSCryptListenerOwner([string[]]$Servers,[string]$Binary,$Entry,$SharingProbe) {
     if(-not $Servers.Count -or @($Servers | Where-Object {$_ -cnotin @('127.0.0.1','::1')}).Count){
         throw 'Expected managed DNSCrypt loopback addresses'
     }
@@ -2779,6 +2853,7 @@ function Get-ManagedDNSCryptListenerOwner([string[]]$Servers,[string]$Binary,$En
     }
 
     $listenerID=[uint32]0
+    $sharing=''
     foreach($protocol in @('TCP','UDP')){
         $endpoints=if($protocol -ceq 'TCP'){
             $script:dnsOperationStage='listener-tcp-ownership'
@@ -2798,6 +2873,11 @@ function Get-ManagedDNSCryptListenerOwner([string[]]$Servers,[string]$Binary,$En
             if($address.IsIPv4MappedToIPv6){$address=$address.MapToIPv4()}
             $local=$address.ToString()
             if($local -cin @('0.0.0.0','::')){
+                if($SharingProbe -and -not $sharing -and $protocol -ceq 'UDP' -and $endpoint.LocalAddress -ceq '0.0.0.0' -and
+                    $endpoint.OwningProcess -is [uint32] -and $endpoint.OwningProcess -ne $listenerID){
+                    $sharing=Get-DNSCryptConnectionSharingIdentity $endpoint.OwningProcess
+                    if($sharing){continue}
+                }
                 if($protocol -ceq 'TCP'){
                     $script:dnsOperationStage='listener-tcp-wildcard'
                 }elseif($endpoint.OwningProcess -isnot [uint32] -or $endpoint.OwningProcess -eq 0){
@@ -2838,11 +2918,19 @@ function Get-ManagedDNSCryptListenerOwner([string[]]$Servers,[string]$Binary,$En
         $process[0].CreationDate -isnot [datetime] -or $process[0].CreationDate -lt $hostProcess[0].CreationDate){
         throw 'DNSCrypt listener does not belong to the managed service child'
     }
-    return '{0}:{1}:{2}:{3}' -f $hostID,$hostProcess[0].CreationDate.Ticks,$listenerID,$process[0].CreationDate.Ticks
+    $identity='{0}:{1}:{2}:{3}' -f $hostID,$hostProcess[0].CreationDate.Ticks,$listenerID,$process[0].CreationDate.Ticks
+    if($SharingProbe){
+        if($SharingProbe.expectedSharing -and $sharing -cne $SharingProbe.expectedSharing){
+            throw 'Internet Connection Sharing changed after DNSCrypt admission'
+        }
+        Assert-DNSCryptSharingProbe $SharingProbe
+        $identity+='|'+$sharing
+    }
+    return $identity
 }
 function Assert-DNSCryptListenerUnchanged($Listener) {
     $previousStage=$script:dnsOperationStage
-    $currentOwner=Get-ManagedDNSCryptListenerOwner $Listener.servers $Listener.binary $Listener.service
+    $currentOwner=Get-ManagedDNSCryptListenerOwner $Listener.servers $Listener.binary $Listener.service $Listener.sharingProbe
     if($currentOwner -cne $Listener.owner){
         $script:dnsOperationStage='listener-owner-changed'
         throw 'Managed DNSCrypt listener changed after startup verification'
@@ -2850,15 +2938,18 @@ function Assert-DNSCryptListenerUnchanged($Listener) {
     $script:dnsOperationStage=$previousStage
 }
 function Wait-ManagedDNSCryptListeners([string[]]$Servers,[string]$Binary,$Entry,[int]$TimeoutSeconds=30,
-        [string]$FailureMessage='DNSCrypt loopback readiness could not be verified before adapter configuration') {
+        [string]$FailureMessage='DNSCrypt loopback readiness could not be verified before adapter configuration',$SharingProbe) {
     $timer=[Diagnostics.Stopwatch]::StartNew()
     do {
         try {
-            $owner=Get-ManagedDNSCryptListenerOwner $Servers $Binary $Entry
+            $owner=Get-ManagedDNSCryptListenerOwner $Servers $Binary $Entry $SharingProbe
             # Repeat all probes together when any answer or the observed owner changes.
             $script:dnsOperationStage='listener-dns-answers'
             Wait-DNSCryptListeners $Servers -TimeoutSeconds 0 -RequireBothAddressTypes -RequireBothTransports
-            if((Get-ManagedDNSCryptListenerOwner $Servers $Binary $Entry) -ceq $owner){return $owner}
+            if($SharingProbe -and -not (Test-DNSCryptTransportAnswer '127.0.0.1' 'A' 'UDP' -Challenge $SharingProbe.name)){
+                throw 'DNSCrypt did not return its managed loopback challenge'
+            }
+            if((Get-ManagedDNSCryptListenerOwner $Servers $Binary $Entry $SharingProbe) -ceq $owner){return $owner}
             $script:dnsOperationStage='listener-owner-changed'
         }catch{}
         if($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds){break}
@@ -3568,7 +3659,8 @@ function Configure-DNS([string]$method) {
     $recoveryCopy=Read-DNSRecoveryCopy
     if(-not $originalSnapshot -and $recoveryCopy){throw 'Original DNS snapshot is missing; use dns-restore to recover from its protected copy'}
     Assert-DNSRecoveryCopyMatches $originalSnapshot $recoveryCopy
-    if($method -eq 'dnscrypt' -and -not $existingResolver){Assert-DNSCryptLoopbackPortsAvailable}
+    $sharingAdmission=''
+    if($method -eq 'dnscrypt' -and -not $existingResolver){$sharingAdmission=Assert-DNSCryptLoopbackPortsAvailable}
     $hadSnapshot=$null -ne $originalSnapshot
     $original=if($hadSnapshot){$originalSnapshot.record}else{[pscustomobject]@{adapters=@();doh=@();dohManaged=$false}}
     $plaintextBlockID=Get-DNSDohPlaintextBlockID $original
@@ -3708,6 +3800,8 @@ function Configure-DNS([string]$method) {
             if($text -notmatch '(?m)^listen_addresses[ \t]*='){throw 'DNSCrypt configuration is missing its top-level listen_addresses setting'}
             $text=[regex]::Replace($text,'(?m)^listen_addresses[ \t]*=[^\r\n]*',"listen_addresses = ['127.0.0.1:53', '[::1]:53']")
             if($text -notmatch '(?m)^server_names\s*='){$text="server_names = ['google', 'cloudflare', 'quad9-dnscrypt-ip4-nofilter-pri']`r`n"+$text}
+            $sharingProbe=Get-DNSCryptSharingProbe $text (Split-Path -Parent $binary) $sharingAdmission
+            if($sharingProbe -and $sharingProbe.create){$text=$sharingProbe.directive+"`r`n"+$text}
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
             $updatedConfig=[Text.UTF8Encoding]::new($false).GetBytes($text)
             if($updatedConfig.Length -gt 1MB){throw 'DNSCrypt configuration exceeds its size limit'}
@@ -3736,8 +3830,11 @@ function Configure-DNS([string]$method) {
                 if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before startup'}
             }
             # Component staging can outlast the earlier port inventory.
-            if(-not $existingResolver){Assert-DNSCryptLoopbackPortsAvailable}
+            if(-not $existingResolver -and (Assert-DNSCryptLoopbackPortsAvailable) -cne $sharingAdmission){
+                throw 'DNSCrypt port ownership changed during setup'
+            }
             $script:dnsOperationStage='resolver-configuration'
+            if($sharingProbe -and $sharingProbe.create){Publish-WorkflowFile $sharingProbe.path $sharingProbe.data -Recorded -BeforeHash ''}
             if($configChanged){Publish-WorkflowFile $config $updatedConfig -Recorded -BeforeHash $configBefore}
             $servers=@('127.0.0.1','::1')
             $listeners=@(foreach($number in @('4','6')){
@@ -3750,6 +3847,7 @@ function Configure-DNS([string]$method) {
                     }
                 }
             })
+            if($sharingProbe -and $listeners -cnotcontains '127.0.0.1'){$listeners+=@('127.0.0.1')}
             if($existingResolver){
                 if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before startup'}
                 Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
@@ -3772,8 +3870,8 @@ function Configure-DNS([string]$method) {
             }
             $script:dnsOperationStage='listener-verification'
             # SCM can report Running before the replacement listener is usable.
-            $listenerOwner=Wait-ManagedDNSCryptListeners $listeners $binary $resolver
-            $dnsCryptListener=@{servers=$listeners;binary=$binary;service=$resolver;owner=$listenerOwner}
+            $listenerOwner=Wait-ManagedDNSCryptListeners $listeners $binary $resolver -SharingProbe $sharingProbe
+            $dnsCryptListener=@{servers=$listeners;binary=$binary;service=$resolver;owner=$listenerOwner;sharingProbe=$sharingProbe}
             Assert-DNSCryptConfiguration $config $publishedConfigSHA256
             $script:dnsOperationStage='automatic-startup'
             # Verify automatic startup before adding any loopback DNS dependency.
@@ -3865,7 +3963,7 @@ function Configure-DNS([string]$method) {
             # The ordinary resolver can succeed through one listener while
             # another cannot answer both address record types.
             Assert-DNSCryptListenerUnchanged $dnsCryptListener
-            $finalOwner=Wait-ManagedDNSCryptListeners $listeners $binary $resolver -TimeoutSeconds 5 -FailureMessage 'DNSCrypt loopback readiness could not be verified after adapter configuration'
+            $finalOwner=Wait-ManagedDNSCryptListeners $listeners $binary $resolver -SharingProbe $sharingProbe -TimeoutSeconds 5 -FailureMessage 'DNSCrypt loopback readiness could not be verified after adapter configuration'
             if($finalOwner -cne $listenerOwner){
                 $script:dnsOperationStage='listener-owner-changed'
                 throw 'Managed DNSCrypt listener changed during final resolver verification'

@@ -17,6 +17,10 @@ on:
       - '.github/workflows/native-doh.yml'
   workflow_dispatch:
     inputs:
+      dnscrypt_roundtrip:
+        description: Run only the two product DNSCrypt round-trip jobs
+        type: boolean
+        default: false
       dnscrypt_port_probe:
         description: Compare UDP port 53 on disposable Windows runners
         type: boolean
@@ -47,31 +51,27 @@ env:
 jobs:
   native:
     if: ${{ !inputs.dnscrypt_port_probe && !inputs.dnscrypt_engine_probe && !inputs.dnscrypt_service_probe }}
-    name: Native DNS ${{ matrix.method }}/${{ matrix.scenario }} (windows/${{ matrix.goarch }})
+    name: Native DNS ${{ matrix.case.method }}/${{ matrix.case.scenario }} (windows/${{ matrix.goarch }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
+        goarch: [amd64, arm64]
+        case: >-
+          ${{ fromJSON(inputs.dnscrypt_roundtrip && '[{"method":"dnscrypt","scenario":"roundtrip"}]' ||
+          '[{"method":"doh","scenario":"roundtrip"},
+          {"method":"doh","scenario":"journal-recovery"},
+          {"method":"doh","scenario":"static-ipv6"},
+          {"method":"dnscrypt","scenario":"roundtrip"},
+          {"method":"dnscrypt","scenario":"remove-all"},
+          {"method":"dnscrypt","scenario":"missing-snapshot"},
+          {"method":"dnscrypt","scenario":"service-loss"},
+          {"method":"dnscrypt","scenario":"service-reactivation"},
+          {"method":"dnscrypt","scenario":"verification-failure"}]') }}
         include:
-          - {goarch: amd64, os: windows-latest, sdkarch: x64, method: doh, scenario: roundtrip}
-          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: doh, scenario: roundtrip}
-          - {goarch: amd64, os: windows-latest, sdkarch: x64, method: doh, scenario: journal-recovery}
-          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: doh, scenario: journal-recovery}
-          - {goarch: amd64, os: windows-latest, sdkarch: x64, method: doh, scenario: static-ipv6}
-          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: doh, scenario: static-ipv6}
-          - {goarch: amd64, os: windows-latest, sdkarch: x64, method: dnscrypt, scenario: roundtrip}
-          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: dnscrypt, scenario: roundtrip}
-          - {goarch: amd64, os: windows-latest, sdkarch: x64, method: dnscrypt, scenario: remove-all}
-          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: dnscrypt, scenario: remove-all}
-          - {goarch: amd64, os: windows-latest, sdkarch: x64, method: dnscrypt, scenario: missing-snapshot}
-          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: dnscrypt, scenario: missing-snapshot}
-          - {goarch: amd64, os: windows-latest, sdkarch: x64, method: dnscrypt, scenario: service-loss}
-          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: dnscrypt, scenario: service-loss}
-          - {goarch: amd64, os: windows-latest, sdkarch: x64, method: dnscrypt, scenario: service-reactivation}
-          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: dnscrypt, scenario: service-reactivation}
-          - {goarch: amd64, os: windows-latest, sdkarch: x64, method: dnscrypt, scenario: verification-failure}
-          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: dnscrypt, scenario: verification-failure}
+          - {goarch: amd64, os: windows-latest, sdkarch: x64}
+          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64}
     defaults:
       run:
         shell: pwsh
@@ -117,13 +117,13 @@ jobs:
           $binary=(Resolve-Path 'build/native-doh/accessweaver.exe').Path
           $digest=(Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
           $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
-          & $stock -NoProfile -NonInteractive -File ./scripts/test-native-doh.ps1 -Binary $binary -BinarySHA256 $digest -Method ${{ matrix.method }} -ScenarioKind ${{ matrix.scenario }} -ReportPath (Join-Path $evidence 'status.json')
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-native-doh.ps1 -Binary $binary -BinarySHA256 $digest -Method ${{ matrix.case.method }} -ScenarioKind ${{ matrix.case.scenario }} -ReportPath (Join-Path $evidence 'status.json')
           if($LASTEXITCODE -ne 0){throw 'Native encrypted DNS acceptance failed; fixed metadata retained'}
       - name: Retain fixed native DNS metadata only
         if: always() && env.ACCESSWEAVER_NATIVE_DOH_EVIDENCE != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: native-dns-${{ matrix.method }}-${{ matrix.scenario }}-windows-${{ matrix.goarch }}
+          name: native-dns-${{ matrix.case.method }}-${{ matrix.case.scenario }}-windows-${{ matrix.goarch }}
           path: ${{ env.ACCESSWEAVER_NATIVE_DOH_EVIDENCE }}/status.json
           if-no-files-found: error
           retention-days: 7
