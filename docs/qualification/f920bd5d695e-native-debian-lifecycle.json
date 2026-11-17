@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "scope": "native-linux-dpkg-and-ephemeral-signed-apt-qualification",
+  "sourceCommit": "f920bd5d695e0251e02005c3c0fca90eac2f6890",
+  "sourceRef": "refs/heads/codex/dns-adapter-coverage",
+  "runId": 44068502451,
+  "runAttempt": 1,
+  "targets": [
+    {
+      "target": "linux/amd64",
+      "jobId": 133988350173,
+      "status": "completed",
+      "conclusion": "success",
+      "artifactId": 14322510324,
+      "artifactSHA256": "583837b3c7c440c84e1d5c9000e3829b4660e908da487e73e039d69f620f467e",
+      "reportsSHA256": {
+        "dpkg.json": "475496028c57f87a351d43dd27fd1b4d0dfcf2cea246ed301404482b545a1eac",
+        "apt.json": "90ee8358b7a22d8cea10b6e00d8523cf9d42c54751be86783dbedec0c5fd3a25"
+      },
+      "fixtureVersions": [
+        "0.0.0~alpha.1",
+        "0.0.0~alpha.2"
+      ],
+      "dpkgChecksVerified": 12,
+      "aptChecksVerified": 9,
+      "signedDisposableRepositoryVerified": true,
+      "installedBinaryDigestsMatched": true,
+      "packages": [
+        {
+          "arch": "amd64",
+          "version": "0.0.0~alpha.1",
+          "archiveSHA256": "384b3e01f5d94285798309b29f4d169f32f943c436c753b9e0b108de0519ad85",
+          "debSHA256": "3c80488cfb51cb4f86ceffac75d8682092dcbb5e11ce4bbc9786fe7ee0cf2553",
+          "binarySHA256": "b090317ab53359d9d0c91e9a54830e3b0b04422568a8db571833c7034343822f",
+          "payloadFiles": 570
+        },
+        {
+          "arch": "amd64",
+          "version": "0.0.0~alpha.2",
+          "archiveSHA256": "f46655f4a4f1738fa498ae1f96b8b3e2df44ac19dad123162e182dce3403d47f",
+          "debSHA256": "6fd762dda559f43b5b03ca0dc5a6b2a18dcdec715395893a3612b28e2a578ea8",
+          "binarySHA256": "2b67a1a52bf117a149acc7ba3d2af4140dcb6e4c0709bafe5e1291f666872f56",
+          "payloadFiles": 570
+        },
+        {
+          "arch": "arm64",
+          "version": "0.0.0~alpha.2",
+          "archiveSHA256": "b349c86f137aaeca8f7c73aae70081f234994141040b3b410158b7961cd4088b",
+          "debSHA256": "d8d32b2484689cfa9b8d38c53267056d4cb95ca2172dfffcf039235f8dc55de5",
+          "binarySHA256": "e12b7cf617adadcee010cef8861ba541ba130f79a12aa645475228ff21abb93c",
+          "payloadFiles": 570
+        }
+      ],
+      "productionQualificationComplete": false
+    },
+    {
+      "target": "linux/arm64",
+      "jobId": 133988350668,
+      "status": "completed",
+      "conclusion": "success",
+      "artifactId": 14321906616,
+      "artifactSHA256": "b89e066837f67f2aa5ea200a0bd3e364fdcb0747c302f80aab94beab33c0b35d",
+      "reportsSHA256": {
+        "dpkg.json": "56d51599be2688836ad900979bcf36e99db83a0233a4824aa6cf6918f1dc8739",
+        "apt.json": "32afa34daac2e2e05eec127068fc17d989f31bf0780bf4323ee0fa7890994819"
+      },
+      "fixtureVersions": [
+        "0.0.0~alpha.1",
+        "0.0.0~alpha.2"
+      ],
+      "dpkgChecksVerified": 12,
+      "aptChecksVerified": 9,
+      "signedDisposableRepositoryVerified": true,
+      "installedBinaryDigestsMatched": true,
+      "packages": [
+        {
+          "arch": "arm64",
+          "version": "0.0.0~alpha.1",
+          "archiveSHA256": "51dbd17e2f2b36f7d4cf56f4b781bc4558d5cf5d5422826f2ea4a4f9465bbb9f",
+          "debSHA256": "37ed0ad5432ed349bc37dd61d509acb17d762455af1475530fffaaead526f2f2",
+          "binarySHA256": "9813904797c934d322c5dea446e48815834a8ebaa67458016f88ebdfcf544687",
+          "payloadFiles": 570
+        },
+        {
+          "arch": "arm64",
+          "version": "0.0.0~alpha.2",
+          "archiveSHA256": "b349c86f137aaeca8f7c73aae70081f234994141040b3b410158b7961cd4088b",
+          "debSHA256": "d8d32b2484689cfa9b8d38c53267056d4cb95ca2172dfffcf039235f8dc55de5",
+          "binarySHA256": "e12b7cf617adadcee010cef8861ba541ba130f79a12aa645475228ff21abb93c",
+          "payloadFiles": 570
+        },
+        {
+          "arch": "amd64",
+          "version": "0.0.0~alpha.2",
+          "archiveSHA256": "f46655f4a4f1738fa498ae1f96b8b3e2df44ac19dad123162e182dce3403d47f",
+          "debSHA256": "6fd762dda559f43b5b03ca0dc5a6b2a18dcdec715395893a3612b28e2a578ea8",
+          "binarySHA256": "2b67a1a52bf117a149acc7ba3d2af4140dcb6e4c0709bafe5e1291f666872f56",
+          "payloadFiles": 570
+        }
+      ],
+      "productionQualificationComplete": false
+    }
+  ],
+  "newerPackageDigestsMatchedAcrossBuildHosts": true,
+  "rebootTested": false,
+  "productionSigningQualified": false,
+  "productionQualificationComplete": false
+}

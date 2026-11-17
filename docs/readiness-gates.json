@@ -198,7 +198,8 @@
             "docs/qualification/ed049b12e54e-installer-terminal-server-refusal.json",
             "docs/WINDOWS_INSTALLER_REGISTRATION.md",
             "scripts/test-windows-installer-protected-publication.ps1",
-            "docs/qualification/7c6c341a9ab6-native-protected-windows-installer.json"
+            "docs/qualification/7c6c341a9ab6-native-protected-windows-installer.json",
+            "docs/qualification/f920bd5d695e-native-debian-lifecycle.json"
           ]
         }
       ]
