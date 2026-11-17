@@ -40,7 +40,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: dnscrypt, scenario: roundtrip}
+          - {goarch: amd64, os: windows-latest, sdkarch: x64, method: dnscrypt, scenario: roundtrip}
     defaults:
       run:
         shell: pwsh
