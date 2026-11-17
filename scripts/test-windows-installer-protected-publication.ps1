@@ -69,9 +69,11 @@ function New-LegacyRetirementFixtureSetup($First) {
             } finally {$stream.Dispose()}
         }
         $compileArguments=@(('/DBuildRoot='+$First.stage),('/DReleaseVersion='+$First.expected.version),
-            ('/DTargetArch='+$Architecture),('/DEvidenceOutput='+$expanded),'/DRequireInnoRuntimeNotice',('/O'+$directory),$setup)
+            ('/DTargetArch='+$Architecture),('/DEvidenceOutput='+$expanded),'/DRequireInnoRuntimeNotice',
+            '/DLegacyRegistrationFixture=1',('/O'+$directory),$setup)
         $null=@(& $First.compiler @compileArguments)
         Require ($LASTEXITCODE -eq 0) 'Legacy footprint fixture compilation failed'
+        Require ([IO.File]::ReadAllText($expanded) -cnotmatch '(?m)^CreateUninstallRegKey=no\s*$') 'Expected a genuine legacy registration fixture'
         Assert-InstallerPackageDirectories $First.stage $setup $expanded ([ref]$inventorySHA256) ([ref]$inventory)
         [IO.File]::WriteAllText($inventoryPath,$inventory,[Text.UTF8Encoding]::new($false))
         Require ((Digest $inventoryPath) -ceq $inventorySHA256) 'Compiled legacy inventory changed when written'
