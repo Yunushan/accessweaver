@@ -2,7 +2,7 @@ name: Windows owned process tree regression
 
 on:
   push:
-    branches: ['main', 'codex/dns-adapter-coverage']
+    branches: ['main', 'codex/dns-adapter-coverage', 'codex/dns-family-reset']
     paths:
       - 'internal/nativeprocess/**'
       - 'scripts/windows-tree-fixed-report.cjs'
