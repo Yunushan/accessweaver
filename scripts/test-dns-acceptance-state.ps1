@@ -978,6 +978,31 @@ function DynamicStage { $script:dnsOperationStage=$value }
         Assert-A ((Get-NativeDNSFailureMarker $catalog '' 'DNSCrypt failure stage: service-starting.').lines.Count -eq 0 -and
             (Get-NativeDNSFailureMarker $catalog '' 'DNSCrypt failure stage: private-stage.').lines.Count -eq 0) 'source-literal-marker'
         Assert-A (($productCatalog.entries | Where-Object literal -CEQ $phase).lines.Count -eq 1) 'source-literal-catalog'
+
+        $tokens=$null;$issues=$null
+        $worker=[Management.Automation.Language.Parser]::ParseInput($productText,[ref]$tokens,[ref]$issues)
+        $markers=@($worker.FindAll({param($n)
+            $n -is [Management.Automation.Language.AssignmentStatementAst] -and
+            $n.Left.Extent.Text -ceq '$result.error' -and
+            $n.Operator -eq [Management.Automation.Language.TokenKind]::PlusEquals -and
+            $n.Right.Extent.Text.Contains('DNSCrypt failure stage: ')
+        },$true))
+        Assert-A (-not $issues.Count -and $markers.Count -eq 1 -and
+            $markers[0].Parent.Parent -is [Management.Automation.Language.IfStatementAst]) 'source-literal-projection'
+        & {
+            param($Handler)
+            $script:dnsOperationStage='service-start'
+            $result=@{error='PRIVATE_PROVIDER_EXCEPTION'}
+            $r=@{action='dns';dns='dnscrypt'}
+            . ([scriptblock]::Create($Handler.Extent.Text))
+            $serialized=ConvertTo-Json -InputObject @{result=$result} -Compress
+            $observation=Get-NativeDNSFailureMarker $productCatalog '' $serialized
+            Assert-A ($observation.lines.Count -eq 1 -and $result.error.StartsWith('PRIVATE_PROVIDER_EXCEPTION')) 'source-literal-projection'
+            $result.error='PRIVATE_PROVIDER_EXCEPTION'
+            $r.dns='doh'
+            . ([scriptblock]::Create($Handler.Extent.Text))
+            Assert-A ($result.error -ceq 'PRIVATE_PROVIDER_EXCEPTION') 'source-literal-projection'
+        } $markers[0].Parent.Parent
         $expected=@(1,3)
         $message='PRIVATE_STATIC_REFUSAL'
         for($split=0;$split -le $message.Length;$split++){

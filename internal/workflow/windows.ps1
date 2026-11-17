@@ -7036,7 +7036,8 @@ try {
     $result.error=$_.Exception.Message
     $script:journalState='failed'
     if(($r.action -ceq 'dns' -and $r.dns -ceq 'dnscrypt') -or ($r.action -ceq 'remove' -and $r.engine -ceq 'dnscrypt')){
-        Write-Output ('DNSCrypt failure stage: '+$script:dnsOperationStage+'.')
+        # The CLI receives this checked worker result, while stdout stays in process.log.
+        $result.error+=(' DNSCrypt failure stage: '+$script:dnsOperationStage+'.')
     }
     if($r.action -in @('install','auto-install','connect','config','download','dns','refresh','scan','app-install','app-reinstall','app-repair')){
         $result.rollbackScope='recorded-resources';$result.recordedRollbackComplete=$false
