@@ -185,9 +185,13 @@ the record because the Inno completion callback runs after its deletion log.
 
 The manual protected-publication workflow exercises real Setup rollback before
 publication, retry, same-version repair using the previous directory, controller
-binding and owned uninstall. Native verification of managed migration, process
-termination, reboot recovery, and signed installed-product acceptance remain
-open.
+binding and owned uninstall. Its migration scenario installs a standard older
+Setup, verifies refusal of a wrong uninstall-data pin, then stops the fixture
+after committed legacy retirement and before copying any files. It requires
+detection to recognize the bound pending state, a genuine Setup retry to
+complete publication, the old writer to lose access, and the new installation
+to uninstall cleanly. Native results, reboot recovery, and signed
+installed-product acceptance remain open.
 
 
 The [first publication fixture run](https://github.com/Yunushan/accessweaver/actions/runs/44009212448)
