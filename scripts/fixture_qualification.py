@@ -256,8 +256,12 @@ def main():
         spec.loader.exec_module(contract)
         for target in ["linux/amd64", "windows/amd64"]:
             system, arch = target.split("/")
-            raw = command([scanner, "-db", "https://vuln.go.dev", "-json", "./..."], module, dict(environment, GOOS=system, GOARCH=arch, CGO_ENABLED="0"), limit=32 << 20, seconds=300)
-            result = contract.analyze(raw.decode("utf-8"), "accessweaver.test/wgpeer", "v1.9.0", "go1.27.4")
+            target_environment = dict(environment, GOOS=system, GOARCH=arch, CGO_ENABLED="0")
+            roots = command(["go", "list", "./..."], module, target_environment).decode("utf-8").splitlines()
+            raw = command([scanner, "-db", "https://vuln.go.dev", "-json", "./..."], module,
+                          target_environment, limit=32 << 20, seconds=300)
+            result = contract.analyze(raw.decode("utf-8"), "accessweaver.test/wgpeer", "v1.9.0",
+                                      "go1.27.4", expected_roots=roots)
             assert result["passed"] and result["affectedCount"] == result["moduleOnlyCount"] == 0
             data["advisories"].append({"target": target, "scanner": "v1.9.0", "go": "go1.27.4", "databaseModifiedAt": result["databaseModifiedAt"], "affected": 0, "moduleOnly": 0, "reportSHA256": hashlib.sha256(raw).hexdigest()})
         data["stage"] = "source"

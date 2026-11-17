@@ -21,13 +21,13 @@ scan() {
   printf '%s\tstarted\n' "$label" >> "$status_file"
   if (
     cd "$project_root/$module_dir" &&
-    GOOS="$target_os" GOARCH="$target_arch" CGO_ENABLED=0 \
-      "$scanner" -db https://vuln.go.dev -json ./... > "$output_dir/$label.json" \
-      2> "$output_dir/$label.stderr"
-  ); then
+    export GOOS="$target_os" GOARCH="$target_arch" CGO_ENABLED=0 &&
+    go list ./... > "$output_dir/$label-packages.txt" &&
+    "$scanner" -db https://vuln.go.dev -json ./... > "$output_dir/$label.json"
+  ) 2> "$output_dir/$label.stderr"; then
     if python3 "$project_root/scripts/check-vulnerability-report.py" "$output_dir/$label.json" \
       --module "$module_path" --target "$target_os/$target_arch" --scanner-version "$scanner_version" --go-version "$go_version" \
-      --summary "$output_dir/$label-summary.json"; then
+      --package-roots "$output_dir/$label-packages.txt" --summary "$output_dir/$label-summary.json"; then
       outcome=passed
     else
       status=$?
