@@ -81,7 +81,8 @@ class DarwinAuditCommandCaptureTests(unittest.TestCase):
                 self.assertTrue(report["commandPassed"])
                 self.assertFalse(report["productionQualificationComplete"])
                 self.assertIn("cmd/accessweaver/managed_audit_ordinary_darwin_test.go", report["sourceSHA256"])
-                self.assertEqual(len(report["sourceSHA256"]), 4)
+                self.assertIn("cmd/accessweaver/managed_audit_commands_darwin_test.go", report["sourceSHA256"])
+                self.assertEqual(len(report["sourceSHA256"]), 5)
                 self.assertEqual(command[:4], ["/usr/bin/sudo", "-n", "/usr/bin/env", "-i"])
                 source_bindings = [value for value in command if value.startswith("GITHUB_SHA=")]
                 self.assertEqual(source_bindings, ["GITHUB_SHA=" + SOURCE_COMMIT])
@@ -103,7 +104,7 @@ class DarwinAuditCommandCaptureTests(unittest.TestCase):
     def test_worker_bootstrap_diagnostics_preserve_only_fixed_labels(self):
         labels = [
             "ordinary Darwin audit bootstrap failed: worker-ipc-" + stage
-            for stage in ("endpoints", "request", "reply", "binding")
+            for stage in ("endpoints", "request", "reply", "reply-timeout", "binding")
         ] + [
             "ordinary Darwin audit worker bootstrap failed: " + stage
             for stage in ("request-descriptor", "reply-descriptor", "wire-files",

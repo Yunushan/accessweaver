@@ -2,6 +2,7 @@ name: Native macOS recorded audit command qualification
 
 on:
   workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -58,6 +59,8 @@ jobs:
         env:
           ACCESSWEAVER_DISPOSABLE_DARWIN_AUDIT_TEST: '1'
         run: go test -race ./internal/audit -run '^TestDarwin' -count=1
+      - name: Worker protocol and bounded diagnostic contracts
+        run: CGO_ENABLED=0 go test ./cmd/accessweaver -run '^TestDarwinOrdinary(Protocol|Progress|AliasReply)' -count=1
       - name: Ordinary recorded commands and signed required-policy acceptance
         shell: bash
         env:
