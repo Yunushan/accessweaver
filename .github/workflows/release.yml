@@ -6,6 +6,9 @@ on:
     tags: ['v*']
     branches: [codex/dns-adapter-coverage]
     paths:
+      - .gitattributes
+      - go.mod
+      - go.sum
       - .github/workflows/release.yml
       - .github/workflows/darwin-audit-commands.yml
       - .github/workflows/windows-audit-storage.yml
@@ -26,6 +29,21 @@ on:
       - scripts/check-native-environment.cjs
       - scripts/check-native-environment.test.cjs
       - scripts/check-packaged-evidence.cjs
+      - scripts/check-packaged-evidence.test.cjs
+      - scripts/stage_packaged_native.py
+      - scripts/test_stage_packaged_native.py
+      - scripts/packaged_windows_discovery.py
+      - scripts/test_packaged_windows_discovery.py
+      - scripts/test-backup-interop.cjs
+      - scripts/test-recovery-interop.cjs
+      - scripts/test-packaged-diagnostics.cjs
+      - scripts/test-unix-controller.py
+      - scripts/test-linux-session.sh
+      - scripts/bsd_packaged_candidate.py
+      - scripts/bsd_test_observations.py
+      - scripts/test-bsd-guest.py
+      - scripts/test-openbsd-guest.py
+      - scripts/check_provenance_rejections.py
       - scripts/verify-release.py
       - scripts/verify_release_provenance.py
       - scripts/verify_release_rebuild.py
