@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "scope": "hosted-dnscrypt-port-admission",
+  "sourceCommit": "4ac16aaf7b17cd344d37a519bfa6d9ac3871c54c",
+  "run": 44043783900,
+  "qualification": [
+    {
+      "architecture": "amd64",
+      "artifact": 14310558150,
+      "archiveSHA256": "14343dd6a2318be2ae17a275838bbb443d3730e3571a4807d536f6e2c723a25d",
+      "jobOutcome": "passed",
+      "portConflictObserved": false,
+      "configurationAccepted": true,
+      "ordinaryResolverVerified": true,
+      "originalStateVerified": true,
+      "serviceRemoved": true,
+      "snapshotRemoved": true
+    },
+    {
+      "architecture": "arm64",
+      "artifact": 14311184419,
+      "archiveSHA256": "cfae08c2b3c563056b19d7ef0d6047e08ea981d884a8865d32af52ceb8a0aaef",
+      "jobOutcome": "failed",
+      "preexistingIPv4UDPWildcard": true,
+      "configurationAccepted": false,
+      "refusalStage": "configuration-port-in-use",
+      "originalStateVerified": true,
+      "roundtripVerified": false
+    }
+  ],
+  "bothArchitecturesRoundtripVerified": false,
+  "rebootQualified": false,
+  "productionQualificationComplete": false,
+  "sourceSHA256": {
+    "internal/workflow/windows.ps1": "aa31064e114cc3f930b3d22e32bc253f4542a15c76699379edbe9cbdd0937f07",
+    "scripts/test-native-doh.ps1": "ef29015f647e3563fabf50ac1545cf4547dbb39554701dc5fbe2af7cbee7c8c0",
+    "scripts/native-doh-scenario.ps1": "4d6294a52c53219090216aa0c39bb0610303f1bef1a6d73e5114587d7e52f064",
+    "scripts/test-dns-recovery-contracts.ps1": "72e60b62b5b0e66ce6eb6d78cb04812676c72cb6e6bf41b3e7bb729f8b7c0d7f",
+    ".github/workflows/native-doh.yml": "fdc7bd5a5e0f0f188bf4db7910ccf83e46d301049dc29fbcc4bd193106ef9ac6"
+  }
+}
