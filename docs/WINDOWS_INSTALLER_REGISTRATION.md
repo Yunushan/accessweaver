@@ -79,6 +79,14 @@ The existing version, destination, and approval-pin format remains compatible
 with the detector. The disposable registry fixture checks ordinary marker
 creation and refusal of a linked parent, including when creation is requested.
 
+The [no-follow marker run](https://github.com/Yunushan/accessweaver/actions/runs/44006688562)
+passed the installer and managed detector contracts and all 48 registry fixture
+assertions on AMD64 and ARM64 at `5be66f439b7d9ba754397082aee352eac0f4d3ba`.
+Each fixture reported exact cleanup. The AMD64 receipt is artifact `14294812607`
+with ZIP SHA-256 `73e94165311949d1918862d8474dd38ded52e11ea2e5830f217cd97ea2f55a23`.
+The ARM64 receipt is artifact `14295495053` with ZIP SHA-256
+`41c73214b819a067715548ff410bd371978f6f4881f72faacc849f0f2ec4c154`.
+
 The [two-transaction recovery run](https://github.com/Yunushan/accessweaver/actions/runs/44004076267)
 passed all 46 assertions and confirmed exact fixture cleanup on AMD64 and ARM64
 at `7d6833963933598a0cc84106f83d09f7c8505f91`. Recovery refused a mismatched
