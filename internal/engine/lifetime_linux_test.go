@@ -48,7 +48,7 @@ func TestLinuxLifetimeRejectsSignalsInsideActualReapToOutputDrain(t *testing.T) 
 	f.start("output", func(owner *ownedProcess) {
 		owner.admittedDispatch = func(_ int, invoke func() error) error { admissions.Add(1); return invoke() }
 	}, nil)
-	lifetimeAwait(t, writer.entered, "actual output copy did not enter destination writer")
+	f.await(writer.entered, "output-write", "actual output copy did not enter destination writer")
 	f.write('q')
 	if lifetimeLinuxWait(f.owner.cmd.Process.Pid, unix.WEXITED, true) != nil {
 		t.Fatal("actual child reap was not witnessed during output drain")
@@ -95,7 +95,7 @@ func TestLinuxLifetimeAdmittedSignalKeepsActuallyExitedChildUnreaped(t *testing.
 			return err
 		}, killProcess, 3*time.Second, time.Second)
 	}()
-	lifetimeAwait(t, entered, "native dispatch did not enter its owned barrier")
+	f.await(entered, "signal-admission", "native dispatch did not enter its owned barrier")
 	f.read('t')
 	if lifetimeLinuxWait(f.owner.cmd.Process.Pid, unix.WEXITED, false) != nil {
 		t.Fatal("exited child was not retained waitable during admitted dispatch")
@@ -114,7 +114,7 @@ func TestLinuxLifetimeAdmittedSignalKeepsActuallyExitedChildUnreaped(t *testing.
 	case <-time.After(8 * time.Second):
 		t.Fatal("retained native dispatch did not drain")
 	}
-	lifetimeExit(t, f.run, RunStopped, 0)
+	f.exit(RunStopped, 0)
 }
 
 func TestLinuxLifetimeImmediateExitBeforeObserverBind(t *testing.T) {
@@ -130,7 +130,7 @@ func TestLinuxLifetimeImmediateExitBeforeObserverBind(t *testing.T) {
 			return nil
 		}}
 	}, nil)
-	result := lifetimeExit(t, f.run, RunExited, 0)
+	result := f.exit(RunExited, 0)
 	if !observed.Load() || result.LifecycleErr != nil {
 		t.Fatal("already-exited unreaped child was not observed correctly")
 	}
@@ -157,7 +157,7 @@ func TestLinuxLifetimeStoppedChildIsNotAnExit(t *testing.T) {
 		t.Fatal("owned stopped child could not resume")
 	}
 	f.write('q')
-	lifetimeExit(t, f.run, RunExited, 0)
+	f.exit(RunExited, 0)
 }
 
 func TestLinuxLifetimeAuthorizationRevocationAfterActualReapCannotSignal(t *testing.T) {
@@ -184,14 +184,14 @@ func TestLinuxLifetimeAuthorizationRevocationAfterActualReapCannotSignal(t *test
 	case <-time.After(5 * time.Second):
 		t.Fatal("actual authorization context unavailable")
 	}
-	lifetimeAwait(t, writer.entered, "real output writer did not block")
+	f.await(writer.entered, "output-write", "real output writer did not block")
 	f.write('q')
 	if lifetimeLinuxWait(f.owner.cmd.Process.Pid, unix.WEXITED, true) != nil {
 		t.Fatal("authorization fixture actual reap was not observed")
 	}
 	before := admissions.Load()
 	revoked.Store(true)
-	lifetimeAwait(t, authorization.Done(), "actual managed authorization did not revoke")
+	f.await(authorization.Done(), "policy-revocation", "actual managed authorization did not revoke")
 	if !managed.IsPolicyError(context.Cause(authorization)) {
 		t.Fatal("actual revocation cause was not retained")
 	}

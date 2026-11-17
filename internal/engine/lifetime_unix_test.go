@@ -384,7 +384,8 @@ type lifetimeObserverTrace struct {
 
 var lifetimeDiagnosticStages = []string{
 	"launch", "inherited-endpoint-close", "control-write", "control-reply",
-	"identity-reply",
+	"identity-reply", "wait-barrier", "signal-admission", "cleanup-fault", "terminal-wait", "terminal-publication", "terminal-reason", "terminal-status", "graceful-stop",
+	"output-write", "shutdown-lock", "launch-publication", "shutdown-generation", "policy-revocation",
 }
 var lifetimeObserverPhases = []string{
 	"not-created", "binding", "bound", "bind-failed", "waiting", "exit-observed",
@@ -659,28 +660,51 @@ func (f *lifetimeFixture) close() {
 		f.t.Error("lifetime fixture removal failed")
 	}
 }
-func lifetimeAwait(t *testing.T, done <-chan struct{}, message string) {
-	t.Helper()
+func (f *lifetimeFixture) await(done <-chan struct{}, stage, message string) {
+	f.t.Helper()
 	select {
 	case <-done:
 	case <-time.After(8 * time.Second):
-		t.Fatal(message)
+		f.reportFailure(stage)
+		f.t.Fatal(message)
 	}
 }
-func lifetimeExit(t *testing.T, run *Run, reason RunReason, exitCode int) RunResult {
-	t.Helper()
-	result := waitTracked(t, run)
+
+func (f *lifetimeFixture) waitResult() RunResult {
+	f.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	result, err := f.run.Wait(ctx)
+	if err != nil {
+		f.reportFailure("terminal-wait")
+		f.t.Fatal("owned launch did not publish its terminal result")
+	}
+	select {
+	case <-f.run.Done():
+	default:
+		f.reportFailure("terminal-publication")
+		f.t.Fatal("result returned before completion was published")
+	}
+	return result
+}
+
+func (f *lifetimeFixture) exit(reason RunReason, exitCode int) RunResult {
+	f.t.Helper()
+	result := f.waitResult()
 	if result.Reason != reason {
-		t.Fatal("lifetime fixture terminal reason differs")
+		f.reportFailure("terminal-reason")
+		f.t.Fatal("lifetime fixture terminal reason differs")
 	}
 	if exitCode == 0 {
 		if result.WaitErr != nil {
-			t.Fatal("lifetime fixture successful wait lost")
+			f.reportFailure("terminal-status")
+			f.t.Fatal("lifetime fixture successful wait lost")
 		}
 	} else {
 		var native *exec.ExitError
 		if !errors.As(result.WaitErr, &native) || native.ExitCode() != exitCode {
-			t.Fatal("lifetime fixture original exit status lost")
+			f.reportFailure("terminal-status")
+			f.t.Fatal("lifetime fixture original exit status lost")
 		}
 	}
 	return result
@@ -720,7 +744,7 @@ func TestUnixLifetimeRetiresSignalsAcrossWaitAndPublication(t *testing.T) {
 				}
 			}, after)
 			f.write('q')
-			lifetimeAwait(t, entered, "lifetime wait barrier was not reached")
+			f.await(entered, "wait-barrier", "lifetime wait barrier was not reached")
 			before := admissions.Load()
 			var stale atomic.Int64
 			refused := func(*os.Process) error { stale.Add(1); return nil }
@@ -739,7 +763,7 @@ func TestUnixLifetimeRetiresSignalsAcrossWaitAndPublication(t *testing.T) {
 				t.Fatal("unpublished owned launch admitted replacement")
 			}
 			releaseOnce.Do(func() { close(release) })
-			result := lifetimeExit(t, f.run, RunExited, 0)
+			result := f.exit(RunExited, 0)
 			if result.LifecycleErr != nil || result.PolicyErr != nil {
 				t.Fatal("retired refusal changed original terminal outcome")
 			}
@@ -766,7 +790,7 @@ func TestUnixLifetimeAdmittedSignalResolvesBeforeConsumingWait(t *testing.T) {
 			return err
 		}, killProcess, 3*time.Second, time.Second)
 	}()
-	lifetimeAwait(t, signalEntered, "lifetime signal admission was not entered")
+	f.await(signalEntered, "signal-admission", "lifetime signal admission was not entered")
 	f.read('t')
 	select {
 	case <-beforeWait:
@@ -790,13 +814,15 @@ func TestUnixLifetimeAdmittedSignalResolvesBeforeConsumingWait(t *testing.T) {
 	select {
 	case err := <-stopped:
 		if err != nil {
+			f.reportFailure("graceful-stop")
 			t.Fatal("owned graceful stop failed")
 		}
 	case <-time.After(8 * time.Second):
+		f.reportFailure("graceful-stop")
 		t.Fatal("owned graceful stop did not drain")
 	}
-	lifetimeAwait(t, beforeWait, "consuming wait did not follow resolved signal")
-	result := lifetimeExit(t, f.run, RunStopped, 0)
+	f.await(beforeWait, "wait-barrier", "consuming wait did not follow resolved signal")
+	result := f.exit(RunStopped, 0)
 	if result.LifecycleErr != nil || result.PolicyErr != nil {
 		t.Fatal("resolved native dispatch lost actual graceful status")
 	}
@@ -819,7 +845,7 @@ func TestUnixLifetimeCleanupFaultRetainsOwnershipUntilExplicitRetry(t *testing.T
 	}, nil)
 	t.Cleanup(func() { refuse.Store(false) })
 	f.write('q')
-	lifetimeAwait(t, f.run.Fault(), "cleanup fault was not published")
+	f.await(f.run.Fault(), "cleanup-fault", "cleanup fault was not published")
 	if !errors.Is(f.run.PendingError(), ErrProcessCleanupPending) || consuming.Load() != 0 {
 		t.Fatal("cleanup fault lost pending ownership")
 	}
@@ -844,7 +870,7 @@ func TestUnixLifetimeCleanupFaultRetainsOwnershipUntilExplicitRetry(t *testing.T
 	if err := f.manager.RetryCleanup(f.run); err != nil {
 		t.Fatal("retained cleanup retry failed")
 	}
-	result := lifetimeExit(t, f.run, RunFailed, 0)
+	result := f.exit(RunFailed, 0)
 	if !errors.Is(result.LifecycleErr, ErrProcessLifecycle) || consuming.Load() != 1 {
 		t.Fatal("recovered cleanup fault lost actual wait or sticky uncertainty")
 	}
@@ -881,7 +907,7 @@ func TestUnixLifetimeObserverBindFailureKeepsAcceptedRun(t *testing.T) {
 	if f.run == nil {
 		t.Fatal("post-start observer failure erased accepted launch")
 	}
-	result := waitTracked(t, f.run)
+	result := f.waitResult()
 	if result.WaitErr == nil || !errors.Is(result.LifecycleErr, ErrProcessLifecycle) || result.Reason != RunFailed {
 		t.Fatal("post-start observer failure lost native wait and uncertainty")
 	}
@@ -892,7 +918,7 @@ func TestUnixLifetimeObserverCloseFailureRetainsActualExit(t *testing.T) {
 		owner.observer = &lifetimeFaultObserver{base: owner.observer, closeErr: syscall.EIO}
 	}, nil)
 	f.write('f')
-	result := lifetimeExit(t, f.run, RunFailed, 23)
+	result := f.exit(RunFailed, 23)
 	if !errors.Is(result.LifecycleErr, ErrProcessLifecycle) {
 		t.Fatal("late observer close failure lost lifetime uncertainty")
 	}
@@ -916,7 +942,7 @@ func TestUnixLifetimeRealDescendantWaitAcknowledgedBeforeLeaderExit(t *testing.T
 	case <-time.After(8 * time.Second):
 		t.Fatal("descendant group stop did not finish")
 	}
-	result := lifetimeExit(t, f.run, RunStopped, 0)
+	result := f.exit(RunStopped, 0)
 	if result.LifecycleErr != nil {
 		t.Fatal("parent-acknowledged descendant wait became uncertain")
 	}
@@ -1044,7 +1070,7 @@ func TestUnixLifetimeOutsideSessionCannotJoinEngineGroup(t *testing.T) {
 	}
 	outside.wait()
 	f.write('q')
-	lifetimeExit(t, f.run, RunExited, 0)
+	f.exit(RunExited, 0)
 }
 
 func TestUnixLifetimeCanceledWaitAndShutdownDoNotAbandonAdmittedSignal(t *testing.T) {
@@ -1057,7 +1083,7 @@ func TestUnixLifetimeCanceledWaitAndShutdownDoNotAbandonAdmittedSignal(t *testin
 	go func() {
 		stopped <- f.manager.stop(func(*os.Process) error { close(entered); <-release; return syscall.EPERM }, func(*os.Process) error { return syscall.EPERM }, 0, 0)
 	}()
-	lifetimeAwait(t, entered, "owned signal admission unavailable")
+	f.await(entered, "signal-admission", "owned signal admission unavailable")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if got, err := f.run.Wait(ctx); !errors.Is(err, context.Canceled) || got != (RunResult{}) {
@@ -1080,14 +1106,14 @@ func TestUnixLifetimeCanceledWaitAndShutdownDoNotAbandonAdmittedSignal(t *testin
 	case <-time.After(8 * time.Second):
 		t.Fatal("admitted failed signal did not resolve")
 	}
-	lifetimeAwait(t, f.run.Fault(), "shutdown did not retain failed cleanup")
+	f.await(f.run.Fault(), "cleanup-fault", "shutdown did not retain failed cleanup")
 	if !errors.Is(f.run.PendingError(), ErrProcessCleanupPending) {
 		t.Fatal("shutdown lost pending fault")
 	}
 	if err := f.manager.RetryCleanup(f.run); err != nil {
 		t.Fatal("shutdown retained cleanup could not be retried")
 	}
-	result := lifetimeExit(t, f.run, RunFailed, -1)
+	result := f.exit(RunFailed, -1)
 	var exit *exec.ExitError
 	if !errors.As(result.WaitErr, &exit) || !errors.Is(result.LifecycleErr, ErrProcessLifecycle) {
 		t.Fatal("shutdown recovery lost actual forced wait")
@@ -1138,7 +1164,7 @@ func TestUnixLifetimeAlreadyExitedChildBeforeNativeObserverBinding(t *testing.T)
 			return nil
 		}}
 	}, nil)
-	result := lifetimeExit(t, f.run, RunExited, 0)
+	result := f.exit(RunExited, 0)
 	if !sawExit.Load() || result.LifecycleErr != nil {
 		t.Fatal("late native observer registration lost original exit")
 	}
@@ -1204,7 +1230,7 @@ func TestUnixLifetimeEscalationFailureReturnsPendingFault(t *testing.T) {
 	if !errors.Is(err, ErrProcessCleanupPending) {
 		t.Fatal("forced escalation hid fixed cleanup fault")
 	}
-	lifetimeAwait(t, f.run.Fault(), "forced escalation did not publish pending fault")
+	f.await(f.run.Fault(), "cleanup-fault", "forced escalation did not publish pending fault")
 	select {
 	case <-f.run.Done():
 		t.Fatal("failed forced escalation published completion")
@@ -1216,7 +1242,7 @@ func TestUnixLifetimeEscalationFailureReturnsPendingFault(t *testing.T) {
 	if err := f.manager.RetryCleanup(f.run); err != nil {
 		t.Fatal("failed forced escalation recovery failed")
 	}
-	result := lifetimeExit(t, f.run, RunFailed, -1)
+	result := f.exit(RunFailed, -1)
 	if !errors.Is(result.LifecycleErr, ErrProcessLifecycle) {
 		t.Fatal("failed forced escalation recovery lost sticky uncertainty")
 	}

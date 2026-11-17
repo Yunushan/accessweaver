@@ -87,7 +87,7 @@ func TestUnixShutdownRepeatedCallersShareOneActualStop(t *testing.T) {
 			t.Fatal("shared graceful shutdown failed")
 		}
 	}
-	result := lifetimeExit(t, f.run, RunStopped, 0)
+	result := f.exit(RunStopped, 0)
 	if result.LifecycleErr != nil || result.PolicyErr != nil || admissions.Load() != 2 {
 		t.Fatal("repeated shutdown duplicated TERM or final owned cleanup")
 	}
@@ -111,15 +111,15 @@ func TestUnixShutdownDrainsActualBlockedOutputAfterStopTimeout(t *testing.T) {
 		owner.admittedDispatch = func(_ int, invoke func() error) error { admissions.Add(1); return invoke() }
 		owner.beforeWait = func() { close(beforeWait) }
 	}, nil)
-	lifetimeAwait(t, writer.entered, "shutdown fixture did not enter the actual output writer")
+	f.await(writer.entered, "output-write", "shutdown fixture did not enter the actual output writer")
 	background := shutdownAsync(f.manager)
 	f.read('t') // The sole Stop is now inside its graceful wait, holding opMu.
 	shared := shutdownState(t, f.manager)
 	f.write('q')
-	lifetimeAwait(t, beforeWait, "shutdown child did not retire its native signal owner")
+	f.await(beforeWait, "wait-barrier", "shutdown child did not retire its native signal owner")
 	// This lock witness cannot pass until Stop releases its real operation lock.
 	// The destination writer remains blocked throughout the ordinary stop budgets.
-	lifetimeAwait(t, shutdownOperationReleased(f.manager), "shutdown retained operation lock while draining output")
+	f.await(shutdownOperationReleased(f.manager), "shutdown-lock", "shutdown retained operation lock while draining output")
 	select {
 	case <-f.run.Done():
 		t.Fatal("blocked output was reported as drained")
@@ -150,7 +150,7 @@ func TestUnixShutdownDrainsActualBlockedOutputAfterStopTimeout(t *testing.T) {
 	if terminal == nil || !strings.Contains(terminal.Error(), "within timeout") {
 		t.Fatal("late shutdown drain erased the original Stop timeout")
 	}
-	result := waitTracked(t, f.run)
+	result := f.waitResult()
 	if !f.owner.cmd.ProcessState.Success() || result.LifecycleErr != nil || result.PolicyErr != nil || writer.bytes.Load() != int64(len("lifetime-output-marker\n")) {
 		t.Fatal("late shutdown drain lost actual exit or output")
 	}
@@ -184,7 +184,7 @@ func TestUnixShutdownPendingCleanupRequiresExplicitSameRunRetry(t *testing.T) {
 	}, nil)
 	t.Cleanup(func() { refuse.Store(false) })
 	f.write('q')
-	lifetimeAwait(t, f.run.Fault(), "shutdown cleanup fault was not published")
+	f.await(f.run.Fault(), "cleanup-fault", "shutdown cleanup fault was not published")
 	if !errors.Is(f.run.PendingError(), ErrProcessCleanupPending) {
 		t.Fatal("shutdown cleanup lost its fixed pending fault")
 	}
@@ -198,7 +198,7 @@ func TestUnixShutdownPendingCleanupRequiresExplicitSameRunRetry(t *testing.T) {
 			t.Fatal("pending cleanup created another shutdown worker")
 		}
 	}
-	lifetimeAwait(t, shutdownOperationReleased(f.manager), "pending shutdown held operation lock against explicit recovery")
+	f.await(shutdownOperationReleased(f.manager), "shutdown-lock", "pending shutdown held operation lock against explicit recovery")
 	if attempts.Load() != 1 {
 		t.Fatal("shutdown automatically retried native cleanup")
 	}
@@ -226,7 +226,7 @@ func TestUnixShutdownPendingCleanupRequiresExplicitSameRunRetry(t *testing.T) {
 	if !errors.Is(terminal, ErrProcessCleanupPending) || !errors.Is(terminal, ErrProcessLifecycle) {
 		t.Fatal("shutdown recovery erased initial fault or terminal uncertainty")
 	}
-	result := lifetimeExit(t, f.run, RunFailed, 0)
+	result := f.exit(RunFailed, 0)
 	if !errors.Is(result.LifecycleErr, ErrProcessLifecycle) || attempts.Load() != 2 {
 		t.Fatal("shutdown recovery changed actual zero exit or repeated cleanup")
 	}
@@ -252,7 +252,7 @@ func TestUnixShutdownPropagatesLifecycleErrorWithoutChangingActualExitZero(t *te
 	if !errors.Is(terminal, ErrProcessLifecycle) {
 		t.Fatal("shutdown discarded terminal lifetime uncertainty")
 	}
-	result := lifetimeExit(t, f.run, RunFailed, 0)
+	result := f.exit(RunFailed, 0)
 	if result.WaitErr != nil || !errors.Is(result.LifecycleErr, ErrProcessLifecycle) {
 		t.Fatal("shutdown rewrote the actual successful process wait")
 	}
@@ -267,7 +267,7 @@ func TestUnixShutdownDoesNotImportInactiveHistoricalFailure(t *testing.T) {
 		owner.observer = &lifetimeFaultObserver{base: owner.observer, closeErr: syscall.EIO}
 	}, nil)
 	f.write('q')
-	result := lifetimeExit(t, f.run, RunFailed, 0)
+	result := f.exit(RunFailed, 0)
 	if !errors.Is(result.LifecycleErr, ErrProcessLifecycle) {
 		t.Fatal("historical fixture lifetime failure was not real")
 	}
@@ -299,7 +299,7 @@ func TestUnixShutdownDrainsRealAcceptedStartPublishedAfterClosing(t *testing.T) 
 			owner.admittedDispatch = func(_ int, invoke func() error) error { admissions.Add(1); return invoke() }
 		}, nil)
 	}()
-	lifetimeAwait(t, entered, "real accepted Start did not reach publication boundary")
+	f.await(entered, "launch-publication", "real accepted Start did not reach publication boundary")
 	f.read('r') // The real image is executing before manager publication.
 	stateRead := make(chan Snapshot, 1)
 	go func() { stateRead <- f.manager.Snapshot() }()
@@ -319,7 +319,7 @@ func TestUnixShutdownDrainsRealAcceptedStartPublishedAfterClosing(t *testing.T) 
 	default:
 	}
 	once.Do(func() { close(release) })
-	lifetimeAwait(t, startReturned, "accepted Start failed to publish after closing")
+	f.await(startReturned, "launch-publication", "accepted Start failed to publish after closing")
 	if f.run == nil {
 		t.Fatal("successful Start returned no accepted generation")
 	}
@@ -327,7 +327,7 @@ func TestUnixShutdownDrainsRealAcceptedStartPublishedAfterClosing(t *testing.T) 
 	if err := f.manager.Shutdown(context.Background()); err != nil {
 		t.Fatal("late accepted generation was not drained")
 	}
-	result := lifetimeExit(t, f.run, RunStopped, 0)
+	result := f.exit(RunStopped, 0)
 	if result.LifecycleErr != nil || result.PolicyErr != nil || admissions.Load() != 2 || shutdownState(t, f.manager) != shared {
 		t.Fatal("late accepted generation lost shared exact shutdown ownership")
 	}
@@ -373,21 +373,21 @@ func TestUnixShutdownRetainsCompletedGenerationPublishedAfterEntry(t *testing.T)
 			owner.admittedDispatch = func(_ int, invoke func() error) error { admissions.Add(1); return invoke() }
 		}, nil)
 	}()
-	lifetimeAwait(t, started, "completed-generation real Start did not reach publication barrier")
+	f.await(started, "launch-publication", "completed-generation real Start did not reach publication barrier")
 	f.read('r')
 	// Configure before the first Shutdown. The native child is accepted but is
 	// still unpublished; the worker may not serialize/capture until released.
 	f.manager.beforeShutdownCapture = func() { close(workerPaused); <-releaseWorker }
 	shutdownCallerTimeout(t, f.manager)
-	lifetimeAwait(t, workerPaused, "shutdown worker did not reach generation capture barrier")
+	f.await(workerPaused, "shutdown-generation", "shutdown worker did not reach generation capture barrier")
 	shared = shutdownState(t, f.manager)
 	startOnce.Do(func() { close(releaseStart) })
-	lifetimeAwait(t, startReturned, "accepted generation did not publish while shutdown worker paused")
+	f.await(startReturned, "launch-publication", "accepted generation did not publish while shutdown worker paused")
 	if f.run == nil {
 		t.Fatal("accepted completed generation lost its Run")
 	}
 	f.write('q')
-	actual := lifetimeExit(t, f.run, RunFailed, 0)
+	actual := f.exit(RunFailed, 0)
 	if !errors.Is(actual.LifecycleErr, ErrProcessLifecycle) || actual.WaitErr != nil {
 		t.Fatal("completed generation fixture lost actual zero exit or uncertainty")
 	}
