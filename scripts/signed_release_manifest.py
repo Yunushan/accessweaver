@@ -928,27 +928,27 @@ def file_identity(info):
     return info.st_dev, info.st_ino, stat.S_IFMT(info.st_mode), info.st_size, info.st_mtime_ns, info.st_nlink
 
 
-def verify_staged_update(path, size, approved_digest):
+def verify_staged_update(path, size, approved_digest, *, subject="Staged installer"):
     before = path.lstat()
     require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_size == size
             and not getattr(before, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT,
-            "Expected a bounded ordinary staged installer")
+            f"Expected a bounded ordinary {subject.lower()}")
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     with os.fdopen(os.open(path, flags), "rb") as stream:
         opened = os.fstat(stream.fileno())
         require(stat.S_ISREG(opened.st_mode) and file_identity(opened) == file_identity(before),
-                "Staged installer changed before verification")
+                f"{subject} changed before verification")
         result = hashlib.sha256()
         remaining = size
         while remaining:
             block = stream.read(min(remaining, 1 << 20))
-            require(block, "Staged installer changed during verification")
+            require(block, f"{subject} changed during verification")
             result.update(block)
             remaining -= len(block)
         require(not stream.read(1) and file_identity(os.fstat(stream.fileno())) == file_identity(before)
                 and file_identity(path.lstat()) == file_identity(before),
-                "Staged installer changed during verification")
-        require(result.hexdigest() == approved_digest, "Staged installer differs from the approved digest")
+                f"{subject} changed during verification")
+        require(result.hexdigest() == approved_digest, f"{subject} differs from the approved digest")
 
 
 def staging_directory_identity(path):
@@ -1352,20 +1352,35 @@ def write_intune_detector(commit, entry, output, directory, policy):
             "Write the Intune detector to a new .ps1 file outside the release directory")
     identity = staging_directory_identity(parent)
     destination = parent / output.name
-    with tempfile.TemporaryDirectory(prefix=".accessweaver-intune-", dir=parent) as temporary:
-        staged = Path(temporary) / "detector.ps1"
-        with staged.open("xb") as stream:
-            stream.write(rendered)
-            stream.flush()
-            os.fsync(stream.fileno())
+    script_pin = hashlib.sha256(rendered).hexdigest()
+
+    def check_directory():
         require(staging_directory_identity(parent) == identity,
                 "Intune detector output directory changed")
-        require_current_revocation_policy(policy)
-        publish_staged_installer(staged, destination)
+
+    with hold_windows_staging_directory(parent):
+        check_directory()
+        with tempfile.TemporaryDirectory(prefix=".accessweaver-intune-", dir=parent) as temporary:
+            staged = Path(temporary) / "detector.ps1"
+            with staged.open("xb") as stream:
+                stream.write(rendered)
+                stream.flush()
+                os.fsync(stream.fileno())
+            verify_staged_update(staged, len(rendered), script_pin, subject="Intune detector")
+            check_directory()
+            require_current_revocation_policy(policy)
+            publish_staged_installer(staged, destination)
+        check_directory()
+        with ExitStack() as published:
+            if os.name == "nt":
+                published.enter_context(hold_windows_setup(destination))
+            verify_staged_update(destination, len(rendered), script_pin, subject="Intune detector")
+            check_directory()
+            require_current_revocation_policy(policy)
     return {
         "target": entry["target"], "version": entry["version"], "file": destination.name,
         "rebootEvidenceSHA256": entry["rebootEvidenceSHA256"], "sourceDetectorSHA256": source_pin,
-        "scriptSHA256": hashlib.sha256(rendered).hexdigest(),
+        "scriptSHA256": script_pin,
     }
 
 

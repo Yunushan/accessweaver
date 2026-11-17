@@ -801,6 +801,26 @@ class SignedReleaseManifestTests(unittest.TestCase):
                     self.assertEqual(output.read_bytes(), b"\xef\xbb\xbf" + expected)
                 refused = self.root / "refused.ps1"
                 amd64_pin = evidence["amd64", "clean"][1]
+                detector_directory = self.root / "detector-output"
+                detector_directory.mkdir()
+                altered = detector_directory / "altered.ps1"
+                native_publish = release.publish_staged_installer
+
+                def change_published_detector(staged, destination):
+                    if destination == altered:
+                        if os.name == "nt":
+                            moved = detector_directory.with_name("moved-detector-output")
+                            with self.assertRaises(PermissionError):
+                                detector_directory.rename(moved)
+                        native_publish(staged, destination)
+                        valid = destination.read_bytes()
+                        destination.write_bytes(b"!" + valid[1:])
+                    else:
+                        native_publish(staged, destination)
+
+                with patch.object(release, "publish_staged_installer", side_effect=change_published_detector):
+                    with self.assertRaisesRegex(ValueError, "Intune detector differs from the approved digest"):
+                        self.verify(cert, pin, source, intune_detection=("amd64", amd64_pin, altered))
                 with self.assertRaisesRegex(ValueError, "No unique signed Windows detection entry"):
                     self.verify(cert, pin, source, intune_detection=("arm64", amd64_pin, refused))
                 with self.assertRaisesRegex(ValueError, "outside the release directory"):
