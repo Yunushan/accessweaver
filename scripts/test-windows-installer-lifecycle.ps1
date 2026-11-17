@@ -560,10 +560,15 @@ try {
     $faultSource=Join-Path $capsule 'setup-completion-source'
     $faultPayload=Join-Path $capsule 'setup-completion-payload'
     foreach($folder in @($faultSource,$faultPayload)){[void][IO.Directory]::CreateDirectory($folder)}
-    foreach($name in @('windows-installer-lock.iss','windows-installer-version.iss','windows-installer-registry.iss','windows-installer-restore.iss')){
+    $productSetup=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'windows-installer.iss'))
+    # Fault variants keep the genuine Setup mode and its source-owned includes.
+    $fixtureIncludes=[regex]::Matches($productSetup,'(?m)^[ 	]*#include[ 	]+"([^"\r\n]+)"')
+    Require ($fixtureIncludes.Count -gt 0) 'Expected local installer source includes'
+    foreach($include in $fixtureIncludes){
+        $name=$include.Groups[1].Value
+        Require ($name -cmatch '\Awindows-installer-[a-z-]+\.iss\z') 'Unexpected installer include name'
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $faultSource -ErrorAction Stop
     }
-    $productSetup=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'windows-installer.iss'))
     $digestDefinition='#define PayloadSBOMDigest GetSHA256OfFile(PayloadSBOMPath)'
     Require ([regex]::Matches($productSetup,[regex]::Escape($digestDefinition)).Count -eq 1) 'Expected exactly one Setup SBOM digest definition'
     $faultSetup=Join-Path $faultSource 'windows-installer.iss'
