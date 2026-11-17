@@ -23,8 +23,8 @@ $ast=[Management.Automation.Language.Parser]::ParseFile($sourcePath,[ref]$tokens
 if($parseErrors.Count){throw 'DNS workflow source did not parse'}
 $selected=@('Assert-DNSCryptConfiguration','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Assert-DNSCryptServiceState','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Get-ManagedServiceCommandDigest','Assert-DNSMutationAdapter','Test-DNSRecoveryUsesAdapterOwnership','Test-DNSFamilyMatchesOriginal','Read-ObservedDNSFamily','Test-DNSFamilyNeedsRollback','Get-ActiveDNSAdapters','Assert-ConfiguredDNSDohPolicy','Get-DNSDohProviders','Test-DNSRecoveryUsesDohOwnership','Get-DNSOriginalDohEntry','Test-DNSDohEntriesEqual','Test-DNSRecoveryOwnsDoh','Get-DNSClientMutationRow','Read-DNSRecoveryFileBytes','Read-DNSRecoverySnapshot','Assert-DNSRecoverySnapshotUnchanged','Get-WorkflowRecoveryJournalLimit','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Assert-ConfiguredDNSServers','Assert-RestoredDNSFamily','Assert-RestoredDNSState','Get-StaticDNSServers','Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Assert-OriginalDNSModes','Read-OriginalDNSFamily','Read-OriginalDNSAdapter','Read-OriginalDNSNameServer','Get-DNSOverridePath','Read-DNSStaticOverride','Test-DNSAddressAnswer','Wait-OrdinaryDNSResolver','Wait-DNSCryptListeners','Get-ManagedDNSCryptListenerOwner','Wait-ManagedDNSCryptListeners','Get-EffectiveDNSCryptListeners','Assert-EffectiveDNSCryptListeners','Get-DNSCryptAdapterIdentities','Test-DNSCryptLoopbackAddress','Get-DNSCryptIndependentFamilies','Test-DNSCryptListenerNeeded','Assert-DNSCryptCanBeRemoved','Configure-DNS','Restore-DNS','Remove-Method','Remove-All')
 $allowed=@('Read-OwnedWireSockProfile','Remove-WireSockRefreshTask','Disconnect-OwnedWireSock','Native','Remove-ModernWireSockProfile','Restore-Drover','Get-ManagedFirewallRule','Remove-RecordedService','Remove-ManagedFirewallRule','Remove-Method','Under','Assert-DNSCryptConfiguration','Get-WorkflowFileHash','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Assert-DNSCryptServiceState','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Get-ManagedServiceCommandDigest','Get-CimInstance','Get-NetTCPConnection','Get-NetUDPEndpoint','Assert-DNSMutationAdapter','Test-DNSRecoveryUsesAdapterOwnership','Test-DNSFamilyMatchesOriginal','Read-ObservedDNSFamily','Test-DNSFamilyNeedsRollback','Get-ActiveDNSAdapters','Assert-ConfiguredDNSDohPolicy','Get-DNSDohProviders','Test-DNSRecoveryUsesDohOwnership','Get-DNSOriginalDohEntry','Test-DNSDohEntriesEqual','Test-DNSRecoveryOwnsDoh','Get-DNSClientMutationRow','Read-DNSRecoveryFileBytes','Read-DNSRecoverySnapshot','Assert-DNSRecoverySnapshotUnchanged','Get-WorkflowRecoveryJournalLimit','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Save-DNSRecoveryReceipt','Publish-WorkflowFile','No-Reparse','Get-Item','Assert-ConfiguredDNSServers','Assert-RestoredDNSFamily','Assert-RestoredDNSState','Get-StaticDNSServers','Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Assert-OriginalDNSModes','Read-OriginalDNSFamily','Read-OriginalDNSAdapter','Read-OriginalDNSNameServer','Get-DNSOverridePath','Read-DNSStaticOverride','Test-DNSAddressAnswer','Wait-OrdinaryDNSResolver','Wait-DNSCryptListeners','Get-ManagedDNSCryptListenerOwner','Wait-ManagedDNSCryptListeners','Get-EffectiveDNSCryptListeners','Assert-EffectiveDNSCryptListeners','Get-DNSCryptAdapterIdentities','Test-DNSCryptLoopbackAddress','Get-DNSCryptIndependentFamilies','Test-DNSCryptListenerNeeded','Assert-DNSCryptCanBeRemoved','Restore-DNS','Get-ItemProperty','Get-Command','Join-Path','Get-NetAdapter','Where-Object','ForEach-Object','Select-Object','Test-Path','Get-DnsClientServerAddress','Get-DnsClientDohServerAddress','Get-FileHash','Add-Member','ConvertTo-Json','Save-Journal','Ensure-Asset','Split-Path','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Get-Service','Restore-RecordedWorkflowFile','Install-EngineService','Set-Service','Start-Service','Restart-Service','Stop-Service','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress','Set-DnsClientServerAddress','Clear-DnsClientCache','Resolve-DnsName','Start-Sleep','Event','ConvertFrom-Json','Remove-Item','Remove-VerifiedDNSRecoverySnapshot')
-$selected+=@('Set-RestoredDNSFamily','Wait-RecordedServiceStopped','Assert-DNSCryptLoopbackPortsAvailable')
-$allowed+=@('Assert-DNSCryptLoopbackPortsAvailable')
+$selected+=@('Set-RestoredDNSFamily','Wait-RecordedServiceStopped','Assert-DNSCryptLoopbackPortsAvailable','Assert-DNSCryptListenerUnchanged')
+$allowed+=@('Assert-DNSCryptLoopbackPortsAvailable','Assert-DNSCryptListenerUnchanged')
 $allowed+=@('Set-RestoredDNSFamily','Invoke-DNSInterfaceSettings')
 $dohFirewallFunctions=@('Get-DNSDohPlaintextBlockID','Assert-DNSDohFirewallAvailable','Read-DNSDohPlaintextRules','Get-DNSDohPlaintextRule','Assert-DNSDohPlaintextRuleOwnership','Assert-DNSDohPlaintextBlock','Enable-DNSDohPlaintextBlock','Remove-DNSDohPlaintextBlock')
 $dnsCopyFunctions=@('ConvertFrom-DNSRecoverySnapshotBytes','Get-DNSRecoveryCopyPath','Read-DNSRecoveryCopy','Assert-DNSRecoveryCopyMatches','Publish-DNSRecoveryCopy')
@@ -56,6 +56,7 @@ $script:closedContractCodes+=@('doh-firewall-cim-raw-status','doh-firewall-cim-f
 $script:closedContractCodes+=@('doh-firewall-missing-store-reason','doh-firewall-diagnostic-does-not-mutate','doh-firewall-known-enforcement-reason','doh-firewall-status-diagnostic-does-not-mutate','doh-firewall-unavailable-or-unsupported-reason','doh-firewall-malformed-diagnostic-does-not-mutate')
 $script:closedContractCodes+=@('dnscrypt-port-conflict-before-mutation','dnscrypt-unreadable-port-before-mutation','dnscrypt-port-inventory-observed','dnscrypt-port-drift-before-service','dnscrypt-port-drift-recovers','doh-firewall-loss-before-next-adapter-write','doh-firewall-loss-restores-applied-family')
 $script:closedContractCodes+=@('doh-firewall-loss-stops-resolver-probes','doh-probe-firewall-loss-restores-state')
+$script:closedContractCodes+=@('dnscrypt-refuses-replaced-listener-during-cutover','dnscrypt-recovers-after-cutover-owner-loss')
 function Assert-DNS([bool]$Condition,[string]$Code){if(-not $Condition){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('DNS contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-DNS([scriptblock]$Operation,[string]$ExpectedMessage){
     $failed=$false
@@ -689,10 +690,13 @@ function Get-ManagedDNSCryptListenerOwner([string[]]$Servers,[string]$Binary,$En
     }
     if($script:resolverQueries){
         $script:finalOwnerReads++
-        if($script:listenerOwnerFault -ceq 'final-replaced' -and $script:finalOwnerReads -eq 2){return 'replacement'}
+        if($script:listenerOwnerFault -ceq 'final-replaced' -and $script:finalListenerAAAAQueries.Count -eq 2){return 'replacement'}
+        if($script:listenerOwnerFault -ceq 'final-stable-replacement' -and $script:finalOwnerReads -ge 3){return 'replacement'}
+        if($script:listenerOwnerFault -ceq 'before-aaaa'){return 'replacement'}
     }else{
         $script:initialOwnerReads++
         if($script:listenerOwnerFault -ceq 'initial-foreign'){throw 'Synthetic unowned listener'}
+        if($script:listenerOwnerFault -ceq 'between-adapters' -and (Mutation-Count) -eq 1){return 'replacement'}
     }
     return 'managed-fixture-owner'
 }
@@ -2083,9 +2087,9 @@ try {
     New-DNSCase;$script:emptyOrdinaryAAAAAnswers=1
     & {
         $probe=${function:Wait-OrdinaryDNSResolver}
-        function Wait-OrdinaryDNSResolver([int]$TimeoutSeconds,[string]$DohProtectionID) {
+        function Wait-OrdinaryDNSResolver([int]$TimeoutSeconds,[string]$DohProtectionID,$DNSCryptListener) {
             Assert-DNS ($TimeoutSeconds -eq 90) 'configure-restores-when-aaaa-is-missing'
-            & $probe 0 -DohProtectionID $DohProtectionID
+            & $probe 0 -DohProtectionID $DohProtectionID -DNSCryptListener $DNSCryptListener
         }
         Reject-DNS {Configure-DNS 'doh'} 'Resolver verification failed; original DNS settings restored'
     }
@@ -2264,16 +2268,36 @@ try {
         (Mutation-Count) -eq 0 -and $script:serviceStartupChanges -eq 0 -and
         $script:journalActive -and -not $script:dnsConfigured) 'dnscrypt-refuses-unowned-dns-before-adapter-switch'
 
-    New-DNSCase;$script:stageDNSCrypt=$true;$script:resolverServicePresent=$true
-    $script:listenerOwnerFault='final-replaced';$script:refuseListenerWait=$true
-    $path=Join-Path $root 'components\dnscrypt\dnscrypt-proxy.toml'
-    [IO.File]::WriteAllText($path,"listen_addresses = ['192.0.2.53:53']")
-    $script:restartRecoveryOriginal=[IO.File]::ReadAllBytes($path)
-    Reject-DNS {Configure-DNS 'dnscrypt'} 'Synthetic loopback wait boundary'
-    Assert-DNS ($script:initialOwnerReads -eq 2 -and $script:finalOwnerReads -eq 2 -and
-        ($script:finalListenerAAAAQueries -join ',') -ceq '127.0.0.1,::1' -and
-        $script:restartRecoveryWrites -eq 1 -and -not [IO.File]::Exists($snapshot) -and
-        -not $script:dnsConfigured) 'dnscrypt-restores-when-listener-owner-changes'
+    foreach($ownerFault in @('final-replaced','final-stable-replacement')){
+        New-DNSCase;$script:stageDNSCrypt=$true;$script:resolverServicePresent=$true
+        $script:listenerOwnerFault=$ownerFault;$script:refuseListenerWait=$true
+        $path=Join-Path $root 'components\dnscrypt\dnscrypt-proxy.toml'
+        [IO.File]::WriteAllText($path,"listen_addresses = ['192.0.2.53:53']")
+        $script:restartRecoveryOriginal=[IO.File]::ReadAllBytes($path)
+        $expected=if($ownerFault -ceq 'final-replaced'){'Synthetic loopback wait boundary'}else{'Managed DNSCrypt listener changed during final resolver verification'}
+        Reject-DNS {Configure-DNS 'dnscrypt'} $expected
+        Assert-DNS ($script:initialOwnerReads -eq 5 -and $script:finalOwnerReads -eq 4 -and
+            ($script:finalListenerAAAAQueries -join ',') -ceq '127.0.0.1,::1' -and
+            $script:restartRecoveryWrites -eq 1 -and -not [IO.File]::Exists($snapshot) -and
+            -not $script:dnsConfigured) 'dnscrypt-restores-when-listener-owner-changes'
+    }
+
+    foreach($boundary in @('between-adapters','before-aaaa')){
+        New-DNSCase;$script:stageDNSCrypt=$true;$script:resolverServicePresent=$true
+        $script:listenerOwnerFault=$boundary
+        $path=Join-Path $root 'components\dnscrypt\dnscrypt-proxy.toml'
+        [IO.File]::WriteAllText($path,"server_names = ['google']`r`nlisten_addresses = ['127.0.0.1:53', '[::1]:53']`r`n",[Text.UTF8Encoding]::new($false))
+        Reject-DNS {Configure-DNS 'dnscrypt'} 'Managed DNSCrypt listener changed after startup verification'
+        $writes=if($boundary -ceq 'before-aaaa'){2}else{1}
+        Assert-DNS ((Mutation-Count) -eq $writes -and $script:dnsOperationStage -ceq 'listener-owner-changed' -and
+            $script:resolverQueries -eq [int]($boundary -ceq 'before-aaaa') -and $script:resolverAAAAQueries -eq 0 -and
+            $script:finalListenerQueries.Count -eq 0 -and -not $script:dnsConfigured) 'dnscrypt-refuses-replaced-listener-during-cutover'
+        Assert-SnapshotRetained $script:journalDigest
+        $errors=@(Rollback)
+        $restored=$script:appliedDNS[([string]$script:adapters[0].InterfaceGuid)+'/IPv4']
+        Assert-DNS ($errors.Count -eq 0 -and ($restored.values -join ',') -ceq '192.0.2.53' -and
+            -not [IO.File]::Exists($snapshot) -and -not [IO.File]::Exists($copyPath)) 'dnscrypt-recovers-after-cutover-owner-loss'
+    }
 
     foreach($fault in @('127.0.0.1','::1','AAAA')){
         $failedListener=if($fault -ceq 'AAAA'){'::1'}else{$fault}

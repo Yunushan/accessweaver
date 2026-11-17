@@ -2549,7 +2549,7 @@ function Test-DNSAddressAnswer([object[]]$Answers,[string]$Name,[ValidateSet('A'
     }
     return $false
 }
-function Wait-OrdinaryDNSResolver([int]$TimeoutSeconds,[string]$DohProtectionID) {
+function Wait-OrdinaryDNSResolver([int]$TimeoutSeconds,[string]$DohProtectionID,$DNSCryptListener) {
     $timer=[Diagnostics.Stopwatch]::StartNew()
     do {
         $healthy=$false
@@ -2562,6 +2562,7 @@ function Wait-OrdinaryDNSResolver([int]$TimeoutSeconds,[string]$DohProtectionID)
             # A policy refusal must reach recovery instead of being retried as
             # a DNS failure. Check both address types on every attempt.
             if($DohProtectionID){Assert-DNSDohPlaintextBlock $DohProtectionID}
+            if($DNSCryptListener){Assert-DNSCryptListenerUnchanged $DNSCryptListener}
             try {
                 $answers=@(Resolve-DnsName -Name 'example.com.' -Type $type -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
                 $healthy=Test-DNSAddressAnswer $answers 'example.com' $type
@@ -2710,6 +2711,15 @@ function Get-ManagedDNSCryptListenerOwner([string[]]$Servers,[string]$Binary,$En
     }
     return '{0}:{1}:{2}:{3}' -f $hostID,$hostProcess[0].CreationDate.Ticks,$listenerID,$process[0].CreationDate.Ticks
 }
+function Assert-DNSCryptListenerUnchanged($Listener) {
+    $previousStage=$script:dnsOperationStage
+    $currentOwner=Get-ManagedDNSCryptListenerOwner $Listener.servers $Listener.binary $Listener.service
+    if($currentOwner -cne $Listener.owner){
+        $script:dnsOperationStage='listener-owner-changed'
+        throw 'Managed DNSCrypt listener changed after startup verification'
+    }
+    $script:dnsOperationStage=$previousStage
+}
 function Wait-ManagedDNSCryptListeners([string[]]$Servers,[string]$Binary,$Entry,[int]$TimeoutSeconds=30,
         [string]$FailureMessage='DNSCrypt loopback readiness could not be verified before adapter configuration') {
     $timer=[Diagnostics.Stopwatch]::StartNew()
@@ -2719,7 +2729,7 @@ function Wait-ManagedDNSCryptListeners([string[]]$Servers,[string]$Binary,$Entry
             # Repeat all probes together when any answer or the observed owner changes.
             $script:dnsOperationStage='listener-dns-answers'
             Wait-DNSCryptListeners $Servers -TimeoutSeconds 0 -RequireBothAddressTypes
-            if((Get-ManagedDNSCryptListenerOwner $Servers $Binary $Entry) -ceq $owner){return}
+            if((Get-ManagedDNSCryptListenerOwner $Servers $Binary $Entry) -ceq $owner){return $owner}
             $script:dnsOperationStage='listener-owner-changed'
         }catch{}
         if($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds){break}
@@ -3478,6 +3488,7 @@ function Configure-DNS([string]$method) {
     Save-Journal
     Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
     $resolverReload=$null
+    $dnsCryptListener=$null
     $adapterMutationAttempted=$false
     $recoveryAttempted=$false
     try {
@@ -3565,7 +3576,8 @@ function Configure-DNS([string]$method) {
             }
             $script:dnsOperationStage='listener-verification'
             # SCM can report Running before the replacement listener is usable.
-            Wait-ManagedDNSCryptListeners $listeners $binary $resolver
+            $listenerOwner=Wait-ManagedDNSCryptListeners $listeners $binary $resolver
+            $dnsCryptListener=@{servers=$listeners;binary=$binary;service=$resolver;owner=$listenerOwner}
             Assert-DNSCryptConfiguration $config $publishedConfigSHA256
             $script:dnsOperationStage='automatic-startup'
             # Verify automatic startup before adding any loopback DNS dependency.
@@ -3622,8 +3634,10 @@ function Configure-DNS([string]$method) {
                     }
                 }
                 Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
-                if($method -ceq 'dnscrypt'){Assert-DNSCryptConfiguration $config $publishedConfigSHA256}
-                else{Assert-DNSDohPlaintextBlock $plaintextBlockID}
+                if($method -ceq 'dnscrypt'){
+                    Assert-DNSCryptConfiguration $config $publishedConfigSHA256
+                    Assert-DNSCryptListenerUnchanged $dnsCryptListener
+                }else{Assert-DNSDohPlaintextBlock $plaintextBlockID}
                 Assert-DNSMutationAdapter $record.guid $dns.InterfaceIndex -RequireUp
                 $script:externalEffectsPending=$true
                 $adapterMutationAttempted=$true
@@ -3644,7 +3658,7 @@ function Configure-DNS([string]$method) {
         }
         $script:dnsOperationStage='ordinary-resolver'
         $dohProbeBlockID=if($method -ceq 'doh'){$plaintextBlockID}else{''}
-        if(-not (Wait-OrdinaryDNSResolver 90 -DohProtectionID $dohProbeBlockID)){
+        if(-not (Wait-OrdinaryDNSResolver 90 -DohProtectionID $dohProbeBlockID -DNSCryptListener $dnsCryptListener)){
             if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'DNS recovery snapshot disappeared during verification'}
             $recoveryAttempted=$true
             Restore-DNS $snapshotSHA256 -ResolverReload $resolverReload
@@ -3654,7 +3668,12 @@ function Configure-DNS([string]$method) {
         if($method -ceq 'dnscrypt'){
             # The ordinary resolver can succeed through one listener while
             # another cannot answer both address record types.
-            Wait-ManagedDNSCryptListeners $listeners $binary $resolver -TimeoutSeconds 5 -FailureMessage 'DNSCrypt loopback readiness could not be verified after adapter configuration'
+            Assert-DNSCryptListenerUnchanged $dnsCryptListener
+            $finalOwner=Wait-ManagedDNSCryptListeners $listeners $binary $resolver -TimeoutSeconds 5 -FailureMessage 'DNSCrypt loopback readiness could not be verified after adapter configuration'
+            if($finalOwner -cne $listenerOwner){
+                $script:dnsOperationStage='listener-owner-changed'
+                throw 'Managed DNSCrypt listener changed during final resolver verification'
+            }
         }
         # A DNS answer could have come through settings that changed during the probe.
         Assert-ConfiguredDNSServers $adapters $records $servers
@@ -3724,7 +3743,10 @@ function Configure-DNS([string]$method) {
             Assert-DNSDohPlaintextBlock $plaintextBlockID
         }
         Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
-        if($method -ceq 'dnscrypt'){Assert-DNSCryptConfiguration $config $publishedConfigSHA256}
+        if($method -ceq 'dnscrypt'){
+            Assert-DNSCryptConfiguration $config $publishedConfigSHA256
+            Assert-DNSCryptListenerUnchanged $dnsCryptListener
+        }
         Event ('Encrypted DNS configured: '+$method)
         $script:dnsConfigured=$true
     } catch {
