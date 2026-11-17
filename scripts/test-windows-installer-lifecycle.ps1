@@ -696,6 +696,18 @@ end;
     $documentationCompletionRefusal.documentationRestored=$true
 
     $stage='setup-uninstall-registration-refusal'
+    $uninstaller=Join-Path $install 'unins000.exe'
+    $quietValue='QuietUninstallString'
+    $originalQuiet='"'+$uninstaller+'" /SILENT'
+    $expectedQuiet='"'+$uninstaller+'" /VERYSILENT'
+    $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
+    $key=$null
+    try {
+        $key=$base.OpenSubKey($uninstallKey,$false)
+        Require ($null -ne $key -and $key.GetValueKind($quietValue) -eq [Microsoft.Win32.RegistryValueKind]::String -and
+            $key.GetValue($quietValue) -ceq $originalQuiet) 'Expected the verified original quiet uninstall command'
+        $originalRegistration=Registration-Fingerprint $key
+    } finally {if($key){$key.Dispose()};$base.Dispose()}
     [IO.File]::WriteAllText($faultSetup,$productSetup.Replace($uninstallInjectionPoint,
         $uninstallInjectionPoint+[Environment]::NewLine+$registerFault))
     $null=@(& $compiler ('/DBuildRoot='+$genuinePayload) ('/DReleaseVersion='+$builds[0].version) ('/DTargetArch='+$Architecture) $faultSetup)
@@ -708,18 +720,17 @@ end;
     $log=[IO.File]::ReadAllText($registrationLog)
     Require ($log.Contains('AccessWeaver installed payload or registration verification failed. Pending installation record retained.') -and
         -not $log.Contains('Pending installation record retired.')) 'Setup did not refuse the changed uninstall command'
-    Require ((Get-PendingInstallFixtureValue) -ceq ($builds[0].version+'|'+$install)) 'Uninstall registration refusal lost its pending record'
-    $uninstaller=Join-Path $install 'unins000.exe'
-    $expectedQuiet='"'+$uninstaller+'" /VERYSILENT'
+    $registrationPending=Get-PendingInstallFixtureValue
+    Require ($registrationPending -ceq ($builds[0].version+'|'+$install)) 'Uninstall registration refusal lost its pending record'
     $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
+    $key=$null
     try {
-        $key=$base.OpenSubKey('SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{B13D4677-4660-4E63-B3DB-03077ACBB092}_is1',$false)
-        Require ($null -ne $key) 'Owned uninstall registration fixture disappeared'
-        try {
-            Require ($key.GetValue('UninstallString') -ceq ('"'+$uninstaller+'"') -and
-                $key.GetValue('QuietUninstallString') -ceq $expectedQuiet) 'Setup did not retain the controlled command change'
-        } finally {$key.Dispose()}
-    } finally {$base.Dispose()}
+        $key=$base.OpenSubKey($uninstallKey,$false)
+        Require ($null -ne $key -and $key.GetValue('UninstallString') -ceq ('"'+$uninstaller+'"') -and
+            $key.GetValueKind($quietValue) -eq [Microsoft.Win32.RegistryValueKind]::String -and
+            $key.GetValue($quietValue) -ceq $expectedQuiet) 'Setup did not retain the controlled command change'
+        $alteredRegistration=Registration-Fingerprint $key
+    } finally {if($key){$key.Dispose()};$base.Dispose()}
     Assert-Installed $builds[0]
     $detectorOutput=@(& $detector -Version $builds[0].version -Architecture $Architecture -PayloadSHA256 $builds[0].payloadSha256 -InstallDirectory $install 2>&1)
     Require ($LASTEXITCODE -eq 1 -and $detectorOutput.Count -eq 0) 'Managed detection accepted the incomplete setup'
@@ -730,6 +741,32 @@ end;
         refusalLogged=$true;changedCommandPreserved=$true;installedPayloadVerified=$true;pendingMarkerRetained=$true;
         managedDetectionRefused=$true;unrelatedStatePreserved=$true;genuineRetryVerified=$false
     }
+    $stage='setup-uninstall-registration-altered-retry'
+    $alteredTree=Installed-TreeFingerprint
+    $alteredRetryLog=Join-Path $capsule 'setup-uninstall-registration-altered-retry.log'
+    $null=Native-Record $first ($arguments+@('/LOG='+$alteredRetryLog)) @(3)
+    No-Reparse $alteredRetryLog
+    $retryLogSize=(Get-Item -LiteralPath $alteredRetryLog -ErrorAction Stop).Length
+    Require ($retryLogSize -gt 0 -and $retryLogSize -le 4MB) 'Protected registration retry log is unavailable or exceeds its bound'
+    Require ([IO.File]::ReadAllText($alteredRetryLog).Contains('AccessWeaver protected registration or legacy approval refused.')) 'Expected Setup to refuse the changed protected registration'
+    Require ((Registration-Fingerprint) -ceq $alteredRegistration -and (Installed-TreeFingerprint) -ceq $alteredTree -and
+        (Get-PendingInstallFixtureValue) -ceq $registrationPending -and (State-Snapshot) -ceq $before) 'Refused Setup retry changed the fixture state'
+    Assert-UserState
+
+    # The fixture owns the deliberate edit. Restore its verified original value
+    # only while the altered registration and pending record still match.
+    $stage='setup-uninstall-registration-fixture-restore'
+    $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
+    $key=$null
+    try {
+        $key=$base.OpenSubKey($uninstallKey,$true)
+        Require ($null -ne $key -and (Registration-Fingerprint $key) -ceq $alteredRegistration -and
+            (Get-PendingInstallFixtureValue) -ceq $registrationPending) 'The controlled registration changed before fixture restoration'
+        $key.SetValue($quietValue,$originalQuiet,[Microsoft.Win32.RegistryValueKind]::String)
+        $key.Flush()
+        Require ((Registration-Fingerprint $key) -ceq $originalRegistration) 'Fixture did not restore the original registration'
+    } finally {if($key){$key.Dispose()};$base.Dispose()}
+
     $stage='setup-uninstall-registration-retry'
     $completionLog=Join-Path $capsule 'setup-uninstall-registration-retry.log'
     $null=Native-Record $first ($arguments+@('/LOG='+$completionLog))
