@@ -736,8 +736,12 @@ public static class AccessWeaverNativeDoHIdentity {
             if($script:staticFailurePhase -ceq 'none'){$script:staticFailurePhase=$script:staticPhase;$script:staticFailureCode=Get-NativeDNSStaticFailure $Exception}
         }
         $staticFixture=Invoke-NativeDNSStaticFixture -Capture {
+            param($phase)
             $script:staticPhase='capture'
-            try {Read-DNSAcceptanceState ([ref]$script:captureStage) ([ref]$script:captureProgress)}catch{Save-NativeStaticFailure $_.Exception;throw}
+            try {Read-DNSAcceptanceState ([ref]$script:captureStage) ([ref]$script:captureProgress)}catch{
+                if($phase -ceq 'cleanup'){Save-NativeStaticFailure $_.Exception}
+                throw
+            }
         } -Resolve {
             $script:staticPhase='resolver'
             try {
@@ -753,6 +757,10 @@ public static class AccessWeaverNativeDoHIdentity {
         } -Unstage {
             param($before)
             try {Remove-NativeStaticIPv6Fixture $before}catch{Save-NativeStaticFailure $_.Exception;throw}
+        }
+        if($staticFixture.baselineCaptureFailureCode -cne 'none'){
+            $script:staticFailurePhase='capture'
+            $script:staticFailureCode=$staticFixture.baselineCaptureFailureCode
         }
     }else{[void](Invoke-NativeDoHExercise)}
     }

@@ -33,7 +33,7 @@ $tokens=$null;$issues=$null;$coordinator=[Management.Automation.Language.Parser]
 if($issues.Count){throw 'Native coordinator source did not parse'}
 $definitions+=@($coordinator.EndBlock.Statements)
 $selected=@('Convert-NativeDNSCryptWildcardBaseline','New-NativeDNSFailureCatalog','Get-NativeDNSFailureMarker','Get-NativeDNSFailureObservation','Get-NativeDNSStaticFailure','Invoke-NativeDNSStaticFixture','Read-DNSAcceptanceRegistry','Get-DNSAcceptanceRegistryHash','Invoke-NativeDoHScenario','Invoke-NativeDNSJournalScenario','Invoke-NativeDNSMissingSnapshotScenario','Invoke-NativeDNSRollbackScenario','New-NativeDNSFailureResponse','Get-NativeDNSVerificationMarker','Get-NativeDNSForwarderFailure','Get-NativeDNSComponentFailure','Get-NativeDNSComponentRetry','Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Assert-DNSAcceptanceFamilyPreserved','Assert-DNSAcceptanceConfigured','Invoke-DNSAcceptanceRoundTrip')
-$allowed=$selected+@('ConvertTo-Json','Get-NetAdapter','Get-ItemProperty','Get-DnsClientServerAddress','Get-Command','Get-DnsClientDohServerAddress','Where-Object','Get-Service','Clear-DnsClientCache','Resolve-DnsName')
+$allowed=$selected+@('ConvertTo-Json','Get-NetAdapter','Get-ItemProperty','Get-DnsClientServerAddress','Get-Command','Get-DnsClientDohServerAddress','Where-Object','Get-Service','Clear-DnsClientCache','Resolve-DnsName','Start-Sleep')
 foreach($name in $selected){
     $nodes=@($definitions | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
     if($nodes.Count -ne 1){throw 'Acceptance helper function unavailable'}
@@ -45,7 +45,7 @@ foreach($name in $selected){
     . ([scriptblock]::Create($nodes[0].Extent.Text))
 }
 $script:checks=0;$script:contractOutcome='failed';$script:contractCode='unexpected-contract-error'
-$script:closedContractCodes=@('source-literal-catalog','source-literal-marker','source-literal-private-output','source-literal-bounds','source-literal-projection','service-reactivation-result','service-reactivation-order','static-stage-source','static-resolver-source-callback','static-closed-failure-map','static-fixture-result','static-fixture-cleanup','static-fixture-order','static-fixture-flags','static-fixture-preflight','component-retry-contract','component-closed-error-map','forwarder-closed-error-map','rollback-native-result','rollback-native-flags','rollback-native-cleanup','rollback-native-order','rollback-native-preflight','fixed-dns-response','journal-scenario-order','journal-scenario-result','journal-scenario-private-output','journal-refusal-marker','missing-snapshot-scenario','missing-snapshot-retained','missing-snapshot-marker','verification-marker-boundary','failure-native-result','failure-native-flags','failure-native-cleanup','failure-native-order','failure-native-preflight','roundtrip-does-not-inject','native-method-forwarded','native-invalid-method-no-effects','capture-identity-change-refused','final-capture-topology-change-refused','unexposed-state-preserved','unexposed-state-not-selected','unexposed-access-refused','unexposed-registry-change-refused','single-family-configured-state','client-inventory-failure-phase','capture-stage-complete','capture-stage-refusal','native-coordinator-result','native-coordinator-cleanup','remove-all-native-recovery','service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
+$script:closedContractCodes=@('source-literal-catalog','source-literal-marker','source-literal-private-output','source-literal-bounds','source-literal-projection','service-reactivation-result','service-reactivation-order','static-stage-source','static-resolver-source-callback','static-closed-failure-map','static-fixture-result','static-fixture-cleanup','static-fixture-order','static-fixture-flags','static-fixture-preflight','static-fixture-baseline-retry','component-retry-contract','component-closed-error-map','forwarder-closed-error-map','rollback-native-result','rollback-native-flags','rollback-native-cleanup','rollback-native-order','rollback-native-preflight','fixed-dns-response','journal-scenario-order','journal-scenario-result','journal-scenario-private-output','journal-refusal-marker','missing-snapshot-scenario','missing-snapshot-retained','missing-snapshot-marker','verification-marker-boundary','failure-native-result','failure-native-flags','failure-native-cleanup','failure-native-order','failure-native-preflight','roundtrip-does-not-inject','native-method-forwarded','native-invalid-method-no-effects','capture-identity-change-refused','final-capture-topology-change-refused','unexposed-state-preserved','unexposed-state-not-selected','unexposed-access-refused','unexposed-registry-change-refused','single-family-configured-state','client-inventory-failure-phase','capture-stage-complete','capture-stage-refusal','native-coordinator-result','native-coordinator-cleanup','remove-all-native-recovery','service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
 function Assert-A([bool]$Value,[string]$Code){if(-not $Value){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('Acceptance contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-A([scriptblock]$Operation){$failed=$false;try{& $Operation | Out-Null}catch{$failed=$true};Assert-A $failed 'expected-refusal'}
 $script:g1='abcdef00-0000-0000-0000-000000000001';$script:g2='abcdef00-0000-0000-0000-000000000002'
@@ -912,6 +912,41 @@ try {
         if($failure -ceq 'none'){
             Assert-A ($result.baselineCaptured -and $result.baselineResolverPassed -and $result.stagingVerified -and $result.exerciseAttempted -and $result.exercisePassed -and $result.originalStateRestored -and $result.originalResolverPassed) 'static-fixture-flags'
             Assert-A (($script:staticTrace -join ',') -ceq 'capture,resolve,stage,exercise,unstage,capture,resolve') 'static-fixture-order'
+        }
+    }
+    foreach($captureFailure in @('transient-missing','persistent-missing','initial-inspection','cleanup-missing')){
+        New-ACase
+        $script:staticCaptureCalls=0;$script:staticStagingWrites=0
+        $result=Invoke-NativeDNSStaticFixture -Capture {
+            param($phase)
+            $script:staticCaptureCalls++
+            $missing=($captureFailure -ceq 'transient-missing' -and $script:staticCaptureCalls -le 2) -or
+                $captureFailure -ceq 'persistent-missing' -or ($captureFailure -ceq 'cleanup-missing' -and $phase -ceq 'cleanup')
+            if($missing){throw 'DNS acceptance exposed-family registry state is missing'}
+            if($captureFailure -ceq 'initial-inspection'){throw 'DNS acceptance registry mode is malformed'}
+            return (Read-DNSAcceptanceState)
+        } -Resolve {return $true} -Stage {$script:staticStagingWrites++;return $true} -Exercise {return $true} -Unstage {}
+        switch -CaseSensitive ($captureFailure){
+            'transient-missing' {
+                Assert-A ($result.outcome -ceq 'passed' -and $result.baselineCaptured -and $result.originalStateRestored -and
+                    $result.baselineCaptureRetries -eq 2 -and $result.baselineCaptureFailureCode -ceq 'none' -and
+                    $script:staticWaitCalls -eq 2 -and $script:staticCaptureCalls -eq 4 -and $script:staticStagingWrites -eq 1) 'static-fixture-baseline-retry'
+            }
+            'persistent-missing' {
+                Assert-A ($result.operationCode -ceq 'baseline' -and -not $result.baselineCaptured -and -not $result.cleanupAttempted -and
+                    $result.baselineCaptureRetries -eq 8 -and $result.baselineCaptureFailureCode -ceq 'read-registry-missing' -and
+                    $script:staticWaitCalls -eq 8 -and $script:staticCaptureCalls -eq 9 -and $script:staticStagingWrites -eq 0) 'static-fixture-baseline-retry'
+            }
+            'initial-inspection' {
+                Assert-A ($result.operationCode -ceq 'baseline' -and -not $result.baselineCaptured -and
+                    $result.baselineCaptureRetries -eq 0 -and $result.baselineCaptureFailureCode -ceq 'read-registry-mode' -and
+                    $script:staticWaitCalls -eq 0 -and $script:staticCaptureCalls -eq 1 -and $script:staticStagingWrites -eq 0) 'static-fixture-baseline-retry'
+            }
+            'cleanup-missing' {
+                Assert-A ($result.cleanupCode -ceq 'state' -and $result.cleanupAttempted -and -not $result.originalStateRestored -and
+                    $result.baselineCaptureRetries -eq 0 -and $result.baselineCaptureFailureCode -ceq 'none' -and
+                    $script:staticWaitCalls -eq 0 -and $script:staticCaptureCalls -eq 2 -and $script:staticStagingWrites -eq 1) 'static-fixture-baseline-retry'
+            }
         }
     }
     foreach($missing in @('Capture','Resolve','Stage','Exercise','Unstage')){

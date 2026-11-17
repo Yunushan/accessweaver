@@ -338,10 +338,27 @@ function Get-NativeDNSComponentRetry([int]$Status,[int]$Attempt,[long]$Remaining
 # The fixture changes only a disposable hosted machine. Its outer baseline and
 # resolver are verified again after unconditional teardown of staged DNS state.
 function Invoke-NativeDNSStaticFixture([scriptblock]$Capture,[scriptblock]$Resolve,[scriptblock]$Stage,[scriptblock]$Exercise,[scriptblock]$Unstage) {
-    $result=@{outcome='failed';code='baseline';operationCode='none';cleanupCode='none';baselineCaptured=$false;baselineResolverPassed=$false;stagingAttempted=$false;stagingVerified=$false;exerciseAttempted=$false;exercisePassed=$false;cleanupAttempted=$false;originalStateRestored=$false;originalResolverPassed=$false}
+    $result=@{outcome='failed';code='baseline';operationCode='none';cleanupCode='none';baselineCaptured=$false;baselineCaptureRetries=0;baselineCaptureFailureCode='none';baselineResolverPassed=$false;stagingAttempted=$false;stagingVerified=$false;exerciseAttempted=$false;exercisePassed=$false;cleanupAttempted=$false;originalStateRestored=$false;originalResolverPassed=$false}
     try {
         if($null -eq $Capture -or $null -eq $Resolve -or $null -eq $Stage -or $null -eq $Exercise -or $null -eq $Unstage){throw 'Missing native static fixture boundary'}
-        $before=& $Capture;[void](Get-DNSAcceptanceIndex $before);$result.baselineCaptured=$true
+        # The DNS client row can appear before its backing registry key. Give the
+        # disposable fixture a short read-only window to capture a complete baseline.
+        while($true){
+            try{
+                $before=& $Capture 'baseline'
+                [void](Get-DNSAcceptanceIndex $before)
+                break
+            }catch{
+                $reason=Get-NativeDNSStaticFailure $_.Exception
+                if($reason -cne 'read-registry-missing' -or $result.baselineCaptureRetries -ge 8){
+                    $result.baselineCaptureFailureCode=$reason
+                    throw
+                }
+                $result.baselineCaptureRetries++
+                Start-Sleep -Milliseconds 250
+            }
+        }
+        $result.baselineCaptured=$true
         $resolved=& $Resolve
         if($resolved -isnot [bool] -or -not $resolved){throw 'Native fixture baseline resolver failed'}
         $result.baselineResolverPassed=$true
@@ -358,7 +375,7 @@ function Invoke-NativeDNSStaticFixture([scriptblock]$Capture,[scriptblock]$Resol
     finally {
         $result.cleanupAttempted=$true
         try {[void](& $Unstage $before)}catch{$result.cleanupCode='unstage'}
-        try {Assert-DNSAcceptanceRestored $before (& $Capture);$result.originalStateRestored=$true}catch{if($result.cleanupCode -ceq 'none'){$result.cleanupCode='state'}}
+        try {Assert-DNSAcceptanceRestored $before (& $Capture 'cleanup');$result.originalStateRestored=$true}catch{if($result.cleanupCode -ceq 'none'){$result.cleanupCode='state'}}
         if($result.originalStateRestored){
             try {
                 $resolved=& $Resolve
