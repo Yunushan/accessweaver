@@ -1206,6 +1206,7 @@ procedure AWFixtureStopDuringCopy;
 var Path, Name, Destination: String;
 begin
   Path := CurrentFilename;
+  if Copy(Path, 1, 1) = '{' then Path := ExpandConstant(Path);
   if Copy(Path, 1, 4) = '\\?\' then Delete(Path, 1, 4);
   Destination := ExpandConstant('{app}');
   if not AWIsInstallationDirectory(Destination, ExtractFileDir(Path)) then Exit;
