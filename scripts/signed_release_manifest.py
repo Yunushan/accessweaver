@@ -451,7 +451,7 @@ def load_detection_evidence(directory, evidence, subjects, version, *, include_l
     return entries
 
 
-def windows_lifecycle_sources(commit):
+def windows_lifecycle_sources(commit, *, fields=WINDOWS_LIFECYCLE_SOURCES):
     root = Path(__file__).resolve().parents[1]
     git = ["git", "--no-replace-objects"]
     # Keep object selection rooted in the verifier's checkout.
@@ -462,7 +462,8 @@ def windows_lifecycle_sources(commit):
         kind = subprocess.check_output([*git, "cat-file", "-t", commit], **options).strip()
         require(kind == b"commit", "Windows lifecycle qualification requires the approved Git commit")
         sources = {}
-        for field, path in WINDOWS_LIFECYCLE_SOURCES.items():
+        for field in fields:
+            path = WINDOWS_LIFECYCLE_SOURCES[field]
             entry = subprocess.check_output([*git, "ls-tree", commit, "--", path], **options).split(b"\t", 1)
             require(len(entry) == 2 and entry[1].rstrip(b"\r\n") == path.encode("ascii"),
                     "Windows lifecycle source is missing from the approved Git commit")
@@ -1313,6 +1314,59 @@ def stage_verified_installer(root, directory, update, policy, size, directory_id
     require_current_revocation_policy(policy)
 
 
+def write_intune_detector(commit, entry, output, directory, policy):
+    version_parts(entry["version"])
+    require(len(entry["version"]) <= 256, "Windows detector version exceeds its size limit")
+    values = {
+        "Version": entry["version"],
+        "Architecture": entry["target"].removeprefix("windows/"),
+        "PayloadSHA256": entry["payloadSHA256"],
+        "UninstallerSHA256": entry["uninstallerSHA256"],
+        "PayloadSBOMSHA256": entry["payloadSBOMSHA256"],
+        "PayloadPublisherSHA256": entry[WINDOWS_PAYLOAD_PUBLISHER],
+        "BuildInfoSHA256": entry[WINDOWS_BUILD_INFO],
+    }
+    require(values["Architecture"] in ("amd64", "arm64") and
+            re.fullmatch(r"[A-Za-z0-9.+-]+", values["Version"]) and
+            all(re.fullmatch(SHA256, value) for name, value in values.items()
+                if name not in ("Version", "Architecture")), "Malformed Intune detection defaults")
+    source = windows_lifecycle_sources(commit, fields=(WINDOWS_DETECTOR,))[WINDOWS_DETECTOR]
+    source_pin = hashlib.sha256(source).hexdigest()
+    require(source_pin == entry[WINDOWS_DETECTOR], "Intune detector differs from the qualified Git source")
+    end = re.search(rb"\r?\n\)(?=\r?\n)", source)
+    require(end is not None, "Intune detector parameter block is missing")
+    parameters = source[:end.start()]
+    for name, value in values.items():
+        prefix = b"    [string]$" + name.encode("ascii") + b" = '"
+        pattern = rb"(?m)^" + re.escape(prefix) + rb"'(?=,?\r?$)"
+        parameters, replaced = re.subn(pattern, prefix + value.encode("ascii") + b"'", parameters)
+        require(replaced == 1, "Intune detector parameter block differs from the qualified template")
+    rendered = parameters + source[end.start():]
+    if not rendered.startswith(b"\xef\xbb\xbf"):
+        rendered = b"\xef\xbb\xbf" + rendered
+
+    parent = output.parent.resolve(strict=True)
+    require(output.suffix.lower() == ".ps1" and not parent.is_relative_to(directory.resolve()),
+            "Write the Intune detector to a new .ps1 file outside the release directory")
+    identity = staging_directory_identity(parent)
+    destination = parent / output.name
+    with tempfile.TemporaryDirectory(prefix=".accessweaver-intune-", dir=parent) as temporary:
+        staged = Path(temporary) / "detector.ps1"
+        with staged.open("xb") as stream:
+            stream.write(rendered)
+            stream.flush()
+            os.fsync(stream.fileno())
+        require(staging_directory_identity(parent) == identity,
+                "Intune detector output directory changed")
+        require_current_revocation_policy(policy)
+        publish_staged_installer(staged, destination)
+    return {
+        "target": entry["target"], "version": entry["version"], "file": destination.name,
+        "rebootEvidenceSHA256": entry["rebootEvidenceSHA256"], "sourceDetectorSHA256": source_pin,
+        "scriptSHA256": hashlib.sha256(rendered).hexdigest(),
+    }
+
+
 def verify(directory, certificate, certificate_sha256, commit, ref, openssl="openssl",
            *, revocation_list, revocation_list_sha256, current_version=None, target=None, stage_directory=None,
            current_payload_sha256=None, current_payload_sbom_sha256=None, current_payload_publisher_sha256=None,
@@ -1323,7 +1377,15 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
            detect_installed_windows_upgrade=False, windows_upgrade_attempt_id=None, windows_upgrade_start_receipt=None,
            windows_setup_wait_seconds=None, windows_upgrade_result_receipt=None, require_windows_lifecycle=False,
            verify_lifecycle_publishers=False, retry_windows_upgrade_after_reboot=False,
-           require_windows_legacy_footprint_sha256=None):
+           require_windows_legacy_footprint_sha256=None, intune_detection=None):
+    if intune_detection is not None:
+        arch, evidence_pin, _ = intune_detection
+        require(arch in ("amd64", "arm64") and re.fullmatch(SHA256, evidence_pin),
+                "Intune detector export requires an architecture and lowercase reboot evidence SHA-256")
+        require(current_version is None and target is None and stage_directory is None
+                and windows_upgrade_inventory is None and not launch_staged_windows_setup
+                and not detect_installed_windows_upgrade,
+                "Intune detector export is separate from staging and evaluating or running an upgrade")
     if verify_lifecycle_publishers:
         require(sys.platform == "win32", "Windows lifecycle publisher verification requires a Windows host")
         require_windows_lifecycle = True
@@ -1789,6 +1851,15 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
         if detect_installed_windows_upgrade or launch_staged_windows_setup:
             # A Setup exit code or saved receipt remains a historical observation.
             return finish_windows_upgrade_report(report, policy)
+        if intune_detection is not None:
+            arch, evidence_pin, output = intune_detection
+            rows = [entry for entry in report.get("windowsDetection", ())
+                    if entry["target"] == "windows/" + arch and entry["rebootEvidenceSHA256"] == evidence_pin]
+            require(len(rows) == 1, "No unique signed Windows detection entry matches the Intune assignment")
+            entry = rows[0]
+            require({WINDOWS_DETECTOR, WINDOWS_PAYLOAD_PUBLISHER, WINDOWS_BUILD_INFO} <= entry.keys(),
+                    "Intune detection requires signed detector, publisher and build metadata evidence")
+            report["windowsIntuneDetector"] = write_intune_detector(commit, entry, output, directory, policy)
         return report
 
 
@@ -1820,6 +1891,8 @@ def main():
                              help="match the installed Windows payload signer certificate to signed reboot evidence")
     verify_args.add_argument("--current-build-info-sha256",
                              help="match the installed Windows build metadata digest to signed reboot evidence")
+    verify_args.add_argument("--write-intune-detector", nargs=3, metavar=("ARCH", "REBOOT_SHA256", "OUTPUT"),
+                             help="export a standalone detector for an authenticated Windows detection assignment")
     verify_args.add_argument("--windows-upgrade-inventory", nargs=2, metavar=("PATH", "SHA256"),
                              help="match an independently pinned Windows detector inventory to signed reboot evidence")
     verify_args.add_argument("--require-windows-setup-baseline", action="store_true",
@@ -1877,6 +1950,10 @@ def main():
             result_receipt = args.windows_upgrade_result_receipt
             if result_receipt is not None:
                 result_receipt = (Path(result_receipt[0]), result_receipt[1])
+            intune_detection = args.write_intune_detector
+            if intune_detection is not None:
+                arch, pin, output = intune_detection
+                intune_detection = (arch, pin, Path(output))
             report = verify(args.directory, args.approval_certificate, args.approval_certificate_sha256,
                                     args.source_commit, args.source_ref, args.openssl,
                                     revocation_list=args.revocation_list,
@@ -1904,7 +1981,8 @@ def main():
                                     require_windows_lifecycle=args.require_windows_lifecycle,
                                     verify_lifecycle_publishers=args.verify_windows_lifecycle_publishers,
                                     retry_windows_upgrade_after_reboot=args.retry_windows_upgrade_after_reboot,
-                                    require_windows_legacy_footprint_sha256=args.require_windows_legacy_footprint_sha256)
+                                    require_windows_legacy_footprint_sha256=args.require_windows_legacy_footprint_sha256,
+                                    intune_detection=intune_detection)
             print(json.dumps(report))
             if args.launch_staged_windows_setup:
                 update = report["managedUpdate"]

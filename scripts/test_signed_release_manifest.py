@@ -763,6 +763,56 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 self.assertIs(report["productionQualificationComplete"], False)
                 self.assertEqual(report["schemaVersion"], 12)
                 self.assertIs(report["windowsRestorationJournalEvidenceVerified"], True)
+                for arch, mode in (("amd64", "clean"), ("arm64", "upgrade")):
+                    evidence_pin = evidence[arch, mode][1]
+                    selection, = [entry for entry in report["windowsDetection"]
+                                  if entry["target"] == f"windows/{arch}" and entry["rebootEvidenceSHA256"] == evidence_pin]
+                    output = self.root / f"intune-{arch}.ps1"
+                    arguments = [
+                        "signed_release_manifest.py", "verify", str(self.candidate),
+                        "--approval-certificate", str(cert), "--approval-certificate-sha256", pin,
+                        "--revocation-list", str(self.revocation_list), "--revocation-list-sha256", self.policy_pin,
+                        "--source-commit", source, "--source-ref", REF,
+                        "--write-intune-detector", arch, evidence_pin, str(output),
+                    ]
+                    stdout = io.StringIO()
+                    with patch.object(sys, "argv", arguments), redirect_stdout(stdout):
+                        self.assertEqual(release.main(), 0)
+                    assignment = json.loads(stdout.getvalue())["windowsIntuneDetector"]
+                    self.assertEqual(assignment, {
+                        "target": f"windows/{arch}", "version": VERSION, "file": output.name,
+                        "rebootEvidenceSHA256": evidence_pin, "sourceDetectorSHA256": pins["detectorSHA256"],
+                        "scriptSHA256": release.digest(output),
+                    })
+                    approved_template = release.windows_lifecycle_sources(source)[release.WINDOWS_DETECTOR]
+                    expected = approved_template.removeprefix(b"\xef\xbb\xbf")
+                    for name, value in {
+                        "Version": VERSION, "Architecture": arch, "PayloadSHA256": selection["payloadSHA256"],
+                        "UninstallerSHA256": selection["uninstallerSHA256"],
+                        "PayloadSBOMSHA256": selection["payloadSBOMSHA256"],
+                        "PayloadPublisherSHA256": selection["payloadPublisherCertificateSHA256"],
+                        "BuildInfoSHA256": selection["buildInfoSHA256"],
+                    }.items():
+                        expected = expected.replace(f"[string]${name} = ''".encode(),
+                                                    f"[string]${name} = '{value}'".encode(), 1)
+                    self.assertEqual(output.read_bytes(), b"\xef\xbb\xbf" + expected)
+                    with self.assertRaises(FileExistsError):
+                        self.verify(cert, pin, source, intune_detection=(arch, evidence_pin, output))
+                    self.assertEqual(output.read_bytes(), b"\xef\xbb\xbf" + expected)
+                refused = self.root / "refused.ps1"
+                amd64_pin = evidence["amd64", "clean"][1]
+                with self.assertRaisesRegex(ValueError, "No unique signed Windows detection entry"):
+                    self.verify(cert, pin, source, intune_detection=("arm64", amd64_pin, refused))
+                with self.assertRaisesRegex(ValueError, "outside the release directory"):
+                    self.verify(cert, pin, source, intune_detection=("amd64", amd64_pin, self.candidate / refused.name))
+                with patch.object(release, "windows_lifecycle_sources", return_value={release.WINDOWS_DETECTOR: b"other detector"}):
+                    with self.assertRaisesRegex(ValueError, "differs from the qualified Git source"):
+                        self.verify(cert, pin, source, intune_detection=("amd64", amd64_pin, refused))
+                revoked = self.write_policy({**self.policy, "subjectSHA256": [amd64_pin]})
+                with self.assertRaisesRegex(ValueError, "revoked"):
+                    self.verify(cert, pin, source, policy_pin=revoked, intune_detection=("amd64", amd64_pin, refused))
+                self.assertFalse(refused.exists())
+                self.write_policy(self.policy)
                 journal_field = release.WINDOWS_RESTORATION_JOURNAL
                 restoration_pin = report["windowsDetection"][0][journal_field]
                 with patch.object(release.sys, "platform", "linux"):
