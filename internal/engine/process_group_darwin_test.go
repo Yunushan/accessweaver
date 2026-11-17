@@ -1,6 +1,10 @@
 package engine
 
-import "testing"
+import (
+	"testing"
+
+	"golang.org/x/sys/unix"
+)
 
 func TestDarwinExitedGroupRequiresExactUnreapedLeader(t *testing.T) {
 	const leader = 12345
@@ -33,5 +37,30 @@ func TestDarwinExitedGroupRequiresExactUnreapedLeader(t *testing.T) {
 	}
 	if onlyObservedDarwinGroupLeader(leader, nil) {
 		t.Fatal("missing Darwin group inventory cleared a signal failure")
+	}
+}
+
+func TestDarwinRetryRequiresExactWaitableChild(t *testing.T) {
+	const leader, parent = 12345, 23456
+	info := unix.KinfoProc{
+		Proc:  unix.ExternProc{P_pid: leader, P_stat: 5},
+		Eproc: unix.Eproc{Ppid: parent, Pgid: leader},
+	}
+	if !darwinWaitableGroupLeader(&info, leader, parent) {
+		t.Fatal("waitable direct group leader refused")
+	}
+	if darwinWaitableGroupLeader(nil, leader, parent) ||
+		darwinWaitableGroupLeader(&info, leader+1, parent) ||
+		darwinWaitableGroupLeader(&info, leader, parent+1) {
+		t.Fatal("missing or different child identity was accepted")
+	}
+	info.Eproc.Pgid = leader + 1
+	if darwinWaitableGroupLeader(&info, leader, parent) {
+		t.Fatal("foreign process group was accepted")
+	}
+	info.Eproc.Pgid = leader
+	info.Proc.P_stat = 2
+	if darwinWaitableGroupLeader(&info, leader, parent) {
+		t.Fatal("live child was accepted as waitable")
 	}
 }

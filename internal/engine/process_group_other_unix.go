@@ -3,3 +3,5 @@
 package engine
 
 func groupSignalAlreadyExited(_ int, _ error) bool { return false }
+
+func retryGroupAlreadyExited(_ int, _ error) bool { return false }

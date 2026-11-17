@@ -2,10 +2,12 @@ package engine
 
 import (
 	"errors"
+	"os"
 	"sync"
 	"syscall"
 
 	"github.com/ebitengine/purego"
+	"golang.org/x/sys/unix"
 )
 
 // proc_listpgrppids takes a process-group ID and a pid_t buffer size in bytes.
@@ -33,6 +35,24 @@ func groupSignalAlreadyExited(pgid int, signalErr error) bool {
 		return false
 	}
 	return onlyObservedDarwinGroupLeader(pgid, darwinListGroup())
+}
+
+// Explicit retry can acquire the owner's mutex before the exit observer
+// publishes its result. A waitable direct child is an independent exit proof.
+// The owner still holds this generation unreaped throughout the native queries.
+func retryGroupAlreadyExited(pgid int, signalErr error) bool {
+	if !errors.Is(signalErr, syscall.EPERM) || pgid <= 1 || int(int32(pgid)) != pgid {
+		return false
+	}
+	info, err := unix.SysctlKinfoProc("kern.proc.pid", pgid)
+	return err == nil && darwinWaitableGroupLeader(info, int32(pgid), int32(os.Getpid())) &&
+		groupSignalAlreadyExited(pgid, signalErr)
+}
+
+func darwinWaitableGroupLeader(info *unix.KinfoProc, pgid, parent int32) bool {
+	const zombie = 5 // SZOMB in Darwin's <sys/proc.h>.
+	return info != nil && info.Proc.P_stat == zombie &&
+		info.Proc.P_pid == pgid && info.Eproc.Pgid == pgid && info.Eproc.Ppid == parent
 }
 
 func onlyObservedDarwinGroupLeader(pgid int, list darwinGroupMembers) bool {

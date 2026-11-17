@@ -202,7 +202,13 @@ func (o *ownedProcess) retryCleanup() error {
 		o.notifyFault()
 		return ErrProcessOwnershipLost
 	}
-	err := o.callSignalLocked(func() error { return o.nativeSignal(o.pid, syscall.SIGKILL, o.exitObserved) })
+	err := o.callSignalLocked(func() error {
+		err := o.nativeSignal(o.pid, syscall.SIGKILL, o.exitObserved)
+		if !o.exitObserved && retryGroupAlreadyExited(o.pid, err) {
+			return os.ErrProcessDone
+		}
+		return err
+	})
 	if err != nil && !ownedProcessGone(err) {
 		if errors.Is(err, ErrProcessOwnershipLost) || errors.Is(err, syscall.ECHILD) {
 			o.faultLocked(ErrProcessOwnershipLost)

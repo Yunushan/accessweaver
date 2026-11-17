@@ -16,6 +16,13 @@ the consuming wait. [XNU group signal behavior](https://github.com/apple-oss-dis
 and [the membership snapshot implementation](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/proc_info.c#L337-L457)
 describe the two native interfaces.
 
+The [first engine correction run](https://github.com/Yunushan/accessweaver/actions/runs/44004990609)
+passed all 873 tests on Apple Silicon. Intel passed 872 and failed the tracked
+immediate-exit signal ordering test. An explicit same-run cleanup retry can now
+confirm the exact direct child as waitable through the kernel before the exit
+observer publishes its result. It still requires the same sole-member snapshot
+and retains ownership through the consuming wait.
+
 This contract relies on exclusive child-status ownership: AccessWeaver must not install automatic child reaping or introduce another component that consumes this child's wait status. The session prevents an unrelated process from joining the original group. An engine can move descendants into another group or session, change privileges or create persistent external state. Those effects need stronger OS containment or the vendor's recovery procedure and are outside original-group cleanup.
 
 If final cleanup cannot be confirmed while ownership is retained, the manager exposes a fixed pending error and refuses a replacement launch. The exact handle remains pending. The desktop shows “Shutdown unconfirmed” and disables launch controls while profile editing, logs and support inspection remain available. The in-process `Manager.RetryCleanup` operation requires that same current handle and explicitly retries cleanup only while the original identity remains owned. The CLI does not retry automatically. If exclusive ownership is lost, numeric process identity cannot safely be recovered: no further signals, consuming waits, releases or cleanup retries are issued for that identity.

@@ -88,6 +88,7 @@ test('macOS unit report binds the release workflow and excludes private data',as
  sourceSHA256['.github/workflows/darwin-audit-commands.yml']='b'.repeat(64);
  sourceSHA256['internal/engine/lifetime_unix_test.go']='e'.repeat(64);
  sourceSHA256['internal/engine/shutdown_unix_test.go']='f'.repeat(64);
+ sourceSHA256['internal/engine/tracked_run_test.go']='a'.repeat(64);
  await assert.rejects(C.writeReport(root,{...data,mode:'race'}));
  await C.writeReport(root,data);
  const report=JSON.parse(await fs.readFile(path.join(root,'build/native-core-evidence/status.json'),'utf8'));
@@ -141,6 +142,7 @@ test('core report retains only fixed diagnostic codes on failed engine roots',as
  sourceSHA256['.github/workflows/darwin-audit-commands.yml']='b'.repeat(64);
  sourceSHA256['internal/engine/lifetime_unix_test.go']='e'.repeat(64);
  sourceSHA256['internal/engine/shutdown_unix_test.go']='f'.repeat(64);
+ sourceSHA256['internal/engine/tracked_run_test.go']='a'.repeat(64);
  const projected=tracker.value('unit',1);
  const data={
   schemaVersion:2,sourceCommit:'a'.repeat(40),sourceTree:'b'.repeat(40),sourceSHA256,
@@ -161,4 +163,17 @@ test('core report retains only fixed diagnostic codes on failed engine roots',as
  const raw=await fs.readFile(path.join(root,'build/native-core-evidence/status.json'),'utf8');
  assert.deepEqual(JSON.parse(raw).engineLifetimeDiagnostics,[item]);
  assert.ok(!raw.includes('PRIVATE_SYNTHETIC'));
+});
+
+test('tracked-run ordering failure records only the approved root and stage',()=>{
+ const pkg=MODULE+'/internal/engine';
+ const name='TestTrackedRunResolvesSignalsBeforePublishingImmediateExit';
+ const other='TestPrivateTrackedName';
+ const tracker=new C.Tracker({schemaVersion:1,module:MODULE,packages:[{path:pkg,tests:[name,other]}]});
+ for(const root of [name,other]){
+  tracker.event({Action:'fail',Package:pkg,Test:root+'/private-subtest/lifetime-diagnostic/fixture-cleanup-retry'});
+  tracker.event({Action:'fail',Package:pkg,Test:root});
+ }
+ assert.deepEqual(C.engineLifetimeDiagnostics(tracker,tracker.value('unit',1).packages),
+  [{test:name,code:'fixture-cleanup-retry'}]);
 });

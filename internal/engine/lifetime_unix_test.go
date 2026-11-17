@@ -384,7 +384,7 @@ type lifetimeObserverTrace struct {
 
 var lifetimeDiagnosticStages = []string{
 	"launch", "inherited-endpoint-close", "control-write", "control-reply",
-	"identity-reply", "wait-barrier", "signal-admission", "cleanup-fault", "terminal-wait", "terminal-publication", "terminal-reason", "terminal-status", "graceful-stop",
+	"identity-reply", "wait-barrier", "signal-admission", "cleanup-fault", "cleanup-retry", "terminal-wait", "terminal-publication", "terminal-reason", "terminal-status", "graceful-stop",
 	"output-write", "shutdown-lock", "launch-publication", "shutdown-generation", "policy-revocation",
 }
 var lifetimeObserverPhases = []string{

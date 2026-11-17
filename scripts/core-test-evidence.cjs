@@ -4,7 +4,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path'),{createHash}=require('node:crypto'),{spawn,execFileSync}=require('node:child_process');
 const MODULE='github.com/Yunushan/accessweaver',modes=['unit','race','vet'],stages=['identity','catalog','execute','source','complete'];
 const sources=['.github/workflows/native-core.yml','scripts/core-test-evidence.cjs','scripts/core-test-catalog/main.go','scripts/core-test-catalog/main_test.go','go.mod','go.sum'];
-function reportSources(platform){return platform==='darwin'?[...sources,'.github/workflows/release.yml','.github/workflows/darwin-audit-commands.yml','internal/engine/lifetime_unix_test.go','internal/engine/shutdown_unix_test.go']:sources}
+function reportSources(platform){return platform==='darwin'?[...sources,'.github/workflows/release.yml','.github/workflows/darwin-audit-commands.yml','internal/engine/lifetime_unix_test.go','internal/engine/shutdown_unix_test.go','internal/engine/tracked_run_test.go']:sources}
 // Only these public, fixed CLI cases/phases may appear in supplemental
 // annotations. Dynamic test labels and Output payloads are never retained.
 const closedPipePackage=MODULE+'/cmd/accessweaver',closedPipeRoot='TestRecordedEngineClosedStdoutAndStderrReapBeforeScopeRestoration',closedPipeRepeat='TestRecordedEngineClosedStandardPipeRepeated';
@@ -17,7 +17,11 @@ for(const label of [...closedPipeLabels])if(label.endsWith('/scope-cleanup'))for
 // Failure-only fixture phases. Retain the catalogued root and final fixed
 // suffix, never intermediate runtime labels or raw Go Output payloads.
 const engineLifetimePackage=MODULE+'/internal/engine';
-const engineLifetimeStages=['launch','inherited-endpoint-close','control-write','control-reply','identity-reply','wait-barrier','signal-admission','cleanup-fault','terminal-wait','terminal-publication','terminal-reason','terminal-status','graceful-stop','output-write','shutdown-lock','launch-publication','shutdown-generation','policy-revocation'];
+const engineLifetimeStages=['launch','inherited-endpoint-close','control-write','control-reply','identity-reply','wait-barrier','signal-admission','cleanup-fault','cleanup-retry','terminal-wait','terminal-publication','terminal-reason','terminal-status','graceful-stop','output-write','shutdown-lock','launch-publication','shutdown-generation','policy-revocation'];
+function engineDiagnosticRoot(root){
+ return /^TestUnix(?:Lifetime|Shutdown)[A-Za-z0-9_]*$/.test(root) ||
+  root==='TestTrackedRunResolvesSignalsBeforePublishingImmediateExit';
+}
 const engineObserverPhases=['not-created','binding','bound','bind-failed','waiting','exit-observed','wait-failed','closing','closed','close-failed'];
 const engineObserverErrors=['none','permission','descriptor','argument','process-gone','ownership-lost','invalid-observation','other'];
 const engineLifetimeLabels=new Set(engineLifetimeStages.map(stage=>'fixture-'+stage));
@@ -33,7 +37,7 @@ class Tracker{
   const p=this.packages.find(p=>p.path===event.Package);if(!p){this.increment('unknown');return}
   if(event.Test!==undefined&&event.Test!==''){
    if(typeof event.Test!=='string'||event.Test.length>65536){this.increment('unknown');return}const slash=event.Test.indexOf('/'),root=slash<0?event.Test:event.Test.slice(0,slash),t=p.tests.find(t=>t.name===root);if(!t){this.increment('unknown');return}
-   if(slash>=0){if(action==='fail'&&p.path===engineLifetimePackage&&/^TestUnix(?:Lifetime|Shutdown)[A-Za-z0-9_]*$/.test(root)){const tail=event.Test.split('/').slice(-2);if(tail[0]==='lifetime-diagnostic'&&engineLifetimeLabels.has(tail[1])&&this.engineLifetimeFailures.size<64)this.engineLifetimeFailures.add(root+'/lifetime-diagnostic/'+tail[1])}if(action==='fail'&&p.path===closedPipePackage&&closedPipeLabels.has(event.Test)&&this.closedPipeFailures.size<10)this.closedPipeFailures.add(event.Test);if(['pass','fail','skip'].includes(action)){const key={pass:'childPassed',fail:'childFailed',skip:'childSkipped'}[action];if(t[key]>=10000000)this.overflow=true;else t[key]++}return}
+   if(slash>=0){if(action==='fail'&&p.path===engineLifetimePackage&&engineDiagnosticRoot(root)){const tail=event.Test.split('/').slice(-2);if(tail[0]==='lifetime-diagnostic'&&engineLifetimeLabels.has(tail[1])&&this.engineLifetimeFailures.size<64)this.engineLifetimeFailures.add(root+'/lifetime-diagnostic/'+tail[1])}if(action==='fail'&&p.path===closedPipePackage&&closedPipeLabels.has(event.Test)&&this.closedPipeFailures.size<10)this.closedPipeFailures.add(event.Test);if(['pass','fail','skip'].includes(action)){const key={pass:'childPassed',fail:'childFailed',skip:'childSkipped'}[action];if(t[key]>=10000000)this.overflow=true;else t[key]++}return}
    if(action==='run'){if(t.attempts>=16){this.overflow=true;return}t.attempts++;t.status='running'}
    if(['pass','fail','skip'].includes(action)){if(['passed','failed','skipped'].includes(t.status)){this.increment('unknown');return}t.status={pass:'passed',fail:'failed',skip:'skipped'}[action];t.elapsedMilliseconds=elapsed(event.Elapsed)}
   }else{
@@ -81,7 +85,7 @@ function validateEngineLifetimeDiagnostics(items,packages){
  const seen=new Set();
  for(const item of items){
   exact(item,['test','code']);
-  assert.ok(typeof item.test==='string'&&/^TestUnix(?:Lifetime|Shutdown)[A-Za-z0-9_]*$/.test(item.test));
+  assert.ok(typeof item.test==='string'&&engineDiagnosticRoot(item.test));
   assert.ok(engineLifetimeLabels.has(item.code));
   assert.ok(engine?.tests.some(t=>t.name===item.test&&t.status==='failed'&&t.childFailed>0));
   const key=item.test+'/'+item.code;
