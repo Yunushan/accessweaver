@@ -1571,7 +1571,7 @@ func (f *ordinaryFixture) report(t *testing.T) {
 		"cleanupComplete": f.cleanupOK, "passed": passed, "productionQualificationComplete": false,
 	}
 	if f.commands {
-		report["schemaVersion"] = 9
+		report["schemaVersion"] = 10
 		report["desktopFailureStage"] = windowsDesktopStageNames[f.desktopFailure]
 		report["runReleaseFailureStage"] = windowsRunReleaseNames[f.releaseFailure]
 		report["aliasFailureVariant"], report["aliasFailureStage"] = windowsAliasFailureNames(f.aliasFailure)

@@ -457,6 +457,7 @@ var windowsRunReleaseNames = [...]string{
 	"job-worker-missing", "job-live-engine", "job-terminated-engine", "job-live-worker-peer",
 	"job-live-other", "job-terminated-other", "job-peer-probe", "job-worker-only-list",
 	"job-live-system-console-path", "job-live-system-powershell-path", "job-live-system-cmd-path",
+	"console-window-binding", "console-process-binding", "console-process-open", "console-image-provenance", "console-initial-job-members",
 }
 
 func windowsRunReleaseValid(stage windowsRunReleaseStage, failed uint64) bool {
@@ -465,6 +466,10 @@ func windowsRunReleaseValid(stage windowsRunReleaseStage, failed uint64) bool {
 	}
 	const runCase = uint64(1) << (5 + 7)
 	const drainCase = uint64(1) << (5 + 8)
+	if stage >= 36 {
+		stream, known := windowsRunDetailBit("run-stream")
+		return known && failed&runCase != 0 && failed&(stream<<(5+windowsRunDetailCaseOffset)) != 0
+	}
 	released, known := windowsRunDetailBit("run-released-resources")
 	if !known {
 		return false
@@ -483,12 +488,67 @@ func TestWindowsRunReleaseProjectionIsClosedAndCaseBound(t *testing.T) {
 	const drainCase = uint64(1) << (5 + 8)
 	for value := 0; value < 256; value++ {
 		stage := windowsRunReleaseStage(value)
-		known := value > 0 && value < len(windowsRunReleaseNames)
+		stream, _ := windowsRunDetailBit("run-stream")
+		if value >= 36 && windowsRunReleaseValid(stage, runCase|stream<<(5+windowsRunDetailCaseOffset)) != (value < len(windowsRunReleaseNames)) {
+			t.Fatal("console binding diagnostic escaped its owning assertion")
+		}
+		known := value > 0 && value < 36
 		if windowsRunReleaseValid(stage, runCase|released) != known ||
 			windowsRunReleaseValid(stage, released) ||
-			windowsRunReleaseValid(stage, drainCase) != (value < len(windowsRunReleaseNames)) ||
+			windowsRunReleaseValid(stage, drainCase) != (value < 36) ||
 			windowsRunReleaseValid(stage, 0) != (value == 0) {
 			t.Fatal("release stage escaped its fixed vocabulary or owning assertion")
+		}
+	}
+}
+
+// A held console host is part of the fixture baseline, never an engine child.
+// Require an exact, duplicate-free set, not a larger allowed process count.
+func windowsJobMembersValid(worker, console, child uint32, consoleInJob bool, assigned uint32, ids []uint32) bool {
+	if worker == 0 || (consoleInJob && (console == 0 || console == worker)) || (child != 0 && (child == worker || child == console)) {
+		return false
+	}
+	expected := map[uint32]bool{worker: true}
+	if consoleInJob {
+		expected[console] = true
+	}
+	if child != 0 {
+		expected[child] = true
+	}
+	if assigned != uint32(len(ids)) || len(ids) != len(expected) {
+		return false
+	}
+	for _, pid := range ids {
+		if !expected[pid] {
+			return false
+		}
+		delete(expected, pid)
+	}
+	return len(expected) == 0
+}
+
+func TestWindowsJobMembersRejectUnknownAndDuplicateProcesses(t *testing.T) {
+	cases := []struct {
+		consoleInJob    bool
+		child, assigned uint32
+		ids             []uint32
+		want            bool
+	}{
+		{false, 0, 1, []uint32{10}, true}, {true, 0, 2, []uint32{20, 10}, true},
+		{false, 30, 2, []uint32{30, 10}, true}, {true, 30, 3, []uint32{30, 20, 10}, true},
+		{true, 0, 2, []uint32{10, 10}, false}, {true, 0, 2, []uint32{10, 99}, false},
+		{false, 0, 1, []uint32{99}, false}, {true, 30, 3, []uint32{10, 20}, false},
+		{false, 0, 2, []uint32{10}, false}, {true, 30, 3, []uint32{10, 20, 20}, false},
+		{false, 0, 2, []uint32{10, 20}, false}, {true, 0, 3, []uint32{10, 20, 99}, false},
+	}
+	for _, c := range cases {
+		if windowsJobMembersValid(10, 20, c.child, c.consoleInJob, c.assigned, c.ids) != c.want {
+			t.Fatal("job membership escaped the held fixture baseline")
+		}
+	}
+	for _, values := range [][3]uint32{{0, 20, 30}, {10, 10, 30}, {10, 0, 30}, {10, 20, 10}, {10, 20, 20}} {
+		if windowsJobMembersValid(values[0], values[1], values[2], true, 3, []uint32{10, 20, 30}) {
+			t.Fatal("invalid process binding accepted")
 		}
 	}
 }

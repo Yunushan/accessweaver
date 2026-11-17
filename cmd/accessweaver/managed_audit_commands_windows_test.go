@@ -351,6 +351,10 @@ func stageRequiredWindowsPolicy(f *ordinaryFixture) (*ordinaryPolicyFixture, err
 }
 
 type windowsCommandWorker struct {
+	consoleProcess                                   windows.Handle
+	consoleWindow                                    uintptr
+	consolePID                                       uint32
+	consoleInJob                                     bool
 	releaseFailure                                   windowsRunReleaseStage
 	base, directory, state, profilePath, engine, sid string
 	start, head                                      audit.Checkpoint
@@ -1488,22 +1492,30 @@ func runWindowsCommandCases(nonce []byte) (executed, passed uint64, desktopFailu
 	if root.mkdirPrivate(root.base) != nil {
 		return 0, 0, windowsDesktopNoFailure, 0
 	}
-	for index, operation := range operations {
-		if ctx.Err() != nil {
-			break
+	if stage := root.bindWindowsConsole(); stage != 0 {
+		root.releaseFailure = stage
+		executed |= 1 << 7
+		root.runAssertion("run-stream", false)
+	} else {
+		for index, operation := range operations {
+			if ctx.Err() != nil {
+				break
+			}
+			executed |= 1 << index
+			if operation() != nil {
+				break
+			}
+			passed |= 1 << index
 		}
-		executed |= 1 << index
-		if operation() != nil {
-			break
-		}
-		passed |= 1 << index
 	}
 	// No arbitrary enumeration is adopted for deletion. Unexpected operation
 	// outputs remain in their private directory and make exact cleanup fail.
 	// Preserve each operation's result and report cleanup as its own fixed case.
 	cleanupBit := uint64(1) << len(operations)
 	executed |= cleanupBit
-	if root.close() == nil {
+	cleanupErr := root.close()
+	consoleClosed := ordinaryClose(&root.consoleProcess)
+	if cleanupErr == nil && consoleClosed {
 		passed |= cleanupBit
 	}
 	executed |= root.runDetailExecuted << windowsRunDetailCaseOffset
@@ -1657,22 +1669,103 @@ func windowsOwnedReadyPipe(w *windowsCommandWorker, childPID uint32) (ready, ret
 	return true, false
 }
 
+func windowsCurrentJobMembers() ([]uint32, uint32, error) {
+	var list struct {
+		Assigned, Count uint32
+		IDs             [8]uintptr
+	}
+	if windows.QueryInformationJobObject(0, windows.JobObjectBasicProcessIdList, uintptr(unsafe.Pointer(&list)), uint32(unsafe.Sizeof(list)), nil) != nil ||
+		list.Count > 8 || list.Assigned != list.Count {
+		return nil, 0, errOrdinary
+	}
+	ids := make([]uint32, 0, list.Count)
+	for _, pid := range list.IDs[:list.Count] {
+		if pid == 0 || uint64(pid) > uint64(^uint32(0)) {
+			return nil, 0, errOrdinary
+		}
+		ids = append(ids, uint32(pid))
+	}
+	return ids, list.Assigned, nil
+}
+
+func (w *windowsCommandWorker) bindWindowsConsole() windowsRunReleaseStage {
+	hwnd, _, _ := ordinaryKernel.NewProc("GetConsoleWindow").Call()
+	if hwnd == 0 {
+		return 36
+	}
+	var pid uint32
+	thread, _, _ := ordinaryUser32.NewProc("GetWindowThreadProcessId").Call(hwnd, uintptr(unsafe.Pointer(&pid)))
+	if thread == 0 || pid == 0 || pid == uint32(os.Getpid()) {
+		return 37
+	}
+	process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, pid)
+	if err != nil {
+		return 38
+	}
+	w.consoleProcess, w.consolePID, w.consoleWindow = process, pid, hwnd
+	var image [32768]uint16
+	length := uint32(len(image))
+	system, systemErr := nativepath.SystemDirectory()
+	if windows.QueryFullProcessImageName(process, 0, &image[0], &length) != nil || systemErr != nil ||
+		length == 0 || length >= uint32(len(image)) || !strings.EqualFold(windows.UTF16ToString(image[:length]), filepath.Join(system, "conhost.exe")) {
+		return 39
+	}
+	file, err := ordinaryOpen(filepath.Join(system, "conhost.exe"), windows.FILE_READ_ATTRIBUTES|windows.READ_CONTROL)
+	if err != nil {
+		return 39
+	}
+	protected := wintrust.CheckHandle(syscall.Handle(file), uint32(windows.SE_FILE_OBJECT), ordinaryAncestorMutation) == nil
+	closed := ordinaryClose(&file)
+	if !protected || !closed {
+		return 39
+	}
+	ids, assigned, err := windowsCurrentJobMembers()
+	if err != nil {
+		return 40
+	}
+	for _, id := range ids {
+		if id == pid {
+			w.consoleInJob = true
+		}
+	}
+	if !windowsJobMembersValid(uint32(os.Getpid()), pid, 0, w.consoleInJob, assigned, ids) || !w.windowsConsoleStillBound() {
+		return 40
+	}
+	return 0
+}
+
+func (w *windowsCommandWorker) windowsConsoleStillBound() bool {
+	root := w.manifest()
+	state, err := windows.WaitForSingleObject(root.consoleProcess, 0)
+	if err != nil || state != uint32(windows.WAIT_TIMEOUT) {
+		return false
+	}
+	hwnd, _, _ := ordinaryKernel.NewProc("GetConsoleWindow").Call()
+	var pid uint32
+	thread, _, _ := ordinaryUser32.NewProc("GetWindowThreadProcessId").Call(hwnd, uintptr(unsafe.Pointer(&pid)))
+	return hwnd == root.consoleWindow && thread != 0 && pid == root.consolePID
+}
+
 func windowsRunWaitReady(w *windowsCommandWorker) bool {
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		var processes struct {
-			Assigned, Count uint32
-			IDs             [4]uintptr
-		}
-		if windows.QueryInformationJobObject(0, windows.JobObjectBasicProcessIdList, uintptr(unsafe.Pointer(&processes)), uint32(unsafe.Sizeof(processes)), nil) != nil || processes.Count > 4 {
+		ids, assigned, err := windowsCurrentJobMembers()
+		root := w.manifest()
+		if err != nil || !w.windowsConsoleStillBound() {
 			return false
 		}
-		if processes.Count == 2 {
-			var childPID uint32
-			for _, pid := range processes.IDs[:processes.Count] {
-				if uint32(pid) != uint32(os.Getpid()) {
-					childPID = uint32(pid)
+		var childPID uint32
+		for _, pid := range ids {
+			if pid != uint32(os.Getpid()) && (!root.consoleInJob || pid != root.consolePID) {
+				if childPID != 0 {
+					return false
 				}
+				childPID = pid
+			}
+		}
+		if childPID != 0 {
+			if !windowsJobMembersValid(uint32(os.Getpid()), root.consolePID, childPID, root.consoleInJob, assigned, ids) {
+				return false
 			}
 			if childPID == 0 {
 				return false
@@ -1873,7 +1966,10 @@ func windowsRunReleased(w *windowsCommandWorker) error {
 		uintptr(unsafe.Pointer(&accounting)), uint32(unsafe.Sizeof(accounting)), nil) != nil {
 		return fail(19)
 	}
-	if accounting.Active != 1 {
+	root := w.manifest()
+	ids, assigned, err := windowsCurrentJobMembers()
+	if err != nil || !w.windowsConsoleStillBound() || accounting.Active != assigned ||
+		!windowsJobMembersValid(uint32(os.Getpid()), root.consolePID, 0, root.consoleInJob, assigned, ids) {
 		return fail(windowsRunJobMismatch(w, accounting.Active))
 	}
 	return nil
