@@ -47,6 +47,7 @@ func TestApplicationPrivilegeReview(t *testing.T) {
 	m := New(t.TempDir())
 	m.platform = "windows"
 	m.requireAdmin = func() error { return nil }
+	m.requireDesktop = func() error { return nil }
 	p, err := m.Preview(Request{Action: "app-repair", Engine: "discord"})
 	if err != nil || p.Ready || len(p.Issues) == 0 {
 		t.Fatalf("combined repair must be blocked: %+v %v", p, err)
@@ -69,6 +70,7 @@ func TestSplitCordMaintenanceRequiresAdministrator(t *testing.T) {
 	m := New(t.TempDir())
 	m.platform = "windows"
 	m.requireAdmin = func() error { return errors.New("elevated token required") }
+	m.requireDesktop = func() error { return nil }
 	for _, action := range []string{"app-install", "app-remove", "app-start"} {
 		maintenance := action != "app-start"
 		p, err := m.Preview(Request{Action: action, Engine: "splitcord"})

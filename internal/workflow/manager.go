@@ -153,11 +153,12 @@ type Manager struct {
 	lastJobPersistClosed   bool
 	platform               string
 	requireAdmin           func() error
+	requireDesktop         func() error
 }
 
 func New(root string) *Manager { return NewWithGuard(root, managed.NewGuard(nil)) }
 func NewWithGuard(root string, guard *managed.Guard) *Manager {
-	m := &Manager{guard: guard, root: filepath.Join(root, "workflows"), storeRoot: filepath.Clean(root), openStoreLease: openWorkflowStoreLease, plans: map[string]Plan{}, execute: execute, platform: runtime.GOOS, requireAdmin: requireAdministrator}
+	m := &Manager{guard: guard, root: filepath.Join(root, "workflows"), storeRoot: filepath.Clean(root), openStoreLease: openWorkflowStoreLease, plans: map[string]Plan{}, execute: execute, platform: runtime.GOOS, requireAdmin: requireAdministrator, requireDesktop: requireDesktopUser}
 	m.persist = m.defaultPersist
 	return m
 }
@@ -187,8 +188,8 @@ func (m *Manager) Preview(r Request) (Plan, error) {
 	if m.platform != "windows" {
 		p.Issues = append(p.Issues, "Windows system workflows require a Windows host")
 	}
-	if m.platform == "windows" && p.RequiresAdministrator {
-		if err := m.checkAdministrativeAccess(); err != nil {
+	if m.platform == "windows" {
+		if err := m.checkWorkflowAccess(p); err != nil {
 			p.Issues = append(p.Issues, err.Error())
 		}
 	}
@@ -517,10 +518,8 @@ func (m *Manager) Start(id string) (Job, error) {
 	if _, ok := m.plans[id]; !ok || time.Now().After(p.ExpiresAt) {
 		return Job{}, errors.New("workflow plan expired; preview again")
 	}
-	if p.RequiresAdministrator {
-		if err := m.checkAdministrativeAccess(); err != nil {
-			return Job{}, err
-		}
+	if err := m.checkWorkflowAccess(p); err != nil {
+		return Job{}, err
 	}
 	m.cancel = cancel
 	m.job = Job{ID: id, Action: p.Request.Action, State: "running", StartedAt: time.Now().UTC()}
@@ -1107,9 +1106,29 @@ func requiresAdministrator(action string) bool {
 		return true
 	}
 }
-func (m *Manager) checkAdministrativeAccess() error {
-	if m.requireAdmin == nil {
-		return errors.New("cannot determine administrator access; use a separately elevated system apply CLI")
+func (r Request) requiresDesktopUser() bool {
+	switch r.Action {
+	case "app-install", "app-remove":
+		return !r.splitCordMaintenance()
+	case "app-start", "app-reinstall":
+		return true
+	default:
+		return false
 	}
-	return m.requireAdmin()
+}
+
+func (m *Manager) checkWorkflowAccess(plan Plan) error {
+	if plan.RequiresAdministrator {
+		if m.requireAdmin == nil {
+			return errors.New("cannot determine administrator access; use a separately elevated system apply CLI")
+		}
+		return m.requireAdmin()
+	}
+	if plan.Request.requiresDesktopUser() {
+		if m.requireDesktop == nil {
+			return errors.New("apply from the signed-in user's Windows desktop so AccessWeaver can verify desktop access")
+		}
+		return m.requireDesktop()
+	}
+	return nil
 }

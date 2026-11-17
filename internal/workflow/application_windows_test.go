@@ -7,12 +7,20 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/Yunushan/accessweaver/internal/uiaccess"
 )
 
+func TestNativeDesktopAdmissionRefusesElevatedToken(t *testing.T) {
+	if err := requireAdministrator(); err != nil {
+		t.Skip("this admission check requires an elevated Windows test process")
+	}
+	const denied = "apply from an unelevated Windows desktop session as the signed-in user"
+	if err := requireDesktopUser(); err == nil || err.Error() != denied {
+		t.Fatalf("expected the native desktop-token refusal, got %v", err)
+	}
+}
+
 func TestNativeUserApplicationNoOpAvoidsMachineStorage(t *testing.T) {
-	if err := uiaccess.RequireUnelevated(); err != nil {
+	if err := requireDesktopUser(); err != nil {
 		t.Skip("user application acceptance requires an unelevated desktop token")
 	}
 	root := t.TempDir()
