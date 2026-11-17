@@ -267,6 +267,7 @@ function Reset-Finalizer([string[]]$Faults=@()){
     $script:events=[Collections.Generic.List[string]]::new();$script:events.Add('source fixture event')
     $script:journalPath='source-fixture-journal';$script:journalState='succeeded';$script:rebootRequired=$true
     $script:externalEffectsPending=$false;$script:pendingUninstaller='source-fixture-uninstaller'
+    $script:applicationMutex=$null
     $script:mutex=[AccessWeaverFinalizerFixture.Owner]::new();$script:ownsMutex=$true
     $script:mutex.FailRelease=$Faults -contains 'mutex-release';$script:mutex.FailDispose=$Faults -contains 'mutex-dispose'
 }
@@ -275,7 +276,7 @@ function Save-Journal {
     if($script:finalizerFaults -contains 'journal-save'){throw 'PRIVATE_FINAL_JOURNAL'}
 }
 function Invoke-WorkflowDeferredUninstaller([string]$Path){
-    Assert-Finalizer ($null -eq $script:mutex -and -not $script:ownsMutex) 'Deferred handoff preceded observed mutex cleanup'
+    Assert-Finalizer ($null -eq $script:applicationMutex -and $null -eq $script:mutex -and -not $script:ownsMutex) 'Deferred handoff preceded observed mutex cleanup'
     $script:finalizerCalls.Add('handoff')
     if($script:finalizerFaults -contains 'uninstaller-start'){throw 'PRIVATE_FINAL_HANDOFF'}
 }
@@ -301,6 +302,20 @@ foreach($faults in @(@(),@('journal-save'),@('mutex-release'),@('mutex-dispose')
     Assert-Finalizer ($result.ok -eq ($faults.Count -eq 0)) 'Finalization turned an uncertain outcome into success'
     Assert-Finalizer ($result.externalEffectsPending -and $script:journalEffectsPending) 'Deferred launch uncertainty was not saved before release'
     if($faults.Count){Assert-Finalizer ($result.error -notmatch 'PRIVATE_') 'Finalizer exposed a private cleanup cause in its public summary'}
+}
+foreach($failOwners in @($false,$true)){
+    $faults=if($failOwners){@('mutex-release','mutex-dispose')}else{@()}
+    Reset-Finalizer $faults
+    $adminOwner=$script:mutex
+    $desktopOwner=[AccessWeaverFinalizerFixture.Owner]::new()
+    $desktopOwner.FailRelease=$failOwners;$desktopOwner.FailDispose=$failOwners
+    $script:applicationMutex=$desktopOwner
+    $result=@{ok=$true;data=$null}
+    Complete-WorkflowFinalization $result 'source-path' $finalizerToken
+    Assert-Finalizer ($desktopOwner.Releases -eq 1 -and $desktopOwner.Disposals -eq 1 -and
+        $adminOwner.Releases -eq 1 -and $adminOwner.Disposals -eq 1) 'Finalizer did not attempt both owners independently'
+    Assert-Finalizer (($result.finalizationFailures -join ',') -ceq ($faults -join ',') -and $result.ok -eq (-not $failOwners)) 'Finalizer lost or duplicated mutex cleanup failures'
+    Assert-Finalizer (($script:finalizerCalls -contains 'handoff') -ne $failOwners) 'Deferred handoff ignored mutex cleanup outcome'
 }
 Reset-Finalizer @('journal-save','mutex-release','mutex-dispose')
 $failed=@{ok=$false;error='original operation failure';data=$null}

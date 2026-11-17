@@ -3907,23 +3907,22 @@ $prefix='Global\AccessWeaver-DesktopApplications-'
 Assert ($lockSource.Contains($prefix)) 'Desktop application coordination uses the cross-session namespace'
 $fixturePrefix=$prefix+'fixture-'+[guid]::NewGuid().ToString('N')+'-'
 $lock=[scriptblock]::Create($lockSource.Replace($prefix,$fixturePrefix))
-$script:mutex=$null
-$script:ownsMutex=$false
+$script:applicationMutex=$null
 & $lock
 try{
-    $owner=$script:mutex
-    Assert ($script:ownsMutex -and $null -ne $owner) 'Desktop application operation owns its Windows mutex'
+    $owner=$script:applicationMutex
+    Assert ($null -ne $owner) 'Desktop application operation owns its Windows mutex'
     $busy=$false
     try {& $lock}catch{$busy=$_.Exception.Message -ceq 'An AccessWeaver application workflow is already active for this Windows user'}
-    Assert ($busy -and [object]::ReferenceEquals($script:mutex,$owner)) 'Second application operation is refused without replacing the original owner'
+    Assert ($busy -and [object]::ReferenceEquals($script:applicationMutex,$owner)) 'Second application operation is refused without replacing the original owner'
 }finally{
-    try {$script:mutex.ReleaseMutex()}finally{$script:mutex.Dispose();$script:mutex=$null;$script:ownsMutex=$false}
+    try {$script:applicationMutex.ReleaseMutex()}finally{$script:applicationMutex.Dispose();$script:applicationMutex=$null}
 }
 & $lock
 try {
-    Assert ($script:ownsMutex) 'Application workflow admission recovers after its owner releases the mutex'
+    Assert (($null -ne $script:applicationMutex)) 'Application workflow admission recovers after its owner releases the mutex'
 } finally {
-    try {$script:mutex.ReleaseMutex()}finally{$script:mutex.Dispose();$script:mutex=$null;$script:ownsMutex=$false}
+    try {$script:applicationMutex.ReleaseMutex()}finally{$script:applicationMutex.Dispose();$script:applicationMutex=$null}
 }
 $descriptor=Private-DirectorySecurity
 Assert (Trusted-SecurityDescriptor $descriptor) 'Administrator-owned private storage descriptor accepted'
@@ -4416,6 +4415,10 @@ try {
     [void][IO.Directory]::CreateDirectory($profiles)
     $manifest=Join-Path $profiles 'drover-owned.json'
     [IO.File]::WriteAllText($manifest,'inert recovery record')
+    function Enter-ApplicationWorkflow {
+        $script:fixtureDroverLockCalls++
+        if($busy){throw 'Fixture application workflow is active'}
+    }
     function Discord-Directories {return $directories}
     function Configure-DNS {throw 'Unexpected DNS mutation'}
     function Make-Config {throw 'Unexpected WireSock configuration'}
@@ -4423,12 +4426,16 @@ try {
     foreach($selection in @(@{engine='byedpi';mode='dll'},@{engine='wiresock';mode='standard'})){
         $r=@{engine=$selection.engine;mode=$selection.mode;dns='doh'}
         $directories=@('C:\fixture\app-1')
-        $refused=$false
-        try {Install-Method | Out-Null}catch{
-            if($_.Exception.Message -cne 'Restore the existing managed drover installation before replacing it'){throw}
-            $refused=$true
+        foreach($busy in @($true,$false)){
+            $script:fixtureDroverLockCalls=0
+            $expected=if($busy){'Fixture application workflow is active'}else{'Restore the existing managed drover installation before replacing it'}
+            $refused=$false
+            try {Install-Method | Out-Null}catch{
+                if($_.Exception.Message -cne $expected){throw}
+                $refused=$true
+            }
+            Assert ($refused -and $script:fixtureDroverLockCalls -eq 1 -and [IO.File]::ReadAllText($manifest) -ceq 'inert recovery record') ('Drover lock precedes ownership checks and machine changes for '+$r.engine)
         }
-        Assert ($refused -and [IO.File]::ReadAllText($manifest) -ceq 'inert recovery record') ('Pending Drover recovery prevents machine changes for '+$r.engine)
     }
     [IO.File]::Delete($manifest)
     $r=@{engine='byedpi';mode='dll';dns='doh'}
@@ -4446,6 +4453,7 @@ try {
     $r=@{engine='byedpi'}
     $trace=[Collections.Generic.List[string]]::new()
     $root=Join-Path $testRoot 'byedpi-probe'
+    function Enter-ApplicationWorkflow {$trace.Add('lock')}
     function Discord-Directories {return 'C:\fixture\app-1'}
     function Ensure-Asset {return 'C:\fixture\ciadpi.exe'}
     function Assert-ManagedServiceOwnership {return $null}
@@ -4470,7 +4478,7 @@ try {
         @{mode='service';label='service';success='service,firewall,probe'},
         @{mode='split';label='split';success='service,firewall,probe,proxifyre'},
         @{mode='';label='default';success='service,firewall,probe,proxifyre'},
-        @{mode='dll';label='DLL';success='service,firewall,probe,drover'}
+        @{mode='dll';label='DLL';success='lock,service,firewall,probe,drover'}
     )){
         $r.mode=$case.mode
         foreach($failProbe in @($true,$false)){
@@ -4480,7 +4488,7 @@ try {
                 if($_.Exception.Message -cne 'Fixture SOCKS negotiation failed'){throw}
                 $refused=$true
             }
-            $expected=if($failProbe){'service,firewall,probe'}else{$case.success}
+            $expected=if($failProbe -and $case.mode -ceq 'dll'){'lock,service,firewall,probe'}elseif($failProbe){'service,firewall,probe'}else{$case.success}
             Assert ($refused -eq $failProbe -and ($trace -join ',') -ceq $expected) ('ByeDPI '+$case.label+' install completes only after the managed proxy probe, probe failure '+$failProbe)
         }
     }
@@ -4505,6 +4513,7 @@ try {
     $serviceDigest='A'*64
     $expectedCommandLine='"'+$binary+'" --ip 127.0.0.1 --port 1080 --split 2 "two words\\" a\\\"b ""'
     $trace=[Collections.Generic.List[string]]::new()
+    function Enter-ApplicationWorkflow {}
     function Discord-Directories {return 'C:\fixture\app-1'}
     function Assert-ManagedServiceOwnership([string]$Name){
         if($Name -cne 'AccessWeaver-byedpi'){throw 'Unexpected service name'}

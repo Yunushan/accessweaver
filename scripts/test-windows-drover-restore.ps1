@@ -11,6 +11,11 @@ foreach($name in @('No-Reparse','Get-DroverInstallDirectories','Assert-DroverIns
     if($nodes.Count -ne 1){throw 'Missing Drover fixture function'}
     . ([scriptblock]::Create($nodes[0].Extent.Text))
 }
+function Enter-ApplicationWorkflow {
+    $script:applicationLockAttempts++
+    if($script:applicationBusy){throw 'Fixture application workflow is active'}
+    $script:applicationMutex=[object]::new()
+}
 function Assert-TrustedItem([string]$path){No-Reparse $path}
 function Stop-AppProcesses([string]$variant){
     if($variant -cne 'discord'){throw 'Wrong client selected'}
@@ -92,6 +97,14 @@ try {
     function Write-Manifest($entries){[IO.File]::WriteAllText($manifest,(ConvertTo-Json -InputObject $entries))}
     Write-Manifest $records
     $script:stops=0;$script:events=0;$script:denySecond=$false;$script:externalEffectsPending=$false
+    $script:applicationMutex=$null;$script:applicationBusy=$true;$script:applicationLockAttempts=0
+    $ownershipDigest=Get-DroverFileHash $manifest
+    $lockRefused=$false
+    try {Restore-Drover}catch{$lockRefused=$_.Exception.Message -ceq 'Fixture application workflow is active'}
+    Require ($lockRefused -and $script:applicationLockAttempts -eq 1 -and $script:stops -eq 0 -and
+        (Get-DroverFileHash $manifest) -ceq $ownershipDigest -and (Get-DroverFileHash $first) -ceq $installed -and
+        (Get-DroverFileHash $second) -ceq $installedINI -and -not $script:externalEffectsPending) 'Busy desktop workflow allowed Drover restoration to change recovery state'
+    $script:applicationBusy=$false
     $refused=$false
     try {Install-Drover}catch{$refused=$_.Exception.Message -ceq 'Restore the existing managed drover installation before replacing it'}
     Require ($refused -and $script:stops -eq 0 -and [IO.File]::Exists($manifest)) 'DLL deployment replaced pending Drover recovery'
@@ -136,6 +149,7 @@ try {
              [IO.File]::Exists($manifest) -and $script:events -eq 0 -and $script:externalEffectsPending) 'Partial restore lost ownership evidence'
     $script:denySecond=$false
     Restore-Drover
+    Require ($script:applicationLockAttempts -eq 2) 'Drover restoration did not reuse the current workflow lock'
     Require ($script:stops -eq 2 -and (Get-DroverFileHash $first) -ceq $original -and
              -not [IO.File]::Exists($second) -and -not [IO.File]::Exists($manifest) -and $script:events -eq 1) 'Retry could not finish verified restoration'
 

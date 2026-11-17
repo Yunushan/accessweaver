@@ -26,6 +26,7 @@ $script:dnsConfigured = $false
 $script:dnsOperationStage = 'initialization'
 $script:mutex = $null
 $script:ownsMutex = $false
+$script:applicationMutex = $null
 $script:journalState = 'running'
 $script:pendingUninstaller = $null
 $script:externalEffectsPending = $false
@@ -98,8 +99,7 @@ function Enter-ApplicationWorkflow {
         $owner.Dispose()
         throw 'An AccessWeaver application workflow is already active for this Windows user'
     }
-    $script:mutex=$owner
-    $script:ownsMutex=$true
+    $script:applicationMutex=$owner
 }
 function Initialize-Operation {
     # Check before machine-storage initialization, DNS changes, discovery or
@@ -2288,6 +2288,9 @@ function Restore-Drover([string]$ExpectedManifestSHA256) {
     $manifest=Join-Path $root 'profiles\drover-owned.json'
     No-Reparse $manifest
     if(-not (Test-Path -LiteralPath $manifest -ErrorAction Stop)){return}
+    # Installation retains this lock through rollback. Separate removal and
+    # recovery must acquire it before inspecting or stopping the user client.
+    if(-not $script:applicationMutex){Enter-ApplicationWorkflow}
     $bytes=Read-DroverManifest $manifest
     $manifestHash=Get-WorkflowBytesSHA256 $bytes
     if($ExpectedManifestSHA256 -and $manifestHash -ine $ExpectedManifestSHA256){throw 'Drover recovery journal differs from the current ownership record'}
@@ -4640,6 +4643,9 @@ function Install-ByeDPIDrover([string[]]$Arguments) {
 function Install-Method([string]$ScannedEngineSHA256,[string[]]$ScannedLuaSHA256) {
     if($r.engine -eq 'byedpi'){Assert-ByeDPIArguments @($r.args)}
     if(($r.engine -eq 'wiresock' -and $r.mode -eq 'standard') -or ($r.engine -eq 'byedpi' -and $r.mode -eq 'dll')){
+        # Lock the same Windows user's application before any DLL preflight,
+        # DNS, or service changes. Finalization releases both workflow locks.
+        Enter-ApplicationWorkflow
         [void](Get-DroverInstallDirectories)
     }
     if($r.engine -ne 'dnscrypt' -and $r.dns -and $r.dns -ne 'unchanged' -and -not $script:dnsConfigured){Configure-DNS $r.dns}
@@ -7135,11 +7141,19 @@ function Complete-WorkflowFinalization([Collections.IDictionary]$Result,[string]
     # Every owned cleanup stage is attempted independently. A failed journal
     # save must not skip mutex release/disposal or bounded result publication.
     try {Save-Journal}catch {[void]$failures.Add('journal-save')}
+    if($script:applicationMutex){
+        try {$script:applicationMutex.ReleaseMutex()}catch {[void]$failures.Add('mutex-release')}
+        try {$script:applicationMutex.Dispose();$script:applicationMutex=$null}catch {[void]$failures.Add('mutex-dispose')}
+    }
     if($script:mutex){
         if($script:ownsMutex){
-            try {$script:mutex.ReleaseMutex();$script:ownsMutex=$false}catch {[void]$failures.Add('mutex-release')}
+            try {$script:mutex.ReleaseMutex();$script:ownsMutex=$false}catch {
+                if(-not $failures.Contains('mutex-release')){[void]$failures.Add('mutex-release')}
+            }
         }
-        try {$script:mutex.Dispose();$script:mutex=$null}catch {[void]$failures.Add('mutex-dispose')}
+        try {$script:mutex.Dispose();$script:mutex=$null}catch {
+            if(-not $failures.Contains('mutex-dispose')){[void]$failures.Add('mutex-dispose')}
+        }
     }
     if($handoffPlanned -and $failures.Count -eq 0){
         # Mark before the attempt: a launch exception cannot prove that no
