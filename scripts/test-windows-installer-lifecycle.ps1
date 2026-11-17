@@ -981,12 +981,8 @@ end;
     $uninstallDataDetectionVerified=$true
 
     $stage='setup-pending-marker-replacement'
-    $injectionPoint='    AWInstallFinished := True;'
-    Require ([regex]::Matches($productSetup,[regex]::Escape($injectionPoint)).Count -eq 1) 'Expected one Setup post-copy fixture boundary'
-    # Preserve the product's install and verification path. The disposable
-    # compiled fixture replaces the marker after copying but before ssDone.
-    $injected=$injectionPoint + [Environment]::NewLine +
-        "    if not RegWriteStringValue(HKLM64, AWLifecycleRegistry, AWPendingInstall, '0.1.1-alpha|' + ExpandConstant('{app}')) then RaiseException('Could not change the owned pending installation fixture.');"
+    # Protected publication uses the original pending record. Replace it only
+    # after verification, while the completion routine still holds its handles.
     $guardPoint='    AWPendingRetirementFailed := True;'
     Require ([regex]::Matches($productSetup,[regex]::Escape($guardPoint)).Count -eq 1) 'Expected one Setup retirement fixture boundary'
     $checkGuards=@'
@@ -1022,8 +1018,10 @@ end;
 '@
     $routinePoint='procedure AWCompleteInstallation(const Destination: String);'
     Require ([regex]::Matches($productSetup,[regex]::Escape($routinePoint)).Count -eq 1) 'Expected one Setup completion routine'
-    $fixtureSetup=$productSetup.Replace($injectionPoint,$injected).Replace($routinePoint,$fixtureRoutine+$routinePoint)
-    [IO.File]::WriteAllText($faultSetup,$fixtureSetup.Replace($guardPoint,$checkGuards+[Environment]::NewLine+$guardPoint))
+    $replacement="    if not AWWriteLifecycleString(AWPendingInstall, '"+$builds[1].version+"|' + Destination, True) then RaiseException('Could not change the owned pending installation fixture.');"
+    $fixtureSetup=$productSetup.Replace($routinePoint,$fixtureRoutine+$routinePoint)
+    $injected=@($checkGuards,$replacement,$guardPoint) -join [Environment]::NewLine
+    [IO.File]::WriteAllText($faultSetup,$fixtureSetup.Replace($guardPoint,$injected))
     $null=@(& $compiler ('/DBuildRoot='+$genuinePayload) ('/DReleaseVersion='+$builds[0].version) ('/DTargetArch='+$Architecture) $faultSetup)
     Require ($LASTEXITCODE -eq 0) 'Pending-marker replacement fixture compilation failed'
     $refusalLog=Join-Path $capsule 'pending-marker-replacement.log'
