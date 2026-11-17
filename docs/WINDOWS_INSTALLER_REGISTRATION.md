@@ -299,3 +299,21 @@ retirement phase addresses that boundary. The AMD64 receipt is artifact
 0db9ff6eeaf7ac5b1d0ade92b97c180c6252d8ed0e98a6cb100170431e3a2525.
 The ARM64 receipt is artifact 14298444013 with ZIP SHA-256
 c77c50388acff02b04fde1c528bdeb45cd7f6a3d2f7bb2b6f8a7e219793d79e9.
+
+The [protected migration rerun](https://github.com/Yunushan/accessweaver/actions/runs/44020786005)
+at `d1f8c160782cbe4bd2a4cbf09d3ce032de3e3272` passed on AMD64 and ARM64.
+Both fixtures recovered the bound installation directory after the interrupted
+legacy retirement, confirmed that the stale registry writer lost access, and
+uninstalled the protected replacement.
+
+The [package cleanup run](https://github.com/Yunushan/accessweaver/actions/runs/44023287836)
+at `0c0fc0155cdcc723a3a7e8199946d5afb89b8d97` passed on AMD64 and ARM64.
+Both published a protected replacement, kept the matching recovery record
+when a prior file was locked, and removed the unchanged prior file on retry.
+The fixture verified that an edited former package file and an unrelated
+file both survived the retry. The AMD64 receipt is artifact `14302267031`
+with ZIP SHA-256 `91c0eea66cc50b73800a0897da6b7f3fb5e85249393eb03650128d6af8614564`.
+The ARM64 receipt is artifact `14302885293` with ZIP SHA-256
+`a6b6be934a98bd4fb73107dbb50f3783f3ad89eabe25d7ada115a964c6a0b282`.
+Organization-signed release qualification and migration of shortcuts outside
+the application directory remain open.
