@@ -174,11 +174,11 @@ function Invoke-ProtectedRegistrationAcceptance {
     $pins=[ordered]@{}
     foreach($name in $sourceNames){$pins[$name]=Digest (Join-Path $project $name)}
     $report=[ordered]@{
-        schemaVersion=2;scope='disposable-protected-registration-setup'
+        schemaVersion=3;scope='disposable-protected-registration-setup'
         sourceCommit=$source;runID=$run;runAttempt=$runAttempt;architecture=$Architecture
         sourceSHA256=$pins;compilerSHA256=$null;compiledSetupSHA256=$null;faultedSetupSHA256=$null
         stagedPayloadSHA256=$null;legacyInstallerSHA256=$null;migrationInstallerSHA256=$null;interruptedMigrationSHA256=$null
-        stage='build';setupExitCode=$null;failureSourceLine=$null
+        stage='build';setupExitCode=$null;failureSourceLine=$null;bindingFailure=$null
         rolledBackPublication=$false;pendingInstallDetected=$false;recoveredPublication=$false
         previousDirectoryRepair=$false;managedUninstallBinding=$false;ownedPayloadAndRegistrationRemoved=$false
         legacyWrongApprovalRefused=$false;legacyInterruptionVerified=$false;legacyRecoveryVerified=$false
@@ -275,11 +275,25 @@ function Invoke-ProtectedRegistrationAcceptance {
         $report.previousDirectoryRepair=$true
 
         $report.stage='managed-uninstall-binding'
-        $binding=Open-WorkflowUninstallBinding $Architecture
+        $binding=$null
         try {
+            $binding=Open-WorkflowUninstallBinding $Architecture
             Require ($null -ne $binding -and $binding.path -ieq $uninstaller -and
                 $binding.sha256 -ieq (Digest $uninstaller) -and
                 $binding.dataSHA256 -ieq (Digest $uninstallData)) 'Controller did not bind the protected registration and installed uninstaller'
+        } catch {
+            $report.bindingFailure=switch -Exact ($_.Exception.Message) {
+                'An AccessWeaver installation is incomplete. Retry the approved installer before uninstalling.' {'recovery-pending'}
+                'AccessWeaver Setup recovery state could not be read. Ask an administrator to verify it before uninstalling.' {'recovery-unavailable'}
+                'AccessWeaver Setup is active or its mutex could not be inspected' {'setup-active'}
+                'Registered AccessWeaver installation ownership could not be verified' {'ownership'}
+                'Registered AccessWeaver installation is writable by an untrusted principal' {'writable'}
+                'Registered AccessWeaver installation access could not be verified' {'access'}
+                'Registered AccessWeaver payload or uninstaller architecture could not be verified' {'architecture'}
+                'Controller did not bind the protected registration and installed uninstaller' {'identity'}
+                default {'other'}
+            }
+            throw
         } finally {if($binding){Close-WorkflowUninstallBinding $binding}}
         $report.managedUninstallBinding=$true
 

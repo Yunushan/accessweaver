@@ -235,3 +235,13 @@ opaque metadata changes, a foreign value, a held legacy writer and the
 separate replacement transaction. Native migration of real older packages must
 still verify retained files and shortcuts that the current package no longer
 ships. [Inno registration and log source](https://github.com/jrsoftware/issrc/blob/is-6_7_1/Projects/Src/Setup.Install.pas#L263-L367) · [Uninstall log modes](https://jrsoftware.org/ishelp/topic_setup_uninstalllogmode.htm)
+
+
+The first [actual Setup run](https://github.com/Yunushan/accessweaver/actions/runs/44012046920)
+verified staged publication rollback, pending detection, retry, and same-version
+repair on ARM64 at 3592dcd8cfa4b1088cbc75dbf6d1801167fc4d5c. It stopped before
+removal when the fixture's extracted controller functions lacked their native
+registry initializer. The fixture now imports that initializer with the reader
+and retains only fixed binding error categories. The ARM64 receipt is artifact
+14297549241 with ZIP SHA-256
+6620b9d345b2ce7386702592c7c08df4bbcdea2d90c926e8a1ab52b9d6236bee.
