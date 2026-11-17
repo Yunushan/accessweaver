@@ -1,0 +1,51 @@
+{
+  "productionQualificationComplete": false,
+  "publisherSigningQualified": false,
+  "realInstallationExercised": false,
+  "repository": "Yunushan/accessweaver",
+  "runID": 44162971890,
+  "schemaVersion": 1,
+  "scope": "native-windows-staging-and-cms-lifecycle-fixtures",
+  "sourceCommit": "420b412ec6e15163e7302d856a46f808c5875639",
+  "targets": [
+    {
+      "artifactID": 14365520861,
+      "artifactName": "windows-update-staging-amd64",
+      "errors": 0,
+      "failures": 0,
+      "outcome": "passed",
+      "providerZIPDigest": "sha256:3164e09bdbd60539831dee50533366a77bf38d0e8c54580da8099451e8298e7e",
+      "providerZIPDigestVerified": true,
+      "reportSHA256": "cc61596aded3cfec0d0465bf25e52763845d2f2e00a92e9908eb5ff5d0af242d",
+      "skipped": 0,
+      "sourceSHA256": {
+        "scripts/sbom.py": "a973b9268001e6328f963ea9715723c1706bd9095ad70e8d874b87dab97904b8",
+        "scripts/signed_release_manifest.py": "95892d0d3c984ac81a75d9a3566d5841cdad6111ec30cc7e412a67d282b0bca1",
+        "scripts/test_signed_release_manifest.py": "cdf1c19277fd9eec2a6b65e51bdf7e20b14cb7e55a7dd91fa8401292996e0638",
+        "scripts/windows_staging_evidence.py": "8e941933567cada3a9ccadb0c440f4a2af877641b92cb5355fd57fdcf6ccfb33"
+      },
+      "tests": 9
+    },
+    {
+      "artifactID": 14365161987,
+      "artifactName": "windows-update-staging-arm64",
+      "errors": 0,
+      "failures": 0,
+      "outcome": "passed",
+      "providerZIPDigest": "sha256:11fbe6bacf814dfb6e0502d15cf56502b151cd9c7327a0b1bda567ac920f0b44",
+      "providerZIPDigestVerified": true,
+      "reportSHA256": "cc61596aded3cfec0d0465bf25e52763845d2f2e00a92e9908eb5ff5d0af242d",
+      "skipped": 0,
+      "sourceSHA256": {
+        "scripts/sbom.py": "a973b9268001e6328f963ea9715723c1706bd9095ad70e8d874b87dab97904b8",
+        "scripts/signed_release_manifest.py": "95892d0d3c984ac81a75d9a3566d5841cdad6111ec30cc7e412a67d282b0bca1",
+        "scripts/test_signed_release_manifest.py": "cdf1c19277fd9eec2a6b65e51bdf7e20b14cb7e55a7dd91fa8401292996e0638",
+        "scripts/windows_staging_evidence.py": "8e941933567cada3a9ccadb0c440f4a2af877641b92cb5355fd57fdcf6ccfb33"
+      },
+      "tests": 9
+    }
+  ],
+  "testCorrection": "Resolve the expected detector directory before comparing the tampering hook destination",
+  "unchangedAssertion": "Intune detector differs from the approved digest",
+  "workflow": ".github/workflows/release.yml"
+}

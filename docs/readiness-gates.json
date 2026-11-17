@@ -73,7 +73,9 @@
             "docs/qualification/4ac16aaf7b17-dnscrypt-port-admission.json",
             "docs/qualification/4296e45911c1-native-dns-matrix.json",
             "docs/qualification/f920bd5d695e-native-dns-matrix.json",
-            "docs/qualification/f920bd5d695e-native-doh-wire.json"
+            "docs/qualification/f920bd5d695e-native-doh-wire.json",
+            "docs/qualification/a9cd0b15a4d4-native-dns-matrix.json",
+            "docs/qualification/a9cd0b15a4d4-native-doh-wire.json"
           ]
         },
         {
@@ -672,7 +674,8 @@
             "docs/qualification/16632c4b2a7f-linux-packaged-byedpi.json",
             "docs/qualification/16632c4b2a7f-linux-package-reboot.json",
             "docs/qualification/16632c4b2a7f-linux-package-active-reboot.json",
-            "docs/qualification/16632c4b2a7f-linux-package-arm64-reboot.json"
+            "docs/qualification/16632c4b2a7f-linux-package-arm64-reboot.json",
+            "docs/qualification/420b412ec6e1-windows-staging-fixtures.json"
           ]
         },
         {
