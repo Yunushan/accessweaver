@@ -5,6 +5,7 @@ package main
 import (
 	"errors"
 	"math/bits"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -549,6 +550,40 @@ func TestWindowsJobMembersRejectUnknownAndDuplicateProcesses(t *testing.T) {
 	for _, values := range [][3]uint32{{0, 20, 30}, {10, 10, 30}, {10, 0, 30}, {10, 20, 10}, {10, 20, 20}} {
 		if windowsJobMembersValid(values[0], values[1], values[2], true, 3, []uint32{10, 20, 30}) {
 			t.Fatal("invalid process binding accepted")
+		}
+	}
+}
+
+// Windows-relative staging layout only. A nested deletion is authorized only
+// for the source-known engine beneath its separately recorded protected parent.
+func windowsStagingObjectKind(relative string) int {
+	if relative == "." {
+		return 1
+	}
+	if relative == "approved-engine"+string(rune(92))+"ciadpi.exe" {
+		return 3
+	}
+	if relative == "" || relative == ".." || strings.ContainsAny(relative, "/:"+string(rune(92))) {
+		return 0
+	}
+	return 2
+}
+
+func TestWindowsStagingCleanupRejectsUnexpectedNestedPaths(t *testing.T) {
+	for _, value := range []string{".", "worker.exe", "reviewed-profile.json", "child-slot", "approved-engine"} {
+		if got := windowsStagingObjectKind(value); got != 1 && got != 2 {
+			t.Fatal("known immediate staging object lost")
+		}
+	}
+	if windowsStagingObjectKind("approved-engine"+string(rune(92))+"ciadpi.exe") != 3 {
+		t.Fatal("recorded isolated engine lost")
+	}
+	for _, value := range []string{"", "..", "../outside", "approved-engine/ciadpi.exe",
+		"approved-engine" + string(rune(92)) + "other.exe", "other" + string(rune(92)) + "ciadpi.exe",
+		"approved-engine" + string(rune(92)) + "ciadpi.exe:stream", "C:" + string(rune(92)) + "outside",
+		string(rune(92)) + "outside", ".." + string(rune(92)) + "ciadpi.exe"} {
+		if windowsStagingObjectKind(value) != 0 {
+			t.Fatal("unexpected staging deletion path accepted")
 		}
 	}
 }

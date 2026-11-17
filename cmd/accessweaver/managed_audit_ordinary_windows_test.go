@@ -1467,39 +1467,11 @@ func (f *ordinaryFixture) finish() {
 	}
 	f.stagingRemoved = true
 	for index := len(f.objects) - 1; index >= 0; index-- {
-		object := f.objects[index]
-		safe := f.processesEmpty && (object.path == f.root || strings.EqualFold(filepath.Dir(object.path), f.root))
-		if len(f.objects) > 0 {
-			rootHandle, err := ordinarySameObject(f.objects[0], windows.FILE_READ_ATTRIBUTES)
-			if err != nil {
-				safe = false
-			} else if !ordinaryClose(&rootHandle) {
-				safe = false
-				f.handlesClosed = false
-			}
-		}
-		if !safe {
-			f.stagingRemoved = false
-			continue
-		}
-		handle, err := ordinarySameObject(object, windows.DELETE)
-		if err != nil {
-			f.stagingRemoved = false
-			continue
-		}
-		remove := byte(1)
-		if windows.SetFileInformationByHandle(handle, windows.FileDispositionInfo, &remove, 1) != nil {
-			f.stagingRemoved = false
-		}
-		if !ordinaryClose(&handle) {
-			f.handlesClosed = false
-			f.stagingRemoved = false
-		}
-		_, err = fileidentity.FromPath(object.path, false)
-		if !errors.Is(err, os.ErrNotExist) {
+		if f.removeRecordedStagingObject(f.objects[index]) != nil {
 			f.stagingRemoved = false
 		}
 	}
+
 	if f.stagingCreated {
 		_, absenceErr := fileidentity.FromPath(f.root, false)
 		if !errors.Is(absenceErr, os.ErrNotExist) {
@@ -1519,6 +1491,74 @@ func (f *ordinaryFixture) finish() {
 		return nil
 	})
 }
+
+// Delete only an immutable recorded object. The sole nested layout addition is
+// the approved engine, with its separately recorded protected parent held and
+// revalidated. No enumeration or recursive deletion adopts unexpected objects.
+func (f *ordinaryFixture) removeRecordedStagingObject(object ordinaryObject) (failure error) {
+	relative, err := filepath.Rel(f.root, object.path)
+	kind := windowsStagingObjectKind(relative)
+	if err != nil || !f.processesEmpty || kind == 0 || (kind == 3 && !f.commands) || len(f.objects) == 0 {
+		return errOrdinary
+	}
+	root, err := ordinarySameObject(f.objects[0], windows.FILE_READ_ATTRIBUTES)
+	if err != nil {
+		return errOrdinary
+	}
+	if !ordinaryClose(&root) {
+		f.handlesClosed = false
+		return errOrdinary
+	}
+	var parent windows.Handle
+	if kind == 3 {
+		var recorded ordinaryObject
+		found := false
+		for _, candidate := range f.objects {
+			if strings.EqualFold(candidate.path, filepath.Join(f.root, "approved-engine")) {
+				if found {
+					return errOrdinary
+				}
+				recorded = candidate
+				found = true
+			}
+		}
+		if !found || !wintrust.TrustedSID(recorded.owner) {
+			return errOrdinary
+		}
+		parent, err = ordinarySameObject(recorded, windows.FILE_READ_ATTRIBUTES|windows.READ_CONTROL)
+		if err != nil {
+			return errOrdinary
+		}
+		defer func() {
+			if !ordinaryClose(&parent) {
+				f.handlesClosed = false
+				failure = errOrdinary
+			}
+		}()
+		sd, err := windows.GetSecurityInfo(parent, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+		if err != nil || !ordinaryDescriptor(sd, "", false) {
+			return errOrdinary
+		}
+	}
+	handle, err := ordinarySameObject(object, windows.DELETE)
+	if err != nil {
+		return errOrdinary
+	}
+	remove := byte(1)
+	dispositionErr := windows.SetFileInformationByHandle(handle, windows.FileDispositionInfo, &remove, 1)
+	closed := ordinaryClose(&handle)
+	if !closed {
+		f.handlesClosed = false
+	}
+	if dispositionErr != nil || !closed {
+		return errOrdinary
+	}
+	if _, err := fileidentity.FromPath(object.path, false); !errors.Is(err, os.ErrNotExist) {
+		return errOrdinary
+	}
+	return nil
+}
+
 func ordinaryPublicMetadata(value string) string {
 	if len(value) > 128 || strings.Trim(value, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._- ") != "" {
 		return ""
@@ -1571,7 +1611,7 @@ func (f *ordinaryFixture) report(t *testing.T) {
 		"cleanupComplete": f.cleanupOK, "passed": passed, "productionQualificationComplete": false,
 	}
 	if f.commands {
-		report["schemaVersion"] = 11
+		report["schemaVersion"] = 12
 		report["desktopFailureStage"] = windowsDesktopStageNames[f.desktopFailure]
 		report["runReleaseFailureStage"] = windowsRunReleaseNames[f.releaseFailure]
 		report["aliasFailureVariant"], report["aliasFailureStage"] = windowsAliasFailureNames(f.aliasFailure)
