@@ -13,6 +13,9 @@
 #ifndef TargetArch
   #error TargetArch is required
 #endif
+#ifndef ExpectedCaseCount
+  #error ExpectedCaseCount is required
+#endif
 #define FixtureRootName "AccessWeaverRegistryContract-" + RunID + "-" + RunAttempt + "-" + TargetArch
 [Setup]
 AppId=AccessWeaverRegistryOwnershipContract
@@ -372,7 +375,7 @@ begin
     '"scope":"disposable-protected-registry-ownership-contract","cases":[' + AWFixtureCases + '],' +
     '"descriptorResult":"' + AWFixtureDescriptorResult + '","cleanupResult":"' + AWFixtureCleanupResult + '",' +
     '"cleanupComplete":' + AWFixtureBool(AWFixtureCleanup) + ',"passed":' +
-    AWFixtureBool(AWFixturePassed and (AWFixtureCaseCount = 31)) +
+    AWFixtureBool(AWFixturePassed and (AWFixtureCaseCount = {#ExpectedCaseCount})) +
     ',"productionRegistrationChanged":false,"productionQualificationComplete":false}' + #10;
   Result := SaveStringToFile('{#EvidenceRoot}\registry-owned-{#TargetArch}.json', RecordText, False);
 end;

@@ -82,3 +82,12 @@ updates check that a foreign field or a string in place of a DWORD is refused
 and the committed record remains intact. Production registration publication,
 legacy migration, and behavior in Apps & Features still require native
 qualification.
+
+Both jobs in the [first binary descriptor run](https://github.com/Yunushan/accessweaver/actions/runs/43998040683)
+failed before uploading receipts. That revision added an unprotected-descriptor
+case to the executable while the launcher still admitted only its earlier case
+catalog. The launcher now derives the expected identities and count from the
+exact checked-in fixture before compiling it. If the launcher stops before it
+can validate native results, it retains a source-bound stage receipt with the
+fixed failing stage and numeric process exit when available. The stage receipt
+leaves cleanup unknown and does not credit any case.
