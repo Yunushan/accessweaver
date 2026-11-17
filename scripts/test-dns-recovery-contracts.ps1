@@ -55,6 +55,7 @@ $script:closedContractCodes+=@('doh-firewall-full-status-representations','doh-f
 $script:closedContractCodes+=@('doh-firewall-cim-raw-status','doh-firewall-cim-format-not-authority')
 $script:closedContractCodes+=@('doh-firewall-missing-store-reason','doh-firewall-diagnostic-does-not-mutate','doh-firewall-known-enforcement-reason','doh-firewall-status-diagnostic-does-not-mutate','doh-firewall-unavailable-or-unsupported-reason','doh-firewall-malformed-diagnostic-does-not-mutate')
 $script:closedContractCodes+=@('dnscrypt-port-conflict-before-mutation','dnscrypt-unreadable-port-before-mutation','dnscrypt-port-inventory-observed','dnscrypt-port-drift-before-service','dnscrypt-port-drift-recovers','doh-firewall-loss-before-next-adapter-write','doh-firewall-loss-restores-applied-family')
+$script:closedContractCodes+=@('doh-firewall-loss-stops-resolver-probes','doh-probe-firewall-loss-restores-state')
 function Assert-DNS([bool]$Condition,[string]$Code){if(-not $Condition){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('DNS contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-DNS([scriptblock]$Operation,[string]$ExpectedMessage){
     $failed=$false
@@ -73,7 +74,7 @@ function New-DNSCase([switch]$ExistingResolver) {
     $script:failDNSCryptPortRead=$false;$script:portConflictOnStaging=$false
     $script:failCopyPublication=$false;$script:failCopyRetirement=$false
     $script:dohFirewallRules=@{};$script:dohFirewallWrites=0;$script:dohFirewallFault=''
-    $script:firewallOnRetirementJournal='';$script:firewallAfterAdapterWrite=''
+    $script:firewallOnRetirementJournal='';$script:firewallAfterAdapterWrite='';$script:firewallAfterAProbe=''
     $script:present=@{'Get-DnsClientDohServerAddress'=$true;'Set-DnsClientDohServerAddress'=$true;'Add-DnsClientDohServerAddress'=$true;'Remove-DnsClientDohServerAddress'=$true}
     $script:adapters=@([pscustomobject]@{Status='Up';InterfaceDescription='Fixture adapter';InterfaceGuid='{00000000-0000-0000-0000-000000000001}';ifIndex=77})
     $script:mode4='192.0.2.53';$script:mode6='absent';$script:registryFailure='';$script:emptyDnsRead=$false;$script:failDohRead=0;$script:dohReads=0
@@ -732,6 +733,7 @@ function Clear-DnsClientCache {
     [CmdletBinding()]param()
     $script:cacheFlushes++
     if($script:cacheFlushFault -ceq 'unavailable'){Write-Error 'source-dns-cache-flush-failed'}
+    if($script:cacheFlushFault -ceq 'firewall'){$script:dohFirewallFault='inactive'}
     if($script:cacheFlushFault -ceq 'adapter-drift'){
         $key=([string]$script:adapters[0].InterfaceGuid)+'/IPv4'
         $script:appliedDNS[$key]=@{dhcp=$false;values=@('198.51.100.53')}
@@ -746,6 +748,10 @@ function Resolve-DnsName {
         }
         if($Type -ceq 'AAAA'){
             $script:resolverAAAAQueries++
+            if($script:resolverDrift -ceq 'firewall' -or
+                ($script:resolverStopped -and $script:postRetirementFault -ceq 'firewall')){
+                $script:dohFirewallFault='inactive'
+            }
             if($script:resolverAAAAQueries -le $script:emptyOrdinaryAAAAAnswers){return}
             $answer=@{Name=$Name;Type='AAAA';Section='Answer';IPAddress='2001:db8::15'}
             switch -CaseSensitive ($script:ordinaryAAAAFault){
@@ -758,6 +764,10 @@ function Resolve-DnsName {
             return [pscustomobject]$answer
         }
         $script:resolverQueries++
+        if($script:firewallAfterAProbe -ceq 'first' -or
+            ($script:firewallAfterAProbe -ceq 'after-service-stop' -and $script:resolverStopped)){
+            $script:dohFirewallFault='inactive'
+        }
         if($script:changeDNSCryptAfter -ceq 'ordinary-probe'){
             [IO.File]::WriteAllText((Join-Path $root 'components\dnscrypt\dnscrypt-proxy.toml'),'independent configuration')
         }
@@ -771,11 +781,9 @@ function Resolve-DnsName {
                 'policy' {$script:currentDoh['8.8.8.8'].AllowFallbackToUdp=$true}
                 'server' {$script:appliedDNS[([string]$script:adapters[0].InterfaceGuid)+'/IPv4'].values[0]='198.51.100.53'}
                 'service' {$script:resolverReadbackFault='still-running'}
-                'firewall' {$script:dohFirewallFault='inactive'}
             }
         }
         switch -CaseSensitive ($script:resolverDrift){
-            'firewall' {$script:dohFirewallFault='inactive'}
             'policy' {$script:currentDoh['8.8.8.8'].AllowFallbackToUdp=$true}
             'stored-dhcp' {$script:storedDNSFault='dhcp'}
             'server' {$script:appliedDNS[([string]$script:adapters[0].InterfaceGuid)+'/IPv4'].values[0]='198.51.100.53'}
@@ -1528,6 +1536,29 @@ try {
         $script:dohFirewallRules.Count -eq 0 -and -not [IO.File]::Exists($snapshot) -and
         -not [IO.File]::Exists($copyPath)) 'doh-firewall-loss-restores-applied-family'
 
+    foreach($probeLoss in @('after-cache-flush','before-aaaa','before-retry','after-service-stop')){
+        $afterStop=$probeLoss -ceq 'after-service-stop'
+        New-DNSCase -ExistingResolver:$afterStop
+        $script:firewallAfterAProbe=if($afterStop){'after-service-stop'}else{'first'}
+        if($probeLoss -ceq 'after-cache-flush'){$script:cacheFlushFault='firewall'}
+        if($probeLoss -ceq 'before-retry'){$script:emptyOrdinaryAnswers=1}
+        Reject-DNS {Configure-DNS 'doh'} 'Managed DoH plaintext protection is missing from effective Windows Firewall policy'
+        $expectedA=if($probeLoss -ceq 'after-cache-flush'){0}else{1+[int]$afterStop}
+        Assert-DNS ($script:resolverQueries -eq $expectedA -and
+            $script:resolverAAAAQueries -eq [int]$afterStop -and $script:serviceStops -eq [int]$afterStop -and
+            $script:ordinaryResolverWaits -eq [int]($probeLoss -ceq 'before-retry') -and
+            -not $script:dnsConfigured) 'doh-firewall-loss-stops-resolver-probes'
+        Assert-SnapshotRetained $script:journalDigest
+
+        $script:retirementRecovery=$afterStop
+        $errors=@(Rollback)
+        $restored=$script:appliedDNS[([string]$script:adapters[0].InterfaceGuid)+'/IPv4']
+        Assert-DNS ($errors.Count -eq 0 -and $script:serviceStarts -eq [int]$afterStop -and
+            -not $script:resolverStopped -and ($restored.values -join ',') -ceq '192.0.2.53' -and
+            $script:dohFirewallRules.Count -eq 0 -and $script:currentDoh.Count -eq 0 -and
+            -not [IO.File]::Exists($snapshot) -and -not [IO.File]::Exists($copyPath)) 'doh-probe-firewall-loss-restores-state'
+    }
+
     foreach($guardLoss in @('first-probe','journal','second-probe')){
         New-DNSCase -ExistingResolver
         switch -CaseSensitive ($guardLoss){
@@ -2052,9 +2083,9 @@ try {
     New-DNSCase;$script:emptyOrdinaryAAAAAnswers=1
     & {
         $probe=${function:Wait-OrdinaryDNSResolver}
-        function Wait-OrdinaryDNSResolver([int]$TimeoutSeconds) {
+        function Wait-OrdinaryDNSResolver([int]$TimeoutSeconds,[string]$DohProtectionID) {
             Assert-DNS ($TimeoutSeconds -eq 90) 'configure-restores-when-aaaa-is-missing'
-            & $probe 0
+            & $probe 0 -DohProtectionID $DohProtectionID
         }
         Reject-DNS {Configure-DNS 'doh'} 'Resolver verification failed; original DNS settings restored'
     }

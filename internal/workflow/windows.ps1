@@ -2549,18 +2549,25 @@ function Test-DNSAddressAnswer([object[]]$Answers,[string]$Name,[ValidateSet('A'
     }
     return $false
 }
-function Wait-OrdinaryDNSResolver([int]$TimeoutSeconds) {
+function Wait-OrdinaryDNSResolver([int]$TimeoutSeconds,[string]$DohProtectionID) {
     $timer=[Diagnostics.Stopwatch]::StartNew()
     do {
+        $healthy=$false
         try {
             Clear-DnsClientCache -ErrorAction Stop
-            $answers=@(Resolve-DnsName -Name 'example.com.' -Type A -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
-            if(Test-DNSAddressAnswer $answers 'example.com' 'A'){
-                # Query the AAAA record through the same ordinary resolver.
-                $answers=@(Resolve-DnsName -Name 'example.com.' -Type AAAA -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
-                if(Test-DNSAddressAnswer $answers 'example.com' 'AAAA'){return $true}
-            }
+            $healthy=$true
         }catch{}
+        foreach($type in @('A','AAAA')){
+            if(-not $healthy){break}
+            # A policy refusal must reach recovery instead of being retried as
+            # a DNS failure. Check both address types on every attempt.
+            if($DohProtectionID){Assert-DNSDohPlaintextBlock $DohProtectionID}
+            try {
+                $answers=@(Resolve-DnsName -Name 'example.com.' -Type $type -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
+                $healthy=Test-DNSAddressAnswer $answers 'example.com' $type
+            }catch{$healthy=$false}
+        }
+        if($healthy){return $true}
         if($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds){break}
         Start-Sleep -Seconds 2
     } while($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds)
@@ -3636,7 +3643,8 @@ function Configure-DNS([string]$method) {
             Assert-DNSDohPlaintextBlock $plaintextBlockID
         }
         $script:dnsOperationStage='ordinary-resolver'
-        if(-not (Wait-OrdinaryDNSResolver 90)){
+        $dohProbeBlockID=if($method -ceq 'doh'){$plaintextBlockID}else{''}
+        if(-not (Wait-OrdinaryDNSResolver 90 -DohProtectionID $dohProbeBlockID)){
             if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'DNS recovery snapshot disappeared during verification'}
             $recoveryAttempted=$true
             Restore-DNS $snapshotSHA256 -ResolverReload $resolverReload
@@ -3678,7 +3686,7 @@ function Configure-DNS([string]$method) {
             if(-not $listenerNeeded){
                 # Test DoH with the old listener stopped, then check whether
                 # another adapter acquired a dependency during the probe.
-                $dohVerified=Wait-OrdinaryDNSResolver 10
+                $dohVerified=Wait-OrdinaryDNSResolver 10 -DohProtectionID $plaintextBlockID
                 $listenerNeeded=Test-DNSCryptListenerNeeded $records
             }
             if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared after stopping it'}
