@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -99,6 +100,20 @@ class DiscoveryTests(unittest.TestCase):
             invalid['result'][key] = value
             with self.assertRaises(RuntimeError):
                 probe.validate_job(invalid)
+
+    @unittest.skipUnless(shutil.which('pwsh'), 'PowerShell is required for the actual worker discovery contract')
+    def test_release_validator_matches_actual_powershell_worker_discovery(self):
+        worker = Path(__file__).with_name('test-windows-workflow-finalization.ps1')
+        completed = subprocess.run(
+            ['pwsh', '-NoProfile', '-NonInteractive', '-File', str(worker), '-DiscoveryOnly'],
+            capture_output=True, encoding='utf-8', check=True, timeout=30,
+        )
+        records = json.loads(completed.stdout)
+        self.assertEqual([record['installerRecovery'] for record in records], ['clear', 'pending', 'unavailable'])
+        for inventory in records:
+            actual_job = job()
+            actual_job['result']['data'] = inventory
+            self.assertEqual(probe.validate_job(actual_job), 'b'*48)
 
     def test_public_timings_exclude_private_unknown_and_unbounded_values(self):
         raw = b'PRIVATE\nWorkflow timing ms: shell-management-ready 10\nTask query timing ms: disposed 25\nWorkflow timing ms: PRIVATE 1\nDiscovery timing ms: complete 1234567890123\nDiscovery timing ms: complete 40\n'

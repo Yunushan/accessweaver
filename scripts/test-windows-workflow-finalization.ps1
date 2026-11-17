@@ -1,7 +1,7 @@
 # Selected source functions and inert fake owners only. No native worker,
 # installer, mutex, network, service, account or machine configuration runs.
 [CmdletBinding()]
-param([switch]$RequireWindowsPowerShell,[string]$InteropDirectory)
+param([switch]$RequireWindowsPowerShell,[string]$InteropDirectory,[switch]$DiscoveryOnly)
 $ErrorActionPreference='Stop'
 if($RequireWindowsPowerShell -and ($PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1 -or $PSVersionTable.PSEdition -cne 'Desktop')){throw 'Windows PowerShell 5.1 Desktop is required'}
 $finalizerProject=Split-Path -Parent $PSScriptRoot
@@ -20,6 +20,50 @@ if((Get-FileHash -LiteralPath $finalizerSource -Algorithm SHA256).Hash.ToLowerIn
 $script:finalizerChecks=0
 $finalizerToken='0123456789abcdef0123456789abcdef0123456789abcdef'
 function Assert-Finalizer([bool]$Value,[string]$Message){if(-not $Value){throw $Message};$script:finalizerChecks++}
+function Get-FinalizerDiscoveryFixtures {
+    $catalog=@($finalizerAst.EndBlock.Statements | Where-Object {
+        $_ -is [Management.Automation.Language.AssignmentStatementAst] -and $_.Left.Extent.Text -ceq '$assetNames'
+    })
+    if($catalog.Count -ne 1 -or $catalog[0].Right -isnot [Management.Automation.Language.CommandExpressionAst] -or
+        $catalog[0].Right.Expression -isnot [Management.Automation.Language.HashtableAst]){
+        throw 'Expected one literal discovery engine catalog'
+    }
+    $assetNames=$catalog[0].Right.Expression.SafeGetValue()
+    $root='synthetic-discovery-root'
+    function Get-ServiceInspection {return @{services=@();error=$null}}
+    function Find-Source {return $null}
+    function Find-App {return $null}
+    function Get-Process {param($Name,$ErrorAction) return $null}
+    function Get-RefreshTaskInspection {return @{present=$false;error=$null}}
+    function WireSock-CLI {return $null}
+    function Test-Path {param($LiteralPath) return $false}
+    function Get-AccessWeaverInstallerRecoveryState {return $observed}
+    foreach($observed in @('clear','pending','unavailable')){
+        $report=Discover
+        Assert-Finalizer ($report.installerRecovery -ceq $observed -and $report.dnsSnapshot -eq $false) 'Discovery lost Setup state or an independent observation'
+        $expected=if($observed -ceq 'pending'){'*retry with the same or a newer approved installer in the original directory.'}
+            elseif($observed -ceq 'unavailable'){'*Ask an administrator to verify it before uninstalling.'}
+        if($expected){
+            Assert-Finalizer ($report.conflicts.Count -eq 1 -and $report.conflicts[0] -clike $expected) 'Discovery omitted fixed recovery guidance'
+        } else {
+            Assert-Finalizer ($report.conflicts.Count -eq 0) 'Cleared Setup state reported a recovery conflict'
+        }
+        $report
+    }
+}
+if($DiscoveryOnly){
+    $stdout=[Console]::Out
+    $timings=[IO.StringWriter]::new()
+    try {
+        [Console]::SetOut($timings)
+        $records=@(Get-FinalizerDiscoveryFixtures)
+    } finally {
+        [Console]::SetOut($stdout)
+        $timings.Dispose()
+    }
+    ConvertTo-Json -InputObject $records -Depth 12 -Compress
+    return
+}
 foreach($flag in @($false,$true)){
     $fallback=New-WorkflowResultFailureReport @{externalEffectsPending=$flag} $finalizerToken 'result-too-large'
     Assert-Finalizer ($fallback.externalEffectsPending -is [bool] -and $fallback.externalEffectsPending -eq $flag) 'Fallback lost the typed external effects observation'
@@ -43,28 +87,7 @@ Assert-Finalizer (-not $fallback.ContainsKey('externalEffectsPending')) 'Fallbac
         Assert-Finalizer $refused 'An ordinary writable file or registration passed inspection'
     }
 }
-& {
-    $assetNames=@{}
-    $root=$finalizerProject
-    function Get-ServiceInspection {return @{services=@();error=$null}}
-    function Find-App {return $null}
-    function Get-Process {param($Name,$ErrorAction) return $null}
-    function Get-RefreshTaskInspection {return @{present=$false;error=$null}}
-    function WireSock-CLI {return $null}
-    function Test-Path {param($LiteralPath) return $false}
-    function Get-AccessWeaverInstallerRecoveryState {return $observed}
-    foreach($observed in @('clear','pending','unavailable')){
-        $report=Discover
-        Assert-Finalizer ($report.installerRecovery -ceq $observed -and $report.dnsSnapshot -eq $false) 'Discovery lost Setup state or an independent observation'
-        $expected=if($observed -ceq 'pending'){'*retry with the same or a newer approved installer in the original directory.'}
-            elseif($observed -ceq 'unavailable'){'*Ask an administrator to verify it before uninstalling.'}
-        if($expected){
-            Assert-Finalizer ($report.conflicts.Count -eq 1 -and $report.conflicts[0] -clike $expected) 'Discovery omitted fixed recovery guidance'
-        } else {
-            Assert-Finalizer ($report.conflicts.Count -eq 0) 'Cleared Setup state reported a recovery conflict'
-        }
-    }
-}
+$null=Get-FinalizerDiscoveryFixtures
 & {
     $folder=[Environment]::GetFolderPath('ProgramFiles')
     $installed=Join-Path $folder 'Fixture vendor\AccessWeaver'
