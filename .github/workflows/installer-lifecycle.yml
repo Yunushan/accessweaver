@@ -2,6 +2,12 @@ name: Windows installer lifecycle acceptance
 
 on:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Native installer validation scope
+        type: choice
+        default: lifecycle
+        options: [lifecycle, registry-ownership]
   push:
     branches: [main, 'codex/dns-adapter-coverage']
     paths:
@@ -41,7 +47,38 @@ concurrency:
   queue: max
 
 jobs:
+  registry-ownership:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.scope == 'registry-ownership' }}
+    name: Native protected registry ownership (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 6
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            arch: amd64
+          - os: windows-11-arm
+            arch: arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Exercise owned registry creation, retry and link refusal
+        shell: pwsh
+        env:
+          ACCESSWEAVER_DISPOSABLE_WINDOWS_INSTALLER_REGISTRY_TEST: '1'
+        run: ./scripts/test-windows-installer-registry-owned.ps1 -Architecture '${{ matrix.arch }}'
+      - name: Retain fixed source-bound registry evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installer-registry-ownership-windows-${{ matrix.arch }}-attempt-${{ github.run_attempt }}
+          path: build/registry-ownership-evidence/${{ matrix.arch }}.json
+          if-no-files-found: error
+          retention-days: 14
   lifecycle:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.scope == 'lifecycle' }}
     name: Native installer lifecycle (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
