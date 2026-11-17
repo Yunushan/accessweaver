@@ -323,31 +323,50 @@ begin
   if not AWOwnedRegistryClose(Key) then Result := False;
 end;
 
-{ This operation applies only to the synthetic legacy registration created here.
-  The installed payload and actual legacy registration require separate admission. }
-function AWFixtureStageLegacySwap(Root, Tx: LongWord;
-  const Prior, Candidate: AWRegistryTextValues; var Key: LongWord; var Deleted: Boolean): Boolean;
-var Created, Closed: Boolean;
+function AWFixtureStageLegacyDelete(Root, Tx: LongWord; const Prior: AWRegistryTextValues): Boolean;
+var Key: LongWord;
 begin
-  Result := False; Key := 0; Deleted := False;
-  if (Tx = 0) or
-     (AWOwnedRegistryOpenInNative(Root, 'legacy', AWOwnedRegistryOpenLink,
-        AWOwnedRegistryAccess, Key, Tx, 0) <> 0) then Exit;
+  Result := False; Key := 0;
+  if Tx = 0 then Exit;
   try
-    if AWFixtureLegacyMatches(Key, Prior) then Deleted := AWRegistryDeleteHeld(Key) = 0;
+    if AWOwnedRegistryOpenInNative(Root, 'legacy', AWOwnedRegistryOpenLink,
+       AWOwnedRegistryAccess, Key, Tx, 0) <> 0 then Exit;
+    if AWFixtureLegacyMatches(Key, Prior) then Result := AWRegistryDeleteHeld(Key) = 0;
   finally
-    Closed := AWOwnedRegistryClose(Key);
+    if not AWOwnedRegistryClose(Key) then Result := False;
   end;
-  if not Deleted or not Closed then Exit;
+end;
+
+function AWFixtureFlushKey(Key: LongWord): LongWord;
+  external 'RegFlushKey@advapi32.dll stdcall';
+
+const AWFixtureMigrationPin = 'approved-fixture-1.0.0-to-2.0.0';
+
+function AWFixtureMigrationPending(Root: LongWord): Boolean;
+var Key: LongWord; Actual: String;
+begin
+  Key := 0;
+  Result := AWOpenOwnedRegistryChild(Root, 'migration-pending', AWFixtureTag, Key) and
+    AWReadRegistrationString(Key, 'Candidate', $30000002, 64, Actual) and
+    (AWOrdinal(Actual, AWFixtureMigrationPin) = 0);
+  if not AWOwnedRegistryClose(Key) then Result := False;
+end;
+
+function AWFixtureStageLegacyRecovery(Root, Tx: LongWord;
+  const Candidate: AWRegistryTextValues; var Key: LongWord): Boolean;
+var Created: Boolean;
+begin
+  Result := False; Key := 0;
+  if (Tx = 0) or not AWFixtureMigrationPending(Root) or not AWFixtureNoKey(Root, 'legacy') then Exit;
   Result := AWCreateOwnedRegistryChildIn(Root, Tx, 'legacy', AWFixtureOtherTag, Key, Created) and
-    Created and AWRegistryStageProductValues(Key, Candidate);
+    Created and AWRegistryStageProductValues(Key, Candidate) and AWFixtureNoKey(Root, 'legacy');
 end;
 
 procedure AWFixtureLegacyReplacementCases(Root: LongWord);
-var Legacy, Replacement, Tx, Key, Value: LongWord; Prior, Candidate: AWRegistryTextValues;
-    Ready, Deleted, Staged, Finished, Opened, StaleRefused: Boolean;
+var Legacy, Replacement, Pending, Tx, Key, Value: LongWord; Prior, Candidate: AWRegistryTextValues;
+    Ready, Staged, Finished, Retired, Opened: Boolean;
 begin
-  Legacy := 0; Replacement := 0; Tx := 0; Key := 0;
+  Legacy := 0; Replacement := 0; Pending := 0; Tx := 0; Key := 0;
   Value := 1;
   Ready := AWRegistryProductValues('1.0.0', AWFixtureDirectory, AWFixtureUninstaller, Prior) and
     AWRegistryProductValues('2.0.0', AWFixtureDirectory, AWFixtureUninstaller, Candidate) and
@@ -357,36 +376,69 @@ begin
     AWFixtureLegacyMatches(Legacy, Prior) and AWFixtureLegacyVisible(Root, Prior);
   AWFixtureCase('legacy-registration-held-with-writer', Ready);
 
-  Staged := False; Deleted := False;
+  Staged := False;
   try
     if Ready and AWRegistryTransactionBegin(Tx) then
-      Staged := AWFixtureStageLegacySwap(Root, Tx, Prior, Candidate, Key, Deleted);
-    AWFixtureCase('legacy-deletion-staged-with-writer-held', Deleted);
-    AWFixtureCase('legacy-replacement-staged-with-prior-visible', Staged and
+      Staged := AWFixtureStageLegacyDelete(Root, Tx, Prior);
+    AWFixtureCase('staged-legacy-retirement-keeps-prior-visible', Staged and
       AWFixtureLegacyMatches(Legacy, Prior) and AWFixtureLegacyVisible(Root, Prior));
   finally
     Finished := AWRegistryTransactionFinish(Tx, Key, False);
   end;
-  AWFixtureCase('abandoned-legacy-replacement-preserves-prior', Ready and Finished and
+  AWFixtureCase('abandoned-legacy-retirement-preserves-prior', Staged and Finished and
     AWFixtureLegacyMatches(Legacy, Prior) and AWFixtureLegacyVisible(Root, Prior));
+
+  Ready := Ready and Finished and AWFixtureLegacyVisible(Root, Prior) and
+    AWFixtureNew(Root, 'migration-pending', Pending) and
+    AWRegistrySetString(Pending, 'Candidate', AWFixtureMigrationPin) and
+    (AWFixtureFlushKey(Pending) = 0) and AWFixtureMigrationPending(Root);
+  AWFixtureCase('legacy-retirement-bound-to-durable-pending-record', Ready);
 
   Staged := False;
   try
-    if Ready and Finished and AWFixtureLegacyMatches(Legacy, Prior) and AWRegistryTransactionBegin(Tx) then
-      Staged := AWFixtureStageLegacySwap(Root, Tx, Prior, Candidate, Key, Deleted) and
+    if Ready and AWFixtureMigrationPending(Root) and AWRegistryTransactionBegin(Tx) then
+      Staged := AWFixtureStageLegacyDelete(Root, Tx, Prior) and
         AWFixtureLegacyMatches(Legacy, Prior) and AWFixtureLegacyVisible(Root, Prior);
+  finally
+    Finished := AWRegistryTransactionFinish(Tx, Key, Staged);
+  end;
+  Retired := Staged and Finished and AWFixtureNoKey(Root, 'legacy');
+  AWFixtureCase('retired-legacy-registration-leaves-recovery-record', Retired and
+    AWFixtureMigrationPending(Root));
+
+  { Recover with a new transaction after the first exact transaction has ended.
+    Both the ordinary missing name and the protected marker must be observable. }
+  Ready := Retired and AWFixtureMigrationPending(Root) and
+    AWRegistrySetString(Pending, 'Candidate', 'different-fixture-candidate') and (AWFixtureFlushKey(Pending) = 0);
+  Staged := False;
+  try
+    if Ready and AWRegistryTransactionBegin(Tx) then
+      Staged := not AWFixtureStageLegacyRecovery(Root, Tx, Candidate, Key);
+  finally
+    Finished := AWRegistryTransactionFinish(Tx, Key, False);
+  end;
+  AWFixtureCase('legacy-recovery-refuses-unbound-pending-record', Staged and Finished and
+    AWFixtureNoKey(Root, 'legacy'));
+
+  Ready := Staged and Finished and AWRegistrySetString(Pending, 'Candidate', AWFixtureMigrationPin) and
+    (AWFixtureFlushKey(Pending) = 0) and AWFixtureMigrationPending(Root);
+  Staged := False;
+  try
+    if Ready and AWRegistryTransactionBegin(Tx) then
+      Staged := AWFixtureStageLegacyRecovery(Root, Tx, Candidate, Key);
+    AWFixtureCase('pending-legacy-recovery-stages-invisible-replacement', Staged);
   finally
     Finished := AWRegistryTransactionFinish(Tx, Key, Staged);
   end;
   Opened := Staged and Finished and AWOpenOwnedRegistryChild(Root, 'legacy', AWFixtureOtherTag, Replacement);
   if Opened then AWFixtureRemember(Replacement);
   AWFixtureCase('legacy-replacement-visible-protected-after-commit', Opened and
-    AWRegistryProductValuesMatch(Replacement, Candidate));
+    AWRegistryProductValuesMatch(Replacement, Candidate) and AWFixtureMigrationPending(Root));
   Value := 73;
-  StaleRefused := Opened and (AWFixtureWriteDWORD(Legacy, 'sentinel', 0, 4, Value, 4) = 1018);
-  AWFixtureCase('legacy-writer-cannot-change-replacement', StaleRefused and
+  AWFixtureCase('legacy-writer-cannot-change-replacement', Opened and
+    (AWFixtureWriteDWORD(Legacy, 'sentinel', 0, 4, Value, 4) = 1018) and
     AWRegistryProductValuesMatch(Replacement, Candidate));
-  if StaleRefused then AWFixtureCloseRetired(Legacy);
+  if Retired then AWFixtureCloseRetired(Legacy);
 end;
 
 procedure AWFixtureTransactionCases(Root: LongWord);

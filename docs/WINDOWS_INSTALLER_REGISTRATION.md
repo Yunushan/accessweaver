@@ -56,14 +56,21 @@ and unknown values, and either replace the owned legacy object safely or leave
 it untouched with an actionable refusal. Neither a class tag alone nor a write
 ACE allowlist can make a legacy leaf authoritative.
 
-The disposable fixture attempts a same-name transaction with a synthetic
-legacy entry that grants Users write access. It holds the old writable handle
-through both rollback and commit and requires the old entry to remain visible
-until commit. A successful replacement must have the protected descriptor and
-complete new values, and the retained old handle must refuse a write. This
-exercises the Windows replacement boundary. The production migration still
-needs to verify the prior package, registry values, and uninstaller identity
-before it can use that operation.
+The [same-name replacement run](https://github.com/Yunushan/accessweaver/actions/runs/44003554389)
+at `7bf36162cfd5a916f3bbb92ba5c8536bff3020e3` passed 40 of 43 cases on AMD64 and ARM64 and confirmed exact cleanup.
+Both architectures staged deletion and restored the legacy entry on rollback.
+The protected replacement failed to stage within that transaction. The AMD64
+receipt is artifact `14294060325` with ZIP SHA-256 `6261b1b3bfc0bca774f67620f8a6f24b37591defa4ca0f616019271351fb8f8b`.
+The ARM64 receipt is artifact `14293033280` with ZIP SHA-256 `ec650f5b007e5312bfa81d721f9617118fe36edee77ed06d823489721be400b3`.
+
+The fixture now tests two transactions. It flushes and verifies a protected
+pending record before retiring the approved prior entry. A new transaction
+creates the protected replacement after independently observing the absent
+name and the pending record. The retained legacy handle must refuse a write
+after publication. Production migration will also need to bind the pending
+record to the exact candidate setup and independently verified prior package.
+An interruption between transactions leaves the registration absent and the
+durable install recovery record present.
 
 At source `2b875e4b698d51b650042e12f072b85268a2592c`, the
 [hosted registry run](https://github.com/Yunushan/accessweaver/actions/runs/44001985316)
