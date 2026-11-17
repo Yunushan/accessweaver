@@ -23,6 +23,7 @@ $script:journalPath = $null
 $script:appRemovalRecoveryRoot = $null
 $script:rebootRequired = $false
 $script:dnsConfigured = $false
+$script:dnsOperationStage = 'initialization'
 $script:mutex = $null
 $script:ownsMutex = $false
 $script:journalState = 'running'
@@ -1867,6 +1868,7 @@ function Disconnect-WireSock {
     Disconnect-OwnedWireSock $record
 }
 function Install-EngineService([string]$engine,[string]$binary,[string[]]$arguments,[switch]$DeferAutomaticStartup) {
+    $script:dnsOperationStage='service-host-preparation'
     $serviceName='AccessWeaver-'+$engine
     $existing=Get-Service -Name $serviceName -ErrorAction SilentlyContinue
     if($existing){throw ('Service already exists; remove this managed method before reinstalling: '+$serviceName)}
@@ -1887,9 +1889,11 @@ function Install-EngineService([string]$engine,[string]$binary,[string[]]$argume
     Write-Atomic (Join-Path $root ('services\'+$engine+'.registration')) $entry.commandSHA256
     $script:undo.Add($entry)
     Save-Journal
+    $script:dnsOperationStage='service-create'
     $created=New-Service @serviceOptions
     if($created -is [IDisposable]){$created.Dispose()}
     if((Assert-RecordedServiceBinding $entry) -ne 0){throw 'New managed service registration could not be verified'}
+    $script:dnsOperationStage='service-start'
     Start-Service -Name $serviceName
     (Get-Service -Name $serviceName).WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
     Start-Sleep -Milliseconds 500
@@ -3271,7 +3275,9 @@ function Configure-DNS([string]$method) {
     if($method -notin @('doh','dnscrypt')){throw 'Choose doh or dnscrypt'}
     if($method -eq 'doh'){foreach($command in @('Get-DnsClientDohServerAddress','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress')){if(-not (Get-Command $command -ErrorAction SilentlyContinue)){throw 'This Windows version does not expose native DoH management; choose DNSCrypt instead'}}}
     $serviceName='AccessWeaver-dnscrypt'
+    $script:dnsOperationStage='configuration-service-ownership'
     $existingResolver=Assert-ManagedServiceOwnership $serviceName
+    $script:dnsOperationStage='adapter-inventory'
     $snapshot=Join-Path $root 'profiles\dns-original.json'
     $inventory=@(Get-NetAdapter -ErrorAction Stop)
     # A complete successful DNS-client query distinguishes non-IP adapters from
@@ -3370,6 +3376,7 @@ function Configure-DNS([string]$method) {
             }
         }
     }
+    $script:dnsOperationStage='snapshot-publication'
     # A new configuration supersedes older journals, even if the originals
     # are identical. DNS alone owns retirement of the published snapshot.
     $original | Add-Member -NotePropertyName recoveryID -NotePropertyValue ([guid]::NewGuid().ToString('N')) -Force
@@ -3404,6 +3411,7 @@ function Configure-DNS([string]$method) {
             if($existingResolver -and (Assert-RecordedServiceBinding $existingResolver) -ne 0){
                 throw 'Existing DNSCrypt service disappeared before reconfiguration'
             }
+            $script:dnsOperationStage='resolver-component'
             $binary=Ensure-Asset 'dnscrypt';$config=Join-Path (Split-Path -Parent $binary) 'dnscrypt-proxy.toml'
             $configBytes=Read-DNSRecoveryFileBytes $config 1MB
             $configBefore=''
@@ -3446,6 +3454,7 @@ function Configure-DNS([string]$method) {
                 Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
                 if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before startup'}
             }
+            $script:dnsOperationStage='resolver-configuration'
             if($configChanged){Publish-WorkflowFile $config $updatedConfig -Recorded -BeforeHash $configBefore}
             $servers=@('127.0.0.1','::1')
             $listeners=@(foreach($number in @('4','6')){
@@ -3462,6 +3471,7 @@ function Configure-DNS([string]$method) {
                 if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before startup'}
                 Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
                 Assert-DNSCryptConfiguration $config $publishedConfigSHA256
+                $script:dnsOperationStage='service-restart'
                 $service=Get-Service -Name $serviceName -ErrorAction Stop
                 try {
                     $resolverReload=$reload
@@ -3477,9 +3487,11 @@ function Configure-DNS([string]$method) {
                 Assert-DNSCryptConfiguration $config $publishedConfigSHA256
                 $resolver=Install-EngineService 'dnscrypt' $binary @('-config',$config) -DeferAutomaticStartup
             }
+            $script:dnsOperationStage='listener-verification'
             # SCM can report Running before the replacement listener is usable.
             Wait-ManagedDNSCryptListeners $listeners $binary $resolver
             Assert-DNSCryptConfiguration $config $publishedConfigSHA256
+            $script:dnsOperationStage='automatic-startup'
             # Verify automatic startup before adding any loopback DNS dependency.
             if((Assert-RecordedServiceBinding $resolver) -ne 0){throw 'DNSCrypt service disappeared before enabling automatic startup'}
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
@@ -3507,6 +3519,7 @@ function Configure-DNS([string]$method) {
             Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy could not be verified; retain the original DNS snapshot'
             $servers=@($providers | ForEach-Object {$_.ServerAddress})
         } else {throw 'Choose doh or dnscrypt'}
+        $script:dnsOperationStage='adapter-configuration'
         foreach($adapter in $adapters){
             $record=@($records | Where-Object {$_.guid -eq [string]$adapter.InterfaceGuid})[0];$bounds=Get-OriginalDNSBounds $record
             foreach($number in @('4','6')){
@@ -3540,6 +3553,7 @@ function Configure-DNS([string]$method) {
                 $dns | Set-DnsClientServerAddress -ServerAddresses $familyServers -ErrorAction Stop
             }
         }
+        $script:dnsOperationStage='adapter-readback'
         # Observe eventual consistency without repeating a setter. Refuse success
         # and leave the original snapshot available if readback never converges.
         $adapterReadbackVerified=$false
@@ -3551,6 +3565,7 @@ function Configure-DNS([string]$method) {
             Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy changed after adapter configuration; retain the original DNS snapshot'
             Assert-DNSDohPlaintextBlock $plaintextBlockID
         }
+        $script:dnsOperationStage='ordinary-resolver'
         if(-not (Wait-OrdinaryDNSResolver 90)){
             if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'DNS recovery snapshot disappeared during verification'}
             $recoveryAttempted=$true
@@ -4192,6 +4207,7 @@ function Assert-DNSCryptCanBeRemoved {
     }
 }
 function Remove-RecordedService([string]$Name,$Entry) {
+    $script:dnsOperationStage='removal-service-binding'
     if($Name -notmatch '\AAccessWeaver-(byedpi|proxifyre|zapret|zapret2|goodbyedpi|dnscrypt)\z'){
         throw 'Recovery journal contains an unmanaged service'
     }
@@ -4199,14 +4215,20 @@ function Remove-RecordedService([string]$Name,$Entry) {
     $state=Assert-RecordedServiceBinding $Entry
     if($state -eq 1060){return}
     if($state -eq 0){
+        $script:dnsOperationStage='removal-dependency'
         if($Name -ieq 'AccessWeaver-dnscrypt'){
             Assert-DNSCryptCanBeRemoved
             # Inventory reads can outlast the service binding observed above.
             if((Assert-RecordedServiceBinding $Entry) -ne 0){return}
         }
+        $script:dnsOperationStage='removal-stop'
         $stopped=Invoke-ManagedServiceControl 'stop' $Name @(0,1060,1062,1072)
-        if($stopped -eq 0){Wait-RecordedServiceStopped $Name}
+        if($stopped -eq 0){
+            $script:dnsOperationStage='removal-wait-stopped'
+            Wait-RecordedServiceStopped $Name
+        }
         if($stopped -in @(0,1062)){
+            $script:dnsOperationStage='removal-dependency-after-stop'
             if($Name -ieq 'AccessWeaver-dnscrypt'){
                 try {Assert-DNSCryptCanBeRemoved}catch{
                     if($stopped -eq 0 -and (Assert-RecordedServiceBinding $Entry) -eq 0){
@@ -4226,10 +4248,12 @@ function Remove-RecordedService([string]$Name,$Entry) {
                 }
             }
             if((Assert-RecordedServiceBinding $Entry) -eq 0){
+                $script:dnsOperationStage='removal-delete'
                 [void](Invoke-ManagedServiceControl 'delete' $Name @(0,1060,1072))
             }
         }
     }
+    $script:dnsOperationStage='removal-wait-absent'
     Wait-RecordedServiceAbsent $Name
 }
 function Remove-Method([string]$engine,[switch]$OwnedOnly) {
@@ -4263,6 +4287,7 @@ function Remove-Method([string]$engine,[switch]$OwnedOnly) {
         };return
     }
     $name='AccessWeaver-'+$engine
+    $script:dnsOperationStage='removal-service-ownership'
     $entry=Assert-ManagedServiceOwnership $name
     $firewallNames=@()
     if($engine -cin @('byedpi','proxifyre')){
@@ -4274,6 +4299,7 @@ function Remove-Method([string]$engine,[switch]$OwnedOnly) {
         Remove-Method 'proxifyre'
     }
     if($engine -eq 'dnscrypt'){
+        $script:dnsOperationStage='removal-snapshot-recovery'
         $digest=Get-DNSRecoverySnapshotDigest
         if(-not $digest){$digest=(Read-DNSRecoveryCopy).sha256}
         if($digest){Restore-DNS $digest}
@@ -7009,6 +7035,9 @@ try {
 } catch {
     $result.error=$_.Exception.Message
     $script:journalState='failed'
+    if(($r.action -ceq 'dns' -and $r.dns -ceq 'dnscrypt') -or ($r.action -ceq 'remove' -and $r.engine -ceq 'dnscrypt')){
+        Write-Output ('DNSCrypt failure stage: '+$script:dnsOperationStage+'.')
+    }
     if($r.action -in @('install','auto-install','connect','config','download','dns','refresh','scan','app-install','app-reinstall','app-repair')){
         $result.rollbackScope='recorded-resources';$result.recordedRollbackComplete=$false
         $result.rollbackErrors=@(Rollback)

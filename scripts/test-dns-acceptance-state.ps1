@@ -965,9 +965,19 @@ function Second { throw 'Another fixed source refusal' }
 function Duplicate { throw 'PRIVATE_STATIC_REFUSAL' }
 function Dynamic { throw ('PRIVATE_DYNAMIC '+$value) }
 function Variable { throw $value }
+function Stage { $script:dnsOperationStage='service-start' }
+function Unrelated { $script:otherStage='private-stage' }
+function DynamicStage { $script:dnsOperationStage=$value }
 '@
         $catalog=New-NativeDNSFailureCatalog $sample
-        Assert-A ($catalog.entries.Count -eq 2 -and $catalog.maxLength -le 512) 'source-literal-catalog'
+        Assert-A ($catalog.entries.Count -eq 3 -and $catalog.maxLength -le 512) 'source-literal-catalog'
+        $phase='DNSCrypt failure stage: service-start.'
+        $stageFirst=Get-NativeDNSFailureMarker $catalog '' 'PRIVATE DNSCrypt failure stage: service-'
+        $stageSecond=Get-NativeDNSFailureMarker $catalog $stageFirst.suffix ('start.'+[char]10+'PRIVATE')
+        Assert-A ($stageFirst.lines.Count -eq 0 -and $stageSecond.lines.Count -eq 1 -and $stageSecond.lines[0] -eq 6) 'source-literal-marker'
+        Assert-A ((Get-NativeDNSFailureMarker $catalog '' 'DNSCrypt failure stage: service-starting.').lines.Count -eq 0 -and
+            (Get-NativeDNSFailureMarker $catalog '' 'DNSCrypt failure stage: private-stage.').lines.Count -eq 0) 'source-literal-marker'
+        Assert-A (($productCatalog.entries | Where-Object literal -CEQ $phase).lines.Count -eq 1) 'source-literal-catalog'
         $expected=@(1,3)
         $message='PRIVATE_STATIC_REFUSAL'
         for($split=0;$split -le $message.Length;$split++){
