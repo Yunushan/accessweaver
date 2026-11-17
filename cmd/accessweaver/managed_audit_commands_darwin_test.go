@@ -2073,6 +2073,7 @@ func runDarwinCommandCases(request darwinOrdinaryRequest) (executed, passed uint
 			root.preserve = true
 			break
 		}
+		darwinOrdinaryWorkerPhase(darwinCommandCaseIDs[index])
 		executed |= uint64(1) << index
 		if operation() != nil {
 			root.preserve = true
@@ -2084,6 +2085,7 @@ func runDarwinCommandCases(request darwinOrdinaryRequest) (executed, passed uint
 			break
 		}
 	}
+	darwinOrdinaryWorkerPhase(darwinCommandCaseIDs[9])
 	executed |= 1 << 9
 	if root.close() == nil {
 		passed |= 1 << 9

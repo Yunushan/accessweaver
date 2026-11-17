@@ -44,7 +44,7 @@ cases = (
     'full-journal-reservation-refusal','approved-recorded-foreground-run',
     'recorded-foreground-output-cancellation-drain','private-command-workspace-cleanup',
 )
-for stage in ('host-context','source-binding','protected-ancestry','protected-source-staging','private-home','policy-preflight','required-policy-install','required-policy-bindings','worker-launch','worker-ipc','worker-ipc-endpoints','worker-ipc-request','worker-ipc-reply','worker-ipc-binding','signal-lifetime-gate','worker-drain','owned-cleanup','unknown-bootstrap'):
+for stage in ('host-context','source-binding','protected-ancestry','protected-source-staging','private-home','policy-preflight','required-policy-install','required-policy-bindings','worker-launch','worker-ipc','worker-ipc-endpoints','worker-ipc-request','worker-ipc-reply','worker-ipc-reply-timeout','worker-ipc-binding','signal-lifetime-gate','worker-drain','owned-cleanup','unknown-bootstrap'):
     labels.add('ordinary Darwin audit bootstrap failed: '+stage)
 for stage in ('request-descriptor','reply-descriptor','wire-files','request-read','request-close','reply-write','reply-close'):
     labels.add('ordinary Darwin audit worker bootstrap failed: '+stage)
@@ -72,6 +72,8 @@ alias_checks = ('setup','source-snapshot','source-read','source-identity','hardl
     'permission','config-read','config-encode','config-write','config-restore','pairwise-open','pairwise-content')
 for label in alias_cases: labels.add('ordinary Darwin audit alias case: '+label)
 for label in alias_checks: labels.add('ordinary Darwin audit alias check: '+label)
+for phase in (*cases, 'bootstrap', 'reply'):
+    labels.add('ordinary Darwin audit worker last phase: '+phase)
 for name in cases:
     labels.add('ordinary Darwin audit command case failed: '+name)
     labels.add('ordinary Darwin audit command case not executed: '+name)
@@ -108,6 +110,7 @@ passed = status == 0 and root_passes == 1 and not overflow and not seen
 sources = (
     '.github/workflows/darwin-audit-commands.yml',
     'cmd/accessweaver/managed_audit_ordinary_darwin_test.go',
+    'cmd/accessweaver/managed_audit_commands_darwin_test.go',
     'scripts/test-darwin-audit-commands.sh',
     'scripts/test_darwin_audit_command_capture.py',
 )
