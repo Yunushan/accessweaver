@@ -32,9 +32,9 @@ OutputDir={#EvidenceRoot}
 OutputBaseFilename=registry-owned-contracts-{#TargetArch}
 [Code]
 #include "windows-installer-registry-owned.iss"
-#include "windows-installer-registry-transaction.iss"
 #include "windows-installer-version.iss"
 #include "windows-installer-registry.iss"
+#include "windows-installer-registry-transaction.iss"
 const AWFixtureTag = 'AWReg-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
       AWFixtureOtherTag = 'AWReg-v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
       AWFixtureParentSDDL = 'O:BAD:P(A;CI;KA;;;SY)(A;CI;KA;;;BA)(A;CI;KA;;;BU)';
@@ -201,22 +201,33 @@ begin
   Result := AWOwnedRegistryClose(Key) and (Status = 2);
 end;
 
+const AWFixtureDirectory = 'C:\Fixture Folder\AccessWeaver';
+      AWFixtureUninstaller = 'C:\Fixture Folder\AccessWeaver\unins000.exe';
+
 function AWFixtureWriteRegistration(Key: LongWord; const Version: String): Boolean;
+var Fields: AWRegistryTextValues;
 begin
-  Result := AWRegistrySetString(Key, 'DisplayVersion', Version) and
-    AWRegistrySetString(Key, 'UninstallString', '"Inert\unins000.exe"') and
-    AWRegistrySetString(Key, 'QuietUninstallString', '"Inert\unins000.exe" /SILENT');
+  Result := AWRegistryProductValues(Version, AWFixtureDirectory, AWFixtureUninstaller, Fields) and
+    AWRegistryStageProductValues(Key, Fields);
 end;
 
 function AWFixtureRegistrationMatches(Key: LongWord; const Version: String): Boolean;
-var Actual, Command, Quiet: String;
+var Fields: AWRegistryTextValues;
 begin
   Result := AWOwnedRegistryHeld(Key, AWFixtureTag) and
-    AWReadRegistrationString(Key, 'DisplayVersion', $30000002, 32, Actual) and (Actual = Version) and
-    AWReadRegistrationString(Key, 'UninstallString', $30000002, 64, Command) and
-    (Command = '"Inert\unins000.exe"') and
-    AWReadRegistrationString(Key, 'QuietUninstallString', $30000002, 64, Quiet) and
-    (Quiet = '"Inert\unins000.exe" /SILENT');
+    AWRegistryProductValues(Version, AWFixtureDirectory, AWFixtureUninstaller, Fields) and
+    AWRegistryProductValuesMatch(Key, Fields);
+end;
+
+function AWFixtureRemovalCommandsMatch(Key: LongWord): Boolean;
+var Location, Command, Quiet: String;
+begin
+  Result := AWReadRegistrationString(Key, 'InstallLocation', $30000002, 261, Location) and
+    (AWOrdinal(Location, 'C:\Fixture Folder\AccessWeaver\') = 0) and
+    AWReadRegistrationString(Key, 'UninstallString', $30000002, 300, Command) and
+    (AWOrdinal(Command, '"C:\Fixture Folder\AccessWeaver\unins000.exe"') = 0) and
+    AWReadRegistrationString(Key, 'QuietUninstallString', $30000002, 300, Quiet) and
+    (AWOrdinal(Quiet, '"C:\Fixture Folder\AccessWeaver\unins000.exe" /SILENT') = 0);
 end;
 
 procedure AWFixtureTransactionCases(Root: LongWord);
@@ -245,7 +256,8 @@ begin
   end;
   Opened := Staged and Finished and AWOpenOwnedRegistryChild(Root, 'published', AWFixtureTag, Prior);
   if Opened then AWFixtureRemember(Prior);
-  AWFixtureCase('complete-registration-visible-after-commit', Opened and AWFixtureRegistrationMatches(Prior, '1.0.0'));
+  AWFixtureCase('complete-registration-visible-after-commit', Opened and
+    AWFixtureRegistrationMatches(Prior, '1.0.0') and AWFixtureRemovalCommandsMatch(Prior));
 
   Staged := False; Finished := False;
   try
@@ -269,6 +281,32 @@ begin
     Finished := AWRegistryTransactionFinish(Tx, Key, Staged);
   end;
   AWFixtureCase('complete-upgrade-visible-after-commit', Staged and Finished and AWFixtureRegistrationMatches(Prior, '2.0.0'));
+
+  Staged := False;
+  try
+    if Opened and AWRegistryTransactionBegin(Tx) then
+      Staged := AWOpenOwnedRegistryChildIn(Root, Tx, 'published', AWFixtureTag, Key) and
+        AWFixtureRegistrationMatches(Key, '2.0.0') and
+        AWRegistrySetString(Key, 'unexpected', 'inert') and
+        not AWFixtureRegistrationMatches(Key, '2.0.0');
+  finally
+    Finished := AWRegistryTransactionFinish(Tx, Key, False);
+  end;
+  AWFixtureCase('unexpected-registration-value-refused', Staged and Finished and
+    AWFixtureRegistrationMatches(Prior, '2.0.0'));
+
+  Staged := False;
+  try
+    if Opened and AWRegistryTransactionBegin(Tx) then
+      Staged := AWOpenOwnedRegistryChildIn(Root, Tx, 'published', AWFixtureTag, Key) and
+        AWFixtureRegistrationMatches(Key, '2.0.0') and
+        AWRegistrySetString(Key, 'NoModify', '1') and
+        not AWFixtureRegistrationMatches(Key, '2.0.0');
+  finally
+    Finished := AWRegistryTransactionFinish(Tx, Key, False);
+  end;
+  AWFixtureCase('registration-value-type-mismatch-refused', Staged and Finished and
+    AWFixtureRegistrationMatches(Prior, '2.0.0'));
 
   Staged := False; Finished := False;
   try
@@ -334,7 +372,7 @@ begin
     '"scope":"disposable-protected-registry-ownership-contract","cases":[' + AWFixtureCases + '],' +
     '"descriptorResult":"' + AWFixtureDescriptorResult + '","cleanupResult":"' + AWFixtureCleanupResult + '",' +
     '"cleanupComplete":' + AWFixtureBool(AWFixtureCleanup) + ',"passed":' +
-    AWFixtureBool(AWFixturePassed and (AWFixtureCaseCount = 29)) +
+    AWFixtureBool(AWFixturePassed and (AWFixtureCaseCount = 31)) +
     ',"productionRegistrationChanged":false,"productionQualificationComplete":false}' + #10;
   Result := SaveStringToFile('{#EvidenceRoot}\registry-owned-{#TargetArch}.json', RecordText, False);
 end;

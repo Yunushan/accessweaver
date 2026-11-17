@@ -13,6 +13,13 @@ function AWRegistrySetStringNative(Key: LongWord; const Name: String;
   Reserved, Kind: LongWord; const Data: String; Bytes: LongWord): LongWord;
   external 'RegSetValueExW@advapi32.dll stdcall';
 
+function AWRegistrySetDWORDNative(Key: LongWord; const Name: String;
+  Reserved, Kind: LongWord; var Data: LongWord; Bytes: LongWord): LongWord;
+  external 'RegSetValueExW@advapi32.dll stdcall';
+function AWRegistryReadDWORDNative(Key: LongWord; const Name: String;
+  Reserved: LongWord; var Kind, Data, Bytes: LongWord): LongWord;
+  external 'RegQueryValueExW@advapi32.dll stdcall';
+
 function AWRegistryTransactionBegin(var Transaction: LongWord): Boolean;
 begin
   Transaction := 0;
@@ -56,4 +63,83 @@ begin
     (Length(Value) > 0) and (Length(Value) <= 1024) and
     (Pos(#0, Value) = 0) and
     (AWRegistrySetStringNative(Key, Name, 0, 1, Value, (Length(Value) + 1) * 2) = 0);
+end;
+
+type AWRegistryTextValue = record
+       Name, Value: String;
+       Maximum: LongWord;
+     end;
+     AWRegistryTextValues = array of AWRegistryTextValue;
+
+procedure AWRegistryTextField(var Field: AWRegistryTextValue; const Name, Value: String; Maximum: LongWord);
+begin
+  Field.Name := Name; Field.Value := Value; Field.Maximum := Maximum;
+end;
+
+function AWRegistryProductValues(const Version, Directory, Uninstaller: String;
+  var Fields: AWRegistryTextValues): Boolean;
+var Major, Minor, Patch, Pre, Location, Command: String; I: Integer;
+begin
+  Result := False;
+  if not AWParse(Version, Major, Minor, Patch, Pre) then Exit;
+  if (Length(Directory) < 4) or (Length(Directory) > 261) or
+     (Length(Uninstaller) > 290) then Exit;
+  if not (((Directory[1] >= 'A') and (Directory[1] <= 'Z')) or
+          ((Directory[1] >= 'a') and (Directory[1] <= 'z'))) then Exit;
+  if Copy(Directory, 2, 2) <> ':\' then Exit;
+  for I := 1 to Length(Uninstaller) do
+    if (Ord(Uninstaller[I]) < 32) or (Uninstaller[I] = '"') then Exit;
+  Location := AddBackslash(Directory);
+  if AWOrdinal(ExtractFilePath(Uninstaller), Location) <> 0 then Exit;
+  if CompareText(ExtractFileExt(Uninstaller), '.exe') <> 0 then Exit;
+  Command := '"' + Uninstaller + '"';
+  SetArrayLength(Fields, 8);
+  AWRegistryTextField(Fields[0], 'DisplayName', Copy('AccessWeaver version ' + Version, 1, 259), 259);
+  AWRegistryTextField(Fields[1], 'DisplayVersion', Version, 256);
+  AWRegistryTextField(Fields[2], 'InstallLocation', Location, 261);
+  AWRegistryTextField(Fields[3], 'UninstallString', Command, 300);
+  AWRegistryTextField(Fields[4], 'QuietUninstallString', Command + ' /SILENT', 300);
+  AWRegistryTextField(Fields[5], 'DisplayIcon', Location + 'accessweaver.exe', 300);
+  AWRegistryTextField(Fields[6], 'Publisher', 'AccessWeaver contributors', 64);
+  AWRegistryTextField(Fields[7], 'URLInfoAbout', 'https://github.com/Yunushan/accessweaver', 128);
+  for I := 0 to GetArrayLength(Fields) - 1 do
+    if Length(Fields[I].Value) > Fields[I].Maximum then Exit;
+  Result := True;
+end;
+
+function AWRegistryDWORDIsOne(Key: LongWord; const Name: String): Boolean;
+var Kind, Data, Bytes: LongWord;
+begin
+  Kind := 0; Data := 0; Bytes := 4;
+  Result := (AWRegistryReadDWORDNative(Key, Name, 0, Kind, Data, Bytes) = 0) and
+    (Kind = 4) and (Bytes = 4) and (Data = 1);
+end;
+
+function AWRegistryProductValuesMatch(Key: LongWord; const Fields: AWRegistryTextValues): Boolean;
+var Actual: String; I: Integer; ClassBuffer: String;
+    Characters, Children, Values: LongWord;
+begin
+  Result := False;
+  if (Key = 0) or (GetArrayLength(Fields) <> 8) then Exit;
+  SetLength(ClassBuffer, 128); Characters := 128; Children := 0; Values := 0;
+  if AWOwnedRegistryQueryInfo(Key, ClassBuffer, Characters, 0, Children, 0, 0,
+       Values, 0, 0, 0, 0) <> 0 then Exit;
+  if (Children <> 0) or (Values <> 10) then Exit;
+  for I := 0 to GetArrayLength(Fields) - 1 do
+    if not AWReadRegistrationString(Key, Fields[I].Name, $30000002, Fields[I].Maximum, Actual) or
+       (AWOrdinal(Actual, Fields[I].Value) <> 0) then Exit;
+  Result := AWRegistryDWORDIsOne(Key, 'NoModify') and AWRegistryDWORDIsOne(Key, 'NoRepair');
+end;
+
+function AWRegistryStageProductValues(Key: LongWord; const Fields: AWRegistryTextValues): Boolean;
+var I: Integer; One: LongWord;
+begin
+  Result := False;
+  if (Key = 0) or (GetArrayLength(Fields) <> 8) then Exit;
+  for I := 0 to GetArrayLength(Fields) - 1 do
+    if not AWRegistrySetString(Key, Fields[I].Name, Fields[I].Value) then Exit;
+  One := 1;
+  Result := (AWRegistrySetDWORDNative(Key, 'NoModify', 0, 4, One, 4) = 0) and
+    (AWRegistrySetDWORDNative(Key, 'NoRepair', 0, 4, One, 4) = 0) and
+    AWRegistryProductValuesMatch(Key, Fields);
 end;

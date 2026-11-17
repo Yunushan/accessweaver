@@ -73,3 +73,12 @@ receipts are artifacts 14290606526 and 14289808008. Validation now compares the
 owner SID, DACL control bits and complete ordered ACE bytes on the held
 descriptor. The fixture also requires the rejection of an unprotected DACL and
 a protected DACL with the same layout but a write grant for Users.
+
+The transaction fixture now stages and checks the Apps & Features fields used
+by deployment and removal. It covers the display name, version, location, icon,
+publisher, publisher URL, both uninstall commands, and the DWORD maintenance
+flags. Readback requires that exact field inventory and types. Separate aborted
+updates check that a foreign field or a string in place of a DWORD is refused
+and the committed record remains intact. Production registration publication,
+legacy migration, and behavior in Apps & Features still require native
+qualification.
