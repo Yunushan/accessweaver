@@ -47,6 +47,11 @@ on:
       - 'scripts/test-dns-wire-native-contracts.ps1'
       - 'scripts/dns-wire-*.cjs'
   workflow_dispatch:
+    inputs:
+      firewall_profiles:
+        description: Compare scoped Windows Firewall rules
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -64,6 +69,7 @@ env:
 
 jobs:
   native:
+    if: ${{ !inputs.firewall_profiles }}
     name: Native DoH wire (windows/${{ matrix.goarch }})
     runs-on: ${{ matrix.goarch == 'arm64' && 'windows-11-arm' || (github.ref_name == 'codex/doh-wire-server-2022' && 'windows-2022' || 'windows-latest') }}
     timeout-minutes: 20
@@ -172,5 +178,39 @@ jobs:
         with:
           name: native-doh-netevent-source-windows-${{ matrix.goarch }}
           path: ${{ env.ACCESSWEAVER_DOH_NETEVENT_SOURCE }}/status.json
+          if-no-files-found: error
+          retention-days: 7
+
+  firewall-profiles:
+    if: inputs.firewall_profiles
+    name: DoH firewall profiles (windows/${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64, runner: windows-latest}
+          - {arch: arm64, runner: windows-11-arm}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compare Windows Firewall profile scopes
+        shell: powershell
+        env:
+          ACCESSWEAVER_DOH_PROFILE_TEST: '1'
+        run: |
+          $ErrorActionPreference='Stop'
+          $evidence=Join-Path $env:RUNNER_TEMP ('accessweaver-doh-firewall-'+[guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $evidence -ErrorAction Stop | Out-Null
+          "ACCESSWEAVER_DOH_PROFILE_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          ./scripts/test-native-doh-firewall-profiles.ps1 -ReportPath (Join-Path $evidence 'status.json')
+      - name: Retain fixed profile and cleanup results
+        if: always() && env.ACCESSWEAVER_DOH_PROFILE_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-doh-firewall-profiles-windows-${{ matrix.arch }}
+          path: ${{ env.ACCESSWEAVER_DOH_PROFILE_EVIDENCE }}/status.json
           if-no-files-found: error
           retention-days: 7
