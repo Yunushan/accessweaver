@@ -48,6 +48,29 @@ func (windowsTreeBackend) terminate(handle uintptr) error {
 func (windowsTreeBackend) close(handle uintptr) error {
 	return windows.CloseHandle(windows.Handle(handle))
 }
+
+func (backend windowsTreeBackend) confirmParentExit(handle uintptr) error {
+	state, err := windows.WaitForSingleObject(windows.Handle(handle), 0)
+	if err != nil {
+		return fmt.Errorf("inspect owned parent exit: %w", err)
+	}
+	if state == windows.WAIT_OBJECT_0 {
+		return nil
+	}
+	if state != uint32(windows.WAIT_TIMEOUT) {
+		return errors.New("owned parent exit state is invalid")
+	}
+	// A tree helper exit code alone does not complete the kernel process.
+	// Signal the exact retained object if it is still live, then observe exit.
+	stopErr := backend.terminate(handle)
+	state, waitErr := windows.WaitForSingleObject(windows.Handle(handle), 2000)
+	if waitErr == nil && state == windows.WAIT_OBJECT_0 {
+		// TerminateProcess can race with exit; the signaled handle is decisive.
+		return nil
+	}
+	return errors.Join(errors.New("owned parent exit was not confirmed"), stopErr, waitErr)
+}
+
 func (backend windowsTreeBackend) tree(handle uintptr, expectedPID int) error {
 	// Derive the numeric utility argument only from the still-owned handle.
 	// The owner mutex or legacy WithHandle scope retains it through all setup,
@@ -56,7 +79,7 @@ func (backend windowsTreeBackend) tree(handle uintptr, expectedPID int) error {
 	if err != nil || pid <= 0 || pid != expectedPID {
 		return errors.Join(errTreeBinding, err)
 	}
-	fallback := func() error { return backend.terminate(handle) }
+	fallback := func() error { return backend.confirmParentExit(handle) }
 	directory, err := nativepath.SystemDirectory()
 	if err != nil {
 		return errors.Join(fmt.Errorf("locate process termination utility: %w", err), fallback())
@@ -65,11 +88,14 @@ func (backend windowsTreeBackend) tree(handle uintptr, expectedPID int) error {
 	if err != nil {
 		return errors.Join(fmt.Errorf("prepare process termination utility: %w", err), fallback())
 	}
-	return terminateCommand(terminationCommand{
+	if err := terminateCommand(terminationCommand{
 		executable:  filepath.Join(directory, "taskkill.exe"),
 		args:        []string{"/PID", strconv.Itoa(pid), "/T", "/F"},
 		environment: environment, directory: directory,
-	}, 5*time.Second, fallback)
+	}, 5*time.Second, fallback); err != nil {
+		return err
+	}
+	return backend.confirmParentExit(handle)
 }
 
 // TerminateTree is the legacy guarded entry. It never dispatches by Process.Pid:
