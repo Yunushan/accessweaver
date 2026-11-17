@@ -103,17 +103,31 @@ jobs:
         run: node --test scripts/core-test-evidence.test.cjs
       - name: Run complete root regression
         run: node scripts/core-test-evidence.cjs unit
-      - name: Qualify native Windows local preview and namespace ownership
+      - name: Qualify native Windows file identity and local readers
+        id: local_file_identity
         if: ${{ !cancelled() && runner.os == 'Windows' && steps.native_identity.outcome == 'success' && steps.source_identity.outcome == 'success' && steps.module_integrity.outcome == 'success' && steps.known_labels.outcome == 'success' }}
         env:
           ACCESSWEAVER_DISPOSABLE_WINDOWS_AUDIT_STORAGE_TEST: '1'
-          ACCESSWEAVER_DISPOSABLE_WINDOWS_PREVIEW_TEST: '1'
         shell: pwsh
         run: |
           go test ./internal/fileidentity -run '^Test(DisposableWindowsFileIdentityNative|WindowsLocalPreviewRead)$' -count=1 -timeout=4m
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Qualify native Windows engine preview
+        if: ${{ !cancelled() && steps.local_file_identity.outcome == 'success' }}
+        env:
+          ACCESSWEAVER_DISPOSABLE_WINDOWS_PREVIEW_TEST: '1'
+        shell: pwsh
+        run: |
           go test ./internal/engine -run '^TestWindowsPreviewLocalInputs$' -count=1 -timeout=3m
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain bounded Windows file identity receipt
+        if: ${{ !cancelled() && (steps.local_file_identity.outcome == 'success' || steps.local_file_identity.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: local-preview-fileidentity-${{ matrix.goarch }}
+          path: build/windows-audit-identity-input-checks/fileidentity-${{ matrix.goarch }}.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Run complete Linux root race regression
         if: ${{ !cancelled() && runner.os == 'Linux' && steps.native_identity.outcome == 'success' && steps.source_identity.outcome == 'success' && steps.module_integrity.outcome == 'success' && steps.known_labels.outcome == 'success' }}
         shell: bash
