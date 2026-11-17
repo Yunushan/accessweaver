@@ -1,7 +1,6 @@
-# Hosted source contracts. No real native boundary is loaded or invoked.
+# Source-only contracts load explicit functions with mocked native boundaries.
 [CmdletBinding()]param([switch]$RequireWindowsPowerShell)
 $ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';Set-StrictMode -Version Latest
-if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted'){throw 'Hosted source contracts only'}
 if($RequireWindowsPowerShell -and ($PSVersionTable.PSEdition -cne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1)){throw 'Stock source shell required'}
 foreach($name in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management')){Import-Module ([IO.Path]::Combine($PSHOME,'Modules',$name,($name+'.psd1'))) -ErrorAction Stop}
 $PSModuleAutoLoadingPreference='None'
@@ -199,7 +198,7 @@ Case-P 'wire-query-helper-preserves-capture-and-source-boundaries' {
     $driver=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-native-doh.ps1'));$wire=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'native-doh-netevent-wire.ps1'))
     Assert-P ($driver.Contains('if($bytes.Length -gt 24576)'))
     Assert-P ($driver.Contains('QueryBinarySHA256') -and $driver.Contains('Invoke-NativeFreshDNSQuery $capture -Probe') -and $driver.Contains("Invoke-NativeFreshDNSQuery $"+"script:wire 'example.com'") -and $driver.Contains('querySourceHashes=$hashes.Clone()'))
-    $answerStart=$driver.IndexOf('function Get-NativeDNSAnswerCount');$guarded=$driver.IndexOf('if($WireTransport -and -not $Restored)', $answerStart);$return=$driver.IndexOf('return $answer.answerCount', $guarded);$legacyFlush=$driver.IndexOf('Clear-DnsClientCache', $answerStart)
+    $answerStart=$driver.IndexOf('function Get-NativeDNSAnswerCount');$guarded=$driver.IndexOf('if($WireTransport -and (-not $Restored -or ($RecordType -ceq ''A'' -and $queryProbeReady -and $null -ne $script:wire)))', $answerStart);$return=$driver.IndexOf('return $answer.answerCount', $guarded);$legacyFlush=$driver.IndexOf('Clear-DnsClientCache', $answerStart)
     Assert-P ($answerStart -ge 0 -and $guarded -gt $answerStart -and $return -gt $guarded -and $legacyFlush -gt $return)
     Assert-P (-not $wire.Contains('Invoke-NativeDNSWireQuery') -and $wire.Contains("Invoke-DoHWireFreshDNSQuery $"+"State 'example.net'") -and $wire.Contains("Invoke-DoHWireFreshDNSQuery $"+"State 'example.org' -ExpectFailure") -and $wire.Contains('Read-DoHNetEventCapture $State'))
 }

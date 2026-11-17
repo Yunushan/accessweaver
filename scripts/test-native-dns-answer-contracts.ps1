@@ -37,7 +37,11 @@ function Resolve-DnsName {
 }
 foreach($case in @(
     @{wire=$true;restored=$false;type='A';probe=$true;binding=$true;expected=2;trace='fresh'},
+    @{wire=$true;restored=$true;type='A';probe=$true;binding=$true;expected=2;trace='fresh'},
     @{wire=$true;restored=$true;type='A';probe=$false;binding=$false;expected=2;trace='cache,ordinary'},
+    @{wire=$true;restored=$true;type='A';probe=$true;binding=$false;expected=2;trace='cache,ordinary'},
+    @{wire=$true;restored=$true;type='A';probe=$false;binding=$true;expected=2;trace='cache,ordinary'},
+    @{wire=$true;restored=$true;type='AAAA';probe=$true;binding=$true;expected=1;trace='cache,ordinary'},
     @{wire=$true;restored=$true;type='AAAA';probe=$false;binding=$false;expected=1;trace='cache,ordinary'},
     @{wire=$false;restored=$false;type='A';probe=$false;binding=$false;expected=2;trace='cache,ordinary'},
     @{wire=$false;restored=$false;type='AAAA';probe=$false;binding=$false;expected=1;trace='cache,ordinary'},

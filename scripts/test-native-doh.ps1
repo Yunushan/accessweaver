@@ -422,7 +422,8 @@ public static class AccessWeaverNativeDoHIdentity {
     # Read-only shape metadata uses no adapter names/GUIDs, addresses or values.
     try{$adapterShapes=@(Get-NativeDoHAdapterShapes);$probeOutcome='complete'}catch{$probeOutcome='failed'}
     function Get-NativeDNSAnswerCount([switch]$Restored,[ValidateSet('A','AAAA')][string]$RecordType='A') {
-        if($WireTransport -and -not $Restored){
+        # Observe restored state through the source-bound, cache-bypassing A helper.
+        if($WireTransport -and (-not $Restored -or ($RecordType -ceq 'A' -and $queryProbeReady -and $null -ne $script:wire))){
             if($RecordType -cne 'A' -or $null -eq $script:wire -or -not $queryProbeReady){throw 'Wire query helper unavailable'}
             $answer=Invoke-NativeFreshDNSQuery $script:wire 'example.com'
             return $answer.answerCount
