@@ -1780,33 +1780,90 @@ end;
     Assert-Installed $builds[1]
     $null=State-Checkpoint 'after-registry-view-policy'
     $stage='registry-access-policy'
-    $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64);$key=$null;$restoreSecurity=$null
+    $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
+    $accessParent=$null;$originalKey=$null;$deniedKey=$null
+    $savedLeaf='AccessWeaver-registration-saved-'+$guid
+    $deniedLeaf='AccessWeaver-registration-denied-'+$guid
+    $deniedCreated=$false;$deniedMounted=$false;$originalHidden=$false
+    $fixtureMarker='AccessWeaverRegistryAccessFixture'
     try {
-        $key=$base.OpenSubKey($uninstallKey,[Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,[Security.AccessControl.RegistryRights]::FullControl)
-        Require ($null -ne $key) 'Owned key is unavailable for isolated access-denial fixture'
+        $accessParent=$base.OpenSubKey($parentPath,$true)
+        Require ($null -ne $accessParent) 'Owned fixture parent is unavailable'
+        $originalKey=$accessParent.OpenSubKey($productLeaf,$false)
+        Require ($null -ne $originalKey) 'Owned product registration is unavailable'
+        $sections=[Security.AccessControl.AccessControlSections]'Access,Owner,Group'
+        $originalSDDL=$originalKey.GetAccessControl($sections).GetSecurityDescriptorSddlForm($sections)
+        $originalFingerprint=Registration-Fingerprint $originalKey
+        $names=$accessParent.GetSubKeyNames()
+        Require ($savedLeaf -notin $names -and $deniedLeaf -notin $names) 'Registry access fixture name already exists'
+        $deniedKey=$accessParent.CreateSubKey($deniedLeaf,$true)
+        Require ($null -ne $deniedKey) 'Could not create the disposable registry access fixture'
+        $deniedCreated=$true
+        $deniedKey.SetValue($fixtureMarker,$guid,[Microsoft.Win32.RegistryValueKind]::String)
+        $deniedKey.Dispose();$deniedKey=$null
+        $deniedKey=$accessParent.OpenSubKey($deniedLeaf,[Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,[Security.AccessControl.RegistryRights]::FullControl)
+        Require ($null -ne $deniedKey -and $deniedKey.GetValue($fixtureMarker) -ceq $guid) 'Could not hold the known registry fixture with DACL write access'
         $access=[Security.AccessControl.AccessControlSections]::Access
-        $originalSDDL=$key.GetAccessControl($access).GetSecurityDescriptorSddlForm($access)
-        $restoreSecurity=[Security.AccessControl.RegistrySecurity]::new();$restoreSecurity.SetSecurityDescriptorSddlForm($originalSDDL,$access)
-        $deniedSecurity=[Security.AccessControl.RegistrySecurity]::new();$deniedSecurity.SetSecurityDescriptorSddlForm($originalSDDL,$access)
+        $deniedSecurity=$deniedKey.GetAccessControl($access)
         $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
-        try {$deniedSecurity.AddAccessRule([Security.AccessControl.RegistryAccessRule]::new($identity.User,[Security.AccessControl.RegistryRights]::QueryValues,[Security.AccessControl.AccessControlType]::Deny))} finally {$identity.Dispose()}
         try {
-            $key.SetAccessControl($deniedSecurity)
-            $deniedSDDL=$key.GetAccessControl($access).GetSecurityDescriptorSddlForm($access)
-            # Framework versions wrap this deliberate denial differently.
-            # Require the exact native result instead of matching exceptions.
+            $deniedSecurity.AddAccessRule([Security.AccessControl.RegistryAccessRule]::new(
+                $identity.User,[Security.AccessControl.RegistryRights]::QueryValues,[Security.AccessControl.AccessControlType]::Deny))
+        } finally {$identity.Dispose()}
+        $deniedKey.SetAccessControl($deniedSecurity)
+        $deniedSDDL=$deniedKey.GetAccessControl($access).GetSecurityDescriptorSddlForm($access)
+        $deniedFingerprint=Registration-Fingerprint $deniedKey
+        # Stage the denial at the normal product path while retaining the original key.
+        try {
+            [InstallerRegistryFixture]::Rename($accessParent,$productLeaf,$savedLeaf);$originalHidden=$true
+            [InstallerRegistryFixture]::Rename($accessParent,$deniedLeaf,$productLeaf);$deniedMounted=$true
             $queryStatus=[InstallerRegistryFixture]::QueryStatus64($base,$uninstallKey)
-            Require ($queryStatus -eq 5) 'Owned-key query denial did not produce native ERROR_ACCESS_DENIED'
-            # Existing handle retains its granted rights for inspection/restore.
-            $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint $key
-            $denied=Native-Record $second $arguments (0..255)
-            Require ($denied.result.exitCode -eq 1 -and (Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint $key) -ceq $registrationBefore -and $key.GetAccessControl($access).GetSecurityDescriptorSddlForm($access) -ceq $deniedSDDL) 'Denied registration read allowed setup or changed protected state'
+            Require ($queryStatus -eq 5) 'Disposable product-key denial did not produce native ERROR_ACCESS_DENIED'
+            $treeBefore=Installed-TreeFingerprint
+            $deniedLog=Join-Path $capsule 'denied-product-registry.log'
+            $denied=Native-Record $second ($arguments+@('/LOG='+$deniedLog)) @(1)
+            No-Reparse $deniedLog
+            $logSize=(Get-Item -LiteralPath $deniedLog -ErrorAction Stop).Length
+            Require ($logSize -gt 0 -and $logSize -le 1MB -and
+                [IO.File]::ReadAllText($deniedLog).Contains('Cannot read the AccessWeaver installation registration. Review access and retry.')) 'Native Setup did not report the registry access refusal'
+            Require ((Installed-TreeFingerprint) -ceq $treeBefore -and
+                (Registration-Fingerprint $deniedKey) -ceq $deniedFingerprint -and
+                $deniedKey.GetAccessControl($access).GetSecurityDescriptorSddlForm($access) -ceq $deniedSDDL -and
+                (Registration-Fingerprint $originalKey) -ceq $originalFingerprint -and
+                $originalKey.GetAccessControl($sections).GetSecurityDescriptorSddlForm($sections) -ceq $originalSDDL -and
+                $null -eq (Get-PendingInstallFixtureValue)) 'Denied registration read changed protected state'
             Assert-UserState
-            $registryAccessCases+=,@{name='denied-product-key-refused';exitCode=$denied.result.exitCode;elapsedMilliseconds=$denied.milliseconds;queryDenialIndependentlyObserved=$true;nativeQueryStatus=$queryStatus;installedFileTreePreserved=$true;registrationValuesPreserved=$true;fixtureDACLUnchangedDuringRefusal=$true;profilePreserved=$true}
-        } finally {$key.SetAccessControl($restoreSecurity)}
-        Require ($key.GetAccessControl($access).GetSecurityDescriptorSddlForm($access) -ceq $originalSDDL) 'Owned key access-control restoration differs from the original'
-        $registryAccessCases[-1].fixtureDACLRestored=$true
-    } finally {if($key){$key.Dispose()};$base.Dispose()}
+        } finally {
+            # RegRenameKey refuses a pre-existing destination and preserves both leaves.
+            if($deniedMounted){[InstallerRegistryFixture]::Rename($accessParent,$productLeaf,$deniedLeaf);$deniedMounted=$false}
+            if($originalHidden){[InstallerRegistryFixture]::Rename($accessParent,$savedLeaf,$productLeaf);$originalHidden=$false}
+        }
+        $namedKey=$accessParent.OpenSubKey($productLeaf,$false)
+        try {
+            Require ($null -ne $namedKey -and (Registration-Fingerprint $namedKey) -ceq $originalFingerprint -and
+                $namedKey.GetAccessControl($sections).GetSecurityDescriptorSddlForm($sections) -ceq $originalSDDL -and
+                [InstallerRegistryFixture]::QueryStatus64($base,$uninstallKey) -eq 0) 'Original protected registration did not return with its exact security descriptor and values'
+        } finally {if($namedKey){$namedKey.Dispose()}}
+    } finally {
+        try {
+            if($deniedCreated -and -not $deniedMounted){
+                if($null -eq $deniedKey){$deniedKey=$accessParent.OpenSubKey($deniedLeaf,$false)}
+                Require ($null -ne $deniedKey -and $deniedKey.GetValue($fixtureMarker) -ceq $guid -and $deniedKey.SubKeyCount -eq 0) 'Refusing to delete a changed registry access fixture'
+                $deniedKey.Dispose();$deniedKey=$null
+                [InstallerRegistryFixture]::DeleteEmptyDeniedLeaf64($accessParent,$deniedLeaf)
+                Require ($deniedLeaf -notin $accessParent.GetSubKeyNames()) 'Disposable registry access fixture remains after deletion'
+            }
+        } finally {
+            if($deniedKey){$deniedKey.Dispose()}
+            if($originalKey){$originalKey.Dispose()}
+            if($accessParent){$accessParent.Dispose()}
+            $base.Dispose()
+        }
+    }
+    $registryAccessCases+=,@{name='denied-product-key-refused';exitCode=$denied.result.exitCode;elapsedMilliseconds=$denied.milliseconds;
+        queryDenialIndependentlyObserved=$true;nativeQueryStatus=$queryStatus;refusalReasonVerified=$true;installedFileTreePreserved=$true;
+        registrationValuesPreserved=$true;fixtureDACLUnchangedDuringRefusal=$true;profilePreserved=$true;
+        originalRegistrationRestored=$true;originalSecurityDescriptorPreserved=$true;separateFixtureKeyRemoved=$true}
     Assert-Installed $builds[1]
     $null=State-Checkpoint 'after-registry-access-policy'
     $stage='restoration-launch-failures'
@@ -2220,7 +2277,7 @@ end;
 $eventDiagnostics=New-InstallerFirewallEventDiagnostic
 if(-not $complete){$eventDiagnostics=Read-FirewallEventDiagnostic}
 $originDiagnostics=[ordered]@{schemaVersion=1;source='captured-rule-properties';maxRecords=16;maxPropertyBytes=4096;records=@($script:firewallOriginObservations);truncated=$script:firewallOriginTruncated;unavailable=$script:firewallOriginUnavailable;extraNativeQueriesPerformed=$false;processOriginEstablished=$false}
-$record=[ordered]@{schemaVersion=63;lateCompatibilityRefusal=$lateCompatibilityRefusal;nativeDocumentationRefusals=$nativeDocumentationRefusals;controllerDocumentationRefusals=$controllerDocumentationRefusals;uninstallLicenseRefusal=$uninstallLicenseRefusal;uninstallDataDetectionVerified=[bool]$uninstallDataDetectionVerified;uninstallDataRecoveryVerified=[bool]$uninstallDataRecoveryVerified;setupUpgradeBaseline=$setupUpgradeBaseline;setupUninstallRegistrationRefusal=$setupUninstallRegistrationRefusal;setupMarkerReplacement=$setupMarkerReplacement;postRestorationRefusal=$postRestorationRefusal;setupCompletionRefusal=$completionRefusal;setupDocumentationCompletionRefusal=$documentationCompletionRefusal;setupRetirementFlush=$setupRetirementFlush;setupCompletionReadbackVerified=$complete;installationPathRefusals=$pathRefusal;pendingMarkerAccess=$pendingMarkerAccess;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;runAttempt=$runAttempt;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record=[ordered]@{schemaVersion=64;lateCompatibilityRefusal=$lateCompatibilityRefusal;nativeDocumentationRefusals=$nativeDocumentationRefusals;controllerDocumentationRefusals=$controllerDocumentationRefusals;uninstallLicenseRefusal=$uninstallLicenseRefusal;uninstallDataDetectionVerified=[bool]$uninstallDataDetectionVerified;uninstallDataRecoveryVerified=[bool]$uninstallDataRecoveryVerified;setupUpgradeBaseline=$setupUpgradeBaseline;setupUninstallRegistrationRefusal=$setupUninstallRegistrationRefusal;setupMarkerReplacement=$setupMarkerReplacement;postRestorationRefusal=$postRestorationRefusal;setupCompletionRefusal=$completionRefusal;setupDocumentationCompletionRefusal=$documentationCompletionRefusal;setupRetirementFlush=$setupRetirementFlush;setupCompletionReadbackVerified=$complete;installationPathRefusals=$pathRefusal;pendingMarkerAccess=$pendingMarkerAccess;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;runAttempt=$runAttempt;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 if($null -ne $script:uninstallBindingFailureCode){$record.uninstallBindingFailureCode=$script:uninstallBindingFailureCode}
 if(-not $complete -and $null -ne $script:installerProtectionDiagnostic -and $script:installerProtectionDiagnosticStage -ceq $stage){$record.uninstallProtectionDiagnostic=$script:installerProtectionDiagnostic}
 $record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $reportPath -Encoding utf8

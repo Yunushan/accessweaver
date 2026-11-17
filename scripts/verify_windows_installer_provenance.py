@@ -33,7 +33,8 @@ PENDING_STATUS_REPORT_SCHEMA = 60
 MATCHING_PENDING_STATUS_REPORT_SCHEMA = 61
 LATE_COMPATIBILITY_REFUSAL_REPORT_SCHEMA = 62
 PROTECTED_REGISTRY_BOUNDARY_REPORT_SCHEMA = 63
-REPORT_SCHEMAS = range(11, PROTECTED_REGISTRY_BOUNDARY_REPORT_SCHEMA + 1)
+PROTECTED_REGISTRY_ACCESS_REPORT_SCHEMA = 64
+REPORT_SCHEMAS = range(11, PROTECTED_REGISTRY_ACCESS_REPORT_SCHEMA + 1)
 PHASES=["baseline","after-install","after-upgrade","after-reinstall","after-active-setup-uninstall","after-lifecycle-locks","after-refused-downgrade","after-version-policy","after-registry-read-boundaries","after-registry-view-policy","after-registry-access-policy","after-restoration-launch-failures","after-restoration-ownership-contracts","before-uninstall","after-uninstall"]
 
 def require(ok,message):
@@ -434,6 +435,26 @@ def validate_protected_registry_read_boundaries(report):
     return {"protectedRegistryReadBoundariesVerified": len(expected)}
 
 
+def validate_protected_registry_access(report):
+    records = report.get("registryAccessCases")
+    flags = {
+        "queryDenialIndependentlyObserved", "refusalReasonVerified", "installedFileTreePreserved",
+        "registrationValuesPreserved", "fixtureDACLUnchangedDuringRefusal", "profilePreserved",
+        "originalRegistrationRestored", "originalSecurityDescriptorPreserved", "separateFixtureKeyRemoved",
+    }
+    require(isinstance(records, list) and len(records) == 1 and isinstance(records[0], dict),
+            "Expected one native registration access refusal")
+    record = records[0]
+    require(record.keys() == flags | {"name", "exitCode", "nativeQueryStatus", "elapsedMilliseconds"}
+            and record["name"] == "denied-product-key-refused"
+            and type(record["exitCode"]) is int and record["exitCode"] == 1
+            and type(record["nativeQueryStatus"]) is int and record["nativeQueryStatus"] == 5
+            and type(record["elapsedMilliseconds"]) is int and 0 <= record["elapsedMilliseconds"] < 180000
+            and all(record[key] is True for key in flags),
+            "Native registration access refusal did not preserve the original protected registration")
+    return {"protectedRegistryAccessRefusalVerified": True}
+
+
 def validate_pending_marker_access(value):
     flags = {
         "discoveryReportedUnavailable", "managedDetectionRefused", "controllerUninstallBindingRefused",
@@ -651,6 +672,8 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
         setup_readback["uninstallDataDetectionVerified"] = True
     if report["schemaVersion"] >= PROTECTED_REGISTRY_BOUNDARY_REPORT_SCHEMA:
         setup_readback.update(validate_protected_registry_read_boundaries(report))
+    if report["schemaVersion"] >= PROTECTED_REGISTRY_ACCESS_REPORT_SCHEMA:
+        setup_readback.update(validate_protected_registry_access(report))
     event_counts=validate_firewall_event_diagnostics(report.get("firewallEventDiagnostics"))
     attempt_counts=validate_native_attempt(report.get("lastNativeAttempt"))
     state_counts=validate_state_observations(report.get("stateObservations"), include_rollback=report["schemaVersion"] >= ROLLBACK_REPORT_SCHEMA)

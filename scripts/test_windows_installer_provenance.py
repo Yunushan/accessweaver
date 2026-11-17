@@ -13,6 +13,7 @@ from verify_windows_installer_provenance import (
     validate_setup_uninstall_registration_refusal, validate_setup_upgrade_baseline, validate_uninstall_license_refusal,
     validate_native_documentation_refusals, validate_inno_runtime_notice, validate_previous_version_rollback,
     validate_setup_retirement_flush, validate_late_compatibility_refusal, validate_protected_registry_read_boundaries,
+    validate_protected_registry_access,
 )
 from verify_windows_installer_provenance import BUNDLE_NAME,DEFAULT_VERSIONS,WORKFLOW,check_rejections,stage,subject_names,validate_build,verification_command,verify
 
@@ -321,6 +322,24 @@ class ProtectedRegistryReadBoundaryTests(unittest.TestCase):
                 validate_protected_registry_read_boundaries(changed)
         with self.assertRaises(ValueError):
             validate_protected_registry_read_boundaries({**report, "registryReadCases": cases[1:]})
+
+
+class ProtectedRegistryAccessTests(unittest.TestCase):
+    def test_requires_independent_denial_and_exact_original_key_restoration(self):
+        record = {
+            "name": "denied-product-key-refused", "exitCode": 1, "nativeQueryStatus": 5,
+            "elapsedMilliseconds": 21, "queryDenialIndependentlyObserved": True, "refusalReasonVerified": True,
+            "installedFileTreePreserved": True, "registrationValuesPreserved": True,
+            "fixtureDACLUnchangedDuringRefusal": True, "profilePreserved": True,
+            "originalRegistrationRestored": True, "originalSecurityDescriptorPreserved": True,
+            "separateFixtureKeyRemoved": True,
+        }
+        self.assertEqual(validate_protected_registry_access({"registryAccessCases": [record]}),
+                         {"protectedRegistryAccessRefusalVerified": True})
+        for field, invalid in (("nativeQueryStatus", 2), ("refusalReasonVerified", False),
+                               ("originalSecurityDescriptorPreserved", False), ("separateFixtureKeyRemoved", False)):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_protected_registry_access({"registryAccessCases": [{**record, field: invalid}]})
 
 
 class FailedCopyRecoveryTests(unittest.TestCase):
