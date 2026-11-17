@@ -60,9 +60,12 @@ begin
     (Committed = Publish);
 end;
 
+const AWRegistryInnoAppPath = 'Inno Setup: App Path';
+
 function AWRegistrySetString(Key: LongWord; const Name, Value: String): Boolean;
 begin
-  Result := (Key <> 0) and AWOwnedRegistryChildName(Name) and
+  { The only supported product value whose name is not a child-key name. }
+  Result := (Key <> 0) and ((Name = AWRegistryInnoAppPath) or AWOwnedRegistryChildName(Name)) and
     (Length(Value) > 0) and (Length(Value) <= 1024) and
     (Pos(#0, Value) = 0) and
     (AWRegistrySetStringNative(Key, Name, 0, 1, Value, (Length(Value) + 1) * 2) = 0);
@@ -107,7 +110,7 @@ begin
   AWRegistryTextField(Fields[5], 'DisplayIcon', Location + 'accessweaver.exe', 300);
   AWRegistryTextField(Fields[6], 'Publisher', 'AccessWeaver contributors', 64);
   AWRegistryTextField(Fields[7], 'URLInfoAbout', 'https://github.com/Yunushan/accessweaver', 128);
-  AWRegistryTextField(Fields[8], 'Inno Setup: App Path', RemoveBackslashUnlessRoot(Directory), 260);
+  AWRegistryTextField(Fields[8], AWRegistryInnoAppPath, RemoveBackslashUnlessRoot(Directory), 260);
   for I := 0 to GetArrayLength(Fields) - 1 do
     if Length(Fields[I].Value) > Fields[I].Maximum then Exit;
   Result := True;
