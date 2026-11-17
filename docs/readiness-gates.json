@@ -759,7 +759,9 @@
             ".github/workflows/ci.yml",
             ".github/workflows/release.yml",
             "scripts/publish_prerelease.py",
-            "scripts/test_publish_prerelease.py"
+            "scripts/test_publish_prerelease.py",
+          "docs/RELEASE_PROVENANCE.md",
+          "docs/qualification/65b3803c473b-portable-release-recovery.json"
           ]
         }
       ]
