@@ -85,6 +85,7 @@ test('macOS unit report binds the release workflow and excludes private data',as
  const data={schemaVersion:2,sourceCommit:'a'.repeat(40),sourceTree:'b'.repeat(40),sourceSHA256,platform:'darwin',architecture:'arm64',go:'go1.27.4',mode:'unit',stage:'complete',exitCode:0,streamValid:true,sourceStable:true,inputBytes:100,...completed().value('unit',0),engineLifetimeDiagnostics:[],productionQualificationComplete:false};
  await assert.rejects(C.writeReport(root,data));
  sourceSHA256['.github/workflows/release.yml']='d'.repeat(64);
+ sourceSHA256['.github/workflows/darwin-audit-commands.yml']='b'.repeat(64);
  sourceSHA256['internal/engine/lifetime_unix_test.go']='e'.repeat(64);
  sourceSHA256['internal/engine/shutdown_unix_test.go']='f'.repeat(64);
  await assert.rejects(C.writeReport(root,{...data,mode:'race'}));
@@ -137,6 +138,7 @@ test('core report retains only fixed diagnostic codes on failed engine roots',as
  ]) tracker.event(event);
  const sourceSHA256=Object.fromEntries(C.sources.map(file=>[file,'c'.repeat(64)]));
  sourceSHA256['.github/workflows/release.yml']='d'.repeat(64);
+ sourceSHA256['.github/workflows/darwin-audit-commands.yml']='b'.repeat(64);
  sourceSHA256['internal/engine/lifetime_unix_test.go']='e'.repeat(64);
  sourceSHA256['internal/engine/shutdown_unix_test.go']='f'.repeat(64);
  const projected=tracker.value('unit',1);

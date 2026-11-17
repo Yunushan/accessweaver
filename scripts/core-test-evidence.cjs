@@ -4,7 +4,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path'),{createHash}=require('node:crypto'),{spawn,execFileSync}=require('node:child_process');
 const MODULE='github.com/Yunushan/accessweaver',modes=['unit','race','vet'],stages=['identity','catalog','execute','source','complete'];
 const sources=['.github/workflows/native-core.yml','scripts/core-test-evidence.cjs','scripts/core-test-catalog/main.go','scripts/core-test-catalog/main_test.go','go.mod','go.sum'];
-function reportSources(platform){return platform==='darwin'?[...sources,'.github/workflows/release.yml','internal/engine/lifetime_unix_test.go','internal/engine/shutdown_unix_test.go']:sources}
+function reportSources(platform){return platform==='darwin'?[...sources,'.github/workflows/release.yml','.github/workflows/darwin-audit-commands.yml','internal/engine/lifetime_unix_test.go','internal/engine/shutdown_unix_test.go']:sources}
 // Only these public, fixed CLI cases/phases may appear in supplemental
 // annotations. Dynamic test labels and Output payloads are never retained.
 const closedPipePackage=MODULE+'/cmd/accessweaver',closedPipeRoot='TestRecordedEngineClosedStdoutAndStderrReapBeforeScopeRestoration',closedPipeRepeat='TestRecordedEngineClosedStandardPipeRepeated';

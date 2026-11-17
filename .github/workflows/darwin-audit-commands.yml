@@ -2,6 +2,13 @@ name: Native macOS recorded audit command qualification
 
 on:
   workflow_call:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Native macOS validation scope
+        type: choice
+        default: audit
+        options: [audit, engine-unit]
 
 permissions:
   contents: read
@@ -12,7 +19,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  engine-unit:
+    if: github.event_name == 'workflow_dispatch' && inputs.scope == 'engine-unit'
+    uses: ./.github/workflows/native-core.yml
+    with:
+      platform: darwin
+
   native:
+    if: github.event_name != 'workflow_dispatch' || inputs.scope != 'engine-unit'
     name: Native macOS recorded audit commands (${{ matrix.goarch }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
