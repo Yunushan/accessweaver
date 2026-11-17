@@ -8,7 +8,7 @@ on:
         description: Native macOS validation scope
         type: choice
         default: audit
-        options: [audit, engine-unit]
+        options: [audit, engine-unit, core-and-audit]
 
 permissions:
   contents: read
@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   engine-unit:
-    if: github.event_name == 'workflow_dispatch' && inputs.scope == 'engine-unit'
+    if: github.event_name == 'workflow_dispatch' && (inputs.scope == 'engine-unit' || inputs.scope == 'core-and-audit')
     uses: ./.github/workflows/native-core.yml
     with:
       platform: darwin
