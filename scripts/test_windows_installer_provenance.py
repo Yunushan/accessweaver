@@ -12,7 +12,7 @@ from verify_windows_installer_provenance import (
     validate_post_restoration_refusal, validate_restoration_controller_refusals, validate_setup_marker_replacement,
     validate_setup_uninstall_registration_refusal, validate_setup_upgrade_baseline, validate_uninstall_license_refusal,
     validate_native_documentation_refusals, validate_inno_runtime_notice, validate_previous_version_rollback,
-    validate_setup_retirement_flush,
+    validate_setup_retirement_flush, validate_late_compatibility_refusal,
 )
 from verify_windows_installer_provenance import BUNDLE_NAME,DEFAULT_VERSIONS,WORKFLOW,check_rejections,stage,subject_names,validate_build,verification_command,verify
 
@@ -277,6 +277,23 @@ class LockedUpgradeTests(unittest.TestCase):
                                             marker_required=True)
                 with self.assertRaises(ValueError):
                     validate_locked_upgrade(metadata, marker_required=True)
+
+
+class LateCompatibilityRefusalTests(unittest.TestCase):
+    def test_requires_a_distinct_late_lock_fixture_and_bindings_to_failed_copy(self):
+        observation = {
+            "fixtureSHA256": "b" * 64, "setupExitCode": 4,
+            "installationStarted": True, "lateLockAcquired": True, "destinationGuardRefused": True,
+            "pendingMarkerRetained": True, "lockedFilePreserved": True,
+        }
+        self.assertEqual(validate_late_compatibility_refusal(observation, 4, "a" * 64),
+                         {"lateCompatibilityFileRefusalVerified": True})
+        for invalid in ({**observation, "pendingMarkerRetained": False},
+                        {**observation, "fixtureSHA256": "a" * 64},
+                        {**observation, "setupExitCode": 5},
+                        {**observation, "setupExitCode": 7}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                validate_late_compatibility_refusal(invalid, 4, "a" * 64)
 
 
 class FailedCopyRecoveryTests(unittest.TestCase):

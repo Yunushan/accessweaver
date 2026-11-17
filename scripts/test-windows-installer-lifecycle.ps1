@@ -406,7 +406,7 @@ $documentationCompletionRefusal=$null
 $setupRetirementFlush=$null
 $setupUninstallRegistrationRefusal=$null
 $setupUpgradeBaseline=$null
-$stage='compile';$failureType=$null;$script:assertionFailure=$null;$script:lastNative=$null;$script:lastNativeAttempt=$null;$complete=$false;$builds=@();$observations=@();$architectureRefusal=$null;$pendingMarkerAccess=$null;$versionPolicyCases=@();$versionContractCases=0;$versionFixtureSHA256=$null;$lifecycleLockCases=@();$lifecycleLockFixtureSHA256=$null;$productLockSHA256=$null;$registryReadCases=@();$registryViewCases=@();$registryAccessCases=@();$failureSourceLine=$null;$registryFixtureSHA256=$null;$productRegistrySHA256=$null;$restorationCases=@();$postRestorationRefusal=$null;$setupMarkerReplacement=$null;$productRestoreSHA256=$null;$restoreFixtureSourceSHA256=$null;$restoreFixtureBinarySHA256=$null;$restoreContractSourceSHA256=$null;$restoreContractBinarySHA256=$null;$restorationOwnerCases=@();$restoreOwnerFixtureSHA256=$null;$restorationLaunchCases=@();$restoreLaunchFixtureSHA256=$null
+$stage='compile';$failureType=$null;$script:assertionFailure=$null;$script:lastNative=$null;$script:lastNativeAttempt=$null;$complete=$false;$builds=@();$observations=@();$architectureRefusal=$null;$pendingMarkerAccess=$null;$lateCompatibilityRefusal=$null;$versionPolicyCases=@();$versionContractCases=0;$versionFixtureSHA256=$null;$lifecycleLockCases=@();$lifecycleLockFixtureSHA256=$null;$productLockSHA256=$null;$registryReadCases=@();$registryViewCases=@();$registryAccessCases=@();$failureSourceLine=$null;$registryFixtureSHA256=$null;$productRegistrySHA256=$null;$restorationCases=@();$postRestorationRefusal=$null;$setupMarkerReplacement=$null;$productRestoreSHA256=$null;$restoreFixtureSourceSHA256=$null;$restoreFixtureBinarySHA256=$null;$restoreContractSourceSHA256=$null;$restoreContractBinarySHA256=$null;$restorationOwnerCases=@();$restoreOwnerFixtureSHA256=$null;$restorationLaunchCases=@();$restoreLaunchFixtureSHA256=$null
 try {
     $buildDirectory=Join-Path $project 'build'
     $stagePattern='installer-'+$Architecture+'-*'
@@ -1498,20 +1498,51 @@ end;
     Require ($null -eq (Get-PendingInstallFixtureValue)) 'Successful Setup did not clear its pending record'
     Require ((Get-AccessWeaverInstallerRecoveryState) -ceq 'clear') 'Controller did not observe cleared Setup recovery state'
     $failedCopyLog=Join-Path $capsule 'failed-install-copy.log'
-    # Lock a packaged file outside early replacement preflight so the per-file guard runs after the pending record is written.
     $lockedCompatibilityFile=Join-Path $install 'uninstall-system.json'
     $compatibilityDigest=Digest $lockedCompatibilityFile
-    $compatibilityGuard=[IO.File]::Open($lockedCompatibilityFile,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
-    try {
-        $failedCopy=Native-Record $second ($arguments+@('/LOG='+$failedCopyLog)) @(7)
-    } finally {$compatibilityGuard.Dispose()}
-    Require ((Get-Item -LiteralPath $failedCopyLog).Length -le 1MB) 'Failed installation log exceeds its bound'
+    # Open a native sharing lock after both preflights and the pending-marker readback.
+    $pendingReadbackPoint="        RaiseException('Cannot verify the AccessWeaver pending installation record after writing it.');"
+    $deinitPoint='  if AWManagedTempCandidates <> nil then AWManagedTempCandidates.Free;'
+    foreach($point in @($pendingReadbackPoint,$declarationPoint,$deinitPoint)){
+        Require ([regex]::Matches($productSetup,[regex]::Escape($point)).Count -eq 1) 'Expected one late file lock fixture boundary'
+    }
+    $lateCompatibilityLock=@'
+      AWFixtureCompatibilityHandle := AWOpenReplaceProbe(Destination + '\uninstall-system.json',
+        $80000000, $00000003, 0, 3, $00200000, 0);
+      if AWFixtureCompatibilityHandle = $FFFFFFFF then
+        RaiseException('Could not acquire the AccessWeaver fixture compatibility-file lock.');
+      Log('AccessWeaver fixture acquired its compatibility-file lock after pending readback.');
+'@
+    $closeCompatibilityLock=@'
+  if (AWFixtureCompatibilityHandle <> 0) and (AWFixtureCompatibilityHandle <> $FFFFFFFF) then
+    AWCloseNativeHandle(AWFixtureCompatibilityHandle);
+'@
+    $lateLockSource=$productSetup.Replace($declarationPoint,('var AWFixtureCompatibilityHandle: LongWord;'+[Environment]::NewLine+$declarationPoint)).
+        Replace($pendingReadbackPoint,($pendingReadbackPoint+[Environment]::NewLine+$lateCompatibilityLock)).
+        Replace($deinitPoint,($closeCompatibilityLock+[Environment]::NewLine+$deinitPoint))
+    [IO.File]::WriteAllText($faultSetup,$lateLockSource)
+    $null=@(& $compiler ('/DBuildRoot='+$upgradePayload) ('/DReleaseVersion='+$builds[1].version) ('/DTargetArch='+$Architecture) $faultSetup)
+    Require ($LASTEXITCODE -eq 0) 'Late compatibility-file lock fixture compilation failed'
+    $lateLockSetupDigest=Digest $interruptedSetup
+    Require ($lateLockSetupDigest -cne $builds[1].installerSHA256) 'Late compatibility-file lock fixture must differ from genuine Setup'
+    $failedCopy=Native-Record $interruptedSetup ($arguments+@('/LOG='+$failedCopyLog)) (0..255)
+    No-Reparse $failedCopyLog
+    $copyLogSize=(Get-Item -LiteralPath $failedCopyLog -ErrorAction Stop).Length
+    Require ($copyLogSize -gt 0 -and $copyLogSize -le 1MB) 'Failed installation log is unavailable or exceeds its bound'
     $copyLog=[IO.File]::ReadAllText($failedCopyLog)
-    Require ($copyLog.Contains('Starting the installation process.') -and
-        $copyLog.Contains('An AccessWeaver package file destination cannot be safely replaced. Setup recovery is required.')) 'Setup did not refuse replacement through the per-file destination guard'
-    Require ((Get-PendingInstallFixtureValue) -ceq $pendingValue) 'Failed Setup did not retain its own pending installation record'
+    $lateCompatibilityRefusal=[ordered]@{
+        fixtureSHA256=$lateLockSetupDigest;setupExitCode=$failedCopy.result.exitCode;
+        installationStarted=$copyLog.Contains('Starting the installation process.');
+        lateLockAcquired=$copyLog.Contains('AccessWeaver fixture acquired its compatibility-file lock after pending readback.');
+        destinationGuardRefused=$copyLog.Contains('An AccessWeaver package file destination cannot be safely replaced. Setup recovery is required.');
+        pendingMarkerRetained=(Get-PendingInstallFixtureValue) -ceq $pendingValue;
+        lockedFilePreserved=(Digest $lockedCompatibilityFile) -ceq $compatibilityDigest
+    }
+    Require ($lateCompatibilityRefusal.setupExitCode -in @(4,5) -and $lateCompatibilityRefusal.installationStarted -and
+        $lateCompatibilityRefusal.lateLockAcquired -and $lateCompatibilityRefusal.destinationGuardRefused) 'Setup did not refuse replacement through the late per-file destination guard'
+    Require $lateCompatibilityRefusal.pendingMarkerRetained 'Failed Setup did not retain its own pending installation record'
     Require ((Get-AccessWeaverInstallerRecoveryState) -ceq 'pending') 'Controller did not observe the native Setup recovery marker'
-    Require ((Digest $lockedCompatibilityFile) -ceq $compatibilityDigest) 'Failed Setup changed the locked compatibility file'
+    Require $lateCompatibilityRefusal.lockedFilePreserved 'Failed Setup changed the locked compatibility file'
     Assert-UserState
     $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint
     Assert-DetectorRefusal 'pending-install-refused'
@@ -2169,7 +2200,7 @@ end;
 $eventDiagnostics=New-InstallerFirewallEventDiagnostic
 if(-not $complete){$eventDiagnostics=Read-FirewallEventDiagnostic}
 $originDiagnostics=[ordered]@{schemaVersion=1;source='captured-rule-properties';maxRecords=16;maxPropertyBytes=4096;records=@($script:firewallOriginObservations);truncated=$script:firewallOriginTruncated;unavailable=$script:firewallOriginUnavailable;extraNativeQueriesPerformed=$false;processOriginEstablished=$false}
-$record=[ordered]@{schemaVersion=61;nativeDocumentationRefusals=$nativeDocumentationRefusals;controllerDocumentationRefusals=$controllerDocumentationRefusals;uninstallLicenseRefusal=$uninstallLicenseRefusal;uninstallDataDetectionVerified=[bool]$uninstallDataDetectionVerified;uninstallDataRecoveryVerified=[bool]$uninstallDataRecoveryVerified;setupUpgradeBaseline=$setupUpgradeBaseline;setupUninstallRegistrationRefusal=$setupUninstallRegistrationRefusal;setupMarkerReplacement=$setupMarkerReplacement;postRestorationRefusal=$postRestorationRefusal;setupCompletionRefusal=$completionRefusal;setupDocumentationCompletionRefusal=$documentationCompletionRefusal;setupRetirementFlush=$setupRetirementFlush;setupCompletionReadbackVerified=$complete;installationPathRefusals=$pathRefusal;pendingMarkerAccess=$pendingMarkerAccess;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;runAttempt=$runAttempt;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record=[ordered]@{schemaVersion=62;lateCompatibilityRefusal=$lateCompatibilityRefusal;nativeDocumentationRefusals=$nativeDocumentationRefusals;controllerDocumentationRefusals=$controllerDocumentationRefusals;uninstallLicenseRefusal=$uninstallLicenseRefusal;uninstallDataDetectionVerified=[bool]$uninstallDataDetectionVerified;uninstallDataRecoveryVerified=[bool]$uninstallDataRecoveryVerified;setupUpgradeBaseline=$setupUpgradeBaseline;setupUninstallRegistrationRefusal=$setupUninstallRegistrationRefusal;setupMarkerReplacement=$setupMarkerReplacement;postRestorationRefusal=$postRestorationRefusal;setupCompletionRefusal=$completionRefusal;setupDocumentationCompletionRefusal=$documentationCompletionRefusal;setupRetirementFlush=$setupRetirementFlush;setupCompletionReadbackVerified=$complete;installationPathRefusals=$pathRefusal;pendingMarkerAccess=$pendingMarkerAccess;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;runAttempt=$runAttempt;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 if($null -ne $script:uninstallBindingFailureCode){$record.uninstallBindingFailureCode=$script:uninstallBindingFailureCode}
 if(-not $complete -and $null -ne $script:installerProtectionDiagnostic -and $script:installerProtectionDiagnosticStage -ceq $stage){$record.uninstallProtectionDiagnostic=$script:installerProtectionDiagnostic}
 $record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $reportPath -Encoding utf8

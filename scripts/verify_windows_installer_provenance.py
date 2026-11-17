@@ -31,7 +31,8 @@ TEMP_UNINSTALLER_RECOVERY_REPORT_SCHEMA = 58
 LOCKED_TEMP_UNINSTALLER_REPORT_SCHEMA = 59
 PENDING_STATUS_REPORT_SCHEMA = 60
 MATCHING_PENDING_STATUS_REPORT_SCHEMA = 61
-REPORT_SCHEMAS = range(11, MATCHING_PENDING_STATUS_REPORT_SCHEMA + 1)
+LATE_COMPATIBILITY_REFUSAL_REPORT_SCHEMA = 62
+REPORT_SCHEMAS = range(11, LATE_COMPATIBILITY_REFUSAL_REPORT_SCHEMA + 1)
 PHASES=["baseline","after-install","after-upgrade","after-reinstall","after-active-setup-uninstall","after-lifecycle-locks","after-refused-downgrade","after-version-policy","after-registry-read-boundaries","after-registry-view-policy","after-registry-access-policy","after-restoration-launch-failures","after-restoration-ownership-contracts","before-uninstall","after-uninstall"]
 
 def require(ok,message):
@@ -391,6 +392,20 @@ def validate_failed_copy_recovery(value, *, controller_required=False, compatibi
     return {"failedInstallCopyRecoveryVerified": True}
 
 
+def validate_late_compatibility_refusal(value, failed_copy_exit_code, approved_setup_sha256):
+    flags = {"installationStarted", "lateLockAcquired", "destinationGuardRefused",
+             "pendingMarkerRetained", "lockedFilePreserved"}
+    require(isinstance(value, dict)
+            and value.keys() == flags | {"fixtureSHA256", "setupExitCode"}
+            and isinstance(value["fixtureSHA256"], str) and SHA.fullmatch(value["fixtureSHA256"])
+            and value["fixtureSHA256"] != approved_setup_sha256
+            and type(value["setupExitCode"]) is int and value["setupExitCode"] in (4, 5)
+            and value["setupExitCode"] == failed_copy_exit_code
+            and all(value[key] is True for key in flags),
+            "Native Setup late compatibility-file refusal was not verified")
+    return {"lateCompatibilityFileRefusalVerified": True}
+
+
 def validate_pending_marker_access(value):
     flags = {
         "discoveryReportedUnavailable", "managedDetectionRefused", "controllerUninstallBindingRefused",
@@ -685,6 +700,12 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
     if report["schemaVersion"] >= ROLLBACK_REPORT_SCHEMA:
         restoration.update(validate_previous_version_rollback(
             operation_by_name["restore-previous-version"], operation_by_name["uninstall-previous-version"], builds[0],
+        ))
+    if report["schemaVersion"] >= LATE_COMPATIBILITY_REFUSAL_REPORT_SCHEMA:
+        failed_copy_recovery.update(validate_late_compatibility_refusal(
+            report.get("lateCompatibilityRefusal"),
+            operation_by_name["recover-failed-install-copy"]["exitCode"],
+            builds[1].get("installerSHA256"),
         ))
     candidates=[]
     for build,version in zip(builds,versions):
