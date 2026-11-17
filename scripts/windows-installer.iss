@@ -14,6 +14,15 @@
 #else
   #error TargetArch must be amd64 or arm64
 #endif
+#ifdef LegacyRegistrationFixture
+  #if Defined(OrganizationSigning) || Defined(ProtectedRegistrationQualification)
+    #error The legacy registration fixture cannot be signed or use protected registration
+  #endif
+#else
+  #ifndef ProtectedRegistrationQualification
+    #define ProtectedRegistrationQualification 1
+  #endif
+#endif
 #ifdef RetiredPayloadInclude
   #if !Defined(ProtectedRegistrationQualification) || !Defined(RetiredPayloadIncludeSHA256)
     #error The retirement plan requires protected registration and a pinned include
@@ -87,8 +96,12 @@ WizardStyle=modern
 UninstallDisplayIcon={app}\accessweaver.exe
 #ifdef ProtectedRegistrationQualification
 CreateUninstallRegKey=no
+  #ifdef RetiredPayloadInclude
 ; A legacy Inno log contains a path-based deletion of the registration.
 UninstallLogMode=overwrite
+  #else
+UninstallLogMode=append
+  #endif
 #endif
 CloseApplications=yes
 RestartApplications=no
@@ -992,6 +1005,9 @@ begin
       Result := 'The installed AccessWeaver release differs from the approved upgrade baseline.';
       Exit;
     end;
+#else
+    Result := 'This AccessWeaver Setup has no approved package inventory for legacy migration.';
+    Exit;
 #endif
   end;
 #endif

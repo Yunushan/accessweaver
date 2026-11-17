@@ -17,8 +17,8 @@ $project=Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'windows-installer-common.ps1')
 Assert-InstallerReleaseVersion $Version
 if(($PreviousPayloadInventory -or $PreviousPayloadInventorySHA256) -and
-   (-not $ProtectedRegistrationQualification -or -not $PreviousPayloadInventory -or -not $PreviousPayloadInventorySHA256)){
-    throw 'An approved prior payload inventory and digest require a protected registration qualification build'
+   (-not $PreviousPayloadInventory -or -not $PreviousPayloadInventorySHA256)){
+    throw 'Legacy migration requires both the approved prior payload inventory and its digest'
 }
 if($PreviousPayloadInventory){$PreviousPayloadInventory=(Resolve-Path -LiteralPath $PreviousPayloadInventory).ProviderPath}
 $callback=Join-Path $PSScriptRoot 'sign-windows-installer-artifact.ps1'
@@ -126,7 +126,7 @@ try {
     if($PreviousPayloadInventory){
         $include=$stage+'.retirement.iss'
         $digest=New-InstallerRetiredPayloadPlan $stage $PreviousPayloadInventory $PreviousPayloadInventorySHA256 $include
-        $setupModeArguments+=@('/DRetiredPayloadInclude='+$include,'/DRetiredPayloadIncludeSHA256='+$digest)
+        $setupModeArguments+=@(('/DRetiredPayloadInclude='+$include),('/DRetiredPayloadIncludeSHA256='+$digest))
     }
     $compile={
         & $Compiler ('/DBuildRoot='+$stage) ('/DReleaseVersion='+$Version) ('/DTargetArch='+$TargetArch) ('/DEvidenceOutput='+$preprocessed) '/DRequireInnoRuntimeNotice' @setupModeArguments @signingArguments $setupScript
@@ -145,12 +145,11 @@ try {
         }
     } finally {$noticeGuard.Dispose()}
     $null=Assert-InstallerSetupScript $preprocessed $TargetArch $Version -OrganizationSigning:$organizationSigning
-    if($ProtectedRegistrationQualification){
-        $expanded=[IO.File]::ReadAllText($preprocessed)
-        if($expanded -cnotmatch '(?m)^CreateUninstallRegKey=no\s*$' -or
-           $expanded -cnotmatch '(?m)^UninstallLogMode=overwrite\s*$'){
-            throw 'Compiled Setup did not select the protected registration lifecycle'
-        }
+    $expanded=[IO.File]::ReadAllText($preprocessed)
+    $logMode=if($PreviousPayloadInventory){'overwrite'}else{'append'}
+    if($expanded -cnotmatch '(?m)^CreateUninstallRegKey=no\s*$' -or
+       $expanded -cnotmatch ('(?m)^UninstallLogMode='+$logMode+'\s*$')){
+        throw 'Compiled Setup did not select the expected protected registration and uninstall log mode'
     }
     $payloadFingerprint='';$payloadInventory=''
     Assert-InstallerPackageDirectories $stage $setupScript $preprocessed ([ref]$payloadFingerprint) ([ref]$payloadInventory)

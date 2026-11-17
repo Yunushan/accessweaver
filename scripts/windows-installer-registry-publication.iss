@@ -1,6 +1,5 @@
 {
-  Included only by the protected-registration qualification build. The
-  release builder requires a complete migration and removal path first.
+  Product registration is published and retired under the installation lock.
 }
 const AWProductRegistrationClass = 'AWReg-v1:8f826fa0456f2122e8b67448bcbda54b87254e164889106f8a66e76ca98b835c';
 
@@ -53,12 +52,20 @@ begin
     Uninstaller := Copy(Command, 2, Length(Command) - 2);
     if not AWRegistryProductValues(Version, RemoveBackslashUnlessRoot(Location),
       Uninstaller, AWPriorRegistration) then Exit;
-    if AWOwnedRegistryHeld(Key, AWProductRegistrationClass) then
-      Result := AWRegistryProductValuesMatch(Key, AWPriorRegistration)
-    else
-      Result := (AWLegacyApproval.Version = Version) and AWLegacyUninstallerName(Uninstaller) and
-        AWLegacyRegistrationInventory(Key, AWPriorRegistration, AWLegacyPriorInventory) and
-        AWVerifyLegacyUpgradeFiles(Destination, Uninstaller, LegacyHeld);
+    if AWOwnedRegistryHeld(Key, AWProductRegistrationClass) then begin
+#ifdef RetiredPayloadInclude
+      { This package overwrites a legacy log. Protected version changes use the
+        ordinary Setup so the previous protected uninstall log remains intact. }
+      if AWOrdinal(Version, '{#ReleaseVersion}') <> 0 then Exit;
+#endif
+      Result := AWRegistryProductValuesMatch(Key, AWPriorRegistration);
+      Exit;
+    end;
+#ifdef RetiredPayloadInclude
+    Result := (AWLegacyApproval.Version = Version) and AWLegacyUninstallerName(Uninstaller) and
+      AWLegacyRegistrationInventory(Key, AWPriorRegistration, AWLegacyPriorInventory) and
+      AWVerifyLegacyUpgradeFiles(Destination, Uninstaller, LegacyHeld);
+#endif
   finally
     if not AWOwnedRegistryClose(Key) then Result := False;
     if not AWOwnedRegistryClose(Parent) then Result := False;

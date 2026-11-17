@@ -1,8 +1,7 @@
 # Protected Windows installer registration
 
-The native installer currently reaches uninstall with a registry entry that
-inherits a write ACE from the machine Add/Remove Programs tree. The uninstaller
-correctly refuses it. The
+The earlier Inno registration reached uninstall with a write ACE inherited from
+the machine Add/Remove Programs tree. The uninstaller refused it. The
 [AMD64 and ARM64 failure receipts](qualification/ed049b12e54e-installer-terminal-server-refusal.json)
 identify the same inherited write class. Pinned Inno Setup 6.7.1 deletes the
 previous leaf and supplies no security descriptor when it creates the new one.
@@ -63,8 +62,9 @@ file in the exact order and encoding covered by the Setup SBOM’s
 independently approved prior Setup and SBOM so later upgrades can identify
 files shipped only by that package.
 
-For a protected registration qualification build, pass
-`-PreviousPayloadInventory` together with
+Normal Setup publishes the protected registration and appends to the uninstall
+log for ordinary upgrades. A legacy migration build replaces the legacy log.
+To compile that package, pass `-PreviousPayloadInventory` together with
 `-PreviousPayloadInventorySHA256`. Use the independently approved prior
 Setup SBOM's staged-payload digest. The builder compares the prior package
 paths with the current staging tree and binds the compiled retirement plan

@@ -12,7 +12,8 @@ from verify_windows_installer_provenance import (
     validate_post_restoration_refusal, validate_restoration_controller_refusals, validate_setup_marker_replacement,
     validate_setup_uninstall_registration_refusal, validate_setup_upgrade_baseline, validate_uninstall_license_refusal,
     validate_native_documentation_refusals, validate_inno_runtime_notice, validate_previous_version_rollback,
-    validate_setup_retirement_flush,
+    validate_setup_retirement_flush, validate_late_compatibility_refusal, validate_protected_registry_read_boundaries,
+    validate_protected_registry_access,
 )
 from verify_windows_installer_provenance import BUNDLE_NAME,DEFAULT_VERSIONS,WORKFLOW,check_rejections,stage,subject_names,validate_build,verification_command,verify
 
@@ -277,6 +278,68 @@ class LockedUpgradeTests(unittest.TestCase):
                                             marker_required=True)
                 with self.assertRaises(ValueError):
                     validate_locked_upgrade(metadata, marker_required=True)
+
+
+class LateCompatibilityRefusalTests(unittest.TestCase):
+    def test_requires_a_distinct_late_lock_fixture_and_bindings_to_failed_copy(self):
+        observation = {
+            "fixtureSHA256": "b" * 64, "setupExitCode": 4,
+            "installationStarted": True, "lateLockAcquired": True, "destinationGuardRefused": True,
+            "pendingMarkerRetained": True, "lockedFilePreserved": True,
+        }
+        self.assertEqual(validate_late_compatibility_refusal(observation, 4, "a" * 64),
+                         {"lateCompatibilityFileRefusalVerified": True})
+        for invalid in ({**observation, "pendingMarkerRetained": False},
+                        {**observation, "fixtureSHA256": "a" * 64},
+                        {**observation, "setupExitCode": 5},
+                        {**observation, "setupExitCode": 7}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                validate_late_compatibility_refusal(invalid, 4, "a" * 64)
+
+
+class ProtectedRegistryReadBoundaryTests(unittest.TestCase):
+    def test_requires_protected_registration_outcomes_and_preserved_state(self):
+        observed = [
+            ("maximum-string-accepted", 0, 514),
+            ("inconsistent-display-name-refused", 3, 514),
+            ("maximum-expand-literal-owned-refused", 3, 514),
+            ("over-budget-string-refused", 1, 516),
+            ("oversized-string-refused", 1, 131086),
+            ("environment-reference-not-expanded", 1, 108),
+        ]
+        cases = [{"name": name, "expectedExitCode": code, "exitCode": code, "elapsedMilliseconds": 16,
+                  "fixtureUTF16Bytes": size, "refusedStatePreserved": code != 0,
+                  "refusalReasonVerified": code != 0, "profilePreserved": True}
+                 for name, code, size in observed]
+        report = {"registryReadCases": cases, "registryReadBufferBytes": 514}
+        self.assertEqual(validate_protected_registry_read_boundaries(report),
+                         {"protectedRegistryReadBoundariesVerified": 6})
+        for field, invalid in (("exitCode", 0), ("refusalReasonVerified", False),
+                               ("refusedStatePreserved", False), ("fixtureUTF16Bytes", 512)):
+            changed = copy.deepcopy(report)
+            changed["registryReadCases"][2][field] = invalid
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_protected_registry_read_boundaries(changed)
+        with self.assertRaises(ValueError):
+            validate_protected_registry_read_boundaries({**report, "registryReadCases": cases[1:]})
+
+
+class ProtectedRegistryAccessTests(unittest.TestCase):
+    def test_requires_independent_denial_and_exact_original_key_restoration(self):
+        record = {
+            "name": "denied-product-key-refused", "exitCode": 1, "nativeQueryStatus": 5,
+            "elapsedMilliseconds": 21, "queryDenialIndependentlyObserved": True, "refusalReasonVerified": True,
+            "installedFileTreePreserved": True, "registrationValuesPreserved": True,
+            "fixtureDACLUnchangedDuringRefusal": True, "profilePreserved": True,
+            "originalRegistrationRestored": True, "originalSecurityDescriptorPreserved": True,
+            "separateFixtureKeyRemoved": True,
+        }
+        self.assertEqual(validate_protected_registry_access({"registryAccessCases": [record]}),
+                         {"protectedRegistryAccessRefusalVerified": True})
+        for field, invalid in (("nativeQueryStatus", 2), ("refusalReasonVerified", False),
+                               ("originalSecurityDescriptorPreserved", False), ("separateFixtureKeyRemoved", False)):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_protected_registry_access({"registryAccessCases": [{**record, field: invalid}]})
 
 
 class FailedCopyRecoveryTests(unittest.TestCase):
