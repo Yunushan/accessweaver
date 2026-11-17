@@ -16,7 +16,7 @@ python scripts/verify_release_provenance.py DOWNLOADED_DIRECTORY --source-commit
 
 If you retained `githubAssetSHA256` from Windows update discovery, pass `--expected-asset-sha256 FILENAME SHA256` for each of its four entries. The verifier compares those pins against the frozen download and reports `assetDigestsMatched`. To verify only one target, supply its archive, the build manifest, checksums and provenance bundle, and add `--target windows/amd64` or `--target windows/arm64`. The independently trusted commit and ref remain required. Target verification authenticates three signed subjects and inspects only the selected archive. The release workflow exercises this path for AMD64 and ARM64 using the signed packages and retains the results as `windows-amd64.json` and `windows-arm64.json` in the `release-provenance-check-ATTEMPT` artifact.
 
-A manual preview uses its independently recorded commit and `refs/heads/main`. The verifier pins all of the following:
+A manual preview uses its independently recorded commit and full source ref. A preview dispatched from the default branch uses `refs/heads/main`. The verifier pins all of the following:
 
 - repository `Yunushan/accessweaver` and host `github.com`;
 - signer workflow `Yunushan/accessweaver/.github/workflows/release.yml`;
@@ -46,7 +46,9 @@ The preview at `65b3803c473b` has verified staging and execution attestations fo
 
 A separate replay authenticated the original Windows x64 and ARM64 archives from the same preview and ran the corrected read-only discovery check. Both targets reported clear installer recovery state, verified service and task inspection, and cleaned up the temporary process and capsule without changing settings. The reports bind each result to the archived source and the exact validator source. Full Windows packaged acceptance still requires its own successful release workflow run. [Discovery evidence](qualification/65b3803c473b-windows-discovery-replay.json) and [replay run](https://github.com/Yunushan/accessweaver/actions/runs/44053033249).
 
-The full release workflow at `236e7db983a9` completed packaged execution on Windows x64 and ARM64. Independent verification authenticated all twelve build subjects and both signed staging and execution reports for each Windows target. It matched the executed binaries to the authenticated archives and verified Windows discovery in both execution reports. Full release publication verification and OS publisher signing require their own evidence. [Windows packaged execution](qualification/236e7db983a9-windows-packaged-execution.json) and [full release run](https://github.com/Yunushan/accessweaver/actions/runs/44056445749).
+The full release workflow at `236e7db983a9` completed packaged execution on Windows x64 and ARM64. Independent verification authenticated all twelve build subjects and both signed staging and execution reports for each Windows target. It matched the executed binaries to the authenticated archives and verified Windows discovery in both execution reports. [Windows packaged execution](qualification/236e7db983a9-windows-packaged-execution.json) and [full release run](https://github.com/Yunushan/accessweaver/actions/runs/44056445749).
+
+The unsigned portable preview at `236e7db983a9` passed packaged execution across Windows, macOS, Linux, FreeBSD and OpenBSD on x64 and ARM64. Independent verification authenticated all twelve build subjects and twenty target attestations, matched the fresh hosted rebuild to all twelve unsigned subjects, and reproduced the exact publication qualification digest from the target receipts. GitHub verified the publication inputs in preview mode. Publisher signing and installed deployment qualification remain open. [Complete preview evidence](qualification/236e7db983a9-portable-qualification.json) and [hosted run](https://github.com/Yunushan/accessweaver/actions/runs/44056445749).
 
 ## Execute the authenticated portable candidate
 
