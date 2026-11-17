@@ -15,6 +15,7 @@ from macos_deployment import PACKAGE_ID,INCOMING,inspect_deployment,DETACHED_MAN
 from macos_installer import BUNDLE_NAME,digest,require,MAX_BYTES
 from macos_package_archive import flat_members,cpio,inflate
 from macos_launcher import BINARY,archive_name,inspect_launcher
+from verify_macos_deployment_provenance import ATTEMPT_BOUND_REPORT_SCHEMA,validate_run_attempt,validate_run_id
 
 REPO=Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location("accessweaver_mac_fixture_support",Path(__file__).with_name("test-macos-installer-lifecycle.py"))
@@ -39,6 +40,10 @@ def main():
     require(support.platform.system()=="Darwin" and os.geteuid()!=0,"Native ordinary-user Mac driver required")
     require(os.environ.get("GITHUB_ACTIONS")=="true" and os.environ.get("RUNNER_ENVIRONMENT")=="github-hosted" and os.environ.get("GITHUB_REPOSITORY")=="Yunushan/accessweaver" and os.environ.get("ACCESSWEAVER_DISPOSABLE_MACOS_DEPLOYMENT_PACKAGE_TEST")=="1","Explicit disposable native package opt-in required")
     source=os.environ.get("GITHUB_SHA","");arch=os.environ.get("ACCESSWEAVER_MACOS_INSTALLER_ARCH","")
+    run_id=os.environ.get("GITHUB_RUN_ID","")
+    run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT","")
+    validate_run_id(run_id)
+    validate_run_attempt(run_attempt)
     require(re.fullmatch("[a-f0-9]{40}",source) is not None and arch in ("amd64","arm64"),"Missing native package source/target")
     require(support.subprocess.check_output(["git","rev-parse","HEAD"],cwd=REPO,text=True).strip()==source and not support.subprocess.check_output(["git","status","--porcelain","--untracked-files=no"],cwd=REPO).strip(),"Expected a clean exact-source checkout")
     for path in (AUTHORITY,INPUT,support.APP,Path("/Library/Preferences/AccessWeaver"),*RECEIPTS,*support.RECEIPTS):
@@ -319,7 +324,7 @@ def main():
         while trace:
             if trace.tb_frame.f_code.co_filename==__file__:failure_line=trace.tb_lineno
             trace=trace.tb_next
-    report={"schemaVersion":4,"managedDetectionCases":detection_cases,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packages":{v:{"file":c["report"]["packageFile"],"bytes":c["report"]["packageBytes"],"packageSHA256":c["report"]["packageSHA256"],"payloadSHA256":c["report"]["payloadSHA256"],"manifestSHA256":c["report"]["manifestSHA256"],"helperSHA256":c["report"]["helperSHA256"],"payloadSBOMSHA256":c["report"]["payloadSBOMSHA256"]} for v,c in candidates.items()},"stage":stage,"passed":complete,"failureType":failure,"failureSourceLine":failure_line,"operations":operations,"runtimeLeaseCases":lease_cases,"launcherCases":launcher_cases,"launcherCandidate":launcher_info,"activeCopyLauncherVerified":complete,"installedControllerLeaseRefusalVerified":complete,"packageScriptsIntegrated":True,"detachedManifestSealingVerified":complete,"detachedPayloadSBOMSealingVerified":complete,"actualApplePackageUpgradeExecuted":complete,"actualUserProfilePreservationVerified":complete,"retainedPriorCopiesVerified":complete,"ownedFixturesRemoved":cleaned,"installedCodeExecutedAsRoot":False,"publicLauncherIntegrated":False,"runtimeLeaseQualified":False,"publisherSignatureVerified":False,"notarized":False,"productUninstallQualified":False,"managedEndpointQualified":False,"abruptTerminationQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
+    report={"schemaVersion":ATTEMPT_BOUND_REPORT_SCHEMA,"managedDetectionCases":detection_cases,"sourceCommit":source,"runID":run_id,"runAttempt":run_attempt,"target":"darwin/"+arch,"packages":{v:{"file":c["report"]["packageFile"],"bytes":c["report"]["packageBytes"],"packageSHA256":c["report"]["packageSHA256"],"payloadSHA256":c["report"]["payloadSHA256"],"manifestSHA256":c["report"]["manifestSHA256"],"helperSHA256":c["report"]["helperSHA256"],"payloadSBOMSHA256":c["report"]["payloadSBOMSHA256"]} for v,c in candidates.items()},"stage":stage,"passed":complete,"failureType":failure,"failureSourceLine":failure_line,"operations":operations,"runtimeLeaseCases":lease_cases,"launcherCases":launcher_cases,"launcherCandidate":launcher_info,"activeCopyLauncherVerified":complete,"installedControllerLeaseRefusalVerified":complete,"packageScriptsIntegrated":True,"detachedManifestSealingVerified":complete,"detachedPayloadSBOMSealingVerified":complete,"actualApplePackageUpgradeExecuted":complete,"actualUserProfilePreservationVerified":complete,"retainedPriorCopiesVerified":complete,"ownedFixturesRemoved":cleaned,"installedCodeExecutedAsRoot":False,"publicLauncherIntegrated":False,"runtimeLeaseQualified":False,"publisherSignatureVerified":False,"notarized":False,"productUninstallQualified":False,"managedEndpointQualified":False,"abruptTerminationQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
     (root/"lifecycle-artifact.json").write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     require(complete,"Native deployment package acceptance failed at "+stage+"; owned disposable state retained")
     print(json.dumps({"target":report["target"],"actualApplePackageOperations":len(operations)+len(lease_cases),"passed":True,"productionQualificationComplete":False}))

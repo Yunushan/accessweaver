@@ -1,4 +1,5 @@
 import verify_macos_deployment_provenance as verify_module
+import json
 import subprocess
 from pathlib import Path
 import tempfile
@@ -23,9 +24,9 @@ class DeploymentProvenanceContracts(unittest.TestCase):
     def test_every_subject_authenticates_before_parsing_in_a_private_snapshot(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);self.fixture(root);authenticated=[]
-            def auth(path,bundle,commit,ref,gh,run_id):
+            def auth(path,bundle,commit,ref,gh,run_id,*,run_attempt=None):
                 self.assertNotEqual(path.parent,root);self.assertEqual(bundle.parent,path.parent);authenticated.append(path.name)
-            def parse(private,*args):
+            def parse(private,*args,**kwargs):
                 self.assertEqual(set(authenticated),set(subjects("amd64")))
                 name=next(n for n in subjects("amd64") if n.endswith(".pkg"));(root/name).write_bytes(b"changed outside snapshot")
                 self.assertEqual((private/name).read_bytes(),b"not parsed before authentication")
@@ -55,6 +56,73 @@ class DeploymentProvenanceContracts(unittest.TestCase):
                 verify(root, COMMIT, REF, "amd64", run_id="7")
             self.assertEqual(run.call_count, 18)
             parse.assert_not_called()
+
+
+    def test_all_subjects_must_match_the_approved_attempt_before_parsing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            matching = subprocess.CompletedProcess(["gh"], 0, stdout=RUN_URI)
+            previous = subprocess.CompletedProcess(["gh"], 0, stdout=RUN_URI.replace("/attempts/2", "/attempts/1"))
+            with patch.object(verify_module.subprocess, "run", side_effect=[matching] * 17 + [previous]) as gh, patch.object(
+                verify_module, "validate_contents"
+            ) as parse, self.assertRaisesRegex(ValueError, "expected GitHub Actions run or attempt"):
+                verify(root, COMMIT, REF, "amd64", run_id="7", run_attempt="2")
+            self.assertEqual(gh.call_count, 18)
+            parse.assert_not_called()
+
+            with patch.object(verify_module.subprocess, "run", return_value=matching) as gh, patch.object(
+                verify_module, "validate_contents", return_value={"lifecycleRunID": "7", "lifecycleRunAttempt": "2"}
+            ) as parse:
+                result = verify(root, COMMIT, REF, "amd64", run_id="7", run_attempt="2")
+            self.assertEqual(gh.call_count, 18)
+            self.assertEqual(parse.call_args.kwargs, {"run_attempt": "2"})
+            self.assertEqual(result["attestationRunAttempt"], "2")
+            self.assertEqual(result["deployment"]["lifecycleRunAttempt"], "2")
+
+    def test_current_lifecycle_report_requires_the_matching_attempt(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            lifecycle = {
+                "schemaVersion": 5,
+                "sourceCommit": COMMIT,
+                "target": "darwin/amd64",
+                "stage": "deactivation-and-owned-cleanup",
+                "runID": "7",
+                "packages": {},
+            }
+            with patch.object(verify_module, "validate_packages", return_value=({}, {}, {})), patch.object(
+                verify_module, "inspect_launcher", return_value={}
+            ):
+                for report_schema, recorded, approved, reason in (
+                    (5, "1", "2", "does not match the approved"),
+                    (5, 2, "2", "does not match the approved"),
+                    (5, None, "2", "does not match the approved"),
+                    (5, "2", None, "schema and approved"),
+                    (4, None, "2", "schema and approved"),
+                    (4, None, None, "Actual deployment lifecycle did not pass"),
+                    (5, "2", "2", "Actual deployment lifecycle did not pass"),
+                ):
+                    with self.subTest(schema=report_schema, recorded=recorded, approved=approved):
+                        report = {**lifecycle, "schemaVersion": report_schema}
+                        if recorded is not None:
+                            report["runAttempt"] = recorded
+                        (root / "lifecycle-artifact.json").write_text(json.dumps(report), encoding="utf-8")
+                        with self.assertRaisesRegex(ValueError, reason):
+                            verify_module.validate_contents(root, COMMIT, "amd64", run_attempt=approved)
+
+    def test_staging_checks_the_report_attempt_before_attestation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            with patch.object(verify_module, "copy_subject"), patch.object(
+                verify_module, "validate_contents", return_value={"lifecycleRunID": "7", "lifecycleRunAttempt": "2"}
+            ) as parse:
+                verify_module.stage(root, root / "candidate", COMMIT, REF, "amd64", "7", run_attempt="2")
+            self.assertEqual(parse.call_args.kwargs, {"run_attempt": "2"})
+            with self.assertRaisesRegex(ValueError, "approved GitHub Actions run attempt"):
+                verify_module.stage(root, root / "invalid", COMMIT, REF, "amd64", "7", run_attempt="02")
+            self.assertFalse((root / "invalid").exists())
 
     def test_missing_extra_linked_and_wrong_target_inputs_fail_closed(self):
         for kind in ("missing","extra","link","wrong-target"):

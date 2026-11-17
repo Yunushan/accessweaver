@@ -321,13 +321,13 @@ For this native acceptance family, download the candidates, lifecycle report and
 
 ## Versioned macOS deployment provenance
 
-The `macos-deployment.yml` workflow attests 18 subjects per architecture, including both package versions, their inventories, the launcher and the native lifecycle report. Place those files and `BUILD-PROVENANCE.sigstore.json` in a private directory. Obtain the commit, ref, architecture and run ID from the reviewed record. Use the verifier from the exact approved source.
+The `macos-deployment.yml` workflow attests 18 subjects per architecture, including both package versions, their inventories, the launcher and the native lifecycle report. Download `macos-deployment-candidate-ARCH-attempt-ATTEMPT` for the reviewed run. Place the 18 subjects and `BUILD-PROVENANCE.sigstore.json` in a private directory. Obtain the commit, ref, architecture, run ID and attempt from the reviewed record. Use the verifier from the exact approved source.
 
 ```text
-python scripts/verify_macos_deployment_provenance.py PRIVATE_DIRECTORY --source-commit FULL_APPROVED_COMMIT --source-ref refs/heads/main --architecture arm64 --run-id APPROVED_NATIVE_RUN_ID
+python scripts/verify_macos_deployment_provenance.py PRIVATE_DIRECTORY --source-commit FULL_APPROVED_COMMIT --source-ref refs/heads/main --architecture arm64 --run-id APPROVED_NATIVE_RUN_ID --run-attempt APPROVED_ATTEMPT
 ```
 
-Use `amd64` for Intel. The verifier authenticates each subject against the approved run before parsing the lifecycle report, then checks that the report names the same run.
+Use `amd64` for Intel. The verifier authenticates each subject against the approved run and attempt before parsing the schema 5 lifecycle report. It checks that the report names the same run and attempt. When rerunning this qualification, rerun all jobs so both architectures issue evidence for the new attempt. For archived schema 1–4 reports, use the historical artifact name `macos-deployment-candidate-ARCH` and verify by approved run ID.
 
 ## Experimental public macOS desktop provenance
 
