@@ -18,6 +18,29 @@ func (b fixtureBind) Open(uint16) ([]conn.ReceiveFunc, uint16, error) {
 	return []conn.ReceiveFunc{b.receive}, 12345, nil
 }
 
+func TestPeerHost(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "default loopback", want: "127.0.0.1"},
+		{name: "private address", args: []string{"172.31.4.5"}, want: "172.31.4.5"},
+		{name: "loopback argument", args: []string{"127.0.0.1"}},
+		{name: "public address", args: []string{"198.51.100.5"}},
+		{name: "IPv6", args: []string{"fd42::1"}},
+		{name: "hostname", args: []string{"fixture.invalid"}},
+		{name: "extra address", args: []string{"10.0.0.1", "10.0.0.2"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := peerHost(tc.args)
+			if got != tc.want || (err == nil) != (tc.want != "") {
+				t.Fatalf("peerHost() = %q, %v; want %q", got, err, tc.want)
+			}
+		})
+	}
+}
+
 func TestObservedBind(t *testing.T) {
 	packet := make([]byte, device.MessageInitiationSize)
 	for _, test := range []struct {

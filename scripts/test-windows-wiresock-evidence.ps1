@@ -4,7 +4,7 @@ $source=Join-Path $PSScriptRoot 'test-windows-native-wiresock.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'WireSock source failed parsing'}
-foreach($name in @('Read-PeerEvidence','Observe-PeerEvidence')){
+foreach($name in @('Read-PeerEvidence','Observe-PeerEvidence','Get-FixtureAdapterIPv4')){
     $nodes=@($ast.EndBlock.Statements | Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -46,4 +46,34 @@ try {
 } finally {
     [IO.File]::Delete($file)
 }
-Write-Output 'Twelve bounded WireSock peer evidence checks passed.'
+function Find-NetRoute {
+    [CmdletBinding()]param([string]$RemoteIPAddress)
+    if($RemoteIPAddress -cne '203.0.113.1'){throw 'Unexpected fixture route query'}
+    return $fixtureRoutes
+}
+function New-FixtureAddress([string]$Address,[string]$State='Preferred',[bool]$Skip=$false){
+    return [pscustomobject]@{IPAddress=$Address;AddressFamily='IPv4';Type='Unicast';AddressState=$State;SkipAsSource=$Skip}
+}
+$route=[pscustomobject]@{DestinationPrefix='0.0.0.0/0';AddressFamily='IPv4'}
+foreach($address in @('10.1.2.3','172.31.2.3','192.168.2.3')){
+    $fixtureRoutes=@((New-FixtureAddress $address),$route)
+    if((Get-FixtureAdapterIPv4) -cne $address){throw 'Expected the private source selected by Windows'}
+}
+$numeric=New-FixtureAddress '172.18.2.3'
+$numeric.AddressFamily=[uint16]2;$numeric.Type=[byte]1;$numeric.AddressState=[uint16]4
+$fixtureRoutes=@($numeric,$route)
+if((Get-FixtureAdapterIPv4) -cne '172.18.2.3'){throw 'Expected documented CIM numeric values'}
+foreach($fixtureRoutes in @(
+    @(New-FixtureAddress '127.0.0.1'),
+    @(New-FixtureAddress '203.0.113.7'),
+    @(New-FixtureAddress '::ffff:10.1.2.3'),
+    @(New-FixtureAddress '010.1.2.3'),
+    @(New-FixtureAddress '10.1.2.3' -State 'Tentative'),
+    @(New-FixtureAddress '10.1.2.3' -Skip $true),
+    @((New-FixtureAddress '10.1.2.3'),(New-FixtureAddress '10.1.2.4'))
+)){
+    $refused=$false
+    try {$null=Get-FixtureAdapterIPv4}catch{$refused=$_.Exception.Message -ceq 'An active private IPv4 source address is required for the adapter fixture'}
+    if(-not $refused){throw 'Unsafe or ambiguous active source reached the WireSock fixture'}
+}
+Write-Output 'Bounded WireSock peer evidence and adapter source checks passed.'

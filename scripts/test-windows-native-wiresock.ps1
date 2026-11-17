@@ -1,5 +1,6 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][ValidateSet('amd64','arm64')][string]$Architecture)
+param([Parameter(Mandatory)][ValidateSet('amd64','arm64')][string]$Architecture,
+    [ValidateSet('loopback','adapter')][string]$PeerEndpointMode='loopback')
 $ErrorActionPreference='Stop'
 if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or $env:RUNNER_OS -cne 'Windows' -or $env:GITHUB_REPOSITORY -cne 'Yunushan/accessweaver' -or $env:ACCESSWEAVER_NATIVE_WIRESOCK_CHECK -cne '1'){
     throw 'Disposable hosted Windows WireSock qualification required'
@@ -11,7 +12,7 @@ $project=Split-Path -Parent $PSScriptRoot
 $source=$env:GITHUB_SHA
 if($source -cnotmatch '^[a-f0-9]{40}$' -or (git -C $project rev-parse HEAD).Trim() -cne $source -or $LASTEXITCODE -ne 0){throw 'Source identity mismatch'}
 if((git -C $project status --porcelain --untracked-files=no)){throw 'Tracked source must be clean'}
-$paths=@('internal/workflow/windows.ps1','go.mod','go.sum','scripts/fixtures/wgpeer/go.mod','scripts/fixtures/wgpeer/go.sum','scripts/fixtures/wgpeer/main.go','scripts/fixtures/wgpeer/cmd/probe/main.go','scripts/test-windows-native-wiresock.ps1','scripts/test-windows-wiresock-evidence.ps1','.github/workflows/windows-native-wiresock.yml')
+$paths=@('internal/workflow/windows.ps1','go.mod','go.sum','scripts/fixtures/wgpeer/go.mod','scripts/fixtures/wgpeer/go.sum','scripts/fixtures/wgpeer/main.go','scripts/fixtures/wgpeer/main_test.go','scripts/fixtures/wgpeer/cmd/probe/main.go','scripts/test-windows-native-wiresock.ps1','scripts/test-windows-wiresock-evidence.ps1','.github/workflows/windows-native-wiresock.yml')
 $hashes=@{}
 foreach($path in $paths){$hashes[$path]=(Get-FileHash -LiteralPath (Join-Path $project $path) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $checks=[ordered]@{
@@ -130,6 +131,31 @@ function Get-FixtureVendorStatus([string]$cli){
     $result=Invoke-PrivateNative $cli @('status')
     if($result.exitCode -ne 0){return 'command-failed'}
     return Get-FixedConnectionState $result.stdout
+}
+function Get-FixtureAdapterIPv4 {
+    $failure='An active private IPv4 source address is required for the adapter fixture'
+    try {
+        # Read Windows' chosen source address for a documentation destination.
+        # Find-NetRoute consults routing state without sending a packet.
+        $selected=@(Find-NetRoute -RemoteIPAddress '203.0.113.1' -ErrorAction Stop | Where-Object {
+            $null -ne $_.IPAddress -and [string]$_.AddressFamily -cin @('IPv4','2')
+        })
+    }catch{throw $failure}
+    if($selected.Count -ne 1 -or [string]$selected[0].Type -cnotin @('Unicast','1') -or
+        [string]$selected[0].AddressState -cnotin @('Preferred','4') -or
+        $selected[0].SkipAsSource -isnot [bool] -or $selected[0].SkipAsSource){
+        throw $failure
+    }
+    $parsed=$null;$value=$selected[0].IPAddress
+    if($value -isnot [string] -or $value -cnotmatch '\A(?:[0-9]{1,3}\.){3}[0-9]{1,3}\z' -or
+        -not [Net.IPAddress]::TryParse($value,[ref]$parsed) -or $parsed.ToString() -cne $value){
+        throw $failure
+    }
+    $bytes=$parsed.GetAddressBytes()
+    if($bytes.Length -ne 4 -or -not ($bytes[0] -eq 10 -or
+        ($bytes[0] -eq 172 -and $bytes[1] -ge 16 -and $bytes[1] -le 31) -or
+        ($bytes[0] -eq 192 -and $bytes[1] -eq 168))){throw $failure}
+    return $value
 }
 function Read-FixtureProfileValue([string]$text,[string]$name) {
     $directive=if($name -ceq 'AllowedApps'){'(?:#@ws:[ \t]*)?'}else{''}
@@ -412,8 +438,10 @@ try {
     $checks.fixtureBuilt=$true
     $stage='peer'
     $env:ACCESSWEAVER_TEST_VM='1'
+    $transportArgs=@()
+    if($PeerEndpointMode -ceq 'adapter'){$transportArgs=@(Get-FixtureAdapterIPv4)}
     $selfTest=Join-Path $bin 'peer-self-test'
-    $control=Invoke-PrivateNative $peerBinary @('self-test',$selfTest)
+    $control=Invoke-PrivateNative $peerBinary (@('self-test',$selfTest)+$transportArgs)
     if($control.exitCode -eq 0){
         $controlReport=Get-Item -LiteralPath (Join-Path $selfTest 'self-test.json')
         if($controlReport.Length -gt 0 -and $controlReport.Length -le 4096){
@@ -426,7 +454,7 @@ try {
         }
     }
     if(-not $checks.peerSelfTest){throw 'Local peer positive control failed'}
-    $peer=Start-Process -FilePath $peerBinary -ArgumentList @('serve',('"'+$state+'"')) -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $bin 'peer.stdout') -RedirectStandardError (Join-Path $bin 'peer.stderr')
+    $peer=Start-Process -FilePath $peerBinary -ArgumentList (@('serve',('"'+$state+'"'))+$transportArgs) -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $bin 'peer.stdout') -RedirectStandardError (Join-Path $bin 'peer.stderr')
     [void]$peer.Handle
     $clock=[Diagnostics.Stopwatch]::StartNew()
     while(-not (Test-Path -LiteralPath (Join-Path $state 'ready.json')) -and -not $peer.HasExited -and $clock.Elapsed.TotalSeconds -lt 15){
@@ -559,7 +587,7 @@ try {
         }
     }
 }
-$report=@{schemaVersion=19;failedConnectionPeer=$failedConnectionPeer;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;connectionRecovery=$connectionRecovery;managedRemovalProfileList=$managedRemovalProfileList;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;cachedBundleTrust=$cachedBundleTrust;productionQualificationComplete=$false}
+$report=@{schemaVersion=20;peerEndpointMode=$PeerEndpointMode;failedConnectionPeer=$failedConnectionPeer;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;connectionRecovery=$connectionRecovery;managedRemovalProfileList=$managedRemovalProfileList;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;cachedBundleTrust=$cachedBundleTrust;productionQualificationComplete=$false}
 $evidence=Join-Path $project 'build/native-wiresock'
 [void][IO.Directory]::CreateDirectory($evidence)
 [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))

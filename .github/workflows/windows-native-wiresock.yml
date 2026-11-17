@@ -10,6 +10,12 @@ on:
       - internal/workflow/windows.ps1
       - .github/workflows/windows-native-wiresock.yml
   workflow_dispatch:
+    inputs:
+      peer_endpoint:
+        description: Local peer transport endpoint
+        type: choice
+        options: [loopback, adapter]
+        default: loopback
 
 permissions:
   contents: read
@@ -41,7 +47,8 @@ jobs:
         shell: powershell
         env:
           ACCESSWEAVER_NATIVE_WIRESOCK_CHECK: '1'
-        run: ./scripts/test-windows-native-wiresock.ps1 -Architecture '${{ matrix.arch }}'
+          WIRESOCK_PEER_ENDPOINT: ${{ inputs.peer_endpoint || 'loopback' }}
+        run: ./scripts/test-windows-native-wiresock.ps1 -Architecture '${{ matrix.arch }}' -PeerEndpointMode $env:WIRESOCK_PEER_ENDPOINT
       - name: Retain fixed WireSock lifecycle evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

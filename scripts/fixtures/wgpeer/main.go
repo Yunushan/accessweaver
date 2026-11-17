@@ -161,12 +161,30 @@ func save(path string, v any) error {
 	}
 	return os.WriteFile(path, b, 0600)
 }
+func peerHost(args []string) (string, error) {
+	if len(args) == 0 {
+		return "127.0.0.1", nil
+	}
+	if len(args) != 1 {
+		return "", errors.New("expected at most one peer transport address")
+	}
+	address, err := netip.ParseAddr(args[0])
+	if err != nil || !address.Is4() || !address.IsPrivate() {
+		return "", errors.New("peer transport address must be a private IPv4 literal")
+	}
+	return address.String(), nil
+}
+
 func run() error {
 	if os.Getenv("ACCESSWEAVER_TEST_VM") != "1" {
 		return errors.New("run this test fixture only in a disposable guest with ACCESSWEAVER_TEST_VM=1")
 	}
-	if len(os.Args) != 3 || (os.Args[1] != "serve" && os.Args[1] != "self-test") {
-		return errors.New("usage: wgpeer serve|self-test PRIVATE_GUEST_DIRECTORY")
+	if len(os.Args) < 3 || (os.Args[1] != "serve" && os.Args[1] != "self-test") {
+		return errors.New("usage: wgpeer serve|self-test PRIVATE_GUEST_DIRECTORY [LOCAL_PRIVATE_IPV4]")
+	}
+	host, err := peerHost(os.Args[3:])
+	if err != nil {
+		return err
 	}
 	dir, err := filepath.Abs(os.Args[2])
 	if err != nil {
@@ -191,8 +209,9 @@ func run() error {
 	if err = server.serve(); err != nil {
 		return err
 	}
+	transport := net.JoinHostPort(host, strconv.Itoa(server.port))
 	if os.Args[1] == "self-test" {
-		client, err := start(clientKey, serverKey.PublicKey().Bytes(), []string{client4, client6}, []string{server4 + "/32", server6 + "/128"}, net.JoinHostPort("127.0.0.1", strconv.Itoa(server.port)))
+		client, err := start(clientKey, serverKey.PublicKey().Bytes(), []string{client4, client6}, []string{server4 + "/32", server6 + "/128"}, transport)
 		if err != nil {
 			return err
 		}
@@ -232,11 +251,11 @@ func run() error {
 		}
 		return save(filepath.Join(dir, "self-test.json"), map[string]any{"passed": true, "tcpIPv4": true, "udpIPv4": true, "tcpIPv6": true, "udpIPv6": true, "peer": server.stats()})
 	}
-	config := fmt.Sprintf("[Interface]\nPrivateKey = %s\nAddress = %s/32, %s/128\n[Peer]\nPublicKey = %s\nEndpoint = 127.0.0.1:%d\nAllowedIPs = %s/32, %s/128\nPersistentKeepalive = 5\n", base64.StdEncoding.EncodeToString(clientKey.Bytes()), client4, client6, base64.StdEncoding.EncodeToString(serverKey.PublicKey().Bytes()), server.port, server4, server6)
+	config := fmt.Sprintf("[Interface]\nPrivateKey = %s\nAddress = %s/32, %s/128\n[Peer]\nPublicKey = %s\nEndpoint = %s\nAllowedIPs = %s/32, %s/128\nPersistentKeepalive = 5\n", base64.StdEncoding.EncodeToString(clientKey.Bytes()), client4, client6, base64.StdEncoding.EncodeToString(serverKey.PublicKey().Bytes()), transport, server4, server6)
 	if err = os.WriteFile(filepath.Join(dir, "client.conf"), []byte(config), 0600); err != nil {
 		return err
 	}
-	if err = save(filepath.Join(dir, "ready.json"), map[string]any{"endpoint": "127.0.0.1", "port": server.port}); err != nil {
+	if err = save(filepath.Join(dir, "ready.json"), map[string]any{"endpoint": host, "port": server.port}); err != nil {
 		return err
 	}
 	for range time.NewTicker(time.Second).C {
