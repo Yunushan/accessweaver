@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "fixed-native-identity-handle-count-refusals",
+  "results": [
+    {
+      "sourceCommit": "58b14b51fcb2140a796ac063b04d3961bd77833f",
+      "producerSHA256": "0912531a8cf5132b3baf0f7931e8670ccdc2192ae265c49e4943b795e029f825",
+      "runID": 43983470773,
+      "artifactID": 14283618434,
+      "artifactSHA256": "a009b616c5fafc9a7e0d44315d95a8e9476d31eebf7a5d1701333d932a24db5a",
+      "providerZIPDigestVerified": true,
+      "architecture": "amd64",
+      "probeCounts": {
+        "handlesBefore": 117,
+        "handlesAfter": 119,
+        "threadRecordsBefore": 8,
+        "threadRecordsAfter": 8,
+        "gcCyclesBefore": 1,
+        "gcCyclesAfter": 1
+      }
+    },
+    {
+      "sourceCommit": "c5b043d863570f34109c63d28e9cd55fa0391b1e",
+      "producerSHA256": "0912531a8cf5132b3baf0f7931e8670ccdc2192ae265c49e4943b795e029f825",
+      "runID": 43984547302,
+      "artifactID": 14284486975,
+      "artifactSHA256": "f81e89e5ddf1fdfec2272ffbf77957706ffccd833291381edd797cc8f9e48c24",
+      "providerZIPDigestVerified": true,
+      "architecture": "arm64",
+      "probeCounts": {
+        "handlesBefore": 118,
+        "handlesAfter": 120,
+        "threadRecordsBefore": 8,
+        "threadRecordsAfter": 8,
+        "gcCyclesBefore": 1,
+        "gcCyclesAfter": 1
+      }
+    }
+  ],
+  "interpretation": [
+    "Each immutable source report passes seven native identity subtests and fails owned-metadata-probes-close-on-success-and-failure.",
+    "The measured aggregate handle count grows by two, exceeding the unchanged before+1 threshold, while recorded thread-creation and GC-cycle counts do not change.",
+    "These aggregate counters do not identify the new handle types or establish their cause. No threshold relaxation, GC disablement or resource-leak qualification is justified.",
+    "Later passing native cohorts do not erase these failures. Failure-only fixed handle-type replay diagnostics are separately being qualified."
+  ],
+  "rawJobLogsFetched": false,
+  "productionQualificationComplete": false,
+  "readinessGatesPromoted": []
+}
