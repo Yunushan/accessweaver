@@ -327,3 +327,5 @@ selected service, firewall and DNS settings. The x64 receipt is artifact
 `e67d913a3c8d310f1e316143deba49d0619217963c036a14739438413df27368`. The Arm64 receipt is artifact
 `14306477555` with ZIP SHA-256
 `7dc9d62ecc7b90905644287456924a044650f5b618725cb50d710820ce065dc2`.
+
+The unsigned protected Setup at `7c6c341a9ab6` completed all 16 lifecycle operations on Windows x64 and ARM64. Each run verified interrupted copy recovery, registry access refusal with the original key preserved, upgrade, downgrade refusal, rollback, uninstall and cleanup. Independent verification matched all ten attested subjects to the hosted reports and confirmed their provenance checks. Publisher signing, reboot qualification and rollout through endpoint management remain open. [Verified protected Setup evidence](qualification/7c6c341a9ab6-native-protected-windows-installer.json) and [hosted run](https://github.com/Yunushan/accessweaver/actions/runs/44064683773).
