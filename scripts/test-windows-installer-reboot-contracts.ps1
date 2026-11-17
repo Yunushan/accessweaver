@@ -4,7 +4,7 @@ $source=Join-Path $PSScriptRoot 'test-windows-installer-reboot.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Reboot fixture failed parsing'}
-foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootQualificationSchema','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootSetupLog','Get-RebootUpgradeArguments','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Read-RebootEvidence','Assert-RebootPath','Open-ApprovedRebootScript','Assert-RebootPublisher','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootAccessDescriptor','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootProfileReadable','Assert-RebootInstalledState','Assert-RebootPackageRemoved','Assert-RebootRestorationJournal','Assert-InstalledDetection','Assert-InstalledPublisher')){
+foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootQualificationSchema','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootSetupLog','Get-RebootUpgradeArguments','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Read-RebootEvidence','Assert-RebootPath','Open-ApprovedRebootScript','Assert-RebootPublisher','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootAccessDescriptor','Get-RebootInstalledTreeDigest','Get-RebootRetiredPackageFootprint','Assert-RebootRetiredPackageFiles','Assert-RebootRetirementBinding','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootProfileReadable','Assert-RebootInstalledState','Assert-RebootPackageRemoved','Assert-RebootRestorationJournal','Assert-InstalledDetection','Assert-InstalledPublisher')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -164,10 +164,13 @@ $upgradeExpected.previousSetupSHA256=$olderSetupDigest
 $upgradeExpected.previousPublisherSHA256=$pin
 Assert-RebootIdentity $upgraded $upgradeExpected
 if((Get-RebootQualificationSchema 'clean' '' '') -ne 14 -or
-   (Get-RebootQualificationSchema 'upgrade' ('a'*64) ('b'*64)) -ne 15){throw 'Unexpected reboot evidence selection'}
+   (Get-RebootQualificationSchema 'upgrade' ('a'*64) ('b'*64)) -ne 15 -or
+   (Get-RebootQualificationSchema 'upgrade' ('a'*64) ('b'*64) ('c'*64) ('d'*64)) -ne 16){throw 'Unexpected reboot evidence selection'}
 Assert-Refused {Get-RebootQualificationSchema 'clean' ('a'*64) ('b'*64)}
 Assert-Refused {Get-RebootQualificationSchema 'upgrade' ('a'*64) ''}
 Assert-Refused {Get-RebootQualificationSchema 'upgrade' '' ('b'*64)}
+Assert-Refused {Get-RebootQualificationSchema 'upgrade' ('a'*64) ('b'*64) ('c'*64) ''}
+Assert-Refused {Get-RebootQualificationSchema 'upgrade' '' '' ('c'*64) ('d'*64)}
 $legacyExpected=$upgradeExpected.Clone()
 $legacyExpected.schemaVersion=15
 $legacyExpected.previousUninstallerSHA256='a'*64
@@ -187,6 +190,24 @@ foreach($field in @('previousUninstallerSHA256','previousUninstallDataSHA256')){
 $wrongLegacy=$legacy.Clone()
 $wrongLegacy.legacyRegistrationMigrated=$false
 Assert-Refused {Assert-RebootIdentity $wrongLegacy $legacyExpected}
+
+$footprintExpected=$legacyExpected.Clone()
+$footprintExpected.schemaVersion=16
+$footprintExpected.previousStagedPayloadSHA256='c'*64
+$footprintExpected.candidateStagedPayloadSHA256='d'*64
+$footprintExpected.retiredPackageFileCount=2
+$footprintSaved=$legacy.Clone()
+$footprintSaved.schemaVersion=16
+$footprintSaved.previousStagedPayloadSHA256=$footprintExpected.previousStagedPayloadSHA256
+$footprintSaved.candidateStagedPayloadSHA256=$footprintExpected.candidateStagedPayloadSHA256
+$footprintSaved.retiredPackageFileCount=$footprintExpected.retiredPackageFileCount
+$footprintSaved.legacyPackageFootprintVerified=$true
+Assert-RebootIdentity $footprintSaved $footprintExpected
+foreach($field in @('previousStagedPayloadSHA256','candidateStagedPayloadSHA256','retiredPackageFileCount','legacyPackageFootprintVerified')){
+    $modified=$footprintSaved.Clone()
+    $modified[$field]=$null
+    Assert-Refused {Assert-RebootIdentity $modified $footprintExpected}
+}
 $unverifiedBaseline=$upgraded.Clone();$unverifiedBaseline.setupUpgradeBaselineVerified=$false
 Assert-Refused {Assert-RebootIdentity $unverifiedBaseline $upgradeExpected}
 foreach($invalid in @($false,1,'true')){
@@ -302,10 +323,10 @@ Assert-Refused {Get-RebootRegistrationFingerprint $null}
 
 # Only the owned, inert fixture tree can reach these path and digest boundaries.
 function Assert-RebootPath([string]$Path){
-    if($Path -cnotin @($tree,$log,$scriptInput)){throw 'Unexpected fixture path'}
+    if($Path -cnotin @($tree,$log,$scriptInput,$bindingFile)){throw 'Unexpected fixture path'}
 }
 function Get-RebootDigest([string]$Path,[switch]$AllowEmpty){
-    if($Path -cnotin @($payload,$notice)){throw 'Unexpected fixture file digest'}
+    if($Path -cnotin @($payload,$notice,$oldFile,$bindingFile)){throw 'Unexpected fixture file digest'}
     if(-not [IO.File]::Exists($Path)){throw 'Expected an existing fixture file'}
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
@@ -316,6 +337,11 @@ $scriptInput=Join-Path $root 'inert-script.ps1'
 $sub=Join-Path $tree 'notices'
 $payload=Join-Path $tree 'accessweaver.exe'
 $notice=Join-Path $sub 'NOTICE.txt'
+$bindingPath='docs\windows-retired-payload.sha256'
+$oldFilePath='docs\old.txt'
+$bindingFile=Join-Path $tree $bindingPath
+$oldFile=Join-Path $tree $oldFilePath
+$footprintDirectory=Split-Path -Parent $oldFile
 try {
     [IO.File]::WriteAllText($scriptInput,'return 42')
     $scriptPin=(Get-FileHash -LiteralPath $scriptInput -Algorithm SHA256).Hash
@@ -334,6 +360,35 @@ try {
     Assert-Refused {Open-ApprovedRebootScript $scriptInput $scriptPin}
     [IO.File]::Delete($scriptInput)
     Assert-RebootPackageRemoved $tree
+
+    [void][IO.Directory]::CreateDirectory($footprintDirectory)
+    [IO.File]::WriteAllText($oldFile,'exact legacy witness')
+    $priorFootprintPin='8'*64
+    [IO.File]::WriteAllText($bindingFile,("retirement-plan-sha256="+('9'*64)+"`r`nprior-payload-sha256=$priorFootprintPin`r`n"))
+    $priorPins=@{'accessweaver.exe'=('1'*64);'SBOM.cdx.json'=('2'*64);'BUILD-INFO.json'=('3'*64)}
+    $candidatePins=@{'accessweaver.exe'=('4'*64);'SBOM.cdx.json'=('5'*64);'BUILD-INFO.json'=('6'*64)}
+    $oldCore=@(foreach($name in $priorPins.Keys){@{path=$name;size=1;sha256=$priorPins[$name]}})
+    $newCore=@(foreach($name in $candidatePins.Keys){@{path=$name;size=1;sha256=$candidatePins[$name]}})
+    $oldInventory=$oldCore+@{path=$oldFilePath;size=(Get-Item -LiteralPath $oldFile).Length;sha256=(Get-RebootDigest $oldFile)}
+    $newInventory=$newCore+@{path=$bindingPath;size=(Get-Item -LiteralPath $bindingFile).Length;sha256=(Get-RebootDigest $bindingFile)}
+    $proof=Get-RebootRetiredPackageFootprint $oldInventory $newInventory $priorPins $candidatePins
+    if($proof.files.Count -ne 1 -or $proof.files[0].path -cne $oldFilePath){throw 'Wrong prior file selected'}
+    Assert-Refused {Get-RebootRetiredPackageFootprint $oldCore $newInventory $priorPins $candidatePins}
+    Assert-Refused {Get-RebootRetiredPackageFootprint $oldInventory $newCore $priorPins $candidatePins}
+    $mismatch=$candidatePins.Clone()
+    $mismatch['BUILD-INFO.json']='7'*64
+    Assert-Refused {Get-RebootRetiredPackageFootprint $oldInventory $newInventory $priorPins $mismatch}
+    Assert-RebootRetirementBinding $tree $proof.binding $priorFootprintPin
+    Assert-Refused {Assert-RebootRetirementBinding $tree $proof.binding ('7'*64)}
+    Assert-RebootRetiredPackageFiles $tree $proof.files -Present
+    Assert-Refused {Assert-RebootRetiredPackageFiles $tree $proof.files}
+    [IO.File]::AppendAllText($oldFile,'wrong')
+    Assert-Refused {Assert-RebootRetiredPackageFiles $tree $proof.files -Present}
+    [IO.File]::Delete($oldFile)
+    Assert-RebootRetiredPackageFiles $tree $proof.files
+    Assert-Refused {Assert-RebootRetiredPackageFiles $tree $proof.files -Present}
+    [IO.File]::Delete($bindingFile)
+    [IO.Directory]::Delete($footprintDirectory,$false)
     $policy='A newer AccessWeaver version is installed. Use a current or newer installer. This installer will not downgrade it.'
     [IO.File]::WriteAllText($log,"2026-11-13 12:34:56.789   $policy")
     Assert-RebootSetupLog $log @($policy) 1MB
@@ -414,6 +469,11 @@ try {
     [IO.File]::Delete($log)
     if([IO.File]::Exists($payload)){[IO.File]::Delete($payload)}
     if([IO.Directory]::Exists($sub)){[IO.File]::Delete($notice);[IO.Directory]::Delete($sub)}
+    if([IO.Directory]::Exists($footprintDirectory)){
+        [IO.File]::Delete($oldFile)
+        [IO.File]::Delete($bindingFile)
+        [IO.Directory]::Delete($footprintDirectory,$false)
+    }
     if([IO.Directory]::Exists($tree)){[IO.Directory]::Delete($tree)}
     [IO.Directory]::Delete($root)
 }

@@ -149,6 +149,24 @@ Windows reboot fixture. The schema 15 report verifies wrong uninstall-data
 refusal, committed protected registration migration, the later guest boot and
 removal. A signed manifest carrying that report uses schema 13.
 
+To qualify retired package files, build with the approved prior
+`-PreviousPayloadInventory` and `-PreviousPayloadInventorySHA256`. Retain
+the compiler's `payload-files.txt` for both signed Setup builds. Stage the
+prior list as `previous-payload-files.txt` and the candidate list as
+`payload-files.txt` beside `setup.exe` in the disposable guest. Pass
+`-PreviousStagedPayloadSHA256` and `-CandidateStagedPayloadSHA256` to
+both reboot phases using each approved Setup SBOM's
+`accessweaver:windows-staged-payload-sha256` property. The fixture checks
+that prior-only files match the
+approved prior list before upgrading and are absent both before and after
+reboot. It verifies the installed retirement binding in both phases.
+
+This uses a schema 16 reboot witness and schema 14 signed manifest. The
+manifest verifier checks that the candidate inventory digest matches the
+signed Setup SBOM. Add
+`--require-windows-legacy-footprint-sha256 APPROVED_PRIOR_INVENTORY_SHA256`
+when a deployment must prove removal for that exact prior package.
+
 For each endpoint, generate the schema 3 upgrade inventory with
 `-UpgradeInventory`, `-UninstallerSHA256` and `-UninstallDataSHA256` in
 addition to the existing payload, SBOM, publisher and build pins. The verifier

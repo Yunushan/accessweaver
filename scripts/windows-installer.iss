@@ -988,7 +988,8 @@ begin
     AWLegacyApproval.BuildInfo := BuildPin;
 #ifdef RetiredPayloadInclude
     if not AWRetiredPayloadMatchesApproval then begin
-      Result := 'The managed upgrade approval does not match this installer''s prior package retirement plan.';
+      Log('AccessWeaver upgrade approval does not match the compiled prior package retirement plan.');
+      Result := 'The installed AccessWeaver release differs from the approved upgrade baseline.';
       Exit;
     end;
 #endif

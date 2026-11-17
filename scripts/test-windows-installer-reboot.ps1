@@ -23,7 +23,9 @@ param(
     [Parameter(Mandatory)][ValidatePattern('\A[a-fA-F0-9]{64}\z')][string]$BuildInfoSHA256,
     [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousBuildInfoSHA256='',
     [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousUninstallerSHA256='',
-    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousUninstallDataSHA256=''
+    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousUninstallDataSHA256='',
+    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousStagedPayloadSHA256='',
+    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$CandidateStagedPayloadSHA256=''
 )
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
@@ -102,21 +104,38 @@ function Assert-RebootUpgradeOrder($Comparison,[string]$PreviousVersion,[string]
         throw 'The approved candidate is not newer than the installed baseline'
     }
 }
-function Get-RebootQualificationSchema([string]$InstallMode,[string]$PriorUninstaller,[string]$PriorData) {
-    if(-not $PriorUninstaller -and -not $PriorData){return 14}
+function Get-RebootQualificationSchema([string]$InstallMode,[string]$PriorUninstaller,[string]$PriorData,
+        [string]$PriorFootprint,[string]$CandidateFootprint) {
+    $verifyFootprint=[bool]($PriorFootprint -or $CandidateFootprint)
+    if(-not $PriorUninstaller -and -not $PriorData -and -not $verifyFootprint){return 14}
     if($InstallMode -cne 'upgrade' -or $PriorUninstaller -notmatch '\A[a-fA-F0-9]{64}\z' -or
        $PriorData -notmatch '\A[a-fA-F0-9]{64}\z'){
         throw 'Legacy migration qualification requires both approved prior uninstaller file digests on an upgrade'
+    }
+    if($verifyFootprint){
+        if($PriorFootprint -notmatch '\A[a-fA-F0-9]{64}\z' -or
+           $CandidateFootprint -notmatch '\A[a-fA-F0-9]{64}\z' -or $PriorFootprint -ieq $CandidateFootprint){
+            throw 'Retirement qualification requires distinct approved prior and candidate compiled inventories'
+        }
+        return 16
     }
     return 15
 }
 
 function Assert-RebootIdentity($Record,$Expected){
-    if($Expected.schemaVersion -eq 15 -and (
+    if($Expected.schemaVersion -ge 15 -and (
        $Record.legacyRegistrationMigrated -isnot [bool] -or -not $Record.legacyRegistrationMigrated -or
        $Record.previousUninstallerSHA256 -cne $Expected.previousUninstallerSHA256 -or
        $Record.previousUninstallDataSHA256 -cne $Expected.previousUninstallDataSHA256)){
         throw 'Prepared reboot evidence differs from the approved legacy migration'
+    }
+    if($Expected.schemaVersion -eq 16 -and (
+       $Record.legacyPackageFootprintVerified -isnot [bool] -or -not $Record.legacyPackageFootprintVerified -or
+       ($Record.retiredPackageFileCount -isnot [int] -and $Record.retiredPackageFileCount -isnot [long]) -or
+       $Record.retiredPackageFileCount -ne $Expected.retiredPackageFileCount -or
+       $Record.previousStagedPayloadSHA256 -cne $Expected.previousStagedPayloadSHA256 -or
+       $Record.candidateStagedPayloadSHA256 -cne $Expected.candidateStagedPayloadSHA256)){
+        throw 'Prepared reboot evidence differs from the approved package footprint'
     }
     if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne $Expected.schemaVersion -or
        $Record.runID -cne $Expected.runID -or $Record.architecture -cne $Expected.architecture -or
@@ -271,6 +290,57 @@ function Assert-RebootInstalledState($Saved,[string]$TreeSHA256,[string]$Registr
     if($Saved.installedTreeSHA256 -cne $TreeSHA256){throw 'Installed package tree changed across reboot'}
     if($Saved.registrationSHA256 -cne $RegistrationSHA256){throw 'Machine registration changed across reboot'}
 }
+function Get-RebootRetiredPackageFootprint([object[]]$Previous,[object[]]$Candidate,[Collections.IDictionary]$PriorPins,[Collections.IDictionary]$CandidatePins){
+    $prior=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::OrdinalIgnoreCase)
+    $next=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach($file in $Previous){$prior.Add($file.path,$file)}
+    foreach($file in $Candidate){$next.Add($file.path,$file)}
+    foreach($name in @('accessweaver.exe','SBOM.cdx.json','BUILD-INFO.json')){
+        if(-not $prior.ContainsKey($name) -or $prior[$name].sha256 -ine $PriorPins[$name] -or
+           -not $next.ContainsKey($name) -or $next[$name].sha256 -ine $CandidatePins[$name]){
+            throw 'Compiled package inventories differ from the approved release identities'
+        }
+    }
+    $bindingPath='docs\windows-retired-payload.sha256'
+    if(-not $next.ContainsKey($bindingPath)){throw 'Candidate inventory lacks its retirement binding'}
+    $retired=@($Previous | Where-Object {-not $next.ContainsKey($_.path)})
+    if(-not $retired.Count){throw 'Selected legacy packages have no retired files to qualify'}
+    return @{files=$retired;binding=$next[$bindingPath]}
+}
+function Assert-RebootRetiredPackageFiles([string]$Directory,[object[]]$Files,[switch]$Present){
+    Assert-RebootPath $Directory
+    foreach($file in $Files){
+        $path=Join-Path $Directory $file.path
+        try {$item=Get-Item -LiteralPath $path -Force -ErrorAction Stop}
+        catch [Management.Automation.ItemNotFoundException] {
+            if($Present){throw 'An approved prior package file is missing'}
+            continue
+        }
+        if(-not $Present){throw 'An approved retired package file is still present'}
+        if($item.PSIsContainer -or $item.Length -ne $file.size -or
+           (Get-RebootDigest $path -AllowEmpty) -cne $file.sha256){
+            throw 'An installed prior package file differs from its approved inventory'
+        }
+    }
+}
+function Assert-RebootRetirementBinding([string]$Directory,$Binding,[string]$PreviousSHA256){
+    $path=Join-Path $Directory $Binding.path
+    Assert-RebootPath $path
+    $stream=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if($stream.Length -le 0 -or $stream.Length -gt 256 -or $stream.Length -ne $Binding.size -or
+           (Get-FileHash -InputStream $stream -Algorithm SHA256).Hash -ine $Binding.sha256){
+            throw 'Installed retirement binding differs from the approved candidate inventory'
+        }
+        $stream.Position=0
+        $reader=[IO.StreamReader]::new($stream,[Text.UTF8Encoding]::new($false,$true),$false,256,$true)
+        try {$text=$reader.ReadToEnd()} finally {$reader.Dispose()}
+        if($text -cnotmatch ('\Aretirement-plan-sha256=[a-f0-9]{64}\r\nprior-payload-sha256='+$PreviousSHA256+'\r\n\z')){
+            throw 'Installed retirement binding differs from the approved prior package inventory'
+        }
+    } finally {$stream.Dispose()}
+}
+
 function Assert-RebootPackageRemoved([string]$Directory){
     if(-not (Test-Path -LiteralPath $Directory -ErrorAction Stop)){return}
     Assert-RebootPath $Directory
@@ -508,8 +578,20 @@ try {
     }
     if($installMode -ceq 'upgrade'){Assert-InstallerReleaseVersion $PreviousVersion}
     $testDowngrade=Test-RebootDowngradeInputs $installMode $SetupSHA256 $PreviousSetupSHA256 $PreviousPublisherCertificateSHA256
-    $schema=Get-RebootQualificationSchema $installMode $PreviousUninstallerSHA256 $PreviousUninstallDataSHA256
-    $legacyMigration=$schema -eq 15
+    $schema=Get-RebootQualificationSchema $installMode $PreviousUninstallerSHA256 $PreviousUninstallDataSHA256 $PreviousStagedPayloadSHA256 $CandidateStagedPayloadSHA256
+    $legacyMigration=$schema -ge 15
+    $footprint=$null
+    if($schema -eq 16){
+        $previousInventory=Join-Path $PSScriptRoot 'previous-payload-files.txt'
+        $candidateInventory=Join-Path $PSScriptRoot 'payload-files.txt'
+        Assert-RebootPath $previousInventory
+        Assert-RebootPath $candidateInventory
+        $previousFiles=@(Read-InstallerPayloadInventory $previousInventory $PreviousStagedPayloadSHA256)
+        $candidateFiles=@(Read-InstallerPayloadInventory $candidateInventory $CandidateStagedPayloadSHA256)
+        $previousPins=@{'accessweaver.exe'=$PreviousPayloadSHA256;'SBOM.cdx.json'=$PreviousPayloadSBOMSHA256;'BUILD-INFO.json'=$PreviousBuildInfoSHA256}
+        $candidatePins=@{'accessweaver.exe'=$PayloadSHA256;'SBOM.cdx.json'=$PayloadSBOMSHA256;'BUILD-INFO.json'=$BuildInfoSHA256}
+        $footprint=Get-RebootRetiredPackageFootprint $previousFiles $candidateFiles $previousPins $candidatePins
+    }
     $priorUninstallerPins=@{}
     if($legacyMigration){
         $priorUninstallerPins.UninstallerDigest=$PreviousUninstallerSHA256
@@ -542,6 +624,12 @@ try {
         $expected.previousUninstallDataSHA256=$PreviousUninstallDataSHA256.ToLowerInvariant()
         $expected.legacyRegistrationMigrated=$false
     }
+    if($footprint){
+        $expected.previousStagedPayloadSHA256=$PreviousStagedPayloadSHA256.ToLowerInvariant()
+        $expected.candidateStagedPayloadSHA256=$CandidateStagedPayloadSHA256.ToLowerInvariant()
+        $expected.retiredPackageFileCount=$footprint.files.Count
+        $expected.legacyPackageFootprintVerified=$false
+    }
     $boot=Get-GuestBoot
     $managed=Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'AccessWeaver'
 
@@ -564,6 +652,7 @@ try {
             $profileInput=Join-Path $capsule 'profile-input.json'
             if($installMode -ceq 'upgrade'){
                 $stage='previous-installation'
+                if($footprint){Assert-RebootRetiredPackageFiles $install $footprint.files -Present}
                 Assert-RebootPath $controller
                 $guard=[IO.File]::Open($controller,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
                 try {
@@ -629,6 +718,13 @@ try {
                 if($legacyMigration){$expected.legacyRegistrationMigrated=$true}
             } finally {$setupGuard.Dispose()}
             $stage='installed-before-reboot'
+            if($footprint){
+                $stage='retired-package-files'
+                Assert-RebootRetiredPackageFiles $install $footprint.files
+                Assert-RebootRetirementBinding $install $footprint.binding $expected.previousStagedPayloadSHA256
+                $expected.legacyPackageFootprintVerified=$true
+                $stage='installed-before-reboot'
+            }
             Assert-InstalledDetection $true
             Assert-InstalledPublisher
             $expected.boot=$boot
@@ -648,7 +744,7 @@ try {
             }
             Write-NewRebootEvidence $baseline $expected
         } catch {
-            Write-NewRebootEvidence $report @{schemaVersion=14;runID=$RunID;stage=$stage;passed=$false}
+            Write-NewRebootEvidence $report @{schemaVersion=$schema;runID=$RunID;stage=$stage;passed=$false}
             throw 'Windows installer reboot preparation failed. Retain the disposable guest for review.'
         }
         Write-Output 'Prepared the approved installation. Reboot the disposable guest before verification.'
@@ -685,6 +781,12 @@ try {
         $result.previousUninstallDataSHA256=$expected.previousUninstallDataSHA256
         $result.legacyRegistrationMigrated=$saved.legacyRegistrationMigrated
     }
+    if($footprint){
+        $result.previousStagedPayloadSHA256=$expected.previousStagedPayloadSHA256
+        $result.candidateStagedPayloadSHA256=$expected.candidateStagedPayloadSHA256
+        $result.retiredPackageFileCount=$expected.retiredPackageFileCount
+        $result.legacyPackageFootprintVerified=$false
+    }
     try {
         Assert-InstalledDetection $true -UninstallerDigest $saved.uninstallerSHA256
         $result.installedPayloadVerified=$true
@@ -697,6 +799,12 @@ try {
         Assert-RebootInstalledState $saved (Get-RebootInstalledTreeDigest $install) (Get-RebootRegistrationDigest)
         $result.installedTreeVerified=$true
         $result.registrationPreserved=$true
+        if($footprint){
+            $result.stage='retired-package-files-after-reboot'
+            Assert-RebootRetiredPackageFiles $install $footprint.files
+            Assert-RebootRetirementBinding $install $footprint.binding $expected.previousStagedPayloadSHA256
+            $result.legacyPackageFootprintVerified=$true
+        }
         $result.stage='user-profile-after-reboot'
         Assert-RebootUserProfile $userProfile $saved.userProfileSHA256
         $result.userProfileVerifiedAfterReboot=$true

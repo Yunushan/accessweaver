@@ -222,12 +222,74 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 "resume_windows_upgrade_baseline_argument": update["windowsSetupBaselineArgument"],
             }
             self.assertEqual(verify_installed(fields, **retry)["managedUpdate"], update)
+            with self.assertRaisesRegex(ValueError, "lacks signed retirement evidence"):
+                verify_installed(fields, require_windows_legacy_footprint_sha256="9" * 64)
             with self.assertRaisesRegex(ValueError, "differs from the original approved upgrade"):
                 verify_installed({**fields, "uninstallDataSHA256": "8" * 64}, **retry)
             for revoked in (prior[release.WINDOWS_LEGACY_PRIOR_FIELDS[1]], fields["uninstallDataSHA256"]):
                 with self.subTest(revoked=revoked), self.assertRaisesRegex(ValueError, "revoked"):
                     policy_pin = self.write_policy({**self.policy, "subjectSHA256": [revoked]})
                     verify_installed(fields, policy_pin=policy_pin)
+
+    def test_signed_legacy_footprint_binds_both_inventories_before_staging(self):
+        candidate_pin = "7" * 64
+        previous_pin = "8" * 64
+        self.add_windows_installer_property("amd64", release.WINDOWS_PAYLOAD_FINGERPRINT_PROPERTY, candidate_pin)
+        files = release.inventory(self.candidate, self.subjects)
+        inputs = dict(
+            schemaVersion=16, installMode="upgrade", previousVersion="1.2.2-rc.1",
+            previousPayloadSHA256="d" * 64, userProfilePreservedThroughUpgrade=True,
+            legacyRegistrationMigrated=True, previousUninstallerSHA256="a" * 64,
+            previousUninstallDataSHA256="b" * 64, legacyPackageFootprintVerified=True,
+            retiredPackageFileCount=2, previousStagedPayloadSHA256=previous_pin,
+            candidateStagedPayloadSHA256=candidate_pin,
+        )
+        for changed in ({"retiredPackageFileCount": 0}, {"retiredPackageFileCount": True},
+                        {"legacyPackageFootprintVerified": False}, {"previousStagedPayloadSHA256": candidate_pin}):
+            bad = self.write_reboot_report("footprint-invalid.json", **{**inputs, **changed})
+            with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, "verified prior package file retirement"):
+                release.load_detection_evidence(self.candidate, [bad], files, VERSION)
+        wrong_candidate = self.write_reboot_report("footprint-sbom-mismatch.json",
+                                                  **{**inputs, "candidateStagedPayloadSHA256": "9" * 64})
+        output = self.root / release.MANIFEST
+        with self.assertRaisesRegex(ValueError, "footprint differs from the signed installer SBOM"):
+            release.prepare(self.candidate, output, COMMIT, REF, windows_reboot_evidence=[wrong_candidate])
+        self.assertFalse(output.exists())
+        qualified = self.write_reboot_report("footprint-qualified.json", **inputs)
+        release.prepare(self.candidate, output, COMMIT, REF, windows_reboot_evidence=[qualified])
+        manifest = output.read_bytes()
+        approval = json.loads(manifest)
+        self.assertEqual(approval["schemaVersion"], 14)
+        entry, = approval["windowsDetection"]
+        self.assertEqual(entry[release.WINDOWS_FOOTPRINT_DIGESTS[0]], previous_pin)
+        self.assertEqual(entry[release.WINDOWS_FOOTPRINT_DIGESTS[1]], candidate_pin)
+        (self.candidate / release.MANIFEST).write_bytes(manifest)
+        (self.candidate / release.SIGNATURE).write_bytes(b"inert authentication fixture")
+        certificate = self.root / "legacy-footprint-approval.der"
+        certificate.write_bytes(b"inert approval certificate")
+        installed = self.root / "legacy-footprint-installed.json"
+        installed.write_text(json.dumps({
+            "schemaVersion": 3, "target": entry["target"], "version": entry["previousVersion"],
+            "payloadSHA256": entry["previousPayloadSHA256"], "payloadSBOMSHA256": entry["previousPayloadSBOMSHA256"],
+            "payloadPublisherSHA256": entry["previousPayloadPublisherSHA256"],
+            "buildInfoSHA256": entry[release.WINDOWS_PREVIOUS_BUILD_INFO],
+            "uninstallerSHA256": entry["previousUninstallerSHA256"], "uninstallDataSHA256": "1" * 64,
+        }), encoding="utf-8")
+        options = {"windows_upgrade_inventory": (installed, release.digest(installed))}
+        with patch.object(release, "authenticate"):
+            result = self.verify(certificate, release.digest(certificate),
+                                 require_windows_legacy_footprint_sha256=previous_pin, **options)
+            self.assertEqual(result["managedUpdate"]["windowsUpgradeDetection"]["legacyPackageFootprintVerified"], True)
+            refused_stage = self.root / "refused-footprint-stage"
+            refused_stage.mkdir()
+            with self.assertRaisesRegex(ValueError, "lacks signed retirement evidence"):
+                self.verify(certificate, release.digest(certificate), stage_directory=refused_stage,
+                            require_windows_legacy_footprint_sha256="9" * 64, **options)
+            self.assertFalse(list(refused_stage.iterdir()))
+            for pin in (previous_pin, candidate_pin):
+                revoked = self.write_policy({**self.policy, "subjectSHA256": [pin]})
+                with self.subTest(revoked=pin), self.assertRaisesRegex(ValueError, "revoked"):
+                    self.verify(certificate, release.digest(certificate), policy_pin=revoked, **options)
 
     def test_setup_baseline_claim_is_required_for_a_current_upgrade_and_rejected_for_clean_install(self):
         files = release.inventory(self.candidate, self.subjects)
