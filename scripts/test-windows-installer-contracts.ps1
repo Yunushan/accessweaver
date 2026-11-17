@@ -268,10 +268,10 @@ Assert ($fingerprint -cmatch '(?s)AWEmitStagedDirectoryChecks.*AWOrdinal\(Entrie
     $installerSource.Contains("Entries.Add('{#AWStagedLiteral}|{#FileSize(AWStagedPath)}|{#GetSHA256OfFile(AWStagedPath)}');") -and
     $approvedUpgrade -cmatch '(?s)\{#TargetArch\}.*AWStagedPayloadDigest.*GetSHA256OfString.*PendingPin = ApprovalPin.*AWOrdinal\(PendingVersion.*AWIsInstallationDirectory\(Destination, PendingDirectory\).*resumed from its pending installation record') 'Managed retry must match the committed approval, entire staged payload and destination'
 $tempRecovery=[regex]::Match($installerSource,'(?ms)^function AWPrepareManagedTempRecovery\(.*?^end;').Value
-$tempRemoval=[regex]::Match($installerSource,'(?ms)^function AWRemoveTemporaryUninstaller\(.*?^end;').Value
+$tempRemoval=[regex]::Match($installerSource,'(?ms)^function AWRemoveMatchingInstallationFile\(.*?^end;').Value
 Assert ($tempRecovery -cmatch '(?s)GetSHA256OfString\(AWPendingInstallValue\(Destination\)\).*AWPendingInstallAbsent.*AWWriteLifecycleString.*not AWPendingInstallMatches.*AWReadLifecycleString.*not AWSetupTempName.*Baseline.IndexOf\(Current\[I\]\) < 0') 'Managed temporary cleanup must restrict recovery to new names from the bound original attempt'
-Assert ($tempRemoval -cmatch '(?s)AWOpenReplaceProbe\(Path, \x2480010000, 1, 0, 3, \x2400200000, 0\).*Info.Links <> 1.*Subject.Size <> ExpectedSize.*GetSHA256OfStream\(Subject\) <> Identity.*AWOnlyDefaultDataStream\(Handle\).*AWSetFileDisposition\(Handle, 4, DeleteFile, 1\).*AWCloseNativeHandle\(Handle\).*AWPathAttributes\(Path\).*Code = 2.*Code = 3') 'Temporary uninstaller removal must verify the exact stream through the no-follow delete handle and confirm absence'
-Assert ($tempRemoval -cmatch '(?s)CanDelete := Handle <> \x24FFFFFFFF.*if not CanDelete.*AWOpenReplaceProbe\(Path, \x2480000000, 1, 0, 3, \x2400200000, 0\).*GetSHA256OfStream\(Subject\) <> Identity.*AWOnlyDefaultDataStream\(Handle\).*if not CanDelete then begin Result := False; Exit; end;.*AWSetFileDisposition\(Handle, 4, DeleteFile, 1\)') 'Only an identified default-stream temporary uninstaller may block cleanup when the delete handle is unavailable'
+Assert ($tempRemoval -cmatch '(?s)AWOpenReplaceProbe\(Path, \x2480010000, 1, 0, 3, \x2400200000, 0\).*Info.Links <> 1.*Subject.Size <> ExpectedSize.*GetSHA256OfStream\(Subject\) <> Identity.*AWOnlyDefaultDataStream\(Handle, StreamsInspected\).*AWSetFileDisposition\(Handle, 4, DeleteFile, 1\).*AWCloseNativeHandle\(Handle\).*AWPathAttributes\(Path\).*Code = 2.*Code = 3') 'Temporary uninstaller removal must verify the exact stream through the no-follow delete handle and confirm absence'
+Assert ($tempRemoval -cmatch '(?s)CanDelete := Handle <> \x24FFFFFFFF.*if not CanDelete.*AWOpenReplaceProbe\(Path, \x2480000000, 1, 0, 3, \x2400200000, 0\).*GetSHA256OfStream\(Subject\) <> Identity.*AWOnlyDefaultDataStream\(Handle, StreamsInspected\).*if not CanDelete then begin Result := False; Exit; end;.*AWSetFileDisposition\(Handle, 4, DeleteFile, 1\)') 'Only an identified default-stream temporary uninstaller may block cleanup when the delete handle is unavailable'
 Assert ($copy -cmatch '(?s)AWPrepareManagedTempRecovery\(Destination\).*AWWriteLifecycleString\(AWPendingInstall' -and
     $retirement -cmatch '(?s)AWVerifyCompletedInstall.*AWCleanupManagedTemporaryUninstallers\(Destination, Uninstaller\).*AWRetirePendingInstall') 'Setup must persist the baseline before copy and retire verified temporary uninstallers before clearing recovery'
 $resumeFile=[regex]::Match($installerSource,'(?ms)^function AWVerifyUpgradeResumeFile\(.*?^end;').Value
@@ -359,6 +359,43 @@ try {
     Assert ((Get-InstallerCompiledPayloadFingerprint $localizedFixture) -ceq '280f5d3166a0ec511eaf280d3d3a0b9230de59912bb6e1eef69c1db938b36a03') 'Localized staged paths must be fingerprinted as UTF-8'
     [IO.File]::WriteAllText($compiled,([IO.File]::ReadAllText($compiled).Replace('; BeforeInstall: AWCheckPackageCopyDestination','')))
     Reject {Assert-InstallerPackageDirectories $layout $setupScript $compiled} 'Compiled installer without a per-file copy guard was accepted'
+
+    $retiredInventory=Join-Path $fixture 'prior-payload-files.txt'
+    $planInclude=Join-Path $fixture 'retirement.iss'
+    foreach($core in @('accessweaver.exe','BUILD-INFO.json','SBOM.cdx.json')){
+        [IO.File]::WriteAllText((Join-Path $layout $core),'{}')
+    }
+    $entries=@(
+        'accessweaver.exe|2|'+('1'*64)
+        'BUILD-INFO.json|2|'+('2'*64)
+        'SBOM.cdx.json|2|'+('3'*64)
+        "docs\qualification\Fixture's report.json|2|"+('4'*64)
+        "docs\qualification\retired file's report.json|2|"+('5'*64)
+    )
+    $writeInventory={
+        param([string[]]$Rows)
+        [Array]::Sort($Rows,[StringComparer]::Ordinal)
+        [IO.File]::WriteAllText($retiredInventory,($Rows -join "`r`n")+"`r`n",[Text.UTF8Encoding]::new($false,$true))
+        return (Get-FileHash -LiteralPath $retiredInventory).Hash.ToLowerInvariant()
+    }
+    $priorDigest=& $writeInventory $entries
+    Reject {New-InstallerRetiredPayloadPlan $layout $retiredInventory ('f'*64) $planInclude} 'Unapproved prior payload inventory was accepted'
+    $paths=@('..\foreign.exe','docs\old.txt:stream','docs\NUL .txt','docs\short~1.txt','docs\old{#Injected}.txt',
+        'unins000.dat','docs\unknown\old.txt',"docs\qualification\fixture's report.json")
+    foreach($invalid in $paths){
+        $invalidDigest=& $writeInventory ($entries+($invalid+'|2|'+('6'*64)))
+        Reject {New-InstallerRetiredPayloadPlan $layout $retiredInventory $invalidDigest $planInclude} 'Unsafe or ambiguous prior package entry was accepted'
+    }
+    $null=& $writeInventory $entries
+    $planDigest=New-InstallerRetiredPayloadPlan $layout $retiredInventory $priorDigest $planInclude
+    $retirementPlan=[IO.File]::ReadAllText($planInclude)
+    $retirementRecord=[IO.File]::ReadAllText((Join-Path $layout 'docs\windows-retired-payload.sha256'))
+    Assert ($retirementRecord.StartsWith("retirement-plan-sha256=$planDigest`r`n") -and
+        $retirementRecord.Contains("prior-payload-sha256=$priorDigest`r`n") -and
+        [regex]::Matches($retirementPlan,'AWRetirePackageFile\(').Count -eq 1 -and
+        $retirementPlan.Contains("retired file''s report.json") -and -not $retirementPlan.Contains("Fixture''s report.json")
+    ) 'Retirement plan must bind the exact approved old list and preserve current paths'
+
     $uncovered=Join-Path $layout 'docs\qualification\new'
     [void][IO.Directory]::CreateDirectory($uncovered)
     Reject {Assert-InstallerPackageDirectories $layout $setupScript} 'Unprotected staged documentation directory was accepted'

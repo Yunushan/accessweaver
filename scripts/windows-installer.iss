@@ -14,6 +14,22 @@
 #else
   #error TargetArch must be amd64 or arm64
 #endif
+#ifdef RetiredPayloadInclude
+  #if !Defined(ProtectedRegistrationQualification) || !Defined(RetiredPayloadIncludeSHA256)
+    #error The retirement plan requires protected registration and a pinned include
+  #endif
+  #if GetSHA256OfFile(RetiredPayloadInclude) != RetiredPayloadIncludeSHA256
+    #error The compiled retirement plan differs from the pinned plan
+  #endif
+  #define RetiredPayloadRecordHandle FileOpen(BuildRoot + "\docs\windows-retired-payload.sha256")
+  #if !RetiredPayloadRecordHandle
+    #error The retirement plan has no staged fingerprint record
+  #endif
+  #if FileRead(RetiredPayloadRecordHandle) != "retirement-plan-sha256=" + RetiredPayloadIncludeSHA256
+    #error The staged fingerprint record does not bind the retirement plan
+  #endif
+  #call FileClose(RetiredPayloadRecordHandle)
+#endif
 #define PayloadPath BuildRoot + "\accessweaver.exe"
 #define BuildInfoPath BuildRoot + "\BUILD-INFO.json"
 #define PayloadSBOMPath BuildRoot + "\SBOM.cdx.json"
@@ -529,11 +545,18 @@ function AWQueryFileStreams(Handle, InfoClass: LongWord; var Info: AWFileStreamI
   Bytes: LongWord): Integer;
   external 'GetFileInformationByHandleEx@kernel32.dll stdcall';
 
-function AWOnlyDefaultDataStream(Handle: LongWord): Boolean;
-var Info: AWFileStreamInfo; I: Integer; DefaultName: String;
+function AWOnlyDefaultDataStream(Handle: LongWord; var Inspected: Boolean): Boolean;
+var Info: AWFileStreamInfo; I: Integer; DefaultName: String; Code: LongWord;
 begin
   Result := False;
-  if AWQueryFileStreams(Handle, 7, Info, SizeOf(Info)) = 0 then Exit;
+  if AWQueryFileStreams(Handle, 7, Info, SizeOf(Info)) = 0 then begin
+    Code := DLLGetLastError;
+    { This fixed buffer has space for the default data stream. A larger
+      enumeration cannot prove the file contains only that stream. }
+    Inspected := (Code = 122) or (Code = 234);
+    Exit;
+  end;
+  Inspected := True;
   DefaultName := '::$DATA';
   if (Info.NextEntryOffset <> 0) or (Info.NameBytes <> 2 * Length(DefaultName)) then Exit;
   for I := 1 to Length(DefaultName) do
@@ -545,9 +568,10 @@ function AWSetFileDisposition(Handle, InfoClass: LongWord; var DeleteFile: Byte;
   Bytes: LongWord): Integer;
   external 'SetFileInformationByHandle@kernel32.dll stdcall';
 
-function AWRemoveTemporaryUninstaller(const Path, Identity: String; ExpectedSize: Int64): Boolean;
+function AWRemoveMatchingInstallationFile(const Path, Identity: String; ExpectedSize: Int64;
+  RequireInspection: Boolean): Boolean;
 var Handle, Code: LongWord; Info: AWFileInfo; Subject: THandleStream; DeleteFile: Byte;
-    CanDelete, Deleted: Boolean;
+    CanDelete, Deleted, StreamsInspected: Boolean;
 begin
   Result := True;
   Deleted := False;
@@ -558,10 +582,17 @@ begin
     { A reader can deny DELETE while still allowing us to identify the file.
       Preserve unrelated files without delaying managed recovery. }
     Handle := AWOpenReplaceProbe(Path, $80000000, 1, 0, 3, $00200000, 0);
-    if Handle = $FFFFFFFF then Exit;
+    if Handle = $FFFFFFFF then begin
+      Code := DLLGetLastError;
+      Result := not RequireInspection or (Code = 2) or (Code = 3);
+      Exit;
+    end;
   end;
   try
-    if AWGetFileInfo(Handle, Info) = 0 then Exit;
+    if AWGetFileInfo(Handle, Info) = 0 then begin
+      Result := not RequireInspection;
+      Exit;
+    end;
     if ((Info.Attributes and ($00000400 or $00000010)) <> 0) or (Info.Links <> 1) then Exit;
     Subject := THandleStream.Create(Handle);
     try
@@ -570,7 +601,10 @@ begin
     finally
       Subject.Free;
     end;
-    if not AWOnlyDefaultDataStream(Handle) then Exit;
+    if not AWOnlyDefaultDataStream(Handle, StreamsInspected) then begin
+      Result := StreamsInspected or not RequireInspection;
+      Exit;
+    end;
     if not CanDelete then begin Result := False; Exit; end;
     DeleteFile := 1;
     Deleted := AWSetFileDisposition(Handle, 4, DeleteFile, 1) <> 0;
@@ -606,8 +640,8 @@ begin
       Subject.Free;
     end;
     for I := 0 to AWManagedTempCandidates.Count - 1 do
-      if not AWRemoveTemporaryUninstaller(AddBackslash(Destination) + AWManagedTempCandidates[I],
-        Identity, UninstallerSize) then Exit;
+      if not AWRemoveMatchingInstallationFile(AddBackslash(Destination) + AWManagedTempCandidates[I],
+        Identity, UninstallerSize, False) then Exit;
     Result := True;
   except
     Result := False;
@@ -698,6 +732,48 @@ end;
 
 #ifdef ProtectedRegistrationQualification
 #include "windows-installer-registry-publication.iss"
+#endif
+
+#ifdef RetiredPayloadInclude
+function AWRetirePackageFile(const Path, Digest: String; Size: Int64): Boolean;
+var Parent: String; Held: AWNativeHandles; Attributes, Code: LongWord; I: Integer;
+begin
+  Result := False;
+  Parent := ExtractFileDir(Path);
+  Attributes := AWPathAttributes(Parent);
+  if Attributes = $FFFFFFFF then begin
+    Code := DLLGetLastError;
+    Result := (Code = 2) or (Code = 3);
+    Exit;
+  end;
+  try
+    if not AWLockInstallationDirectory(Parent, Held) then Exit;
+    Attributes := AWPathAttributes(Path);
+    if (Attributes <> $FFFFFFFF) and ((Attributes and ($00000400 or $00000010)) <> 0) then begin
+      Result := True;
+      Exit;
+    end;
+    Result := AWRemoveMatchingInstallationFile(Path, Digest, Size, True);
+  finally
+    for I := GetArrayLength(Held) - 1 downto 0 do
+      if AWCloseNativeHandle(Held[I]) = 0 then Result := False;
+  end;
+end;
+
+#include RetiredPayloadInclude
+
+function AWCleanupRetiredPackageFiles(const Destination: String): Boolean;
+begin
+  Result := True;
+  if not AWPendingLegacyRetirement then Exit;
+  Result := False;
+  if not AWPendingInstallMatches(Destination) or not AWRetiredPayloadMatchesApproval then Exit;
+  try
+    Result := AWRetireApprovedPackageFiles(Destination);
+  except
+    Result := False;
+  end;
+end;
 #endif
 
 function AWVerifyCompletedInstall(const Destination: String; var Held: AWNativeHandles;
@@ -910,6 +986,12 @@ begin
     AWLegacyApproval.Payload := PayloadPin;
     AWLegacyApproval.SBOM := SBOMPin;
     AWLegacyApproval.BuildInfo := BuildPin;
+#ifdef RetiredPayloadInclude
+    if not AWRetiredPayloadMatchesApproval then begin
+      Result := 'The managed upgrade approval does not match this installer''s prior package retirement plan.';
+      Exit;
+    end;
+#endif
   end;
 #endif
 
@@ -991,6 +1073,10 @@ begin
     AWPendingRetirementFailed := True;
     if not Verified then
       Log('AccessWeaver installed payload or registration verification failed. Pending installation record retained.')
+#ifdef RetiredPayloadInclude
+    else if not AWCleanupRetiredPackageFiles(Destination) then
+      Log('AccessWeaver could not retire a verified prior package file. Pending installation record retained.')
+#endif
     else if not AWCleanupManagedTemporaryUninstallers(Destination, Uninstaller) then
       Log('AccessWeaver could not retire a verified temporary uninstaller. Pending installation record retained.')
     else if AWRetirePendingInstall(Destination) then begin

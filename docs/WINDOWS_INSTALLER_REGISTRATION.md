@@ -63,6 +63,23 @@ file in the exact order and encoding covered by the Setup SBOM’s
 independently approved prior Setup and SBOM so later upgrades can identify
 files shipped only by that package.
 
+For a protected registration qualification build, pass
+`-PreviousPayloadInventory` together with
+`-PreviousPayloadInventorySHA256`. Use the independently approved prior
+Setup SBOM's staged-payload digest. The builder compares the prior package
+paths with the current staging tree and binds the compiled retirement plan
+through the current package fingerprint. Setup requires the matching prior
+payload, SBOM and build metadata in the legacy migration approval.
+
+After verifying the new package and protected registration, Setup removes an
+older package file only when its open handle still identifies the approved
+contents, a single link and the default data stream. It preserves modified
+files, links, additional streams and filenames absent from the approved
+plan. Setup retains the pending record if an identified file is locked or
+its removal cannot be verified. Retry with the same approved Setup and
+baseline. The plan covers app-relative package files for one approved legacy
+baseline.
+
 The [same-name replacement run](https://github.com/Yunushan/accessweaver/actions/runs/44003554389)
 at `7bf36162cfd5a916f3bbb92ba5c8536bff3020e3` passed 40 of 43 cases on AMD64 and ARM64 and confirmed exact cleanup.
 Both architectures staged deletion and restored the legacy entry on rollback.

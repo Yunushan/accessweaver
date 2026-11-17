@@ -150,6 +150,82 @@ function Assert-InstallerPackageDirectories([string]$Root,[string]$SetupScript,[
     }
 }
 
+function New-InstallerRetiredPayloadPlan([string]$Root,[string]$InventoryPath,[string]$InventorySHA256,[string]$IncludePath) {
+    if($InventorySHA256 -cnotmatch '\A[a-fA-F0-9]{64}\z'){throw 'Expected the approved prior Setup payload inventory digest'}
+    $utf8=[Text.UTF8Encoding]::new($false,$true)
+    $stream=[IO.File]::Open($InventoryPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if($stream.Length -le 0 -or $stream.Length -gt 1MB){throw 'Prior Setup payload inventory is outside the size limit'}
+        if((Get-FileHash -InputStream $stream -Algorithm SHA256).Hash -ine $InventorySHA256){throw 'Prior Setup payload inventory digest mismatch'}
+        $stream.Position=0
+        $reader=[IO.StreamReader]::new($stream,$utf8,$false,4096,$true)
+        try {$contents=$reader.ReadToEnd()} finally {$reader.Dispose()}
+    } finally {$stream.Dispose()}
+    $lineBreak="`r`n"
+    $lines=$contents.Split(@($lineBreak),[StringSplitOptions]::None)
+    if($lines.Length -lt 4 -or $lines.Length -gt 4097 -or $lines[-1] -cne ''){
+        throw 'Prior Setup payload inventory must use the compiled CRLF list format'
+    }
+    $current=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $rootPath=(Get-Item -LiteralPath $Root -Force -ErrorAction Stop).FullName
+    foreach($item in [IO.Directory]::EnumerateFiles($rootPath,'*',[IO.SearchOption]::AllDirectories)){
+        [void]$current.Add($item.Substring($rootPath.Length+1))
+    }
+    $digestRecord='docs\windows-retired-payload.sha256'
+    if(-not $current.Add($digestRecord)){throw 'The Setup retirement plan record is reserved'}
+    $seen=[Collections.Generic.Dictionary[string,string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $statements=[Collections.Generic.List[string]]::new()
+    $previous=''
+    for($index=0;$index -lt $lines.Length-1;$index++){
+        $line=$lines[$index]
+        $fields=$line.Split('|')
+        if($fields.Length -ne 3 -or [StringComparer]::Ordinal.Compare($previous,$line) -ge 0 -or
+           $fields[1] -cnotmatch '\A(0|[1-9][0-9]{0,8})\z' -or [long]$fields[1] -gt 512MB -or
+           $fields[2] -cnotmatch '\A[a-fA-F0-9]{64}\z'){
+            throw 'Prior Setup payload inventory has an invalid or out-of-order record'
+        }
+        $previous=$line
+        $relative=$fields[0]
+        $prefix=[IO.Path]::GetDirectoryName($relative)
+        $leaf=$relative.Split('\')[-1]
+        if($relative -cnotmatch '\A[^\\/:*?"<>|\p{C}\p{Zl}\p{Zp}~]+(?:\\[^\\/:*?"<>|\p{C}\p{Zl}\p{Zp}~]+)*\z' -or
+           $relative.Length -gt 240 -or $relative.Contains('{#') -or
+           ($prefix -and $prefix -inotin @('licenses','docs','docs\assets','docs\qualification')) -or
+           $leaf -match '\A |[. ]\z|\A(?:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|(?:COM|LPT)[1-9\u00b9\u00b2\u00b3]) *(?:\.|\z)' -or
+           (-not $prefix -and $leaf -match '\A(?:unins[0-9]{3}\.(?:exe|dat|msg)|is-.*\.tmp)\z')){
+            throw 'Prior Setup payload inventory contains an unsafe or unsupported package path'
+        }
+        $digest=$fields[2].ToLowerInvariant()
+        if($seen.ContainsKey($relative)){throw 'Prior Setup payload inventory contains an ambiguous path'}
+        $seen.Add($relative,$digest)
+        if(-not $current.Contains($relative)){
+            $literal=$relative.Replace("'","''")
+            $statements.Add("  if not AWRetirePackageFile(Destination + '\$literal', '$digest', $($fields[1])) then Exit;")
+        }
+    }
+    foreach($name in @('accessweaver.exe','SBOM.cdx.json','BUILD-INFO.json')){
+        if(-not $seen.ContainsKey($name) -or -not $current.Contains($name)){throw 'Expected both Setup payloads to include their core identity files'}
+    }
+    $guard=@(
+        'function AWRetiredPayloadMatchesApproval: Boolean;',
+        'begin',
+        "  Result := (AWLegacyApproval.Payload = '$($seen['accessweaver.exe'])') and",
+        "    (AWLegacyApproval.SBOM = '$($seen['SBOM.cdx.json'])') and",
+        "    (AWLegacyApproval.BuildInfo = '$($seen['BUILD-INFO.json'])');",
+        'end;',
+        'function AWRetireApprovedPackageFiles(const Destination: String): Boolean;',
+        'begin',
+        '  Result := False;'
+    )
+    $body=($guard+@($statements.ToArray())+@('  Result := True;','end;','')) -join $lineBreak
+    [IO.File]::WriteAllText($IncludePath,$body,$utf8)
+    $digest=(Get-FileHash -LiteralPath $IncludePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $record="retirement-plan-sha256=$digest$lineBreak"+"prior-payload-sha256=$($InventorySHA256.ToLowerInvariant())$lineBreak"
+    # The normal compiled payload fingerprint covers this binding record.
+    [IO.File]::WriteAllText((Join-Path $rootPath $digestRecord),$record,$utf8)
+    return $digest
+}
+
 function Assert-InstallerSetupScript([string]$Path, [string]$TargetArch, [string]$Version, [switch]$OrganizationSigning) {
     if($TargetArch -cnotin @('amd64','arm64')){throw 'Invalid installer script target'}
     if((Get-Item -LiteralPath $Path).Length -gt 1MB){throw 'Preprocessed installer script exceeds evidence limit'}

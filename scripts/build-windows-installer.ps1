@@ -8,12 +8,19 @@ param(
     [string]$PublisherCertificateSHA256,
     [string]$PayloadSigningTool,
     [string]$PayloadPublisherCertificateSHA256,
-    [switch]$ProtectedRegistrationQualification
+    [switch]$ProtectedRegistrationQualification,
+    [string]$PreviousPayloadInventory,
+    [string]$PreviousPayloadInventorySHA256
 )
 $ErrorActionPreference='Stop'
 $project=Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'windows-installer-common.ps1')
 Assert-InstallerReleaseVersion $Version
+if(($PreviousPayloadInventory -or $PreviousPayloadInventorySHA256) -and
+   (-not $ProtectedRegistrationQualification -or -not $PreviousPayloadInventory -or -not $PreviousPayloadInventorySHA256)){
+    throw 'An approved prior payload inventory and digest require a protected registration qualification build'
+}
+if($PreviousPayloadInventory){$PreviousPayloadInventory=(Resolve-Path -LiteralPath $PreviousPayloadInventory).ProviderPath}
 $callback=Join-Path $PSScriptRoot 'sign-windows-installer-artifact.ps1'
 $setupScript=Join-Path $PSScriptRoot 'windows-installer.iss'
 $signingArguments=@()
@@ -116,6 +123,11 @@ try {
     [void](New-Item -ItemType Directory -Force -Path $evidence)
     $preprocessed=Join-Path $evidence 'setup-preprocessed.iss'
     Assert-InstallerPackageDirectories $stage $setupScript
+    if($PreviousPayloadInventory){
+        $include=$stage+'.retirement.iss'
+        $digest=New-InstallerRetiredPayloadPlan $stage $PreviousPayloadInventory $PreviousPayloadInventorySHA256 $include
+        $setupModeArguments+=@('/DRetiredPayloadInclude='+$include,'/DRetiredPayloadIncludeSHA256='+$digest)
+    }
     $compile={
         & $Compiler ('/DBuildRoot='+$stage) ('/DReleaseVersion='+$Version) ('/DTargetArch='+$TargetArch) ('/DEvidenceOutput='+$preprocessed) '/DRequireInnoRuntimeNotice' @setupModeArguments @signingArguments $setupScript
         if($LASTEXITCODE -ne 0){throw 'Installer compilation failed'}

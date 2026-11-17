@@ -1,7 +1,7 @@
 # Reuses the disposable lifecycle harness's native launch, preservation and
 # cleanup checks. Fault variants come from exact expanded Setup source and
 # recovery runs use the unmodified candidates.
-function New-ProtectedPublicationSetup([string]$Version, [string]$Label) {
+function New-ProtectedPublicationSetup([string]$Version, [string]$Label, $Legacy) {
     $buildDirectory=Join-Path $project 'build'
     [void][IO.Directory]::CreateDirectory($buildDirectory)
     $stagePattern='installer-'+$Architecture+'-*'
@@ -26,16 +26,62 @@ function New-ProtectedPublicationSetup([string]$Version, [string]$Label) {
     $directory=Join-Path $capsule $Label
     [void][IO.Directory]::CreateDirectory($directory)
     $expanded=Join-Path $directory 'expanded.iss'
+    $setupScript=Join-Path $PSScriptRoot 'windows-installer.iss'
+    $planArguments=@()
+    if($Legacy){
+        $include=Join-Path $directory 'retirement.iss'
+        $plan=New-InstallerRetiredPayloadPlan $staged[0] $Legacy.inventoryPath $Legacy.inventorySHA256 $include
+        $planArguments=@(('/DRetiredPayloadInclude='+$include),('/DRetiredPayloadIncludeSHA256='+$plan))
+    }
     $compileArguments=@(('/DBuildRoot='+$staged[0]),('/DReleaseVersion='+$Version),('/DTargetArch='+$Architecture),
-        ('/DEvidenceOutput='+$expanded),'/DRequireInnoRuntimeNotice','/DProtectedRegistrationQualification=1',('/O'+$directory),
-        (Join-Path $PSScriptRoot 'windows-installer.iss'))
+        ('/DEvidenceOutput='+$expanded),'/DRequireInnoRuntimeNotice','/DProtectedRegistrationQualification=1',('/O'+$directory))+
+        $planArguments+@($setupScript)
     $null=@(& $compiler @compileArguments)
     Require ($LASTEXITCODE -eq 0) 'Protected Setup compilation failed'
     $null=Assert-InstallerSetupScript $expanded $Architecture $Version
+    $fingerprint=''
+    Assert-InstallerPackageDirectories $staged[0] $setupScript $expanded ([ref]$fingerprint)
+    $expected.stagedPayloadSHA256=$fingerprint
     $real=Join-Path $directory $built.installerName
     return @{
         expected=$expected;compiler=$compiler;compilerSHA256=$built.compilerSha256
-        real=$real;expanded=$expanded;sha256=(Digest $real);normal=$normal;normalSHA256=$built.installerSha256
+        real=$real;expanded=$expanded;sha256=(Digest $real);stage=$staged[0]
+    }
+}
+
+function New-LegacyRetirementFixtureSetup($First) {
+    $setup=Join-Path $PSScriptRoot 'windows-installer.iss'
+    $directory=Join-Path $capsule 'legacy-baseline'
+    [void][IO.Directory]::CreateDirectory($directory)
+    $expanded=Join-Path $directory 'legacy.iss'
+    $inventoryPath=Join-Path $directory 'payload-files.txt'
+    $files=@('docs\legacy-fixture-retired.txt','docs\legacy-fixture-edited.txt')
+    $created=[Collections.Generic.List[string]]::new()
+    $inventorySHA256='';$inventory=''
+    try {
+        foreach($relative in $files){
+            $path=Join-Path $First.stage $relative
+            $stream=[IO.File]::Open($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+            $created.Add($path)
+            try {
+                $bytes=[Text.Encoding]::UTF8.GetBytes('Previously shipped AccessWeaver fixture')
+                $stream.Write($bytes,0,$bytes.Length)
+            } finally {$stream.Dispose()}
+        }
+        $compileArguments=@(('/DBuildRoot='+$First.stage),('/DReleaseVersion='+$First.expected.version),
+            ('/DTargetArch='+$Architecture),('/DEvidenceOutput='+$expanded),'/DRequireInnoRuntimeNotice',('/O'+$directory),$setup)
+        $null=@(& $First.compiler @compileArguments)
+        Require ($LASTEXITCODE -eq 0) 'Legacy footprint fixture compilation failed'
+        Assert-InstallerPackageDirectories $First.stage $setup $expanded ([ref]$inventorySHA256) ([ref]$inventory)
+        [IO.File]::WriteAllText($inventoryPath,$inventory,[Text.UTF8Encoding]::new($false))
+        Require ((Digest $inventoryPath) -ceq $inventorySHA256) 'Compiled legacy inventory changed when written'
+    } finally {
+        foreach($path in $created){[IO.File]::Delete($path)}
+    }
+    $installer=Join-Path $directory $First.expected.installerName
+    return @{
+        expected=$First.expected;normal=$installer;normalSHA256=(Digest $installer)
+        inventoryPath=$inventoryPath;inventorySHA256=$inventorySHA256;files=$files
     }
 }
 
@@ -78,6 +124,16 @@ function Invoke-ProtectedLegacyMigration($First,$Next,[string]$Interrupted,[stri
     $null=Native-Record $First.normal ($InstallArguments+@('/LOG='+$legacyLog))
     Assert-SetupCompletionReadback $legacyLog
     Assert-Installed $before
+    $retired=Join-Path $install $First.files[0]
+    $edited=Join-Path $install $First.files[1]
+    $foreign=Join-Path $install 'docs\legacy-fixture-unrelated.txt'
+    No-Reparse $retired;No-Reparse $edited
+    $retiredPin=Digest $retired
+    Require ((Digest $edited) -ceq $retiredPin) 'Legacy Setup did not copy the two old package files'
+    [IO.File]::WriteAllText($edited,'Edited former package fixture')
+    Require (-not (Test-Path -LiteralPath $foreign)) 'Unrelated fixture path already exists'
+    [IO.File]::Copy($retired,$foreign,$false)
+    $editedPin=Digest $edited
     $uninstaller=Join-Path $install 'unins000.exe'
     $uninstallData=[IO.Path]::ChangeExtension($uninstaller,'dat')
     $uninstallerPin=Digest $uninstaller
@@ -119,15 +175,34 @@ function Invoke-ProtectedLegacyMigration($First,$Next,[string]$Interrupted,[stri
         Assert-DetectorRefusal 'legacy-retirement-managed-pending' -VerifyMatchingPendingStatus -UseRegisteredDirectory
         $Report.legacyInterruptionVerified=$true
 
+        $Report.stage='legacy-retirement-locked-file'
+        $retryArguments=@($InstallArguments | Where-Object {$_ -notlike '/DIR=*'})
+        $retirementPin=Get-PendingInstallFixtureValue
+        $retirementLog=Join-Path $capsule 'legacy-retired-file-locked.log'
+        $locked=[IO.File]::Open($retired,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        try {
+            $null=Native-Record $Next.real ($retryArguments+@($baselineArgument,('/LOG='+$retirementLog))) @(1603)
+            No-Reparse $retirementLog
+            Require ((Get-Item -LiteralPath $retirementLog).Length -le 4MB -and
+                [IO.File]::ReadAllText($retirementLog).Contains('AccessWeaver could not retire a verified prior package file.')) 'Locked file did not reach the retirement boundary'
+            Require ((Get-PendingInstallFixtureValue) -ceq $retirementPin -and (Digest $retired) -ceq $retiredPin) 'Locked retirement changed the old file or pending approval'
+        } finally {$locked.Dispose()}
+
         $Report.stage='legacy-approved-retry'
         $recoveryLog=Join-Path $capsule 'legacy-recovery.log'
-        $retryArguments=@($InstallArguments | Where-Object {$_ -notlike '/DIR=*'})
         $null=Native-Record $Next.real ($retryArguments+@($baselineArgument,('/LOG='+$recoveryLog)))
         Assert-SetupCompletionReadback $recoveryLog
         Assert-Installed $after
         Require ($null -eq (Get-PendingInstallFixtureValue)) 'Approved migration retry left the pending record'
         Assert-ManagedDetection 'legacy-replacement' $after $true -UseRegisteredDirectory
         $Report.legacyRecoveryVerified=$true
+        $Report.stage='legacy-retired-package-files'
+        Require (-not (Test-Path -LiteralPath $retired) -and
+            (Digest $edited) -ceq $editedPin -and (Digest $foreign) -ceq $retiredPin) 'Retirement failed to remove the exact old file or preserve unrelated contents'
+        No-Reparse $edited;No-Reparse $foreign
+        [IO.File]::Delete($edited)
+        [IO.File]::Delete($foreign)
+        $Report.legacyRetiredPackageCleanupVerified=$true
 
         $deletedHandle=$false
         try {$writer.SetValue('accessweaver-fixture-stale-writer',1,[Microsoft.Win32.RegistryValueKind]::DWord)}
@@ -176,7 +251,7 @@ function Invoke-ProtectedRegistrationAcceptance {
     $pins=[ordered]@{}
     foreach($name in $sourceNames){$pins[$name]=Digest (Join-Path $project $name)}
     $report=[ordered]@{
-        schemaVersion=3;scope='disposable-protected-registration-setup'
+        schemaVersion=4;scope='disposable-protected-registration-setup'
         sourceCommit=$source;runID=$run;runAttempt=$runAttempt;architecture=$Architecture
         sourceSHA256=$pins;compilerSHA256=$null;compiledSetupSHA256=$null;faultedSetupSHA256=$null
         stagedPayloadSHA256=$null;legacyInstallerSHA256=$null;migrationInstallerSHA256=$null;interruptedMigrationSHA256=$null
@@ -184,7 +259,7 @@ function Invoke-ProtectedRegistrationAcceptance {
         rolledBackPublication=$false;pendingInstallDetected=$false;recoveredPublication=$false
         previousDirectoryRepair=$false;managedUninstallBinding=$false;ownedPayloadAndRegistrationRemoved=$false
         legacyWrongApprovalRefused=$false;legacyInterruptionVerified=$false;legacyRecoveryVerified=$false
-        legacyStaleWriterRefused=$false;legacyReplacementRemoved=$false
+        legacyStaleWriterRefused=$false;legacyReplacementRemoved=$false;legacyRetiredPackageCleanupVerified=$false
         userStatePreserved=$false;selectedMachineStateUnchanged=$false;scratchRemoved=$false
         passed=$false;productionQualificationComplete=$false
     }
@@ -222,9 +297,10 @@ function Invoke-ProtectedRegistrationAcceptance {
         Require ($report.faultedSetupSHA256 -cne $report.compiledSetupSHA256) 'Rollback Setup must contain the injected fixture boundary'
 
         $report.stage='compile-migration'
-        $next=New-ProtectedPublicationSetup '0.1.1-alpha' 'protected-migration'
+        $legacy=New-LegacyRetirementFixtureSetup $first
+        $next=New-ProtectedPublicationSetup '0.1.1-alpha' 'protected-migration' $legacy
         $interrupted=New-LegacyInterruptionSetup $next
-        $report.legacyInstallerSHA256=$first.normalSHA256
+        $report.legacyInstallerSHA256=$legacy.normalSHA256
         $report.migrationInstallerSHA256=$next.sha256
         $report.interruptedMigrationSHA256=Digest $interrupted
         Require ($report.interruptedMigrationSHA256 -cne $report.migrationInstallerSHA256) 'Legacy interruption fixture must differ from the unmodified Setup'
@@ -312,7 +388,7 @@ function Invoke-ProtectedRegistrationAcceptance {
         $firstJournalPin=Digest $firstJournal
         Assert-SuccessfulRestorationJournal $firstJournal
 
-        Invoke-ProtectedLegacyMigration $first $next $interrupted $installArguments $report
+        Invoke-ProtectedLegacyMigration $legacy $next $interrupted $installArguments $report
         $report.userStatePreserved=$true
         Require ((State-Snapshot) -ceq $baseline) 'Protected Setup changed selected service, firewall or DNS state'
         $report.selectedMachineStateUnchanged=$true

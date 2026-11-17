@@ -320,11 +320,16 @@ function Assert-DetectorRefusal([string]$Phase,[switch]$VerifyMatchingPendingSta
         Require ($LASTEXITCODE -eq 1 -and $output.Count -eq 0) 'Managed detection reported a result during a lifecycle inspection refusal'
         if($VerifyMatchingPendingStatus){
             $env:ACCESSWEAVER_REPORT_INSTALLER_RECOVERY='1'
-            $sidecar=Join-Path $project ('build\'+$expected.installerName+'.cdx.json')
-            $sbom=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($sidecar))
-            $fingerprint=@($sbom.metadata.component.properties | Where-Object name -CEQ 'accessweaver:windows-staged-payload-sha256')
-            Require ($fingerprint.Count -eq 1 -and $fingerprint[0].value -cmatch '\A[a-f0-9]{64}\z') 'Installer SBOM has no compiled payload fingerprint'
-            $material=$baselineArgument.Substring('/AWUpgradeFrom='.Length)+'|'+$Architecture+'|'+$fingerprint[0].value
+            $fingerprint=$expected.stagedPayloadSHA256
+            if(-not $fingerprint){
+                $sidecar=Join-Path $project ('build\'+$expected.installerName+'.cdx.json')
+                $sbom=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($sidecar))
+                $property=@($sbom.metadata.component.properties | Where-Object name -CEQ 'accessweaver:windows-staged-payload-sha256')
+                Require ($property.Count -eq 1) 'Installer SBOM has no unique compiled payload fingerprint'
+                $fingerprint=$property[0].value
+            }
+            Require ($fingerprint -cmatch '\A[a-f0-9]{64}\z') 'Installer has no verified compiled payload fingerprint'
+            $material=$baselineArgument.Substring('/AWUpgradeFrom='.Length)+'|'+$Architecture+'|'+$fingerprint
             $sha=[Security.Cryptography.SHA256]::Create()
             try {$pin=([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::ASCII.GetBytes($material)))).Replace('-','').ToLowerInvariant()}
             finally {$sha.Dispose()}
