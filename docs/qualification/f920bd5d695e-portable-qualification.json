@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 1,
+  "scope": "unsigned-portable-preview-release-qualification",
+  "sourceCommit": "f920bd5d695e0251e02005c3c0fca90eac2f6890",
+  "sourceRef": "refs/heads/codex/dns-adapter-coverage",
+  "runId": 44068503009,
+  "runAttempt": 1,
+  "build": {
+    "artifactId": 14324986905,
+    "artifactSHA256": "1eb714994d165de2acd7ba36c618c9a9e9ba6cac61336af26ffc7d16236f73ba",
+    "hashes": {
+      "BUILD-PROVENANCE.sigstore.json": "d1419facfc4c3b22f2ece7a59bc84f511fb82930b87c4a9f89089b30945f9009",
+      "SHA256SUMS.txt": "5184f73137d9d5093bc2dbd093625fe85b245da94815d6db2e21512d90e76594",
+      "BUILD-MANIFEST.json": "87e34ac543672db9526f9e9ea9a9c3030e42310dea4d0237c18d0581e7573429",
+      "accessweaver-preview-f920bd5d695e-darwin-amd64.tar.gz": "af43a714711c2ab2910662241a5da4e126c2d881408a13ea75e87d7269972e2f",
+      "accessweaver-preview-f920bd5d695e-darwin-arm64.tar.gz": "1b8733c7889ec2e5a1c089fab611286608cf93a428ffd6b476cbd73317aad1b1",
+      "accessweaver-preview-f920bd5d695e-freebsd-amd64.tar.gz": "be2426c9c7de761ec90354da66e31eb92f55a97c6bb823473719960a52256fab",
+      "accessweaver-preview-f920bd5d695e-freebsd-arm64.tar.gz": "6030e6ef76577e0dc90fbd1eb31df5250fe149523663cb971f089b072ae7ad3b",
+      "accessweaver-preview-f920bd5d695e-linux-amd64.tar.gz": "6ce9d281db20b6eb754d97722bdcbd9cbcf8a2f6e506e0de1b871badc123aa1a",
+      "accessweaver-preview-f920bd5d695e-linux-arm64.tar.gz": "653f2d4e4634b545024685fc89d1c887addcc44963475f57b6a4045c8fa523eb",
+      "accessweaver-preview-f920bd5d695e-openbsd-amd64.tar.gz": "166e60aee2e72c30c026ee51b78111291a9753ac25eeb68b0e84d910c39132f7",
+      "accessweaver-preview-f920bd5d695e-openbsd-arm64.tar.gz": "e83cc7bed73509b818700a7a4492623b583fb1e6321d741b7bcf27d77f29554c",
+      "accessweaver-preview-f920bd5d695e-windows-amd64.zip": "e91312441fcc706b4b39c7e01f8c4d4ca0ba5c2709485543df79d2bf36b68657",
+      "accessweaver-preview-f920bd5d695e-windows-arm64.zip": "856ca1ae8268dd1ad88d25ba4851cd47cbf1823b9024ec7b3b4485b8495e411a"
+    },
+    "repository": "Yunushan/accessweaver",
+    "workflow": "Yunushan/accessweaver/.github/workflows/release.yml",
+    "sourceCommit": "f920bd5d695e0251e02005c3c0fca90eac2f6890",
+    "sourceRef": "refs/heads/codex/dns-adapter-coverage",
+    "subjectsVerified": 12,
+    "hostedRunnerRequired": true,
+    "publisherSignatureVerified": false,
+    "productionQualificationComplete": false,
+    "runId": 44068503009,
+    "jobId": 134013101286,
+    "checksumsSHA256": "5184f73137d9d5093bc2dbd093625fe85b245da94815d6db2e21512d90e76594"
+  },
+  "rebuild": {
+    "artifactId": 14326265355,
+    "artifactSHA256": "96a525a45caaa1badc0be742806ab56446efbde513f6034bc1f46bb3b27ed70e",
+    "jobId": 134015716570,
+    "runId": 44068503009,
+    "checksumsSHA256": "5184f73137d9d5093bc2dbd093625fe85b245da94815d6db2e21512d90e76594",
+    "locallyMatchedUnsignedSubjects": 12,
+    "allUnsignedSubjectsByteIdentical": true
+  },
+  "targets": [
+    {
+      "jobId": 134015716803,
+      "artifactId": 14326060684,
+      "artifactSHA256": "ec967b65c1b3a5a7c1c879bb975d09d6772881384e330bfc6da69b16e6df7b7c",
+      "evidenceSHA256": {
+        "candidate.json": "3b62260d44371430137b314b9812fab37eb174746f12349f0a091c1e2b37953a",
+        "execution.json": "40ca3f46ba29d45cfbf8dbca8e1f2ec6bcebaa15eb7cd0aa46819669df6fb2ad",
+        "qualification.sigstore.json": "f3ff6b665e6b50a7f166efbca4603d1a2c1dc1aa0a7aeebe5f7f033bac972d6c"
+      },
+      "target": "darwin/amd64",
+      "attestedSubjectsVerified": 2,
+      "packageSHA256": "af43a714711c2ab2910662241a5da4e126c2d881408a13ea75e87d7269972e2f",
+      "binarySHA256": "ce3f769f37cf63d473d0591301737eb0dfac2743d5ed1240deb32868d8116b43"
+    },
+    {
+      "jobId": 134015716662,
+      "artifactId": 14325272528,
+      "artifactSHA256": "7797d9db5dbd5a9d168690e44367310d0181575d22e4b3c062182a3cc962f19d",
+      "evidenceSHA256": {
+        "candidate.json": "88394e96b2c43cadd03ba450cb78f0b621abf749be8d5f02e54c93e88ccfc077",
+        "qualification.sigstore.json": "a4e14b439e531f23332eb37eb45acbe18fbd9980ef6f90518e28c5306745c8ba",
+        "execution.json": "57a5a79e8819e2271710ddc2a85fd1abd6a1c5550ad25b90f276ce66e28ae9af"
+      },
+      "target": "darwin/arm64",
+      "attestedSubjectsVerified": 2,
+      "packageSHA256": "1b8733c7889ec2e5a1c089fab611286608cf93a428ffd6b476cbd73317aad1b1",
+      "binarySHA256": "00cb7fb921a2821741ab5fc0ae591e2cb3b6a1a03e38db245475aa11597bf68e"
+    },
+    {
+      "jobId": 134015716564,
+      "artifactId": 14324444253,
+      "artifactSHA256": "821155358a6fcc075015e26b9dcc9aca2c5b630e1fd1fc04fd37bbab1a80688f",
+      "evidenceSHA256": {
+        "candidate.json": "c181d471999403f2b6ecbc2de54bede512f08abae5aae0239aa79807a6e20f7f",
+        "qualification.sigstore.json": "7c72af807ed26dc07c87f6472d58120af146fd33fbcf5d03a7c19240ab5464f0",
+        "execution.json": "5a4d5f83d5a4a813632d081030d15a67f2be41923bd56ff3bb66b46a21b57222"
+      },
+      "target": "freebsd/amd64",
+      "attestedSubjectsVerified": 2,
+      "packageSHA256": "be2426c9c7de761ec90354da66e31eb92f55a97c6bb823473719960a52256fab",
+      "binarySHA256": "3f31aa3b5ff277e5f9bc67a8dc78bab62c6d97d3a24bad437d33975b1de4a6ea"
+    },
+    {
+      "jobId": 134015716574,
+      "artifactId": 14324624283,
+      "artifactSHA256": "d9ef2dc2cec39806f248ceacda886683953045bd0d780d9bd0b1af8d0d1e3d81",
+      "evidenceSHA256": {
+        "candidate.json": "816ab165cd8f967ae7b0c885cd9954b8521443d325cf5a5119cddb1347653104",
+        "execution.json": "df201f2df2de8b83a3d39aa13d0d4144cb618b83b6ffea7f1d563d6f9bcda8e6",
+        "qualification.sigstore.json": "5835a4ad9779278aadb4528bdc6087498f640def1127ac75268a485ae1fbd959"
+      },
+      "target": "freebsd/arm64",
+      "attestedSubjectsVerified": 2,
+      "packageSHA256": "6030e6ef76577e0dc90fbd1eb31df5250fe149523663cb971f089b072ae7ad3b",
+      "binarySHA256": "52b290451c5c7fbd3bae2536676106f7ff50cde777e0d26ec2fb366092a118f0"
+    },
+    {
+      "jobId": 134015716644,
+      "artifactId": 14325880715,
+      "artifactSHA256": "9acd8be7bd889fa9da3d9056564a95e0bbb16bb5ca16ad33bf5457533442b52d",
+      "evidenceSHA256": {
+        "candidate.json": "8c603267f7a37020c5c7439a8ffeac08da71cd9abf57c3e267438e936bf5285c",
+        "execution.json": "6a7fc2bc6ab440c895033fabcc934405374ce2c939c336b662b5a1f4b8421ccb",
+        "qualification.sigstore.json": "022f01ea549493144d74de1ae3828ed5dd657a179f7e77f11e32d72c2b2b77e5"
+      },
+      "target": "linux/amd64",
+      "attestedSubjectsVerified": 2,
+      "packageSHA256": "6ce9d281db20b6eb754d97722bdcbd9cbcf8a2f6e506e0de1b871badc123aa1a",
+      "binarySHA256": "620517b6a0946c6df4785764e6772c938cb417ce8a01893b2fefbd712e9ac4a8"
+    },
+    {
+      "jobId": 134015716701,
+      "artifactId": 14326085270,
+      "artifactSHA256": "0c841c065cad1cb7eb58b7f40890275e9cbddef31fa5f8cbb7a48c3bc724c2d5",
+      "evidenceSHA256": {
+        "candidate.json": "b098e9596d40d2a8f3f40ecac27952c3c8b6a214e77d54c172cd2ac27b1dbcda",
+        "execution.json": "635b579be2f2627d455122e8418cf5405fb684943de5f979dd91e55ad4c93a8d",
+        "qualification.sigstore.json": "dca41390a384cfd3df4a848d8e8619ba3738a31e0fb73603186ae0088199c3c2"
+      },
+      "target": "linux/arm64",
+      "attestedSubjectsVerified": 2,
+      "packageSHA256": "653f2d4e4634b545024685fc89d1c887addcc44963475f57b6a4045c8fa523eb",
+      "binarySHA256": "d612af81ba595fcbff54ef397000a2e12b441abaf66857159536f527f2af7208"
+    },
+    {
+      "jobId": 134015716613,
+      "artifactId": 14324354976,
+      "artifactSHA256": "bed700ebebc9d1cdf3d6d0ad65940ff51c082a4957abbd4268e066daa650e98c",
+      "evidenceSHA256": {
+        "candidate.json": "be65c36f54335d6816711923c306740469a23058ee39e84ab2476a2445ad6f15",
+        "execution.json": "d5a431031cdd5cc459096baeaf24d430d8737520167e4baf695a3f55dd3715d0",
+        "qualification.sigstore.json": "edeb43676ee2bd5febe9147d3ee7ef4928a0a2c6fbf0b46669b5ab6622d62270"
+      },
+      "target": "openbsd/amd64",
+      "attestedSubjectsVerified": 2,
+      "packageSHA256": "166e60aee2e72c30c026ee51b78111291a9753ac25eeb68b0e84d910c39132f7",
+      "binarySHA256": "6857542f4ae4751048fb166be264bff6c8db24cdb4a1c924e1285133c80dd8c5"
+    },
+    {
+      "jobId": 134015716649,
+      "artifactId": 14325669178,
+      "artifactSHA256": "f2a2de5ed797001c0a0b515a37e0ae932959e018c92673f9d04607dec708e659",
+      "evidenceSHA256": {
+        "candidate.json": "85ee6ee70867a8be21d30c15aa494a881dc1d0880ae3d40f11f003cd7b8c67fc",
+        "execution.json": "bc043e559236d6902be1009268d5414776c5e3f97dccde5df12ff3a5f958f435",
+        "qualification.sigstore.json": "d3550f5076e0f74fa2f55c71114acd9acf4bac18d3088406aae58757fda1ad65"
+      },
+      "target": "openbsd/arm64",
+      "attestedSubjectsVerified": 2,
+      "packageSHA256": "e83cc7bed73509b818700a7a4492623b583fb1e6321d741b7bcf27d77f29554c",
+      "binarySHA256": "bde91e38ecbcdf5d45916c07f9fb6580f4e511d1838ab2c2a6d67a18771f0a93"
+    },
+    {
+      "jobId": 134015716654,
+      "artifactId": 14325945711,
+      "artifactSHA256": "8bf6e27b9f31d94c2fb20b977cb5ef49c3bf6449dd3391de02d1f9a43ed93dea",
+      "evidenceSHA256": {
+        "candidate.json": "a945e6a2d0f4da981bc947336742ab693449809067b68972df104cbe532659df",
+        "execution.json": "1abdfecc96d825c9455110a409b5071d059786f43f38130d51c0c8b7eb9c98b1",
+        "qualification.sigstore.json": "6f8a172ea600e32ceeb170c52956f9b13d36fd6f51dda9a633c9f198907ecc0f"
+      },
+      "target": "windows/amd64",
+      "attestedSubjectsVerified": 2,
+      "packageSHA256": "e91312441fcc706b4b39c7e01f8c4d4ca0ba5c2709485543df79d2bf36b68657",
+      "binarySHA256": "c7a835df8ad88658577c2b4738db24508468920f69193dd434db9f29fc1abc4f"
+    },
+    {
+      "jobId": 134015716772,
+      "artifactId": 14326150343,
+      "artifactSHA256": "9ff4bc25dbdc621f97983d53b4142f030006a7478c00ff3899f6a13b7b1bc19f",
+      "evidenceSHA256": {
+        "execution.json": "b2d32d1d202bcee706fd770a908080c74de2e19374e76f4b3a31d688ff979e5c",
+        "qualification.sigstore.json": "2e13e31ad1b4ab27f7ee184bcea9803c1e07b0309e281a3408f6b374580f8486",
+        "candidate.json": "8f787598414df63f36e149b3a5e165f5b6e473b98ef76b31abb171797c182fe4"
+      },
+      "target": "windows/arm64",
+      "attestedSubjectsVerified": 2,
+      "packageSHA256": "856ca1ae8268dd1ad88d25ba4851cd47cbf1823b9024ec7b3b4485b8495e411a",
+      "binarySHA256": "2fbd80325fe3abd4fa5401ce0bb6b68fec25082af22f8535fa593baed855af3c"
+    }
+  ],
+  "publication": {
+    "artifactId": 14326566899,
+    "artifactSHA256": "416bbb23380119de02d8b898ac96d35c3913dd97b74e92ccc0d9bafb29c01373",
+    "qualificationSHA256": "505c45af336201958b8a988d1945bc535f69fb5336c52e5dcfd004dda89e148a",
+    "verifyJobId": 134027217241,
+    "skippedPublishJobId": 134028224261,
+    "published": false
+  },
+  "publisherSignatureVerified": false,
+  "installedDeploymentQualified": false,
+  "productionQualificationComplete": false
+}

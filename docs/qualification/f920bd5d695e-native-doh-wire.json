@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "scope": "native-windows-doh-wire-control-refusal",
+  "repository": "Yunushan/accessweaver",
+  "workflow": ".github/workflows/native-doh-wire.yml",
+  "sourceCommit": "f920bd5d695e0251e02005c3c0fca90eac2f6890",
+  "sourceRef": "refs/heads/codex/dns-adapter-coverage",
+  "runID": 44068502503,
+  "targets": [
+    {
+      "fixedObservations": {
+        "captureStage": "complete",
+        "configureExitCode": 1,
+        "restoreExitCode": 1,
+        "environmentVerified": true,
+        "nativeProcessVerified": true,
+        "queryBinaryVerified": true,
+        "queryProbeReady": true,
+        "encryptedTrafficObserved": false,
+        "snapshotRemoved": true
+      },
+      "wireSummary": {
+        "outcome": "failed",
+        "phase": "complete",
+        "failurePhase": "product-configuration",
+        "decoderCode": "none",
+        "processFailureCode": "none",
+        "toolProcesses": 15,
+        "toolProcessesJoined": 15
+      },
+      "sourceHashesVerified": 47,
+      "name": "native-doh-wire-windows-amd64",
+      "jobId": 133988352465,
+      "artifactId": 14322406444,
+      "artifactSHA256": "6f194744423dab3deb2dff47230935e69c9c2975e191bbff6ac9de33d4813cb1",
+      "outcome": "failed",
+      "code": "native-roundtrip-failed",
+      "refusal": "doh-effective-firewall-mixed-full-inactive"
+    },
+    {
+      "fixedObservations": {
+        "captureStage": "complete",
+        "configureExitCode": 1,
+        "restoreExitCode": 1,
+        "environmentVerified": true,
+        "nativeProcessVerified": true,
+        "queryBinaryVerified": true,
+        "queryProbeReady": true,
+        "encryptedTrafficObserved": false,
+        "snapshotRemoved": true
+      },
+      "wireSummary": {
+        "outcome": "failed",
+        "phase": "complete",
+        "failurePhase": "product-configuration",
+        "decoderCode": "none",
+        "processFailureCode": "none",
+        "toolProcesses": 15,
+        "toolProcessesJoined": 15
+      },
+      "sourceHashesVerified": 47,
+      "name": "native-doh-wire-windows-arm64",
+      "jobId": 133988351817,
+      "artifactId": 14321213031,
+      "artifactSHA256": "f731725a3c8e1198f7f9fa93f139313f137cb4842674243fb9f912a541f1e32c",
+      "outcome": "failed",
+      "code": "native-roundtrip-failed",
+      "refusal": "doh-effective-firewall-mixed-full-inactive"
+    }
+  ],
+  "rawCapturePublished": false,
+  "encryptedTransportQualified": false,
+  "productionQualificationComplete": false
+}

@@ -72,7 +72,8 @@
             "docs/qualification/7a963d7c64d9-native-doh-typed-status.json",
             "docs/qualification/4ac16aaf7b17-dnscrypt-port-admission.json",
             "docs/qualification/4296e45911c1-native-dns-matrix.json",
-            "docs/qualification/f920bd5d695e-native-dns-matrix.json"
+            "docs/qualification/f920bd5d695e-native-dns-matrix.json",
+            "docs/qualification/f920bd5d695e-native-doh-wire.json"
           ]
         },
         {
@@ -348,7 +349,8 @@
             "docs/qualification/1c3f86a30f5c-portable-cross-environment-rebuild.json",
             "docs/qualification/7f76605d73d9-pinned-packaging-rebuild.json",
             "docs/qualification/65b3803c473b-hosted-preview-rebuild.json",
-            "docs/qualification/236e7db983a9-portable-qualification.json"
+            "docs/qualification/236e7db983a9-portable-qualification.json",
+            "docs/qualification/f920bd5d695e-portable-qualification.json"
           ]
         },
         {
