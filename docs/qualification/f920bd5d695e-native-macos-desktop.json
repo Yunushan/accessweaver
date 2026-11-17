@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "repository": "Yunushan/accessweaver",
+  "sourceCommit": "f920bd5d695e0251e02005c3c0fca90eac2f6890",
+  "sourceRef": "refs/heads/codex/dns-adapter-coverage",
+  "scope": "unsigned-public-desktop-and-experimental-installer-hosted-macos",
+  "workflows": [
+    {
+      "workflow": ".github/workflows/macos-desktop.yml",
+      "runID": 44068502400,
+      "targets": [
+        {
+          "target": "darwin/amd64",
+          "runID": 44068502400,
+          "reportedAttempt": 1,
+          "jobId": 133988349510,
+          "artifactId": 14322661249,
+          "artifactSHA256": "6e76be7ef69e36797484cfa1b5e8a2eb7126de0e5aa52609636b937bac3a6ae4",
+          "publicComponentInstallerOperations": 21,
+          "singleProductInstallerOperations": 12,
+          "packageHelperWriteFaultCases": 2,
+          "wholeProductRecoveryReinstalls": 2,
+          "hostedRejections": 5,
+          "publisherSignatureVerified": false,
+          "notarized": false,
+          "interactiveFinderQualified": false,
+          "productUninstallQualified": false,
+          "productionQualificationComplete": false,
+          "subjectsVerified": 61,
+          "verifiedSubjectInventorySHA256": "dbd3f239529936718bb208876e6155ed5ae975c0c472fe52e41a7c85d4149aeb"
+        },
+        {
+          "target": "darwin/arm64",
+          "runID": 44068502400,
+          "reportedAttempt": 1,
+          "jobId": 133988350101,
+          "artifactId": 14324251591,
+          "artifactSHA256": "086b2936da480d4dc1eed0ea94aafc56ae1b9edc891b01cde8ed676cd8ecc09f",
+          "publicComponentInstallerOperations": 21,
+          "singleProductInstallerOperations": 12,
+          "packageHelperWriteFaultCases": 2,
+          "wholeProductRecoveryReinstalls": 2,
+          "hostedRejections": 5,
+          "publisherSignatureVerified": false,
+          "notarized": false,
+          "interactiveFinderQualified": false,
+          "productUninstallQualified": false,
+          "productionQualificationComplete": false,
+          "subjectsVerified": 61,
+          "verifiedSubjectInventorySHA256": "22e8fb4d85be980b53d3c4bbc25fa2a3904fc65fd977396d77787448c55e2c47"
+        }
+      ]
+    },
+    {
+      "workflow": ".github/workflows/macos-installer.yml",
+      "runID": 44068502566,
+      "targets": [
+        {
+          "target": "darwin/amd64",
+          "runID": 44068502566,
+          "reportedAttempt": 1,
+          "jobId": 133988350076,
+          "artifactId": 14324686562,
+          "artifactSHA256": "3668ffad1d4a5a3680850a41cf1135901586715bd6919a8bf34c7dbe2676fdc4",
+          "packageVerification": {
+            "packageSHA256": "42ee0f0ec1373bdf1c05ba8983cf75ab5c2fcd24f2a20bb68f78a5862cd0e913",
+            "payloadSHA256": "0f630cb8e7e69a4501c0efba318ccc9b4a9af55dae209d7c3d450064f0309782",
+            "macho": {
+              "cpuType": "0x01000007",
+              "minimumOSVersion": "13.0.0"
+            },
+            "isolatedRefusalCases": 8,
+            "nativeInstallationOperations": 3,
+            "lifecycleRunID": "44068502566"
+          },
+          "hostedRejections": 5,
+          "publisherSignatureVerified": false,
+          "notarized": false,
+          "productionQualificationComplete": false,
+          "subjectsVerified": 7,
+          "verifiedSubjectInventorySHA256": "ad3daab1adf030caf01637f92e44138cb458c35e7f6d8526ce856f16b6c2dad0"
+        },
+        {
+          "target": "darwin/arm64",
+          "runID": 44068502566,
+          "reportedAttempt": 1,
+          "jobId": 133988350385,
+          "artifactId": 14323327192,
+          "artifactSHA256": "97fedd2a5011b4b6451387f9ddd7a9c140dce1d94d2df24ede93790b3f475ebc",
+          "packageVerification": {
+            "packageSHA256": "70bfe2389d99973b505a804eaedb5463c2c903300e3950820a8e0a9ab323e340",
+            "payloadSHA256": "3ce9235139fd458669c35d8afd92df90bd9ee6532e2d9603d16f9a590775298f",
+            "macho": {
+              "cpuType": "0x0100000c",
+              "minimumOSVersion": "13.0.0"
+            },
+            "isolatedRefusalCases": 8,
+            "nativeInstallationOperations": 3,
+            "lifecycleRunID": "44068502566"
+          },
+          "hostedRejections": 5,
+          "publisherSignatureVerified": false,
+          "notarized": false,
+          "productionQualificationComplete": false,
+          "subjectsVerified": 7,
+          "verifiedSubjectInventorySHA256": "cabee121b7854a2032b0e9b31c6dc7d09752baf64bd91ce0eb5e569c1dc98aae"
+        }
+      ]
+    }
+  ],
+  "publisherSignatureVerified": false,
+  "notarized": false,
+  "productionQualificationComplete": false,
+  "subjectInventoryDigestEncoding": "SHA-256 of compact ASCII JSON sorted by filename and then by object key"
+}
