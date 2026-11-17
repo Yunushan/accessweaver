@@ -202,6 +202,51 @@ Case-P 'wire-query-helper-preserves-capture-and-source-boundaries' {
     Assert-P ($answerStart -ge 0 -and $guarded -gt $answerStart -and $return -gt $guarded -and $legacyFlush -gt $return)
     Assert-P (-not $wire.Contains('Invoke-NativeDNSWireQuery') -and $wire.Contains("Invoke-DoHWireFreshDNSQuery $"+"State 'example.net'") -and $wire.Contains("Invoke-DoHWireFreshDNSQuery $"+"State 'example.org' -ExpectFailure") -and $wire.Contains('Read-DoHNetEventCapture $State'))
 }
+Case-P 'restored-resolver-releases-fixture-blocks-before-query' {
+    $t=$null;$e=$null
+    $driver=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'test-native-doh.ps1'),[ref]$t,[ref]$e)
+    Assert-P ($e.Count -eq 0)
+    $calls=@($driver.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -ceq 'Invoke-NativeDoHScenario'},$true))
+    Assert-P ($calls.Count -eq 1)
+    $parts=$calls[0].CommandElements
+    $callback=$null
+    for($i=0;$i -lt $parts.Count-1;$i++){
+        if($parts[$i] -is [Management.Automation.Language.CommandParameterAst] -and $parts[$i].ParameterName -ceq 'ResolveRestored'){
+            $body=$parts[$i+1].ScriptBlock
+            foreach($command in $body.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){
+                Assert-P ($command.GetCommandName() -cin @('Stop-DoHNetEventCapture','Remove-NativeDNSWireRules','Get-NativeDNSAnswerCount'))
+            }
+            $callback=$body.GetScriptBlock()
+        }
+    }
+    Assert-P ($null -ne $callback)
+    $restoreTrace=[Collections.Generic.List[string]]::new()
+    function Stop-DoHNetEventCapture($State){Assert-P ([object]::ReferenceEquals($State,$script:wire));$restoreTrace.Add('stop')}
+    function Remove-NativeDNSWireRules($State,[string]$Kind){
+        Assert-P ([object]::ReferenceEquals($State,$script:wire))
+        $restoreTrace.Add($Kind)
+        if($restoreFault -ceq $Kind){throw 'Synthetic restore fixture removal failure'}
+    }
+    function Get-NativeDNSAnswerCount([switch]$Restored,[string]$RecordType='A'){
+        Assert-P ([bool]$Restored -and $RecordType -ceq 'A')
+        $restoreTrace.Add('query')
+        return 2
+    }
+    $ScenarioKind='roundtrip'
+    foreach($restoreFault in @('none','tls','dns')){
+        $WireTransport=$true;$script:wire=@{synthetic=$true};$script:restoredAnswers=0;$restoreTrace.Clear();$failed=$false
+        try{& $callback}catch{$failed=$true}
+        if($restoreFault -ceq 'none'){
+            Assert-P (-not $failed -and $script:restoredAnswers -eq 2 -and ($restoreTrace -join ',') -ceq 'stop,tls,dns,query')
+        }else{
+            $expected=if($restoreFault -ceq 'tls'){'stop,tls'}else{'stop,tls,dns'}
+            Assert-P ($failed -and $script:restoredAnswers -eq 0 -and ($restoreTrace -join ',') -ceq $expected)
+        }
+    }
+    $WireTransport=$false;$script:wire=$null;$script:restoredAnswers=0;$restoreTrace.Clear()
+    & $callback
+    Assert-P ($script:restoredAnswers -eq 2 -and ($restoreTrace -join ',') -ceq 'query')
+}
 Case-P 'configured-readback-control-is-read-only-and-checks-both-families' {
     $t=$null;$e=$null;$driver=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'test-native-doh.ps1'),[ref]$t,[ref]$e);Assert-P ($e.Count -eq 0)
     $nodes=@($driver.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq 'Test-NativeConfiguredDNSReadback'});Assert-P ($nodes.Count -eq 1)

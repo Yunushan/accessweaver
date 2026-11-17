@@ -639,6 +639,11 @@ public static class AccessWeaverNativeDoHIdentity {
         $script:failedResolverObserved=$failed
         if(-not $failed){throw 'Ordinary resolver unexpectedly succeeded after managed resolver loss'}
     } -ResolveRestored {
+        if($WireTransport -and $null -ne $script:wire){
+            Stop-DoHNetEventCapture $script:wire
+            Remove-NativeDNSWireRules $script:wire 'tls'
+            Remove-NativeDNSWireRules $script:wire 'dns'
+        }
         $script:restoredAnswers=Get-NativeDNSAnswerCount -Restored
         if($ScenarioKind -ceq 'static-ipv6'){[void](Get-NativeDNSAnswerCount -Restored -RecordType AAAA)}
     }
