@@ -19,6 +19,14 @@ function AWOwnedRegistryCreateNative(Parent: LongWord; const Name: String;
   Reserved: LongWord; const ClassTag: String; Options, Access: LongWord;
   var Attributes: AWOwnedRegistrySecurity; var Key, Disposition: LongWord): LongWord;
   external 'RegCreateKeyExW@advapi32.dll stdcall';
+function AWOwnedRegistryCreateInNative(Parent: LongWord; const Name: String;
+  Reserved: LongWord; const ClassTag: String; Options, Access: LongWord;
+  var Attributes: AWOwnedRegistrySecurity; var Key, Disposition: LongWord;
+  Transaction, Extended: LongWord): LongWord;
+  external 'RegCreateKeyTransactedW@advapi32.dll stdcall';
+function AWOwnedRegistryOpenInNative(Parent: LongWord; const Name: String;
+  Options, Access: LongWord; var Key: LongWord; Transaction, Extended: LongWord): LongWord;
+  external 'RegOpenKeyTransactedW@advapi32.dll stdcall';
 function AWOwnedRegistryOpenNative(Parent: LongWord; const Name: String;
   Options, Access: LongWord; var Key: LongWord): LongWord;
   external 'RegOpenKeyExW@advapi32.dll stdcall';
@@ -144,9 +152,9 @@ begin
   Result := (Status = 2) and not AWOwnedRegistryCleanupUncertain;
 end;
 
-function AWCreateOwnedRegistryChild(Parent: LongWord; const Name, ClassTag: String;
+function AWCreateOwnedRegistryChildIn(Parent, Transaction: LongWord; const Name, ClassTag: String;
   var Key: LongWord; var Created: Boolean): Boolean;
-var Descriptor, Bytes, RawKey, Disposition: LongWord; Attributes: AWOwnedRegistrySecurity;
+var Descriptor, Bytes, RawKey, Disposition, Status: LongWord; Attributes: AWOwnedRegistrySecurity;
 begin
   Result := False; Key := 0; Created := False;
   Descriptor := 0; Bytes := 0; RawKey := 0; Disposition := 0;
@@ -156,8 +164,13 @@ begin
     if AWOwnedRegistryParseSD(AWOwnedRegistrySDDL, 1, Descriptor, Bytes) = 0 then Exit;
     if Descriptor = 0 then Exit;
     Attributes.Length := 12; Attributes.Descriptor := Descriptor; Attributes.Inherit := 0;
-    if AWOwnedRegistryCreateNative(Parent, Name, 0, ClassTag, AWOwnedRegistryOpenLink,
-       AWOwnedRegistryAccess, Attributes, RawKey, Disposition) <> 0 then Exit;
+    if Transaction = 0 then
+      Status := AWOwnedRegistryCreateNative(Parent, Name, 0, ClassTag, AWOwnedRegistryOpenLink,
+        AWOwnedRegistryAccess, Attributes, RawKey, Disposition)
+    else
+      Status := AWOwnedRegistryCreateInNative(Parent, Name, 0, ClassTag, AWOwnedRegistryOpenLink,
+        AWOwnedRegistryAccess, Attributes, RawKey, Disposition, Transaction, 0);
+    if Status <> 0 then Exit;
     if (RawKey = 0) or (Disposition <> 1) then Exit;
     Created := True; Key := RawKey; RawKey := 0;
     Result := AWOwnedRegistryHeld(Key, ClassTag);
@@ -167,19 +180,36 @@ begin
   end;
 end;
 
-function AWOpenOwnedRegistryChild(Parent: LongWord; const Name, ClassTag: String;
+function AWOpenOwnedRegistryChildIn(Parent, Transaction: LongWord; const Name, ClassTag: String;
   var Key: LongWord): Boolean;
-var RawKey: LongWord;
+var RawKey, Status: LongWord;
 begin
   Result := False; Key := 0; RawKey := 0;
   if (Parent = 0) or AWOwnedRegistryCleanupUncertain or
      not AWOwnedRegistryChildName(Name) or not AWOwnedRegistryClassTag(ClassTag) then Exit;
   try
-    if AWOwnedRegistryOpenNative(Parent, Name, AWOwnedRegistryOpenLink,
-       AWOwnedRegistryAccess, RawKey) <> 0 then Exit;
+    if Transaction = 0 then
+      Status := AWOwnedRegistryOpenNative(Parent, Name, AWOwnedRegistryOpenLink,
+        AWOwnedRegistryAccess, RawKey)
+    else
+      Status := AWOwnedRegistryOpenInNative(Parent, Name, AWOwnedRegistryOpenLink,
+        AWOwnedRegistryAccess, RawKey, Transaction, 0);
+    if Status <> 0 then Exit;
     if not AWOwnedRegistryHeld(RawKey, ClassTag) then Exit;
     Key := RawKey; RawKey := 0; Result := True;
   finally
     if not AWOwnedRegistryClose(RawKey) then Result := False;
   end;
+end;
+
+function AWCreateOwnedRegistryChild(Parent: LongWord; const Name, ClassTag: String;
+  var Key: LongWord; var Created: Boolean): Boolean;
+begin
+  Result := AWCreateOwnedRegistryChildIn(Parent, 0, Name, ClassTag, Key, Created);
+end;
+
+function AWOpenOwnedRegistryChild(Parent: LongWord; const Name, ClassTag: String;
+  var Key: LongWord): Boolean;
+begin
+  Result := AWOpenOwnedRegistryChildIn(Parent, 0, Name, ClassTag, Key);
 end;

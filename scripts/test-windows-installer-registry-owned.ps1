@@ -54,7 +54,10 @@ $known=@('new-owned-fixture-parent','protected-child-created','creation-descript
     'atomic-class-roundtrip','existing-not-adopted-or-mutated','owned-partial-retry-opens','wrong-class-refused',
     'foreign-writer-descriptor-refused','nested-name-refused','invalid-tag-refused','link-to-existing-target-refused',
     'create-does-not-adopt-link','link-to-missing-target-refused','missing-link-target-not-created',
-    'existing-link-target-preserved','exact-owned-cleanup')
+    'existing-link-target-preserved','new-transacted-registration-staged','abandoned-registration-invisible',
+    'complete-registration-visible-after-commit','staged-upgrade-preserves-visible-prior',
+    'abandoned-upgrade-preserves-prior','complete-upgrade-visible-after-commit',
+    'transaction-rejects-existing-link','exact-owned-cleanup')
 if($result.schemaVersion -ne 1 -or $result.sourceCommit -cne $env:GITHUB_SHA -or
     $result.runID -cne $env:GITHUB_RUN_ID -or $result.runAttempt -cne $env:GITHUB_RUN_ATTEMPT -or
     $result.architecture -cne $Architecture -or $result.compilerVersion -cne '6.7.1' -or
@@ -75,6 +78,7 @@ $rows=@(foreach($case in $result.cases){
 $passed=$processExit -eq 0 -and $rows.Count -eq $known.Count -and $result.passed -and
     $result.cleanupComplete -and @($rows | Where-Object {-not $_.passed}).Count -eq 0
 $producer=@('scripts/test-windows-installer-registry-owned.iss','scripts/windows-installer-registry-owned.iss',
+    'scripts/windows-installer-registry-transaction.iss','scripts/windows-installer-registry.iss','scripts/windows-installer-version.iss',
     'scripts/test-windows-installer-registry-owned.ps1','scripts/windows-installer-common.ps1','.github/workflows/installer-lifecycle.yml')
 $pins=[ordered]@{}
 foreach($name in $producer){$pins[$name]=(Get-FileHash -LiteralPath (Join-Path $project $name) -Algorithm SHA256).Hash.ToLowerInvariant()}

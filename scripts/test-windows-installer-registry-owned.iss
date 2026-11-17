@@ -32,6 +32,9 @@ OutputDir={#EvidenceRoot}
 OutputBaseFilename=registry-owned-contracts-{#TargetArch}
 [Code]
 #include "windows-installer-registry-owned.iss"
+#include "windows-installer-registry-transaction.iss"
+#include "windows-installer-version.iss"
+#include "windows-installer-registry.iss"
 const AWFixtureTag = 'AWReg-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
       AWFixtureOtherTag = 'AWReg-v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
       AWFixtureParentSDDL = 'O:BAD:P(A;CI;KA;;;SY)(A;CI;KA;;;BA)(A;CI;KA;;;BU)';
@@ -156,6 +159,94 @@ begin
   AWFixtureCase('existing-link-target-preserved', AWFixtureSentinel(Target));
 end;
 
+
+function AWFixtureNoKey(Parent: LongWord; const Name: String): Boolean;
+var Key, Status: LongWord;
+begin
+  Key := 0;
+  Status := AWOwnedRegistryOpenNative(Parent, Name, AWOwnedRegistryOpenLink, $00020119, Key);
+  Result := AWOwnedRegistryClose(Key) and (Status = 2);
+end;
+
+function AWFixtureWriteRegistration(Key: LongWord; const Version: String): Boolean;
+begin
+  Result := AWRegistrySetString(Key, 'DisplayVersion', Version) and
+    AWRegistrySetString(Key, 'UninstallString', '"Inert\unins000.exe"') and
+    AWRegistrySetString(Key, 'QuietUninstallString', '"Inert\unins000.exe" /SILENT');
+end;
+
+function AWFixtureRegistrationMatches(Key: LongWord; const Version: String): Boolean;
+var Actual, Command, Quiet: String;
+begin
+  Result := AWOwnedRegistryHeld(Key, AWFixtureTag) and
+    AWReadRegistrationString(Key, 'DisplayVersion', $30000002, 32, Actual) and (Actual = Version) and
+    AWReadRegistrationString(Key, 'UninstallString', $30000002, 64, Command) and
+    (Command = '"Inert\unins000.exe"') and
+    AWReadRegistrationString(Key, 'QuietUninstallString', $30000002, 64, Quiet) and
+    (Quiet = '"Inert\unins000.exe" /SILENT');
+end;
+
+procedure AWFixtureTransactionCases(Root: LongWord);
+var Tx, Key, Prior: LongWord; Created, Staged, Finished, Opened: Boolean;
+begin
+  Tx := 0; Key := 0; Prior := 0;
+  Staged := False;
+  try
+    if AWRegistryTransactionBegin(Tx) then
+      Staged := AWCreateOwnedRegistryChildIn(Root, Tx, 'abandoned', AWFixtureTag, Key, Created) and Created and
+        AWFixtureWriteRegistration(Key, '1.0.0') and AWFixtureRegistrationMatches(Key, '1.0.0');
+    AWFixtureCase('new-transacted-registration-staged', Staged and AWFixtureNoKey(Root, 'abandoned'));
+  finally
+    Finished := AWRegistryTransactionFinish(Tx, Key, False);
+  end;
+  AWFixtureCase('abandoned-registration-invisible', Staged and Finished and AWFixtureNoKey(Root, 'abandoned'));
+
+  Staged := False; Finished := False;
+  try
+    if AWRegistryTransactionBegin(Tx) then
+      Staged := AWCreateOwnedRegistryChildIn(Root, Tx, 'published', AWFixtureTag, Key, Created) and Created and
+        AWFixtureWriteRegistration(Key, '1.0.0') and AWFixtureRegistrationMatches(Key, '1.0.0') and
+        AWFixtureNoKey(Root, 'published');
+  finally
+    Finished := AWRegistryTransactionFinish(Tx, Key, Staged);
+  end;
+  Opened := Staged and Finished and AWOpenOwnedRegistryChild(Root, 'published', AWFixtureTag, Prior);
+  if Opened then AWFixtureRemember(Prior);
+  AWFixtureCase('complete-registration-visible-after-commit', Opened and AWFixtureRegistrationMatches(Prior, '1.0.0'));
+
+  Staged := False; Finished := False;
+  try
+    if Opened and AWRegistryTransactionBegin(Tx) then
+      Staged := AWOpenOwnedRegistryChildIn(Root, Tx, 'published', AWFixtureTag, Key) and
+        AWFixtureRegistrationMatches(Key, '1.0.0') and AWFixtureWriteRegistration(Key, '2.0.0') and
+        AWFixtureRegistrationMatches(Key, '2.0.0');
+    AWFixtureCase('staged-upgrade-preserves-visible-prior', Staged and AWFixtureRegistrationMatches(Prior, '1.0.0'));
+  finally
+    Finished := AWRegistryTransactionFinish(Tx, Key, False);
+  end;
+  AWFixtureCase('abandoned-upgrade-preserves-prior', Staged and Finished and AWFixtureRegistrationMatches(Prior, '1.0.0'));
+
+  Staged := False; Finished := False;
+  try
+    if Opened and AWRegistryTransactionBegin(Tx) then
+      Staged := AWOpenOwnedRegistryChildIn(Root, Tx, 'published', AWFixtureTag, Key) and
+        AWFixtureRegistrationMatches(Key, '1.0.0') and AWFixtureWriteRegistration(Key, '2.0.0') and
+        AWFixtureRegistrationMatches(Key, '2.0.0') and AWFixtureRegistrationMatches(Prior, '1.0.0');
+  finally
+    Finished := AWRegistryTransactionFinish(Tx, Key, Staged);
+  end;
+  AWFixtureCase('complete-upgrade-visible-after-commit', Staged and Finished and AWFixtureRegistrationMatches(Prior, '2.0.0'));
+
+  Staged := False; Finished := False;
+  try
+    if AWRegistryTransactionBegin(Tx) then
+      Staged := not AWOpenOwnedRegistryChildIn(Root, Tx, 'link', AWFixtureTag, Key) and (Key = 0);
+  finally
+    Finished := AWRegistryTransactionFinish(Tx, Key, False);
+  end;
+  AWFixtureCase('transaction-rejects-existing-link', Staged and Finished);
+end;
+
 function InitializeSetup: Boolean;
 var Software, Root, Probe: LongWord; I: Integer; RecordText: String; RootCreated: Boolean;
 begin
@@ -175,7 +266,10 @@ begin
     if AWOwnedRegistryOpenNative($80000002, 'SOFTWARE', 0, $00020104, Software) = 0 then
       RootCreated := AWFixtureRaw(Software, '{#FixtureRootName}', AWFixtureParentSDDL, 0, Root);
     AWFixtureCase('new-owned-fixture-parent', RootCreated);
-    if RootCreated then AWFixtureCasesRun(Root);
+    if RootCreated then begin
+      AWFixtureCasesRun(Root);
+      AWFixtureTransactionCases(Root);
+    end;
   finally
     { Every deletion uses an exact handle returned by a confirmed NEW creation.
       No recursive traversal, path-based link deletion, or adoption for cleanup. }
@@ -196,7 +290,7 @@ begin
     '"runAttempt":"{#RunAttempt}","architecture":"{#TargetArch}","compilerVersion":"6.7.1",' +
     '"scope":"disposable-protected-registry-ownership-contract","cases":[' + AWFixtureCases + '],' +
     '"cleanupComplete":' + AWFixtureBool(AWFixtureCleanup) + ',"passed":' +
-    AWFixtureBool(AWFixturePassed and (AWFixtureCaseCount = 17)) +
+    AWFixtureBool(AWFixturePassed and (AWFixtureCaseCount = 24)) +
     ',"productionRegistrationChanged":false,"productionQualificationComplete":false}' + #10;
   Result := SaveStringToFile('{#EvidenceRoot}\registry-owned-{#TargetArch}.json', RecordText, False);
 end;
