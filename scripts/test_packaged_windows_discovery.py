@@ -22,7 +22,7 @@ def job():
         services=[dict(name='PRIVATE_SERVICE', status='Running', owned=False)], serviceInspectionError=None,
         components={name: 'PRIVATE_COMPONENT' for name in probe.ENGINES}, applications={name: 'PRIVATE_APPLICATION' for name in probe.APPS},
         wiresockCLI='PRIVATE_BINARY', conflicts=['PRIVATE_CONFLICT'], managedRoot='PRIVATE_ROOT', refreshTask=False,
-        refreshTaskInspectionError=None, dnsSnapshot=False)))
+        refreshTaskInspectionError=None, dnsSnapshot=False, installerRecovery='clear')))
 
 
 class DiscoveryTests(unittest.TestCase):
@@ -72,6 +72,19 @@ class DiscoveryTests(unittest.TestCase):
             invalid['result']['data'][key] = value
             with self.subTest(field=key), self.assertRaises(RuntimeError):
                 probe.validate_job(invalid)
+        for state in ('pending', 'unavailable', None, True, [], {'state': 'clear'}, 'PRIVATE_RECOVERY_STATE'):
+            with self.subTest(installer_recovery=state):
+                inventory = job()
+                inventory['result']['data']['installerRecovery'] = state
+                if state in ('pending', 'unavailable'):
+                    self.assertEqual(probe.validate_job(inventory), 'b'*48)
+                else:
+                    with self.assertRaisesRegex(RuntimeError, 'Invalid installer recovery status'):
+                        probe.validate_job(inventory)
+        extra = job()
+        extra['result']['data']['PRIVATE_FIELD'] = True
+        with self.assertRaises(RuntimeError):
+            probe.validate_job(extra)
         unknown = job()
         unknown['result']['data'].update(refreshTask=None, refreshTaskInspectionError='PRIVATE_QUERY_ERROR')
         probe.validate_job(unknown)
@@ -120,10 +133,23 @@ class DiscoveryTests(unittest.TestCase):
                 report = probe.probe(staged, output)
             self.assertTrue(report['fullDiscoveryShapeVerified']); self.assertTrue(report['originalArchiveExecuted'])
             self.assertFalse(report['productionQualificationComplete']); self.assertEqual(report['deadlineMilliseconds'], 45000)
+            self.assertEqual(report['schemaVersion'], 2)
+            self.assertEqual(report['installerRecovery'], 'clear')
             encoded = (output / 'discovery-windows-arm64.json').read_text()
             self.assertNotIn('PRIVATE', encoded); self.assertNotIn(str(folder), encoded)
             self.assertTrue(all(not capsule.exists() for capsule in capsules))
             self.assertEqual(report['binarySha256'], receipt['binarySha256'])
+
+    def test_release_probe_requires_successful_recovery_state_inspection(self):
+        for state in ('clear', 'pending', 'unavailable'):
+            report = dict(serviceInspectionSucceeded=True, taskInspectionSucceeded=True, installerRecovery=state)
+            with self.subTest(state=state), patch.object(probe.sys, 'argv', ['discovery', 'staged']), \
+                 patch.object(probe, 'probe', return_value=report), patch('builtins.print') as output:
+                self.assertEqual(probe.main(), 0 if state == 'clear' else 1)
+                if state == 'clear':
+                    self.assertEqual(json.loads(output.call_args.args[0]), report)
+                else:
+                    self.assertIn('did not confirm a clear installer recovery state', output.call_args.args[0])
 
     def test_timeout_cleanup_uses_bounded_trusted_helper_and_keeps_failure(self):
         child = Mock(pid=1234, poll=Mock(return_value=None))

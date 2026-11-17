@@ -64,7 +64,8 @@ function validateUnixControllerEvidence(report,goos,binarySha256){
  assert.deepEqual(report.checks,checks,'controller checks must match every fixed successful case in order');
 }
 function validateWindowsDiscoveryEvidence(report){
- assert.equal(report.schemaVersion,1);assert.equal(report.deadlineMilliseconds,45000);
+ assert.equal(report.schemaVersion,2);assert.equal(report.deadlineMilliseconds,45000);
+ assert.equal(report.installerRecovery,'clear','installer recovery state must be verified clear');
  assert(Number.isSafeInteger(report.probeElapsedMilliseconds)&&report.probeElapsedMilliseconds>=0&&report.probeElapsedMilliseconds<=45000,'discovery exceeded its unchanged deadline');
  for(const key of ['originalArchiveExecuted','readOnlyActionVerified','fullDiscoveryShapeVerified','ownedProcessStopped','ownedCapsuleRemoved','serviceInspectionSucceeded','taskInspectionSucceeded'])assert.equal(report[key],true,key);
  assert.equal(report.settingsChanged,false);assert.equal(report.productionQualificationComplete,false);
