@@ -21,6 +21,10 @@ on:
         description: Compare UDP port 53 on disposable Windows runners
         type: boolean
         default: false
+      dnscrypt_engine_probe:
+        description: Run the pinned DNSCrypt engine on loopback with offline fixture answers
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -38,7 +42,7 @@ env:
 
 jobs:
   native:
-    if: ${{ !inputs.dnscrypt_port_probe }}
+    if: ${{ !inputs.dnscrypt_port_probe && !inputs.dnscrypt_engine_probe }}
     name: Native DNS ${{ matrix.method }}/${{ matrix.scenario }} (windows/${{ matrix.goarch }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -121,10 +125,10 @@ jobs:
           retention-days: 7
 
   dnscrypt-port:
-    if: inputs.dnscrypt_port_probe
+    if: inputs.dnscrypt_port_probe || inputs.dnscrypt_engine_probe
     name: DNSCrypt UDP port probe (windows/${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 5
+    timeout-minutes: 8
     strategy:
       fail-fast: false
       matrix:
@@ -139,12 +143,13 @@ jobs:
         shell: powershell
         env:
           ACCESSWEAVER_DNSCRYPT_PORT_PROBE: '1'
+          ACCESSWEAVER_DNSCRYPT_ENGINE_PROBE: ${{ inputs.dnscrypt_engine_probe }}
         run: |
           $ErrorActionPreference='Stop'
           $evidence=Join-Path $env:RUNNER_TEMP ('accessweaver-dnscrypt-port-'+[guid]::NewGuid().ToString('N'))
           New-Item -ItemType Directory -Path $evidence -ErrorAction Stop | Out-Null
           "ACCESSWEAVER_DNSCRYPT_PORT_EVIDENCE=$evidence" >> $env:GITHUB_ENV
-          ./scripts/test-native-dnscrypt-port.ps1 -ReportPath (Join-Path $evidence 'status.json')
+          ./scripts/test-native-dnscrypt-port.ps1 -ReportPath (Join-Path $evidence 'status.json') -TestEngine:($env:ACCESSWEAVER_DNSCRYPT_ENGINE_PROBE -ceq 'true')
       - name: Retain fixed port probe results
         if: always() && env.ACCESSWEAVER_DNSCRYPT_PORT_EVIDENCE != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
