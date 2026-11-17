@@ -84,6 +84,7 @@ jobs:
           python3 -m unittest discover -s scripts -p test_vulnerability_report.py -v
           python3 -m unittest discover -s scripts -p test_darwin_audit_command_capture.py -v
           python3 -m unittest discover -s scripts -p test_fixture_qualification.py -v
+          python3 -m unittest discover -s scripts -p test_windows_staging_evidence.py -v
       - name: Verify optional fixture dependencies and compile (no guest execution)
         run: |
           go -C scripts/fixtures/wgpeer mod download

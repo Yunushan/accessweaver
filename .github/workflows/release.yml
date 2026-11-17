@@ -52,6 +52,8 @@ on:
       - scripts/macos_installer.py
       - scripts/sbom.py
       - scripts/test_signed_release_manifest.py
+      - scripts/windows_staging_evidence.py
+      - scripts/test_windows_staging_evidence.py
       - scripts/check_readiness_evidence.py
       - scripts/test_readiness_evidence.py
       - docs/readiness-gates.json
@@ -121,6 +123,7 @@ jobs:
           python3 -m unittest discover -s scripts -p test_vulnerability_report.py -v
           python3 -m unittest discover -s scripts -p test_darwin_audit_command_capture.py -v
           python3 -m unittest discover -s scripts -p test_signed_release_manifest.py -v
+          python3 -m unittest discover -s scripts -p test_windows_staging_evidence.py -v
       - name: Verify optional fixture dependencies and compile (no guest execution)
         run: |
           go -C scripts/fixtures/wgpeer mod download
@@ -217,7 +220,15 @@ jobs:
           node --check scripts/test-packaged-diagnostics.cjs
       - name: Verify Windows managed update staging
         if: runner.os == 'Windows'
-        run: python -m unittest discover -s scripts -p test_signed_release_manifest.py -k test_windows_staging_ -k test_real_cms_windows_lifecycle_gate -v
+        run: python scripts/windows_staging_evidence.py
+      - name: Retain fixed Windows staging outcomes
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-update-staging-${{ matrix.goarch }}
+          path: build/windows-update-staging/status.json
+          if-no-files-found: ignore
+          retention-days: 14
       - run: go vet ./...
       - name: Unit tests
         if: runner.os != 'macOS'
