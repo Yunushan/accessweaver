@@ -280,7 +280,8 @@
             "scripts/build-windows-installer.ps1",
             "internal/buildinfo/info_test.go",
             "scripts/verify-release.py",
-            "docs/qualification/3cf97b25366e-archives.json"
+            "docs/qualification/3cf97b25366e-archives.json",
+            "docs/qualification/65b3803c473b-preview-execution-attestations.json"
           ]
         },
         {
