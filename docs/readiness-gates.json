@@ -674,7 +674,8 @@
             "docs/qualification/1d0324fd35d3-native-audit-aliases.json",
             "docs/qualification/5d23fa19aaf9-native-audit-foreground.json",
             "docs/qualification/4905915e1a4c-native-audit-commands.json",
-            "docs/qualification/native-identity-handle-count-refusals.json"
+            "docs/qualification/native-identity-handle-count-refusals.json",
+            "docs/qualification/820fd9e9a736-native-audit-and-diagnostic-contract.json"
           ]
         },
         {
