@@ -174,12 +174,12 @@ func TestUnixShutdownPendingCleanupRequiresExplicitSameRunRetry(t *testing.T) {
 	var attempts atomic.Int64
 	f.start("controlled", func(owner *ownedProcess) {
 		real := owner.nativeSignal
-		owner.nativeSignal = func(pgid int, sig syscall.Signal) error {
+		owner.nativeSignal = func(pgid int, sig syscall.Signal, leaderExited bool) error {
 			attempts.Add(1)
 			if refuse.Load() {
 				return syscall.EPERM
 			}
-			return real(pgid, sig)
+			return real(pgid, sig, leaderExited)
 		}
 	}, nil)
 	t.Cleanup(func() { refuse.Store(false) })

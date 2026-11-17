@@ -45,11 +45,12 @@ type ownedProcess struct {
 	retryReady      chan struct{}
 	finalBlocked    bool
 	retryAuthorized bool
+	exitObserved    bool
 	lifecycleErr    error
 	onFault         func(error)
 	// Private per-instance native/test seams, fixed before Start. Neither can
 	// substitute a PID, consume child status, or alter signal admission.
-	nativeSignal     func(int, syscall.Signal) error
+	nativeSignal     func(int, syscall.Signal, bool) error
 	beforeWait       func()
 	admittedDispatch func(int, func() error) error
 }
@@ -163,7 +164,7 @@ func (o *ownedProcess) policySignal() {
 		o.notifyFault()
 		return
 	}
-	err := o.callSignalLocked(func() error { return o.nativeSignal(o.pid, syscall.SIGKILL) })
+	err := o.callSignalLocked(func() error { return o.nativeSignal(o.pid, syscall.SIGKILL, o.exitObserved) })
 	if err != nil && !ownedProcessGone(err) {
 		if errors.Is(err, ErrProcessOwnershipLost) || errors.Is(err, syscall.ECHILD) {
 			o.faultLocked(ErrProcessOwnershipLost)
@@ -201,7 +202,7 @@ func (o *ownedProcess) retryCleanup() error {
 		o.notifyFault()
 		return ErrProcessOwnershipLost
 	}
-	err := o.callSignalLocked(func() error { return o.nativeSignal(o.pid, syscall.SIGKILL) })
+	err := o.callSignalLocked(func() error { return o.nativeSignal(o.pid, syscall.SIGKILL, o.exitObserved) })
 	if err != nil && !ownedProcessGone(err) {
 		if errors.Is(err, ErrProcessOwnershipLost) || errors.Is(err, syscall.ECHILD) {
 			o.faultLocked(ErrProcessOwnershipLost)
@@ -249,6 +250,7 @@ func (o *ownedProcess) wait(ctx context.Context) (waitErr, lifecycleErr error) {
 		observeErr = o.observer.waitExit()
 	}
 	o.mu.Lock()
+	o.exitObserved = observeErr == nil
 	if errors.Is(observeErr, syscall.ECHILD) || errors.Is(observeErr, ErrProcessOwnershipLost) {
 		o.faultLocked(ErrProcessOwnershipLost)
 	} else if observeErr != nil {
@@ -271,7 +273,7 @@ func (o *ownedProcess) wait(ctx context.Context) (waitErr, lifecycleErr error) {
 		o.notifyFault()
 		<-o.retryReady
 	} else {
-		err := o.callSignalLocked(func() error { return o.nativeSignal(pid, syscall.SIGKILL) })
+		err := o.callSignalLocked(func() error { return o.nativeSignal(pid, syscall.SIGKILL, o.exitObserved) })
 		if err != nil && !ownedProcessGone(err) {
 			o.finalBlocked = true
 			if errors.Is(err, ErrProcessOwnershipLost) || errors.Is(err, syscall.ECHILD) {

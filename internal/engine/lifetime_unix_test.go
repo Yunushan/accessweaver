@@ -835,11 +835,11 @@ func TestUnixLifetimeCleanupFaultRetainsOwnershipUntilExplicitRetry(t *testing.T
 	var consuming atomic.Int64
 	f.start("controlled", func(owner *ownedProcess) {
 		real := owner.nativeSignal
-		owner.nativeSignal = func(pgid int, sig syscall.Signal) error {
+		owner.nativeSignal = func(pgid int, sig syscall.Signal, leaderExited bool) error {
 			if refuse.Load() {
 				return syscall.EPERM
 			}
-			return real(pgid, sig)
+			return real(pgid, sig, leaderExited)
 		}
 		owner.beforeWait = func() { consuming.Add(1) }
 	}, nil)
@@ -1193,7 +1193,7 @@ func TestUnixLifetimeSyntheticOwnershipLossPermanentlyClosesAdmission(t *testing
 			failure := item.failure
 			var admissions, callbacks, native atomic.Int64
 			owner := &ownedProcess{cmd: &exec.Cmd{}, pid: os.Getpid(), faulted: make(chan struct{}), signalClosed: make(chan struct{}), retryReady: make(chan struct{})}
-			owner.nativeSignal = func(int, syscall.Signal) error { native.Add(1); return nil }
+			owner.nativeSignal = func(int, syscall.Signal, bool) error { native.Add(1); return nil }
 			owner.admittedDispatch = func(_ int, invoke func() error) error { admissions.Add(1); return invoke() }
 			if err := owner.dispatch(func(*os.Process) error { callbacks.Add(1); return failure }); !errors.Is(err, ErrProcessOwnershipLost) {
 				t.Fatal("synthetic lost ownership was not fixed")
@@ -1259,7 +1259,7 @@ func TestUnixLifetimeSyntheticLostTermNeverCallsFallback(t *testing.T) {
 			cmd := &exec.Cmd{Process: &os.Process{Pid: os.Getpid()}}
 			owner := &ownedProcess{cmd: cmd, pid: os.Getpid(), faulted: make(chan struct{}), signalClosed: make(chan struct{}), retryReady: make(chan struct{})}
 			var native, fallback atomic.Int64
-			owner.nativeSignal = func(int, syscall.Signal) error { native.Add(1); return nil }
+			owner.nativeSignal = func(int, syscall.Signal, bool) error { native.Add(1); return nil }
 			manager := NewManager("")
 			state := &runState{done: make(chan struct{}), owner: owner}
 			manager.cmd, manager.run = cmd, state

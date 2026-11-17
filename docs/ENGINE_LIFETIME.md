@@ -4,6 +4,18 @@ A successful launch returns a handle for that exact engine run. Launch acceptanc
 
 On Linux, macOS, FreeBSD and OpenBSD, each foreground engine starts a new session with its initial process group. A single per-launch owner serializes signals against the consuming process wait. Normally it observes leader exit without reaping, attempts final cleanup of the original group, closes signal admission, then performs the sole process wait and drains output. A failed observer with retained identity instead attempts forced cleanup and records lifecycle uncertainty. Natural leader exit triggers immediate final group-signal dispatch; it does not prove every member terminated or classify the run as a manually accepted stop. Manual shutdown retains its graceful interval while the leader remains alive; natural leader exit can shorten that interval for descendants. The existing two-second owned-pipe drain budget is independent of policy cancellation and cannot bound an arbitrary blocked output destination Write.
 
+The [Intel macOS diagnostic job](https://github.com/Yunushan/accessweaver/actions/runs/44001316790/job/133765810265)
+recorded exit observation before nine fixture failures at the wait or completion
+boundary. Its source-bound artifact is 14293537173. On macOS, a group signal
+can return a permission error when the group has no signalable live member.
+After the owner observes the exact leader exit, AccessWeaver accepts that
+error only if a bounded kernel membership snapshot contains the unreaped
+leader alone. Missing or ambiguous membership and groups with another
+member retain the signal failure. Signal admission still closes before
+the consuming wait. [XNU group signal behavior](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_sig.c#L1600-L1624)
+and [the membership snapshot implementation](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/proc_info.c#L337-L457)
+describe the two native interfaces.
+
 This contract relies on exclusive child-status ownership: AccessWeaver must not install automatic child reaping or introduce another component that consumes this child's wait status. The session prevents an unrelated process from joining the original group. An engine can move descendants into another group or session, change privileges or create persistent external state. Those effects need stronger OS containment or the vendor's recovery procedure and are outside original-group cleanup.
 
 If final cleanup cannot be confirmed while ownership is retained, the manager exposes a fixed pending error and refuses a replacement launch. The exact handle remains pending. The desktop shows “Shutdown unconfirmed” and disables launch controls while profile editing, logs and support inspection remain available. The in-process `Manager.RetryCleanup` operation requires that same current handle and explicitly retries cleanup only while the original identity remains owned. The CLI does not retry automatically. If exclusive ownership is lost, numeric process identity cannot safely be recovered: no further signals, consuming waits, releases or cleanup retries are issued for that identity.
