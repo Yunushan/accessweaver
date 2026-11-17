@@ -45,19 +45,6 @@ type windowsIdentityPSSHandleEntry struct {
 // Never dereference its optional name or type-specific pointer fields.
 // The first seven bins retain the PSS_OBJECT_TYPE order used by the replay.
 // File and Token have kernel type names but no dedicated PSS enum value.
-const (
-	windowsIdentityFileHandle      = 7
-	windowsIdentityTokenHandle     = 8
-	windowsIdentityHandleTypeCount = 9
-)
-
-type windowsIdentityHandleWindow struct {
-	SnapshotComplete bool                                   `json:"snapshotComplete"`
-	CountsMatch      bool                                   `json:"countsMatch"`
-	KindsBefore      [windowsIdentityHandleTypeCount]uint32 `json:"kindsBefore"`
-	KindsAfter       [windowsIdentityHandleTypeCount]uint32 `json:"kindsAfter"`
-	NewHandleKinds   [windowsIdentityHandleTypeCount]uint32 `json:"newHandleKinds"`
-}
 
 func identityWindowsHandleKinds(detailed bool) (values map[uintptr]uint32, complete bool) {
 	var entry windowsIdentityPSSHandleEntry
@@ -136,7 +123,7 @@ func identityWindowsHandleKinds(detailed bool) (values map[uintptr]uint32, compl
 			case "Mutant":
 				kind = 3
 			case "Event":
-				kind = 4
+				kind = windowsIdentityEventHandle
 			case "Section":
 				kind = 5
 			case "Semaphore":
@@ -257,6 +244,22 @@ func TestDisposableWindowsHandleReplayNative(t *testing.T) {
 	path := filepath.Join(directory, "metadata.txt")
 	if os.WriteFile(path, []byte("inert native metadata diagnostic"), 0600) != nil {
 		t.Fatal("native diagnostic fixture unavailable")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal("native census fixture file unavailable")
+	}
+	var token windows.Token
+	if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_QUERY, &token); err != nil {
+		_ = file.Close()
+		t.Fatal("native census fixture token unavailable")
+	}
+	fileHandle, tokenHandle := file.Fd(), uintptr(token)
+	kinds, complete := identityWindowsHandleKinds(true)
+	closeFile, closeToken := file.Close(), token.Close()
+	if closeFile != nil || closeToken != nil || !complete ||
+		kinds[fileHandle] != windowsIdentityFileHandle || kinds[tokenHandle] != windowsIdentityTokenHandle {
+		t.Fatal("native census did not verify the owned file and token types")
 	}
 	result = identityWindowsReplayHandleGrowth(t, path, filepath.Join(directory, "missing"))
 	if !result.SnapshotComplete {

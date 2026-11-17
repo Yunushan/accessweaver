@@ -619,7 +619,7 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 			GCCyclesBefore: beforeGC, GCCyclesAfter: afterGC,
 		}
 		t.Logf("metadata probe aggregate counts: handles-before=%d handles-after=%d thread-create-records-before=%d thread-create-records-after=%d GC-cycles-before=%d GC-cycles-after=%d", before, after, beforeThreads, afterThreads, beforeGC, afterGC)
-		if after > before+1 {
+		if !windowsIdentityMetadataHandlesClosed(before, after, probeCounts.MeasuredTypes) {
 			probeCounts.Replay = identityWindowsReplayHandleGrowth(t, path, filepath.Join(directory, "missing-probe"))
 			t.Fatal("owned metadata probe handles accumulated")
 		}

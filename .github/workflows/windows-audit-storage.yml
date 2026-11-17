@@ -48,7 +48,7 @@ jobs:
           ACCESSWEAVER_DISPOSABLE_WINDOWS_AUDIT_STORAGE_TEST: '1'
         shell: pwsh
         run: |
-          go test ./internal/fileidentity -run '^TestDisposableWindowsFileIdentityNative$' -count=1 -v -timeout=4m
+          go test ./internal/fileidentity -run '^(TestDisposableWindowsFileIdentityNative|TestWindowsIdentityHandleAdmission)$' -count=1 -v -timeout=4m
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # Exercise diagnostic APIs in a separate process so their warmup
           # cannot alter the original identity probe's runtime baseline.
