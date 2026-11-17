@@ -1,0 +1,101 @@
+name: Windows archived discovery replay
+
+on:
+  push:
+    branches: ['codex/packaged-windows-discovery-replay']
+    paths: ['.github/workflows/packaged-windows-discovery-replay.yml']
+
+permissions:
+  contents: read
+  actions: read
+  attestations: read
+
+env:
+  ARCHIVE_SOURCE_COMMIT: '65b3803c473bd3b09b2f1e229077860501786cde'
+  ARCHIVE_SOURCE_REF: refs/heads/codex/dns-adapter-coverage
+  ARCHIVE_WORKFLOW_RUN: '44037513465'
+  ARCHIVE_CHECKSUMS_SHA256: '9f0b2e5120173f9bf8e6b840bef66389764524ca9398c977789bb5f11407be40'
+  GO_VERSION: '1.27.4'
+  ACCESSWEAVER_EXPECT_GOOS: windows
+
+jobs:
+  discovery:
+    if: ${{ github.repository == 'Yunushan/accessweaver' }}
+    name: Archived discovery (windows/${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: windows-latest, arch: amd64}
+          - {os: windows-11-arm, arch: arm64}
+    env:
+      ACCESSWEAVER_EXPECT_GOARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          github-token: ${{ github.token }}
+          repository: Yunushan/accessweaver
+          run-id: '44037513465'
+          artifact-ids: '14313060640'
+          path: build/read-only-preview
+          digest-mismatch: error
+      - name: Authenticate the exact archived release before staging
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $checksums = (Get-FileHash -LiteralPath build/read-only-preview/SHA256SUMS.txt -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($checksums -cne $env:ARCHIVE_CHECKSUMS_SHA256) { throw 'Archived preview checksums differ from the reviewed release' }
+          python3 scripts/stage_packaged_native.py build/read-only-preview --into build/packaged-native --source-commit $env:ARCHIVE_SOURCE_COMMIT --source-ref $env:ARCHIVE_SOURCE_REF --workflow-run-id $env:ARCHIVE_WORKFLOW_RUN
+          if ($LASTEXITCODE -ne 0) { throw 'Archived release authentication or staging failed' }
+      - name: Replay read-only discovery and verify its current report
+        shell: pwsh
+        env:
+          ACCESSWEAVER_DISPOSABLE_WINDOWS_DISCOVERY_TEST: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $validatorCommit = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $validatorCommit -cne $env:GITHUB_SHA) { throw 'Discovery validator source differs from this replay' }
+          $validatorRef = $env:GITHUB_REF
+          try {
+            # The probe's source context identifies the authenticated executable.
+            $env:GITHUB_SHA = $env:ARCHIVE_SOURCE_COMMIT
+            $env:GITHUB_REF = $env:ARCHIVE_SOURCE_REF
+            python3 scripts/packaged_windows_discovery.py build/packaged-native
+            if ($LASTEXITCODE -ne 0) { throw 'Archived discovery replay failed; inspect fixed evidence' }
+          } finally {
+            $env:GITHUB_SHA = $validatorCommit
+            $env:GITHUB_REF = $validatorRef
+          }
+          $reportPath = 'build/packaged-native-checks/discovery-windows-' + $env:ACCESSWEAVER_EXPECT_GOARCH + '.json'
+          node -e 'const fs = require("node:fs"); const report = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); require("./scripts/check-packaged-evidence.cjs").validateWindowsDiscoveryEvidence(report);' $reportPath
+          if ($LASTEXITCODE -ne 0) { throw 'Current packaged evidence validation failed' }
+          $report = Get-Content -Raw -LiteralPath $reportPath | ConvertFrom-Json
+          if ($report.sourceCommit -cne $env:ARCHIVE_SOURCE_COMMIT -or $report.sourceRef -cne $env:ARCHIVE_SOURCE_REF -or
+              $report.target -cne ('windows/' + $env:ACCESSWEAVER_EXPECT_GOARCH)) { throw 'Discovery report archive identity differs' }
+          $binding = [ordered]@{
+            schemaVersion = 1
+            scope = 'authenticated-preview-discovery-replay'
+            validatorSourceCommit = $validatorCommit
+            archiveSourceCommit = $env:ARCHIVE_SOURCE_COMMIT
+            archiveWorkflowRunId = $env:ARCHIVE_WORKFLOW_RUN
+            replayWorkflowRunId = $env:GITHUB_RUN_ID
+            target = $report.target
+            discoveryReportSHA256 = (Get-FileHash -LiteralPath $reportPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            productionQualificationComplete = $false
+          }
+          $binding | ConvertTo-Json | Set-Content -LiteralPath build/packaged-native-checks/replay.json -Encoding utf8NoBOM
+      - name: Retain fixed discovery replay reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packaged-windows-discovery-replay-${{ matrix.arch }}
+          path: build/packaged-native-checks/*.json
+          if-no-files-found: ignore
+          retention-days: 14
