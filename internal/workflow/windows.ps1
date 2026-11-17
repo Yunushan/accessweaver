@@ -3706,6 +3706,77 @@ function Assert-RestoredDNSState([object[]]$Plans,[object[]]$DohPlans,[bool]$Doh
         }
     }
 }
+function Invoke-DNSInterfaceSettings([guid]$Adapter, [bool]$IPv6, [string]$NameServers) {
+    if(-not ('AccessWeaver.DNSInterfaceSettings' -as [type])){
+        Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+namespace AccessWeaver
+{
+    public static class DNSInterfaceSettings
+    {
+        private const ulong IPv6 = 0x0001;
+        private const ulong NameServers = 0x0002;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct NativeSettings
+        {
+            public uint Version;
+            public ulong Flags;
+            public IntPtr Domain;
+            [MarshalAs(UnmanagedType.LPWStr)]
+            public string NameServer;
+            public IntPtr SearchList;
+            public uint RegistrationEnabled;
+            public uint RegisterAdapterName;
+            public uint EnableLLMNR;
+            public uint QueryAdapterName;
+            public IntPtr ProfileNameServer;
+        }
+
+        [DllImport("iphlpapi.dll", ExactSpelling = true)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        private static extern uint SetInterfaceDnsSettings(Guid adapter, ref NativeSettings settings);
+
+        public static bool TrySet(Guid adapter, bool ipv6, string nameServers)
+        {
+            var settings = new NativeSettings
+            {
+                Version = 1,
+                Flags = NameServers | (ipv6 ? IPv6 : 0),
+                NameServer = nameServers,
+            };
+            uint result;
+            try
+            {
+                result = SetInterfaceDnsSettings(adapter, ref settings);
+            }
+            catch (EntryPointNotFoundException)
+            {
+                // Older Windows versions can only use their previous DNS provider.
+                return false;
+            }
+            if (result != 0)
+                throw new InvalidOperationException("Windows refused the family-scoped DNS update; retain the recovery snapshot");
+            return true;
+        }
+    }
+}
+'@
+    }
+    return [AccessWeaver.DNSInterfaceSettings]::TrySet($Adapter,$IPv6,$NameServers)
+}
+function Set-RestoredDNSFamily([string]$Guid,[object]$Row,[string[]]$StaticServers,[switch]$Automatic) {
+    # Bind the write to the same GUID and family inspected by recovery. An
+    # empty server list restores automatic DNS for this family alone.
+    $ipv6=(Get-DNSClientFamily $Row.AddressFamily) -ceq 'IPv6'
+    $servers=if($Automatic){''}else{$StaticServers -join ','}
+    if(Invoke-DNSInterfaceSettings ([guid]$Guid) $ipv6 $servers){return}
+    if($Automatic){$Row | Set-DnsClientServerAddress -ResetServerAddresses -ErrorAction Stop}
+    else{$Row | Set-DnsClientServerAddress -ServerAddresses $StaticServers -ErrorAction Stop}
+}
+
 function Test-DNSFamilyNeedsRollback([object]$Record,[string]$Number,[object]$Observed) {
     if(Test-DNSFamilyMatchesOriginal $Record $Number $observed){return $false}
     if(-not $observed.dhcp){
@@ -3817,9 +3888,9 @@ function Restore-DNS([string]$ExpectedSHA256,$ResolverReload) {
             Assert-DNSMutationAdapter $record.guid $dns.InterfaceIndex
             $script:externalEffectsPending=$true
             if($record.('dhcp'+$number)){
-                $dns | Set-DnsClientServerAddress -ResetServerAddresses -ErrorAction Stop
+                Set-RestoredDNSFamily $record.guid $dns -Automatic
             }else{
-                $dns | Set-DnsClientServerAddress -ServerAddresses @(Get-StaticDNSServers @($record.('ipv'+$number)) ('IPv'+$number) $record.index) -ErrorAction Stop
+                Set-RestoredDNSFamily $record.guid $dns -StaticServers @(Get-StaticDNSServers @($record.('ipv'+$number)) ('IPv'+$number) $record.index)
             }
         }
     }
