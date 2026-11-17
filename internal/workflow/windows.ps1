@@ -2590,6 +2590,7 @@ function Get-ManagedDNSCryptListenerOwner([string[]]$Servers,[string]$Binary,$En
         throw 'Expected managed DNSCrypt loopback addresses'
     }
 
+    $script:dnsOperationStage='listener-service-registration'
     $service=Read-ManagedServiceRegistration 'AccessWeaver-dnscrypt'
     $hostID=$service.ProcessId
     $hostCommand=[regex]::Match($service.PathName,'\A"([^"\r\n]+)" service-host ')
@@ -2597,6 +2598,7 @@ function Get-ManagedDNSCryptListenerOwner([string[]]$Servers,[string]$Binary,$En
         -not $hostCommand.Success -or (Get-ManagedServiceCommandDigest $service.PathName) -cne $Entry.commandSHA256){
         throw 'Managed DNSCrypt service identity could not be verified'
     }
+    $script:dnsOperationStage='listener-host-identity'
     $hostProcess=@(Get-CimInstance -ClassName Win32_Process -Filter ("ProcessId="+$hostID) -ErrorAction Stop)
     if($hostProcess.Count -ne 1 -or $hostProcess[0].ProcessId -ne $hostID -or
         $hostProcess[0].ExecutablePath -ine $hostCommand.Groups[1].Value -or $hostProcess[0].CreationDate -isnot [datetime]){
@@ -2606,8 +2608,10 @@ function Get-ManagedDNSCryptListenerOwner([string[]]$Servers,[string]$Binary,$En
     $listenerID=[uint32]0
     foreach($protocol in @('TCP','UDP')){
         $endpoints=if($protocol -ceq 'TCP'){
+            $script:dnsOperationStage='listener-tcp-ownership'
             Get-NetTCPConnection -State Listen -LocalPort 53 -ErrorAction Stop
         }else{
+            $script:dnsOperationStage='listener-udp-ownership'
             Get-NetUDPEndpoint -LocalPort 53 -ErrorAction Stop
         }
         $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -2631,6 +2635,7 @@ function Get-ManagedDNSCryptListenerOwner([string[]]$Servers,[string]$Binary,$En
         if($seen.Count -ne $Servers.Count){throw 'Expected TCP and UDP on every required DNSCrypt loopback address'}
     }
 
+    $script:dnsOperationStage='listener-child-identity'
     $process=@(Get-CimInstance -ClassName Win32_Process -Filter ("ProcessId="+$listenerID) -ErrorAction Stop)
     if($process.Count -ne 1 -or $process[0].ProcessId -ne $listenerID -or
         $process[0].ParentProcessId -ne $hostID -or $process[0].ExecutablePath -ine $Binary -or
@@ -2646,8 +2651,10 @@ function Wait-ManagedDNSCryptListeners([string[]]$Servers,[string]$Binary,$Entry
         try {
             $owner=Get-ManagedDNSCryptListenerOwner $Servers $Binary $Entry
             # Repeat all probes together when any answer or the observed owner changes.
+            $script:dnsOperationStage='listener-dns-answers'
             Wait-DNSCryptListeners $Servers -TimeoutSeconds 0 -RequireBothAddressTypes
             if((Get-ManagedDNSCryptListenerOwner $Servers $Binary $Entry) -ceq $owner){return}
+            $script:dnsOperationStage='listener-owner-changed'
         }catch{}
         if($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds){break}
         Start-Sleep -Milliseconds 500
@@ -4191,6 +4198,7 @@ function Assert-RecordedServiceBinding($Entry) {
 function Wait-RecordedServiceStopped([string]$Name) {
     $service=[ServiceProcess.ServiceController]::new($Name)
     try {$service.WaitForStatus('Stopped',[TimeSpan]::FromSeconds(20))}
+    catch [System.ServiceProcess.TimeoutException] {throw 'Managed service did not reach the stopped state; its registration is retained for recovery'}
     finally {$service.Dispose()}
 }
 function Wait-RecordedServiceAbsent([string]$Name) {

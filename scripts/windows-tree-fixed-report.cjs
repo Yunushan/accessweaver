@@ -3,7 +3,7 @@
 // output, process IDs and native error text are never printed or retained.
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),crypto=require('node:crypto'),{spawnSync}=require('node:child_process');
 const target='TestNativeWindowsTerminationKillsOwnedTree';
-const stages=Object.freeze(['parent-create','parent-bind','parent-start-tree','tree-inventory','unrelated-create','unrelated-bind','tree-cancel','parent-wait','owner-close','tree-empty','unrelated-alive','closed-protocol','fixture-cleanup']);
+const stages=Object.freeze(['parent-create','parent-bind','parent-start-tree','tree-inventory','unrelated-create','unrelated-bind','tree-cancel','parent-wait','owner-close','tree-empty','unrelated-alive','closed-protocol','parent-exit-confirmation','fixture-cleanup']);
 function project(text,exitCode,expected){
  if(typeof text!=='string'||Buffer.byteLength(text)>4*1024*1024||!Number.isInteger(expected)||expected<1||expected>20)return {outcome:'refused',code:'bound',attempts:0,passed:0,failed:0,stages:{}};
  let attempts=0,passed=0,failed=0,open=false,marker=null,invalid=false;const counts=Object.fromEntries(stages.map(x=>[x,0]));

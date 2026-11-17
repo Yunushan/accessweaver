@@ -452,6 +452,10 @@ func TestNativeWindowsTerminationKillsOwnedTree(t *testing.T) {
 	if !parent.output.valid() || !unrelated.output.valid() {
 		t.Fatal("native source output exceeded closed protocol")
 	}
+	stage = "parent-exit-confirmation"
+	if !t.Run("owned-parent-exit-confirmation", testNativeWindowsParentExitRequiresKernelConfirmation) {
+		return
+	}
 	stage = "fixture-cleanup"
 }
 
@@ -509,6 +513,38 @@ func TestNativeWindowsDuplicatePinsIdentityAfterGoWaitAndIsNoninheritable(t *tes
 		t.Fatal("retired native owner repeated helper or duplicate close")
 	}
 	treeWindowsAwaitEmpty(t, f.job)
+}
+
+func testNativeWindowsParentExitRequiresKernelConfirmation(t *testing.T) {
+	for _, natural := range []bool{false, true} {
+		name := "helper-returned-before-exit"
+		if natural {
+			name = "parent-already-exited"
+		}
+		t.Run(name, func(t *testing.T) {
+			f := newTreeWindowsFixture(t, "controlled", nil, nil)
+			if f.bind() != nil {
+				t.Fatal("native source duplicate binding failed")
+			}
+			handle, _, _, _ := f.backend.snapshot()
+			f.beginWait()
+			if natural {
+				f.write('q')
+				f.wait()
+			}
+			if err := (windowsTreeBackend{}).confirmParentExit(handle); err != nil {
+				t.Fatal("owned source parent exit was not confirmed")
+			}
+			f.wait()
+			if natural && f.waitErr != nil {
+				t.Fatal("a previously confirmed natural exit was changed")
+			}
+			if !natural && f.waitErr == nil {
+				t.Fatal("source parent was not terminated after an incomplete helper")
+			}
+			treeWindowsAwaitEmpty(t, f.job)
+		})
+	}
 }
 
 func TestNativeWindowsCancellationBeforeBindWaitsForVerifiedHandle(t *testing.T) {
