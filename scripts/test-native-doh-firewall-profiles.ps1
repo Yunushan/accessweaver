@@ -61,17 +61,21 @@ function Get-FixtureRule([string]$Name,[ValidateSet('PersistentStore','ActiveSto
     if($Name -cnotmatch '\AAccessWeaver-DoH-ProfileFixture-[a-f0-9]{32}-(?:TCP|UDP)-(?:Any|ExplicitAll|Domain|Private|Public)\z'){
         throw 'Invalid fixture firewall rule name'
     }
-    $query=@{Name=$Name;PolicyStore=$Store;WarningAction='Stop';ErrorAction='Stop'}
+    # Windows PowerShell's NetSecurity cmdlets reject WarningAction Stop.
+    $warnings=@()
+    $query=@{Name=$Name;PolicyStore=$Store;WarningAction='SilentlyContinue';WarningVariable='warnings';ErrorAction='Stop'}
     if($Store -ceq 'ActiveStore'){$query.TracePolicyStore=$true}
     try{
         $rules=@(Get-NetFirewallRule @query)
     }catch{
+        if($warnings.Count){throw 'Firewall provider warned during fixture lookup'}
         # NetSecurity queries -Name by the CIM InstanceID property.
         $id=$_.FullyQualifiedErrorId.Split(',')[0]
         if($_.CategoryInfo.Category -eq [Management.Automation.ErrorCategory]::ObjectNotFound -and
            $id -cin @('CmdletizationQuery_NotFound_InstanceID','CmdletizationQuery_NotFound_Name')){return}
         throw
     }
+    if($warnings.Count){throw 'Firewall provider warned during fixture lookup'}
     if($rules.Count -gt 1 -or ($rules.Count -eq 1 -and $rules[0].Name -cne $Name)){throw 'Ambiguous fixture firewall rule'}
     return $rules
 }
@@ -98,7 +102,9 @@ function Remove-FixtureRule([string]$Name,[string]$Marker) {
     $owned=Get-FixtureRule $Name 'PersistentStore'
     if($owned){
         if($owned.Description -cne $Marker){throw 'Fixture firewall ownership changed'}
-        Remove-NetFirewallRule -InputObject $owned -Confirm:$false -WarningAction Stop -ErrorAction Stop
+        $warnings=@()
+        Remove-NetFirewallRule -InputObject $owned -Confirm:$false -WarningAction SilentlyContinue -WarningVariable warnings -ErrorAction Stop
+        if($warnings.Count){throw 'Firewall provider warned during fixture removal'}
     }
     if((Get-FixtureRule $Name 'PersistentStore') -or (Get-FixtureRule $Name 'ActiveStore')){
         throw 'Fixture firewall rule remains'
@@ -125,12 +131,15 @@ try{
                 if(Get-FixtureRule $name 'ActiveStore'){throw 'Fixture identity already exists'}
                 $case.stage='create'
                 # Documentation destinations keep the temporary rule out of ordinary DNS traffic.
+                $warnings=@()
                 $rule=@{Name=$name;DisplayName='AccessWeaver DoH firewall profile comparison';Description=$marker
                     PolicyStore='PersistentStore';Direction='Outbound';Action='Block';Enabled='True'
                     Profile=$profileOptions[$option];Protocol=$protocol;RemotePort=53
-                    RemoteAddress=@('192.0.2.1','2001:db8::1');Service='Dnscache';WarningAction='Stop';ErrorAction='Stop'}
+                    RemoteAddress=@('192.0.2.1','2001:db8::1');Service='Dnscache'
+                    WarningAction='SilentlyContinue';WarningVariable='warnings';ErrorAction='Stop'}
                 $creationAttempted=$true
                 [void](New-NetFirewallRule @rule)
+                if($warnings.Count){throw 'Firewall provider warned during fixture creation'}
                 $case.stage='first-read'
                 $case.first=Get-FixtureStatus $name $marker $report.activeProfileMask
                 Start-Sleep -Seconds 2
