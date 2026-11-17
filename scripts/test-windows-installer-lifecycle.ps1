@@ -1498,18 +1498,17 @@ end;
     Require ($null -eq (Get-PendingInstallFixtureValue)) 'Successful Setup did not clear its pending record'
     Require ((Get-AccessWeaverInstallerRecoveryState) -ceq 'clear') 'Controller did not observe cleared Setup recovery state'
     $failedCopyLog=Join-Path $capsule 'failed-install-copy.log'
-    # Force a real copy failure with a packaged compatibility file outside release preflight.
+    # Lock a packaged file outside early replacement preflight so the per-file guard runs after the pending record is written.
     $lockedCompatibilityFile=Join-Path $install 'uninstall-system.json'
     $compatibilityDigest=Digest $lockedCompatibilityFile
     $compatibilityGuard=[IO.File]::Open($lockedCompatibilityFile,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
     try {
-        $failedCopy=Native-Record $second ($arguments+@('/LOG='+$failedCopyLog)) @(4,5)
+        $failedCopy=Native-Record $second ($arguments+@('/LOG='+$failedCopyLog)) @(7)
     } finally {$compatibilityGuard.Dispose()}
     Require ((Get-Item -LiteralPath $failedCopyLog).Length -le 1MB) 'Failed installation log exceeds its bound'
     $copyLog=[IO.File]::ReadAllText($failedCopyLog)
     Require ($copyLog.Contains('Starting the installation process.') -and
-        $copyLog.Contains($lockedCompatibilityFile) -and
-        $copyLog.Contains('An error occurred while trying to replace the existing file:')) 'Setup did not encounter the expected native compatibility-file replacement failure'
+        $copyLog.Contains('An AccessWeaver package file destination cannot be safely replaced. Setup recovery is required.')) 'Setup did not refuse replacement through the per-file destination guard'
     Require ((Get-PendingInstallFixtureValue) -ceq $pendingValue) 'Failed Setup did not retain its own pending installation record'
     Require ((Get-AccessWeaverInstallerRecoveryState) -ceq 'pending') 'Controller did not observe the native Setup recovery marker'
     Require ((Digest $lockedCompatibilityFile) -ceq $compatibilityDigest) 'Failed Setup changed the locked compatibility file'
