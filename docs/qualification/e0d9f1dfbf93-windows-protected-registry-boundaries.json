@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "scope": "unsigned-windows-protected-registry-read-boundaries",
+  "sourceCommit": "e0d9f1dfbf933a2133c52db584bf551e2c339c0a",
+  "sourceRef": "refs/heads/codex/default-protected-windows-setup",
+  "runId": 44062359991,
+  "reportSchemaVersion": 63,
+  "targets": [
+    {
+      "target": "windows/amd64",
+      "jobId": 133967212758,
+      "artifactId": 14318298774,
+      "artifactSHA256": "ca33dd68a46269562d8f6bf2c88cdfedef0b2f0b53b518f1d2d334c67befe414",
+      "subsequentFailureStage": "registry-access-policy",
+      "cases": [
+        {
+          "name": "maximum-string-accepted",
+          "expectedExitCode": 0,
+          "exitCode": 0,
+          "fixtureUTF16Bytes": 514,
+          "refusedStatePreserved": false,
+          "refusalReasonVerified": false,
+          "profilePreserved": true
+        },
+        {
+          "name": "inconsistent-display-name-refused",
+          "expectedExitCode": 3,
+          "exitCode": 3,
+          "fixtureUTF16Bytes": 514,
+          "refusedStatePreserved": true,
+          "refusalReasonVerified": true,
+          "profilePreserved": true
+        },
+        {
+          "name": "maximum-expand-literal-owned-refused",
+          "expectedExitCode": 3,
+          "exitCode": 3,
+          "fixtureUTF16Bytes": 514,
+          "refusedStatePreserved": true,
+          "refusalReasonVerified": true,
+          "profilePreserved": true
+        },
+        {
+          "name": "over-budget-string-refused",
+          "expectedExitCode": 1,
+          "exitCode": 1,
+          "fixtureUTF16Bytes": 516,
+          "refusedStatePreserved": true,
+          "refusalReasonVerified": true,
+          "profilePreserved": true
+        },
+        {
+          "name": "oversized-string-refused",
+          "expectedExitCode": 1,
+          "exitCode": 1,
+          "fixtureUTF16Bytes": 131086,
+          "refusedStatePreserved": true,
+          "refusalReasonVerified": true,
+          "profilePreserved": true
+        },
+        {
+          "name": "environment-reference-not-expanded",
+          "expectedExitCode": 1,
+          "exitCode": 1,
+          "fixtureUTF16Bytes": 108,
+          "refusedStatePreserved": true,
+          "refusalReasonVerified": true,
+          "profilePreserved": true
+        }
+      ]
+    },
+    {
+      "target": "windows/arm64",
+      "jobId": 133967212246,
+      "artifactId": 14318993814,
+      "artifactSHA256": "3ec950db440b7f21cfcdc74453b9f115bd4fa3eef9ca83661649df8343bf2035",
+      "subsequentFailureStage": "registry-access-policy",
+      "cases": [
+        {
+          "name": "maximum-string-accepted",
+          "expectedExitCode": 0,
+          "exitCode": 0,
+          "fixtureUTF16Bytes": 514,
+          "refusedStatePreserved": false,
+          "refusalReasonVerified": false,
+          "profilePreserved": true
+        },
+        {
+          "name": "inconsistent-display-name-refused",
+          "expectedExitCode": 3,
+          "exitCode": 3,
+          "fixtureUTF16Bytes": 514,
+          "refusedStatePreserved": true,
+          "refusalReasonVerified": true,
+          "profilePreserved": true
+        },
+        {
+          "name": "maximum-expand-literal-owned-refused",
+          "expectedExitCode": 3,
+          "exitCode": 3,
+          "fixtureUTF16Bytes": 514,
+          "refusedStatePreserved": true,
+          "refusalReasonVerified": true,
+          "profilePreserved": true
+        },
+        {
+          "name": "over-budget-string-refused",
+          "expectedExitCode": 1,
+          "exitCode": 1,
+          "fixtureUTF16Bytes": 516,
+          "refusedStatePreserved": true,
+          "refusalReasonVerified": true,
+          "profilePreserved": true
+        },
+        {
+          "name": "oversized-string-refused",
+          "expectedExitCode": 1,
+          "exitCode": 1,
+          "fixtureUTF16Bytes": 131086,
+          "refusedStatePreserved": true,
+          "refusalReasonVerified": true,
+          "profilePreserved": true
+        },
+        {
+          "name": "environment-reference-not-expanded",
+          "expectedExitCode": 1,
+          "exitCode": 1,
+          "fixtureUTF16Bytes": 108,
+          "refusedStatePreserved": true,
+          "refusalReasonVerified": true,
+          "profilePreserved": true
+        }
+      ]
+    }
+  ],
+  "fullInstallerLifecyclePassed": false,
+  "productionQualificationComplete": false
+}
