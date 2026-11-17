@@ -23,7 +23,8 @@ $ast=[Management.Automation.Language.Parser]::ParseFile($sourcePath,[ref]$tokens
 if($parseErrors.Count){throw 'DNS workflow source did not parse'}
 $selected=@('Assert-DNSCryptConfiguration','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Assert-DNSCryptServiceState','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Get-ManagedServiceCommandDigest','Assert-DNSMutationAdapter','Test-DNSRecoveryUsesAdapterOwnership','Test-DNSFamilyMatchesOriginal','Read-ObservedDNSFamily','Test-DNSFamilyNeedsRollback','Get-ActiveDNSAdapters','Assert-ConfiguredDNSDohPolicy','Get-DNSDohProviders','Test-DNSRecoveryUsesDohOwnership','Get-DNSOriginalDohEntry','Test-DNSDohEntriesEqual','Test-DNSRecoveryOwnsDoh','Get-DNSClientMutationRow','Read-DNSRecoveryFileBytes','Read-DNSRecoverySnapshot','Assert-DNSRecoverySnapshotUnchanged','Get-WorkflowRecoveryJournalLimit','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Assert-ConfiguredDNSServers','Assert-RestoredDNSFamily','Assert-RestoredDNSState','Get-StaticDNSServers','Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Assert-OriginalDNSModes','Read-OriginalDNSFamily','Read-OriginalDNSAdapter','Read-OriginalDNSNameServer','Get-DNSOverridePath','Read-DNSStaticOverride','Test-DNSAddressAnswer','Wait-OrdinaryDNSResolver','Wait-DNSCryptListeners','Get-ManagedDNSCryptListenerOwner','Wait-ManagedDNSCryptListeners','Get-EffectiveDNSCryptListeners','Assert-EffectiveDNSCryptListeners','Get-DNSCryptAdapterIdentities','Test-DNSCryptLoopbackAddress','Get-DNSCryptIndependentFamilies','Test-DNSCryptListenerNeeded','Assert-DNSCryptCanBeRemoved','Configure-DNS','Restore-DNS','Remove-Method','Remove-All')
 $allowed=@('Read-OwnedWireSockProfile','Remove-WireSockRefreshTask','Disconnect-OwnedWireSock','Native','Remove-ModernWireSockProfile','Restore-Drover','Get-ManagedFirewallRule','Remove-RecordedService','Remove-ManagedFirewallRule','Remove-Method','Under','Assert-DNSCryptConfiguration','Get-WorkflowFileHash','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Assert-DNSCryptServiceState','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Get-ManagedServiceCommandDigest','Get-CimInstance','Get-NetTCPConnection','Get-NetUDPEndpoint','Assert-DNSMutationAdapter','Test-DNSRecoveryUsesAdapterOwnership','Test-DNSFamilyMatchesOriginal','Read-ObservedDNSFamily','Test-DNSFamilyNeedsRollback','Get-ActiveDNSAdapters','Assert-ConfiguredDNSDohPolicy','Get-DNSDohProviders','Test-DNSRecoveryUsesDohOwnership','Get-DNSOriginalDohEntry','Test-DNSDohEntriesEqual','Test-DNSRecoveryOwnsDoh','Get-DNSClientMutationRow','Read-DNSRecoveryFileBytes','Read-DNSRecoverySnapshot','Assert-DNSRecoverySnapshotUnchanged','Get-WorkflowRecoveryJournalLimit','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Save-DNSRecoveryReceipt','Publish-WorkflowFile','No-Reparse','Get-Item','Assert-ConfiguredDNSServers','Assert-RestoredDNSFamily','Assert-RestoredDNSState','Get-StaticDNSServers','Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Assert-OriginalDNSModes','Read-OriginalDNSFamily','Read-OriginalDNSAdapter','Read-OriginalDNSNameServer','Get-DNSOverridePath','Read-DNSStaticOverride','Test-DNSAddressAnswer','Wait-OrdinaryDNSResolver','Wait-DNSCryptListeners','Get-ManagedDNSCryptListenerOwner','Wait-ManagedDNSCryptListeners','Get-EffectiveDNSCryptListeners','Assert-EffectiveDNSCryptListeners','Get-DNSCryptAdapterIdentities','Test-DNSCryptLoopbackAddress','Get-DNSCryptIndependentFamilies','Test-DNSCryptListenerNeeded','Assert-DNSCryptCanBeRemoved','Restore-DNS','Get-ItemProperty','Get-Command','Join-Path','Get-NetAdapter','Where-Object','ForEach-Object','Select-Object','Test-Path','Get-DnsClientServerAddress','Get-DnsClientDohServerAddress','Get-FileHash','Add-Member','ConvertTo-Json','Save-Journal','Ensure-Asset','Split-Path','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Get-Service','Restore-RecordedWorkflowFile','Install-EngineService','Set-Service','Start-Service','Restart-Service','Stop-Service','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress','Set-DnsClientServerAddress','Clear-DnsClientCache','Resolve-DnsName','Start-Sleep','Event','ConvertFrom-Json','Remove-Item','Remove-VerifiedDNSRecoverySnapshot')
-$selected+=@('Set-RestoredDNSFamily','Wait-RecordedServiceStopped')
+$selected+=@('Set-RestoredDNSFamily','Wait-RecordedServiceStopped','Assert-DNSCryptLoopbackPortsAvailable')
+$allowed+=@('Assert-DNSCryptLoopbackPortsAvailable')
 $allowed+=@('Set-RestoredDNSFamily','Invoke-DNSInterfaceSettings')
 $dohFirewallFunctions=@('Get-DNSDohPlaintextBlockID','Assert-DNSDohFirewallAvailable','Read-DNSDohPlaintextRules','Get-DNSDohPlaintextRule','Assert-DNSDohPlaintextRuleOwnership','Assert-DNSDohPlaintextBlock','Enable-DNSDohPlaintextBlock','Remove-DNSDohPlaintextBlock')
 $dnsCopyFunctions=@('ConvertFrom-DNSRecoverySnapshotBytes','Get-DNSRecoveryCopyPath','Read-DNSRecoveryCopy','Assert-DNSRecoveryCopyMatches','Publish-DNSRecoveryCopy')
@@ -53,6 +54,7 @@ $script:closedContractCodes+=@('restore-refuses-legacy-sibling-reset','restore-s
 $script:closedContractCodes+=@('doh-firewall-full-status-representations','doh-firewall-nonfull-status-refused')
 $script:closedContractCodes+=@('doh-firewall-cim-raw-status','doh-firewall-cim-format-not-authority')
 $script:closedContractCodes+=@('doh-firewall-missing-store-reason','doh-firewall-diagnostic-does-not-mutate','doh-firewall-known-enforcement-reason','doh-firewall-status-diagnostic-does-not-mutate','doh-firewall-unavailable-or-unsupported-reason','doh-firewall-malformed-diagnostic-does-not-mutate')
+$script:closedContractCodes+=@('dnscrypt-port-conflict-before-mutation','dnscrypt-unreadable-port-before-mutation','dnscrypt-port-inventory-observed')
 function Assert-DNS([bool]$Condition,[string]$Code){if(-not $Condition){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('DNS contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-DNS([scriptblock]$Operation,[string]$ExpectedMessage){
     $failed=$false
@@ -66,6 +68,9 @@ function New-DNSCase([switch]$ExistingResolver) {
     [void][IO.Directory]::CreateDirectory((Join-Path $root 'components\dnscrypt'))
     $script:snapshot=Join-Path $root 'profiles/dns-original.json'
     $script:copyPath=Get-DNSRecoveryCopyPath
+    $script:DNSCryptPortRows=@{}
+    $script:DNSCryptPortReads=[Collections.Generic.List[string]]::new()
+    $script:failDNSCryptPortRead=$false
     $script:failCopyPublication=$false;$script:failCopyRetirement=$false
     $script:dohFirewallRules=@{};$script:dohFirewallWrites=0;$script:dohFirewallFault=''
     $script:firewallOnRetirementJournal=''
@@ -637,7 +642,19 @@ function Assert-RecordedServiceBinding($Entry){
     return 0
 }
 function Get-CimInstance {
-    [CmdletBinding()]param($ClassName,$Filter)
+    [CmdletBinding()]param($ClassName,$Filter,$Namespace)
+    if($Namespace -ceq 'root/StandardCimv2'){
+        $filters=@{
+            MSFT_NetTCPConnection='LocalPort = 53 AND State = 2'
+            MSFT_NetUDPEndpoint='LocalPort = 53'
+        }
+        if(-not $filters.ContainsKey($ClassName) -or $Filter -cne $filters[$ClassName] -or
+            $PSBoundParameters['ErrorAction'] -ne 'Stop'){throw 'Unexpected DNSCrypt port inventory query'}
+        $script:DNSCryptPortReads.Add($ClassName)
+        if($script:failDNSCryptPortRead){throw 'Fixture port inventory failure'}
+        if($script:DNSCryptPortRows.ContainsKey($ClassName)){return $script:DNSCryptPortRows[$ClassName]}
+        return
+    }
     if($ClassName -cne 'Win32_Service' -or $Filter -cne "Name='AccessWeaver-dnscrypt'" -or
         $PSBoundParameters['ErrorAction'] -ne 'Stop' -or -not $script:resolverServicePresent -or
         $script:expectedResolverStartup -cnotin @('Automatic','Manual')){throw 'Unexpected DNS service readback'}
@@ -2062,10 +2079,41 @@ try {
         Assert-DNS (($script:listenerQueries -join ',') -ceq '::1' -and
             ($script:listenerAAAAQueries -join ',') -ceq '::1') 'dnscrypt-listener-refuses-invalid-aaaa'
     }
+    foreach($conflict in @(
+        @{class='MSFT_NetUDPEndpoint';address='0.0.0.0'},
+        @{class='MSFT_NetTCPConnection';address='::'},
+        @{class='MSFT_NetUDPEndpoint';address='::ffff:127.0.0.1'},
+        @{class='MSFT_NetTCPConnection';address='::1'}
+    )){
+        New-DNSCase
+        $script:DNSCryptPortRows[$conflict.class]=[pscustomobject]@{LocalPort=[uint16]53;LocalAddress=$conflict.address}
+        Reject-DNS {Configure-DNS 'dnscrypt'} 'DNSCrypt requires TCP and UDP port 53'
+        Assert-DNS ($script:dnsOperationStage -ceq 'configuration-port-in-use' -and
+            -not [IO.File]::Exists($snapshot) -and -not [IO.File]::Exists($script:copyPath) -and
+            -not $script:journalActive -and -not $script:newResolverRegistered -and (Mutation-Count) -eq 0) 'dnscrypt-port-conflict-before-mutation'
+    }
+    foreach($readFailure in @('provider','invalid-address','wrong-port')){
+        New-DNSCase
+        $script:failDNSCryptPortRead=$readFailure -ceq 'provider'
+        if($readFailure -ceq 'invalid-address'){
+            $script:DNSCryptPortRows.MSFT_NetTCPConnection=[pscustomobject]@{LocalPort=[uint16]53;LocalAddress='invalid'}
+        }elseif($readFailure -ceq 'wrong-port'){
+            $script:DNSCryptPortRows.MSFT_NetUDPEndpoint=[pscustomobject]@{LocalPort=[uint16]54;LocalAddress='127.0.0.1'}
+        }
+        Reject-DNS {Configure-DNS 'dnscrypt'} 'DNSCrypt could not inspect local port 53 before setup'
+        Assert-DNS ($script:dnsOperationStage -ceq 'configuration-port-inventory' -and
+            -not [IO.File]::Exists($snapshot) -and -not [IO.File]::Exists($script:copyPath) -and
+            -not $script:journalActive -and -not $script:newResolverRegistered -and (Mutation-Count) -eq 0) 'dnscrypt-unreadable-port-before-mutation'
+    }
+
     New-DNSCase;$script:stageDNSCrypt=$true;$script:allowNewResolver=$true
+    $script:DNSCryptPortRows.MSFT_NetUDPEndpoint=[pscustomobject]@{LocalPort=[uint16]53;LocalAddress='192.0.2.53'}
     $script:listenerAAAAFault='empty';$script:refuseListenerWait=$true
     [IO.File]::WriteAllText((Join-Path $root 'components\dnscrypt\example-dnscrypt-proxy.toml'),"listen_addresses = ['192.0.2.53:53']")
     Reject-DNS {Configure-DNS 'dnscrypt'} 'Synthetic loopback wait boundary'
+    Assert-DNS ($script:DNSCryptPortReads.Count -eq 2 -and
+        $script:DNSCryptPortReads.Contains('MSFT_NetTCPConnection') -and
+        $script:DNSCryptPortReads.Contains('MSFT_NetUDPEndpoint')) 'dnscrypt-port-inventory-observed'
     Assert-DNS (($script:listenerAAAAQueries -join ',') -ceq '127.0.0.1,::1' -and
         (Mutation-Count) -eq 0 -and $script:serviceStartupChanges -eq 0 -and $script:resolverQueries -eq 0 -and
         $script:journalActive -and -not $script:dnsConfigured) 'dnscrypt-listener-refuses-missing-aaaa-before-adapters'

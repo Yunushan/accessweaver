@@ -2585,6 +2585,36 @@ function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds=30,
     } while($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds)
     throw $FailureMessage
 }
+function Assert-DNSCryptLoopbackPortsAvailable {
+    $script:dnsOperationStage='configuration-port-inventory'
+    # A WQL query can return zero rows successfully on a clean machine.
+    # TCP state 2 is Listen. UDP endpoints have no connection state.
+    $queries=@{
+        MSFT_NetTCPConnection='LocalPort = 53 AND State = 2'
+        MSFT_NetUDPEndpoint='LocalPort = 53'
+    }
+    foreach($class in $queries.Keys){
+        try{
+            $endpoints=@(Get-CimInstance -Namespace 'root/StandardCimv2' -ClassName $class `
+                -Filter $queries[$class] -ErrorAction Stop | Select-Object -First 4097)
+        }catch{
+            throw 'DNSCrypt could not inspect local port 53 before setup'
+        }
+        if($endpoints.Count -gt 4096){throw 'DNSCrypt could not inspect local port 53 before setup'}
+        foreach($endpoint in $endpoints){
+            $address=$null
+            if($endpoint.LocalPort -ne 53 -or $endpoint.LocalAddress -isnot [string] -or
+                -not [Net.IPAddress]::TryParse($endpoint.LocalAddress,[ref]$address)){
+                throw 'DNSCrypt could not inspect local port 53 before setup'
+            }
+            if($address.IsIPv4MappedToIPv6){$address=$address.MapToIPv4()}
+            if($address.ToString().Split('%')[0] -cin @('0.0.0.0','::','127.0.0.1','::1')){
+                $script:dnsOperationStage='configuration-port-in-use'
+                throw 'DNSCrypt requires TCP and UDP port 53 on both loopback addresses. An existing listener owns a required address.'
+            }
+        }
+    }
+}
 function Get-ManagedDNSCryptListenerOwner([string[]]$Servers,[string]$Binary,$Entry) {
     if(-not $Servers.Count -or @($Servers | Where-Object {$_ -cnotin @('127.0.0.1','::1')}).Count){
         throw 'Expected managed DNSCrypt loopback addresses'
@@ -3319,6 +3349,7 @@ function Configure-DNS([string]$method) {
     $recoveryCopy=Read-DNSRecoveryCopy
     if(-not $originalSnapshot -and $recoveryCopy){throw 'Original DNS snapshot is missing; use dns-restore to recover from its protected copy'}
     Assert-DNSRecoveryCopyMatches $originalSnapshot $recoveryCopy
+    if($method -eq 'dnscrypt' -and -not $existingResolver){Assert-DNSCryptLoopbackPortsAvailable}
     $hadSnapshot=$null -ne $originalSnapshot
     $original=if($hadSnapshot){$originalSnapshot.record}else{[pscustomobject]@{adapters=@();doh=@();dohManaged=$false}}
     $plaintextBlockID=Get-DNSDohPlaintextBlockID $original
