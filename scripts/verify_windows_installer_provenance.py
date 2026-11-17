@@ -32,7 +32,8 @@ LOCKED_TEMP_UNINSTALLER_REPORT_SCHEMA = 59
 PENDING_STATUS_REPORT_SCHEMA = 60
 MATCHING_PENDING_STATUS_REPORT_SCHEMA = 61
 LATE_COMPATIBILITY_REFUSAL_REPORT_SCHEMA = 62
-REPORT_SCHEMAS = range(11, LATE_COMPATIBILITY_REFUSAL_REPORT_SCHEMA + 1)
+PROTECTED_REGISTRY_BOUNDARY_REPORT_SCHEMA = 63
+REPORT_SCHEMAS = range(11, PROTECTED_REGISTRY_BOUNDARY_REPORT_SCHEMA + 1)
 PHASES=["baseline","after-install","after-upgrade","after-reinstall","after-active-setup-uninstall","after-lifecycle-locks","after-refused-downgrade","after-version-policy","after-registry-read-boundaries","after-registry-view-policy","after-registry-access-policy","after-restoration-launch-failures","after-restoration-ownership-contracts","before-uninstall","after-uninstall"]
 
 def require(ok,message):
@@ -406,6 +407,33 @@ def validate_late_compatibility_refusal(value, failed_copy_exit_code, approved_s
     return {"lateCompatibilityFileRefusalVerified": True}
 
 
+def validate_protected_registry_read_boundaries(report):
+    expected = (
+        ("maximum-string-accepted", 0, 514),
+        ("inconsistent-display-name-refused", 3, 514),
+        ("maximum-expand-literal-owned-refused", 3, 514),
+        ("over-budget-string-refused", 1, 516),
+        ("oversized-string-refused", 1, 131086),
+        ("environment-reference-not-expanded", 1, 2 * (len("0.0.0-%ACCESSWEAVER_INSTALLER_REGISTRY_VERSION_PROBE%") + 1)),
+    )
+    keys = {"name", "expectedExitCode", "exitCode", "elapsedMilliseconds", "fixtureUTF16Bytes",
+            "refusedStatePreserved", "refusalReasonVerified", "profilePreserved"}
+    cases = report.get("registryReadCases")
+    require(type(report.get("registryReadBufferBytes")) is int and report["registryReadBufferBytes"] == 514
+            and isinstance(cases, list) and len(cases) == len(expected),
+            "Protected registry read cases are incomplete")
+    for case, (name, exit_code, size) in zip(cases, expected):
+        refused = exit_code != 0
+        require(isinstance(case, dict) and case.keys() == keys and case["name"] == name
+                and all(type(case[key]) is int and case[key] == exit_code for key in ("expectedExitCode", "exitCode"))
+                and type(case["fixtureUTF16Bytes"]) is int and case["fixtureUTF16Bytes"] == size
+                and type(case["elapsedMilliseconds"]) is int and 0 <= case["elapsedMilliseconds"] < 180000
+                and case["refusedStatePreserved"] is refused and case["refusalReasonVerified"] is refused
+                and case["profilePreserved"] is True,
+                "Protected registry read boundary did not verify its expected result")
+    return {"protectedRegistryReadBoundariesVerified": len(expected)}
+
+
 def validate_pending_marker_access(value):
     flags = {
         "discoveryReportedUnavailable", "managedDetectionRefused", "controllerUninstallBindingRefused",
@@ -621,6 +649,8 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
         require(report.get("uninstallDataDetectionVerified") is True,
                 "Managed detection did not verify the uninstall data refusal")
         setup_readback["uninstallDataDetectionVerified"] = True
+    if report["schemaVersion"] >= PROTECTED_REGISTRY_BOUNDARY_REPORT_SCHEMA:
+        setup_readback.update(validate_protected_registry_read_boundaries(report))
     event_counts=validate_firewall_event_diagnostics(report.get("firewallEventDiagnostics"))
     attempt_counts=validate_native_attempt(report.get("lastNativeAttempt"))
     state_counts=validate_state_observations(report.get("stateObservations"), include_rollback=report["schemaVersion"] >= ROLLBACK_REPORT_SCHEMA)

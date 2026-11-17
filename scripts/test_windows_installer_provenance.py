@@ -12,7 +12,7 @@ from verify_windows_installer_provenance import (
     validate_post_restoration_refusal, validate_restoration_controller_refusals, validate_setup_marker_replacement,
     validate_setup_uninstall_registration_refusal, validate_setup_upgrade_baseline, validate_uninstall_license_refusal,
     validate_native_documentation_refusals, validate_inno_runtime_notice, validate_previous_version_rollback,
-    validate_setup_retirement_flush, validate_late_compatibility_refusal,
+    validate_setup_retirement_flush, validate_late_compatibility_refusal, validate_protected_registry_read_boundaries,
 )
 from verify_windows_installer_provenance import BUNDLE_NAME,DEFAULT_VERSIONS,WORKFLOW,check_rejections,stage,subject_names,validate_build,verification_command,verify
 
@@ -294,6 +294,33 @@ class LateCompatibilityRefusalTests(unittest.TestCase):
                         {**observation, "setupExitCode": 7}):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 validate_late_compatibility_refusal(invalid, 4, "a" * 64)
+
+
+class ProtectedRegistryReadBoundaryTests(unittest.TestCase):
+    def test_requires_protected_registration_outcomes_and_preserved_state(self):
+        observed = [
+            ("maximum-string-accepted", 0, 514),
+            ("inconsistent-display-name-refused", 3, 514),
+            ("maximum-expand-literal-owned-refused", 3, 514),
+            ("over-budget-string-refused", 1, 516),
+            ("oversized-string-refused", 1, 131086),
+            ("environment-reference-not-expanded", 1, 108),
+        ]
+        cases = [{"name": name, "expectedExitCode": code, "exitCode": code, "elapsedMilliseconds": 16,
+                  "fixtureUTF16Bytes": size, "refusedStatePreserved": code != 0,
+                  "refusalReasonVerified": code != 0, "profilePreserved": True}
+                 for name, code, size in observed]
+        report = {"registryReadCases": cases, "registryReadBufferBytes": 514}
+        self.assertEqual(validate_protected_registry_read_boundaries(report),
+                         {"protectedRegistryReadBoundariesVerified": 6})
+        for field, invalid in (("exitCode", 0), ("refusalReasonVerified", False),
+                               ("refusedStatePreserved", False), ("fixtureUTF16Bytes", 512)):
+            changed = copy.deepcopy(report)
+            changed["registryReadCases"][2][field] = invalid
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_protected_registry_read_boundaries(changed)
+        with self.assertRaises(ValueError):
+            validate_protected_registry_read_boundaries({**report, "registryReadCases": cases[1:]})
 
 
 class FailedCopyRecoveryTests(unittest.TestCase):

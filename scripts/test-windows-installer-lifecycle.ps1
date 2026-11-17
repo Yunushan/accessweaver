@@ -1676,35 +1676,55 @@ end;
     }
     $null=State-Checkpoint 'after-version-policy'
     $stage='registry-read-boundaries';$registryReadCases=@()
+    $maximumVersion='0.0.0-'+('a'*250)
+    $protectedRegistrationRefusal='AccessWeaver protected registration or legacy approval refused.'
+    $boundedReadRefusal='The installed AccessWeaver version is unreadable, oversized or has an unsupported type.'
     foreach($case in @(
-        @{name='maximum-string-accepted';value=('0.0.0-'+('a'*250));kind=[Microsoft.Win32.RegistryValueKind]::String;expected=0},
-        @{name='maximum-expand-literal-accepted';value=('0.0.0-'+('a'*250));kind=[Microsoft.Win32.RegistryValueKind]::ExpandString;expected=0},
-        @{name='over-budget-string-refused';value=('0.0.0-'+('a'*251));kind=[Microsoft.Win32.RegistryValueKind]::String;expected=1},
-        @{name='oversized-string-refused';value=('0.0.0-'+('a'*65536));kind=[Microsoft.Win32.RegistryValueKind]::String;expected=1},
-        @{name='environment-reference-not-expanded';value='0.0.0-%ACCESSWEAVER_INSTALLER_REGISTRY_VERSION_PROBE%';kind=[Microsoft.Win32.RegistryValueKind]::ExpandString;expected=1}
+        @{name='maximum-string-accepted';value=$maximumVersion;kind=[Microsoft.Win32.RegistryValueKind]::String;syncName=$true;expected=0;reason=''},
+        @{name='inconsistent-display-name-refused';value=$maximumVersion;kind=[Microsoft.Win32.RegistryValueKind]::String;syncName=$false;expected=3;reason=$protectedRegistrationRefusal},
+        @{name='maximum-expand-literal-owned-refused';value=$maximumVersion;kind=[Microsoft.Win32.RegistryValueKind]::ExpandString;syncName=$true;expected=3;reason=$protectedRegistrationRefusal},
+        @{name='over-budget-string-refused';value=('0.0.0-'+('a'*251));kind=[Microsoft.Win32.RegistryValueKind]::String;syncName=$false;expected=1;reason=$boundedReadRefusal},
+        @{name='oversized-string-refused';value=('0.0.0-'+('a'*65536));kind=[Microsoft.Win32.RegistryValueKind]::String;syncName=$false;expected=1;reason=$boundedReadRefusal},
+        @{name='environment-reference-not-expanded';value='0.0.0-%ACCESSWEAVER_INSTALLER_REGISTRY_VERSION_PROBE%';kind=[Microsoft.Win32.RegistryValueKind]::ExpandString;syncName=$false;expected=1;reason='The installed AccessWeaver version is invalid.'}
     )){
         $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64);$key=$null
         try {
             $key=$base.OpenSubKey($uninstallKey,$true);Require ($null -ne $key) 'Owned installation registration is unavailable'
             $originalVersion=$key.GetValue('DisplayVersion');$originalKind=$key.GetValueKind('DisplayVersion')
+            $originalName=$key.GetValue('DisplayName');$originalNameKind=$key.GetValueKind('DisplayName')
             try {
                 $key.SetValue('DisplayVersion',$case.value,$case.kind)
+                if($case.syncName){
+                    $display='AccessWeaver version '+$case.value
+                    $key.SetValue('DisplayName',$display.Substring(0,[Math]::Min(259,$display.Length)),[Microsoft.Win32.RegistryValueKind]::String)
+                }
                 $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint $key
-                # A successful Inno reinstall replaces the registry leaf. Do not
-                # retain its old handle when restoring the fixture metadata.
                 if($case.expected -eq 0){$key.Dispose();$key=$null}
-                $resultCase=Native-Record $second $arguments (0..255)
+                $registryLog=Join-Path $capsule ('registry-boundary-'+$case.name+'.log')
+                $resultCase=Native-Record $second ($arguments+@('/LOG='+$registryLog)) (0..255)
+                No-Reparse $registryLog
+                $logSize=(Get-Item -LiteralPath $registryLog -ErrorAction Stop).Length
+                Require ($logSize -gt 0 -and $logSize -le 1MB) 'Registry boundary Setup log is unavailable or exceeds its bound'
+                $registryText=[IO.File]::ReadAllText($registryLog)
+                $refusalReasonVerified=$case.expected -ne 0 -and $registryText.Contains($case.reason)
+                $refusedStatePreserved=$case.expected -ne 0 -and (Installed-TreeFingerprint) -ceq $treeBefore -and
+                    (Registration-Fingerprint $key) -ceq $registrationBefore
+                Assert-UserState
+                $registryReadCases+=,@{name=$case.name;expectedExitCode=$case.expected;exitCode=$resultCase.result.exitCode;
+                    elapsedMilliseconds=$resultCase.milliseconds;fixtureUTF16Bytes=([Text.Encoding]::Unicode.GetByteCount($case.value)+2);
+                    refusedStatePreserved=$refusedStatePreserved;refusalReasonVerified=$refusalReasonVerified;profilePreserved=$true}
                 Require ($resultCase.result.exitCode -eq $case.expected) 'Bounded registry version handling returned an unexpected result'
                 if($case.expected -ne 0){
-                    Require ((Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint $key) -ceq $registrationBefore) 'Registry value refusal changed installed state'
+                    Require ($refusalReasonVerified -and $refusedStatePreserved) 'Registry refusal did not verify its cause and preserved installation'
                 }
-                $registryReadCases+=,@{name=$case.name;expectedExitCode=$case.expected;exitCode=$resultCase.result.exitCode;elapsedMilliseconds=$resultCase.milliseconds;fixtureUTF16Bytes=([Text.Encoding]::Unicode.GetByteCount($case.value)+2);refusedStatePreserved=($case.expected -ne 0);profilePreserved=$true}
             } finally {
                 if($null -eq $key){$key=$base.OpenSubKey($uninstallKey,$true);Require ($null -ne $key) 'Owned registration disappeared after boundary setup'}
                 $key.SetValue('DisplayVersion',$originalVersion,$originalKind)
+                if($case.syncName){$key.SetValue('DisplayName',$originalName,$originalNameKind)}
             }
         } finally {if($key){$key.Dispose()};$base.Dispose()}
         Assert-Installed $builds[1]
+        Require ($null -eq (Get-PendingInstallFixtureValue)) 'Registry boundary case left a pending installation record'
     }
     $null=State-Checkpoint 'after-registry-read-boundaries'
     $stage='registry-view-policy'
@@ -2200,7 +2220,7 @@ end;
 $eventDiagnostics=New-InstallerFirewallEventDiagnostic
 if(-not $complete){$eventDiagnostics=Read-FirewallEventDiagnostic}
 $originDiagnostics=[ordered]@{schemaVersion=1;source='captured-rule-properties';maxRecords=16;maxPropertyBytes=4096;records=@($script:firewallOriginObservations);truncated=$script:firewallOriginTruncated;unavailable=$script:firewallOriginUnavailable;extraNativeQueriesPerformed=$false;processOriginEstablished=$false}
-$record=[ordered]@{schemaVersion=62;lateCompatibilityRefusal=$lateCompatibilityRefusal;nativeDocumentationRefusals=$nativeDocumentationRefusals;controllerDocumentationRefusals=$controllerDocumentationRefusals;uninstallLicenseRefusal=$uninstallLicenseRefusal;uninstallDataDetectionVerified=[bool]$uninstallDataDetectionVerified;uninstallDataRecoveryVerified=[bool]$uninstallDataRecoveryVerified;setupUpgradeBaseline=$setupUpgradeBaseline;setupUninstallRegistrationRefusal=$setupUninstallRegistrationRefusal;setupMarkerReplacement=$setupMarkerReplacement;postRestorationRefusal=$postRestorationRefusal;setupCompletionRefusal=$completionRefusal;setupDocumentationCompletionRefusal=$documentationCompletionRefusal;setupRetirementFlush=$setupRetirementFlush;setupCompletionReadbackVerified=$complete;installationPathRefusals=$pathRefusal;pendingMarkerAccess=$pendingMarkerAccess;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;runAttempt=$runAttempt;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record=[ordered]@{schemaVersion=63;lateCompatibilityRefusal=$lateCompatibilityRefusal;nativeDocumentationRefusals=$nativeDocumentationRefusals;controllerDocumentationRefusals=$controllerDocumentationRefusals;uninstallLicenseRefusal=$uninstallLicenseRefusal;uninstallDataDetectionVerified=[bool]$uninstallDataDetectionVerified;uninstallDataRecoveryVerified=[bool]$uninstallDataRecoveryVerified;setupUpgradeBaseline=$setupUpgradeBaseline;setupUninstallRegistrationRefusal=$setupUninstallRegistrationRefusal;setupMarkerReplacement=$setupMarkerReplacement;postRestorationRefusal=$postRestorationRefusal;setupCompletionRefusal=$completionRefusal;setupDocumentationCompletionRefusal=$documentationCompletionRefusal;setupRetirementFlush=$setupRetirementFlush;setupCompletionReadbackVerified=$complete;installationPathRefusals=$pathRefusal;pendingMarkerAccess=$pendingMarkerAccess;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;runAttempt=$runAttempt;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 if($null -ne $script:uninstallBindingFailureCode){$record.uninstallBindingFailureCode=$script:uninstallBindingFailureCode}
 if(-not $complete -and $null -ne $script:installerProtectionDiagnostic -and $script:installerProtectionDiagnosticStage -ceq $stage){$record.uninstallProtectionDiagnostic=$script:installerProtectionDiagnostic}
 $record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $reportPath -Encoding utf8
