@@ -457,7 +457,7 @@ var windowsRunReleaseNames = [...]string{
 	"job-worker-missing", "job-live-engine", "job-terminated-engine", "job-live-worker-peer",
 	"job-live-other", "job-terminated-other", "job-peer-probe", "job-worker-only-list",
 	"job-live-system-console-path", "job-live-system-powershell-path", "job-live-system-cmd-path",
-	"console-window-binding", "console-process-binding", "console-process-open", "console-image-provenance", "console-initial-job-members",
+	"console-client-binding", "console-initial-member-binding", "console-process-open", "console-image-provenance", "console-initial-job-members",
 }
 
 func windowsRunReleaseValid(stage windowsRunReleaseStage, failed uint64) bool {

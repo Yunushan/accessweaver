@@ -352,7 +352,6 @@ func stageRequiredWindowsPolicy(f *ordinaryFixture) (*ordinaryPolicyFixture, err
 
 type windowsCommandWorker struct {
 	consoleProcess                                   windows.Handle
-	consoleWindow                                    uintptr
 	consolePID                                       uint32
 	consoleInJob                                     bool
 	releaseFailure                                   windowsRunReleaseStage
@@ -1689,26 +1688,60 @@ func windowsCurrentJobMembers() ([]uint32, uint32, error) {
 }
 
 func (w *windowsCommandWorker) bindWindowsConsole() windowsRunReleaseStage {
-	hwnd, _, _ := ordinaryKernel.NewProc("GetConsoleWindow").Call()
-	if hwnd == 0 {
+	// The privileged parent assigns only the suspended worker to its anonymous
+	// KILL_ON_JOB_CLOSE job, checks Active/Total == 1, then resumes it. Bind the
+	// initial console helper before any product operation; never adopt a later
+	// or arbitrary peer by its name.
+	var clients [4]uint32
+	count, _, _ := ordinaryKernel.NewProc("GetConsoleProcessList").Call(uintptr(unsafe.Pointer(&clients[0])), uintptr(len(clients)))
+	if count != 1 || clients[0] != uint32(os.Getpid()) {
 		return 36
 	}
-	var pid uint32
-	thread, _, _ := ordinaryUser32.NewProc("GetWindowThreadProcessId").Call(hwnd, uintptr(unsafe.Pointer(&pid)))
-	if thread == 0 || pid == 0 || pid == uint32(os.Getpid()) {
+	ids, assigned, err := windowsCurrentJobMembers()
+	if err != nil || assigned < 1 || assigned > 2 {
+		return 40
+	}
+	var peer uint32
+	foundWorker := false
+	for _, pid := range ids {
+		if pid == uint32(os.Getpid()) {
+			if foundWorker {
+				return 37
+			}
+			foundWorker = true
+		} else {
+			if peer != 0 {
+				return 37
+			}
+			peer = pid
+		}
+	}
+	if !foundWorker {
 		return 37
 	}
-	process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, pid)
+	if peer == 0 {
+		if !windowsJobMembersValid(uint32(os.Getpid()), 0, 0, false, assigned, ids) {
+			return 40
+		}
+		return 0
+	}
+	process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, peer)
 	if err != nil {
 		return 38
 	}
-	w.consoleProcess, w.consolePID, w.consoleWindow = process, pid, hwnd
+	w.consoleProcess, w.consolePID, w.consoleInJob = process, peer, true
 	var image [32768]uint16
 	length := uint32(len(image))
 	system, systemErr := nativepath.SystemDirectory()
 	if windows.QueryFullProcessImageName(process, 0, &image[0], &length) != nil || systemErr != nil ||
 		length == 0 || length >= uint32(len(image)) || !strings.EqualFold(windows.UTF16ToString(image[:length]), filepath.Join(system, "conhost.exe")) {
 		return 39
+	}
+	var workerCreated, peerCreated, exited, kernel, user windows.Filetime
+	if windows.GetProcessTimes(windows.CurrentProcess(), &workerCreated, &exited, &kernel, &user) != nil ||
+		windows.GetProcessTimes(process, &peerCreated, &exited, &kernel, &user) != nil ||
+		uint64(peerCreated.HighDateTime)<<32|uint64(peerCreated.LowDateTime) < uint64(workerCreated.HighDateTime)<<32|uint64(workerCreated.LowDateTime) {
+		return 37
 	}
 	file, err := ordinaryOpen(filepath.Join(system, "conhost.exe"), windows.FILE_READ_ATTRIBUTES|windows.READ_CONTROL)
 	if err != nil {
@@ -1719,16 +1752,7 @@ func (w *windowsCommandWorker) bindWindowsConsole() windowsRunReleaseStage {
 	if !protected || !closed {
 		return 39
 	}
-	ids, assigned, err := windowsCurrentJobMembers()
-	if err != nil {
-		return 40
-	}
-	for _, id := range ids {
-		if id == pid {
-			w.consoleInJob = true
-		}
-	}
-	if !windowsJobMembersValid(uint32(os.Getpid()), pid, 0, w.consoleInJob, assigned, ids) || !w.windowsConsoleStillBound() {
+	if !windowsJobMembersValid(uint32(os.Getpid()), peer, 0, true, assigned, ids) || !w.windowsConsoleStillBound() {
 		return 40
 	}
 	return 0
@@ -1736,14 +1760,19 @@ func (w *windowsCommandWorker) bindWindowsConsole() windowsRunReleaseStage {
 
 func (w *windowsCommandWorker) windowsConsoleStillBound() bool {
 	root := w.manifest()
+	if !root.consoleInJob {
+		return root.consoleProcess == 0 && root.consolePID == 0
+	}
 	state, err := windows.WaitForSingleObject(root.consoleProcess, 0)
 	if err != nil || state != uint32(windows.WAIT_TIMEOUT) {
 		return false
 	}
-	hwnd, _, _ := ordinaryKernel.NewProc("GetConsoleWindow").Call()
-	var pid uint32
-	thread, _, _ := ordinaryUser32.NewProc("GetWindowThreadProcessId").Call(hwnd, uintptr(unsafe.Pointer(&pid)))
-	return hwnd == root.consoleWindow && thread != 0 && pid == root.consolePID
+	var image [32768]uint16
+	length := uint32(len(image))
+	system, systemErr := nativepath.SystemDirectory()
+	return windows.QueryFullProcessImageName(root.consoleProcess, 0, &image[0], &length) == nil &&
+		systemErr == nil && length != 0 && length < uint32(len(image)) &&
+		strings.EqualFold(windows.UTF16ToString(image[:length]), filepath.Join(system, "conhost.exe"))
 }
 
 func windowsRunWaitReady(w *windowsCommandWorker) bool {
