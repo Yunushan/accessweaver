@@ -703,6 +703,7 @@
             "docs/WINDOWS_WORKFLOWS.md",
             "cmd/accessweaver-installer/main.go",
             "scripts/test-macos-deployment-package.py",
+            "docs/qualification/f920bd5d695e-versioned-macos-deployment.json",
             "docs/MACOS_MANAGED_POLICY.md",
             "docs/qualification/16632c4b2a7f-linux-deb-lifecycle.json",
             "docs/LINUX_DEBIAN_DEPLOYMENT.md",
