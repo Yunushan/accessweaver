@@ -4219,10 +4219,12 @@ function Assert-RecordedServiceBinding($Entry) {
     return $state
 }
 function Wait-RecordedServiceStopped([string]$Name) {
-    $service=[ServiceProcess.ServiceController]::new($Name)
+    # Get-Service supplies the controller even when stock Windows PowerShell
+    # has not loaded the ServiceProcess assembly in a fresh removal worker.
+    $service=Get-Service -Name $Name -ErrorAction Stop
     try {$service.WaitForStatus('Stopped',[TimeSpan]::FromSeconds(20))}
     catch [System.ServiceProcess.TimeoutException] {throw 'Managed service did not reach the stopped state; its registration is retained for recovery'}
-    finally {$service.Dispose()}
+    finally {if($service -is [IDisposable]){$service.Dispose()}}
 }
 function Wait-RecordedServiceAbsent([string]$Name) {
     $clock=[Diagnostics.Stopwatch]::StartNew()
