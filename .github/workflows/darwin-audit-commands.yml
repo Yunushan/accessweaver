@@ -8,7 +8,7 @@ on:
         description: Native macOS validation scope
         type: choice
         default: audit
-        options: [audit, engine-unit, core-and-audit]
+        options: [audit, engine-unit, engine-race, core-and-audit]
 
 permissions:
   contents: read
@@ -19,14 +19,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  engine-unit:
-    if: github.event_name == 'workflow_dispatch' && (inputs.scope == 'engine-unit' || inputs.scope == 'core-and-audit')
+  engine-core:
+    if: github.event_name == 'workflow_dispatch' && (inputs.scope == 'engine-unit' || inputs.scope == 'engine-race' || inputs.scope == 'core-and-audit')
     uses: ./.github/workflows/native-core.yml
     with:
-      platform: darwin
+      platform: ${{ inputs.scope == 'engine-race' && 'darwin-race' || 'darwin' }}
 
   native:
-    if: github.event_name != 'workflow_dispatch' || inputs.scope != 'engine-unit'
+    if: github.event_name != 'workflow_dispatch' || (inputs.scope != 'engine-unit' && inputs.scope != 'engine-race')
     name: Native macOS recorded audit commands (${{ matrix.goarch }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15

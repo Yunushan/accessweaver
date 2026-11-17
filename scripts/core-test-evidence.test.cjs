@@ -39,6 +39,9 @@ test('preview reporting keeps full root scope, default concurrency and existing 
  assert.deepEqual(C.testArguments('unit',false,true),['test','-json','-count=1','./...']);
  assert.throws(()=>C.testArguments('race',false,true));
  assert.throws(()=>C.testArguments('unit',true,true));
+ assert.deepEqual(C.testArguments('race',false,false,true),['test','-json','-race','./internal/engine','./cmd/accessweaver','-count=1']);
+ assert.throws(()=>C.testArguments('unit',false,false,true));
+ assert.throws(()=>C.testArguments('race',true,false,true));
 });
 test('Windows unit reports support distinct exclusive names and reject unsafe output names or unsupported modes',async t=>{
  const root=await temporary(t),sourceSHA256=Object.fromEntries(C.sources.map(name=>[name,'c'.repeat(64)]));
@@ -95,6 +98,16 @@ test('macOS unit report binds the release workflow and excludes private data',as
  assert.equal(report.platform,'darwin');
  assert.equal(report.sourceSHA256['.github/workflows/release.yml'],'d'.repeat(64));
  assert.equal(report.outcome,'passed');
+});
+
+test('macOS race receipt requires both PR lifecycle packages and binds the CI workflow',async t=>{
+ const root=await temporary(t),paths=['cmd/accessweaver','internal/engine'].map(name=>MODULE+'/'+name);
+ const tracker=new C.Tracker({schemaVersion:1,module:MODULE,packages:paths.map(path=>({path,tests:[]}))});
+ for(const pkg of paths)tracker.event({Action:'pass',Package:pkg});
+ const pins=[...C.sources,'.github/workflows/release.yml','.github/workflows/darwin-audit-commands.yml','.github/workflows/ci.yml','internal/engine/lifetime_unix_test.go','internal/engine/shutdown_unix_test.go','internal/engine/tracked_run_test.go'];
+ const data={schemaVersion:2,sourceCommit:'a'.repeat(40),sourceTree:'b'.repeat(40),sourceSHA256:Object.fromEntries(pins.map(name=>[name,'c'.repeat(64)])),platform:'darwin',architecture:'arm64',go:'go1.27.4',mode:'race',stage:'complete',exitCode:0,streamValid:true,sourceStable:true,inputBytes:100,...tracker.value('race',0),engineLifetimeDiagnostics:[],productionQualificationComplete:false};
+ await assert.rejects(C.writeReport(root,{...data,packages:data.packages.slice(0,1)}));
+ await C.writeReport(root,data);
 });
 
 
