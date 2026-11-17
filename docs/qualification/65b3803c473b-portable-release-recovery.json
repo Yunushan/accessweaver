@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "scope": "local-portable-release-source-recovery",
+  "sourceCommit": "65b3803c473bd3b09b2f1e229077860501786cde",
+  "gitBundleSHA256": "6409b9321f721023994eee63fb9c34bf5a02a1dd6458352d81d8835388446001",
+  "releaseLabel": "recovery-65b3803",
+  "goVersion": "go version go1.27.4 linux/amd64",
+  "packaging": {
+    "pythonVersion": "3.14.4",
+    "zlibVersion": "1.3.1",
+    "zlibRuntimeVersion": "1.3.1",
+    "archiveEpoch": 1794899687
+  },
+  "oneRefBundleRestored": true,
+  "separateCleanCheckoutsAndBuildCaches": true,
+  "retainedVerifiedModuleMirror": true,
+  "portableArchivesVerifiedPerBuild": 10,
+  "linuxAmd64NativeBuildIdentityVerified": true,
+  "allComparedFilesByteIdentical": true,
+  "publisherSignatureVerified": false,
+  "hostedReleaseInfrastructureRestored": false,
+  "productionQualificationComplete": false,
+  "fileSHA256": {
+    "BUILD-MANIFEST.json": "93d28e5ca6b451192b6c0858d7fc85dd674d739c5fc50ea353d46eab898a16ad",
+    "SHA256SUMS.txt": "b5ab9a98c9a05fb0f3d6801ae5ed40dd3fc19bb94e06663f29be5168251c390b",
+    "accessweaver-recovery-65b3803-darwin-amd64.tar.gz": "da4b960713dc3a136463c26c318105ce81f584a42ce4f305552d5ab61ab2894e",
+    "accessweaver-recovery-65b3803-darwin-arm64.tar.gz": "79e53c9c40f8d25b0218ae2c334d1ddeb77e5ddc6c2919ebb579d8693c36d23a",
+    "accessweaver-recovery-65b3803-freebsd-amd64.tar.gz": "419a1a09af96f4604766eba4371dd25224e908539f539efaf6e7042dab6bdf78",
+    "accessweaver-recovery-65b3803-freebsd-arm64.tar.gz": "62702c8cb9d33962c5cb701b9ab1a40d13736632681df3c6ef6c2329c2c9d93d",
+    "accessweaver-recovery-65b3803-linux-amd64.tar.gz": "1954badbf28af5f3b69c50c642154007a534fdaad7b879219c4ead600639871f",
+    "accessweaver-recovery-65b3803-linux-arm64.tar.gz": "dce21bd19cc802e9ac4da55b1e07226416f885046ae60659aae61a10f253b9af",
+    "accessweaver-recovery-65b3803-openbsd-amd64.tar.gz": "071414b89375a1091a7f2447ffa0e929172b9c5c03841523a4d5156ef68fd204",
+    "accessweaver-recovery-65b3803-openbsd-arm64.tar.gz": "513800bceb6c9ee17491aeaf3e479182d5867cb8c21847b89e81ddcaca540212",
+    "accessweaver-recovery-65b3803-windows-amd64.zip": "fe90bf870229b033a1fd936656e58d9df328d0f1edaf9fd511f8deedcfbf330a",
+    "accessweaver-recovery-65b3803-windows-arm64.zip": "98cea4e0286a5f10853c0646a96a1cf5c99c8842e7640753378ef286f8f3c5d4"
+  },
+  "sourceSHA256": {
+    ".gitattributes": "b7a4f11cbe3632d5d679c8a2c135860b4d31f1f434006be479808463d799f8bc",
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+    "scripts/build-all.sh": "6d8712ac794b04cbd9406d819557db3d74d6f31db43c138a45f5f74be146ccdc",
+    "scripts/package-release.sh": "467a7a8f0d3d225148e65cf2342c809cf52f50a3740400b3096e0ec890865b35",
+    "scripts/release_archive.py": "d4f2da52a8519042193e7bf1f330fff5372c2b6e736a5aed1442d218595dd517",
+    "scripts/sbom.py": "a973b9268001e6328f963ea9715723c1706bd9095ad70e8d874b87dab97904b8",
+    "scripts/verify-release.py": "877e2987c403a8cf5c289d04bed8a8fce915cac7c43d500cf963081d8ac83256",
+    "scripts/sbom-tools/go.mod": "d31958b2a0537cc549be979c567d829812523558d713cc50c59f20caa747a211",
+    "scripts/sbom-tools/go.sum": "da615e479f84e5f7278666ec31f14478644b08f1b3c6f62b5b4a4fb6e417ba50"
+  }
+}
