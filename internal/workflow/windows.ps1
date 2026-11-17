@@ -2971,10 +2971,29 @@ function Read-DNSDohPlaintextRules([ValidateSet('PersistentStore','ActiveStore')
     if($warnings.Count){throw 'Managed DoH firewall inventory could not be verified; retain the recovery snapshot'}
     return $rules
 }
-function Get-DNSDohPlaintextRule([string]$ID,[ValidateSet('TCP','UDP')][string]$Protocol,
-        [ValidateSet('PersistentStore','ActiveStore')][string]$Store,[object[]]$Inventory) {
-    if($ID -cnotmatch '\A[a-f0-9]{32}\z'){throw 'Invalid DoH plaintext protection identity'}
+function Get-DNSDohFirewallProfileBits {
+    return [ordered]@{Domain=1;Private=2;Public=4}
+}
+function Get-DNSDohActiveProfileMask {
+    $policy=New-Object -ComObject HNetCfg.FwPolicy2
+    try {
+        $mask=$policy.CurrentProfileTypes
+        if($mask -isnot [int] -or $mask -lt 1 -or $mask -gt 7){
+            throw 'Active Windows Firewall profiles could not be verified'
+        }
+        return $mask
+    } finally {[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($policy)}
+}
+function Get-DNSDohPlaintextRuleName([string]$ID,[string]$Protocol,[string]$Profile) {
     $name='AccessWeaver-DoH-Plaintext-'+$Protocol+'-'+$ID
+    if($Profile -cne 'Any'){$name+='-'+$Profile}
+    return $name
+}
+function Get-DNSDohPlaintextRule([string]$ID,[ValidateSet('TCP','UDP')][string]$Protocol,
+        [ValidateSet('PersistentStore','ActiveStore')][string]$Store,[object[]]$Inventory,
+        [ValidateSet('Any','Domain','Private','Public')][string]$Profile='Any') {
+    if($ID -cnotmatch '\A[a-f0-9]{32}\z'){throw 'Invalid DoH plaintext protection identity'}
+    $name=Get-DNSDohPlaintextRuleName $ID $Protocol $Profile
     if(-not $PSBoundParameters.ContainsKey('Inventory')){$Inventory=@(Read-DNSDohPlaintextRules $Store)}
     $rows=@($Inventory | Where-Object {$_.Name -ieq $name})
     if($rows.Count -eq 0){return}
@@ -2983,12 +3002,18 @@ function Get-DNSDohPlaintextRule([string]$ID,[ValidateSet('TCP','UDP')][string]$
     if($rows.Count -ne 1 -or $rule.Name -cne $name -or
         $rule.Description -cne ('AccessWeaver DoH plaintext protection '+$ID) -or
         [string]$rule.Enabled -cne 'True' -or [string]$rule.Direction -cne 'Outbound' -or
-        [string]$rule.Action -cne 'Block' -or [string]$rule.Profile -cne 'Any' -or
+        [string]$rule.Action -cne 'Block' -or
         [string]$rule.LooseSourceMapping -cne 'False' -or [string]$rule.LocalOnlyMapping -cne 'False' -or
         $rule.Platforms -or $rule.RemoteDynamicKeywordAddresses -or
         ($Store -ceq 'ActiveStore' -and [string]$rule.PolicyStoreSourceType -cne 'Local')){
         throw $failure
     }
+    if($rule -is [Microsoft.Management.Infrastructure.CimInstance]){
+        $profileProperty=$rule.PSBase.CimInstanceProperties['Profiles']
+        $expectedProfile=if($Profile -ceq 'Any'){0}else{(Get-DNSDohFirewallProfileBits)[$Profile]}
+        if($null -eq $profileProperty -or $profileProperty.CimType -ne [Microsoft.Management.Infrastructure.CimType]::UInt16 -or
+            $profileProperty.Value -isnot [uint16] -or $profileProperty.Value -ne $expectedProfile){throw $failure}
+    }elseif([string]$rule.Profile -cne $Profile){throw $failure}
     $warnings=@()
     $filterQuery=@{AssociatedNetFirewallRule=$rule;PolicyStore=$Store;ErrorAction='Stop';
         WarningAction='SilentlyContinue';WarningVariable='+warnings'}
@@ -3032,10 +3057,13 @@ function Get-DNSDohPlaintextRule([string]$ID,[ValidateSet('TCP','UDP')][string]$
     return $rule
 }
 function Assert-DNSDohPlaintextRuleOwnership([string]$ID) {
+    $profiles=@('Any')+@((Get-DNSDohFirewallProfileBits).Keys)
     $expected=@()
     if($ID){
         if($ID -cnotmatch '\A[a-f0-9]{32}\z'){throw 'Invalid DoH plaintext protection identity'}
-        $expected=@(('AccessWeaver-DoH-Plaintext-TCP-'+$ID),('AccessWeaver-DoH-Plaintext-UDP-'+$ID))
+        $expected=@(foreach($protocol in @('TCP','UDP')){
+            foreach($profile in $profiles){Get-DNSDohPlaintextRuleName $ID $protocol $profile}
+        })
     }
     foreach($store in @('PersistentStore','ActiveStore')){
         $inventory=@(Read-DNSDohPlaintextRules $store)
@@ -3043,154 +3071,193 @@ function Assert-DNSDohPlaintextRuleOwnership([string]$ID) {
             throw 'Managed DoH firewall rules do not match the current DNS recovery snapshot; restore the matching original snapshot before retrying'
         }
         if($ID){
-            foreach($protocol in @('TCP','UDP')){[void](Get-DNSDohPlaintextRule $ID $protocol $store -Inventory $inventory)}
+            foreach($protocol in @('TCP','UDP')){
+                foreach($profile in $profiles){
+                    [void](Get-DNSDohPlaintextRule $ID $protocol $store -Inventory $inventory -Profile $profile)
+                }
+            }
+        }
+    }
+}
+function Assert-DNSDohEffectiveStatus($active,[switch]$RequireInactive) {
+    $fullyEnforced=$false
+    if($active){
+        # MSFT_NetFirewallRule exposes a uint16 array; Full is code 1.
+        # NetSecurity may adapt that value to an enum or the Full label.
+        if($active -is [Microsoft.Management.Infrastructure.CimInstance]){
+            # NetSecurity's ETS property is localized display formatting, not
+            # the schema's uint16 array. Never parse it as policy authority.
+            $statusProperty=$active.PSBase.CimInstanceProperties['EnforcementStatus']
+            $statuses=@()
+            if($null -ne $statusProperty -and $statusProperty.CimType -eq [Microsoft.Management.Infrastructure.CimType]::UInt16Array){
+                $statuses=@($statusProperty.Value)
+            }
+        }else{
+            $statuses=@($active.EnforcementStatus)
+        }
+        if($statuses.Count -eq 1 -and $null -ne $statuses[0]){
+            $status=$statuses[0]
+            $label=($status -is [string] -or $status -is [Enum]) -and [string]$status -ceq 'Full'
+            $integer=$status.GetType() -in @([byte],[sbyte],[uint16],[int16],[uint32],[int32],[uint64],[int64])
+            $fullyEnforced=$label -or ($integer -and $status -eq 1)
+        }
+    }
+    if($RequireInactive){
+        if($statuses.Count -eq 1 -and $null -ne $status){
+            $inactiveLabel=($status -is [string] -or $status -is [Enum]) -and [string]$status -ceq 'InactiveProfile'
+            if($inactiveLabel -or ($integer -and $status -eq 5)){return}
+        }
+        throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: inactive profile status differs'
+    }
+    if(-not $fullyEnforced){
+        $labels=@(
+            'Invalid','Full','FirewallOffInProfile','CategoryOff','DisabledObject','InactiveProfile','LocalAddressResolutionEmpty','RemoteAddressResolutionEmpty','LocalPortResolutionEmpty','RemotePortResolutionEmpty','InterfaceResolutionEmpty','ApplicationResolutionEmpty',
+            'RemoteMachineEmpty','RemoteUserEmpty','LocalGlobalOpenPortsDisallowed','LocalAuthorizedApplicationsDisallowed','LocalFirewallRulesDisallowed','LocalConsecRulesDisallowed','NotTargetPlatform','OptimizedOut','LocalUserEmpty','TransportMachinesEmpty','TunnelMachinesEmpty','TupleResolutionEmpty'
+        )
+        if($statuses.Count -eq 0 -or ($statuses.Count -eq 1 -and $null -eq $statuses[0])){
+            throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: enforcement status unavailable'
+        }
+        if($statuses.Count -ne 1){
+            # Diagnose only bounded, source-known shapes. Every array here still refuses.
+            $onlyFull=$statuses.Count -le 32;$onlyFullOrInactive=$onlyFull
+            $sawFull=$false;$sawInactive=$false
+            if($onlyFullOrInactive){
+                foreach($entry in $statuses){
+                    $entryInteger=$null -ne $entry -and $entry.GetType() -in @([byte],[sbyte],[uint16],[int16],[uint32],[int32],[uint64],[int64])
+                    $entryLabel=$entry -is [string] -or $entry -is [Enum]
+                    $entryFull=($entryLabel -and [string]$entry -ceq 'Full') -or ($entryInteger -and $entry -eq 1)
+                    $entryInactive=($entryLabel -and [string]$entry -ceq 'InactiveProfile') -or ($entryInteger -and $entry -eq 5)
+                    $onlyFull=$onlyFull -and $entryFull
+                    $onlyFullOrInactive=$onlyFullOrInactive -and ($entryFull -or $entryInactive)
+                    $sawFull=$sawFull -or $entryFull;$sawInactive=$sawInactive -or $entryInactive
+                }
+            }
+            if($onlyFull){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: repeated Full statuses'}
+            if($onlyFullOrInactive -and $sawFull -and $sawInactive){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: mixed Full and InactiveProfile statuses'}
+            if($onlyFullOrInactive -and -not $sawFull -and $sawInactive){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: repeated InactiveProfile statuses'}
+            # A documented non-Full member explains a refusal even when other
+            # entries are unrecognized. This never changes Full admission.
+            $diagnosed=$false
+            if($statuses.Count -le 32){
+                foreach($entry in $statuses){
+                    $entryInteger=$null -ne $entry -and $entry.GetType() -in @([byte],[sbyte],[uint16],[int16],[uint32],[int32],[uint64],[int64])
+                    $entryKnown=-1
+                    if($entryInteger){
+                        if($entry -ge 0 -and $entry -le 23 -and $entry -ne 1){$entryKnown=[int]$entry}
+                    }elseif($entry -is [string] -or $entry -is [Enum]){
+                        for($index=0;$index -lt $labels.Count;$index++){
+                            if($index -ne 1 -and [string]$entry -ceq $labels[$index]){$entryKnown=$index;break}
+                        }
+                    }
+                    if($entryKnown -ge 0){$status=$entry;$integer=$entryInteger;$diagnosed=$true;break}
+                }
+            }
+            if(-not $diagnosed){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: enforcement status ambiguous'}
+        }
+        # Only classify documented integer, enum or exact label representations.
+        # Classification never authorizes a non-Full rule.
+        $knownStatus=-1
+        if($integer){
+            if($status -ge 0 -and $status -le 23){$knownStatus=[int]$status}
+        }elseif($status -is [string] -or $status -is [Enum]){
+            for($index=0;$index -lt $labels.Count;$index++){
+                if([string]$status -ceq $labels[$index]){$knownStatus=$index;break}
+            }
+        }
+        switch($knownStatus){
+            0 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: Invalid'}
+            2 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: FirewallOffInProfile'}
+            3 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: CategoryOff'}
+            4 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: DisabledObject'}
+            5 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: InactiveProfile'}
+            6 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalAddressResolutionEmpty'}
+            7 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: RemoteAddressResolutionEmpty'}
+            8 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalPortResolutionEmpty'}
+            9 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: RemotePortResolutionEmpty'}
+            10 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: InterfaceResolutionEmpty'}
+            11 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: ApplicationResolutionEmpty'}
+            12 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: RemoteMachineEmpty'}
+            13 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: RemoteUserEmpty'}
+            14 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalGlobalOpenPortsDisallowed'}
+            15 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalAuthorizedApplicationsDisallowed'}
+            16 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalFirewallRulesDisallowed'}
+            17 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalConsecRulesDisallowed'}
+            18 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: NotTargetPlatform'}
+            19 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: OptimizedOut'}
+            20 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalUserEmpty'}
+            21 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: TransportMachinesEmpty'}
+            22 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: TunnelMachinesEmpty'}
+            23 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: TupleResolutionEmpty'}
+            default {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: enforcement status unsupported'}
         }
     }
 }
 function Assert-DNSDohPlaintextBlock([string]$ID) {
     Assert-DNSDohFirewallAvailable
+    $bits=Get-DNSDohFirewallProfileBits
+    $mask=Get-DNSDohActiveProfileMask
+    $persistent=@(Read-DNSDohPlaintextRules 'PersistentStore')
+    $active=@(Read-DNSDohPlaintextRules 'ActiveStore')
     foreach($protocol in @('TCP','UDP')){
-        $active=Get-DNSDohPlaintextRule $ID $protocol 'ActiveStore'
-        $fullyEnforced=$false
-        if($active){
-            # MSFT_NetFirewallRule exposes a uint16 array; Full is code 1.
-            # NetSecurity may adapt that value to an enum or the Full label.
-            if($active -is [Microsoft.Management.Infrastructure.CimInstance]){
-                # NetSecurity's ETS property is localized display formatting, not
-                # the schema's uint16 array. Never parse it as policy authority.
-                $statusProperty=$active.PSBase.CimInstanceProperties['EnforcementStatus']
-                $statuses=@()
-                if($null -ne $statusProperty -and $statusProperty.CimType -eq [Microsoft.Management.Infrastructure.CimType]::UInt16Array){
-                    $statuses=@($statusProperty.Value)
-                }
-            }else{
-                $statuses=@($active.EnforcementStatus)
+        foreach($profile in $bits.Keys){
+            if(-not (Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore' -Inventory $persistent -Profile $profile)){
+                throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: persistent rule missing'
             }
-            if($statuses.Count -eq 1 -and $null -ne $statuses[0]){
-                $status=$statuses[0]
-                $label=($status -is [string] -or $status -is [Enum]) -and [string]$status -ceq 'Full'
-                $integer=$status.GetType() -in @([byte],[sbyte],[uint16],[int16],[uint32],[int32],[uint64],[int64])
-                $fullyEnforced=$label -or ($integer -and $status -eq 1)
+            $effective=Get-DNSDohPlaintextRule $ID $protocol 'ActiveStore' -Inventory $active -Profile $profile
+            if(-not $effective){
+                throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: effective rule missing'
             }
+            $inactive=($mask -band $bits[$profile]) -eq 0
+            Assert-DNSDohEffectiveStatus $effective -RequireInactive:$inactive
         }
-        # Keep fixed reasons observable without exposing rule identities or provider text.
-        $persistent=Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore'
-        if(-not $persistent){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: persistent rule missing'}
-        if(-not $active){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: effective rule missing'}
-        if(-not $fullyEnforced){
-            $labels=@(
-                'Invalid','Full','FirewallOffInProfile','CategoryOff','DisabledObject','InactiveProfile','LocalAddressResolutionEmpty','RemoteAddressResolutionEmpty','LocalPortResolutionEmpty','RemotePortResolutionEmpty','InterfaceResolutionEmpty','ApplicationResolutionEmpty',
-                'RemoteMachineEmpty','RemoteUserEmpty','LocalGlobalOpenPortsDisallowed','LocalAuthorizedApplicationsDisallowed','LocalFirewallRulesDisallowed','LocalConsecRulesDisallowed','NotTargetPlatform','OptimizedOut','LocalUserEmpty','TransportMachinesEmpty','TunnelMachinesEmpty','TupleResolutionEmpty'
-            )
-            if($statuses.Count -eq 0 -or ($statuses.Count -eq 1 -and $null -eq $statuses[0])){
-                throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: enforcement status unavailable'
-            }
-            if($statuses.Count -ne 1){
-                # Diagnose only bounded, source-known shapes. Every array here still refuses.
-                $onlyFull=$statuses.Count -le 32;$onlyFullOrInactive=$onlyFull
-                $sawFull=$false;$sawInactive=$false
-                if($onlyFullOrInactive){
-                    foreach($entry in $statuses){
-                        $entryInteger=$null -ne $entry -and $entry.GetType() -in @([byte],[sbyte],[uint16],[int16],[uint32],[int32],[uint64],[int64])
-                        $entryLabel=$entry -is [string] -or $entry -is [Enum]
-                        $entryFull=($entryLabel -and [string]$entry -ceq 'Full') -or ($entryInteger -and $entry -eq 1)
-                        $entryInactive=($entryLabel -and [string]$entry -ceq 'InactiveProfile') -or ($entryInteger -and $entry -eq 5)
-                        $onlyFull=$onlyFull -and $entryFull
-                        $onlyFullOrInactive=$onlyFullOrInactive -and ($entryFull -or $entryInactive)
-                        $sawFull=$sawFull -or $entryFull;$sawInactive=$sawInactive -or $entryInactive
-                    }
-                }
-                if($onlyFull){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: repeated Full statuses'}
-                if($onlyFullOrInactive -and $sawFull -and $sawInactive){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: mixed Full and InactiveProfile statuses'}
-                if($onlyFullOrInactive -and -not $sawFull -and $sawInactive){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: repeated InactiveProfile statuses'}
-                # A documented non-Full member explains a refusal even when other
-                # entries are unrecognized. This never changes Full admission.
-                $diagnosed=$false
-                if($statuses.Count -le 32){
-                    foreach($entry in $statuses){
-                        $entryInteger=$null -ne $entry -and $entry.GetType() -in @([byte],[sbyte],[uint16],[int16],[uint32],[int32],[uint64],[int64])
-                        $entryKnown=-1
-                        if($entryInteger){
-                            if($entry -ge 0 -and $entry -le 23 -and $entry -ne 1){$entryKnown=[int]$entry}
-                        }elseif($entry -is [string] -or $entry -is [Enum]){
-                            for($index=0;$index -lt $labels.Count;$index++){
-                                if($index -ne 1 -and [string]$entry -ceq $labels[$index]){$entryKnown=$index;break}
-                            }
-                        }
-                        if($entryKnown -ge 0){$status=$entry;$integer=$entryInteger;$diagnosed=$true;break}
-                    }
-                }
-                if(-not $diagnosed){throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: enforcement status ambiguous'}
-            }
-            # Only classify documented integer, enum or exact label representations.
-            # Classification never authorizes a non-Full rule.
-            $knownStatus=-1
-            if($integer){
-                if($status -ge 0 -and $status -le 23){$knownStatus=[int]$status}
-            }elseif($status -is [string] -or $status -is [Enum]){
-                for($index=0;$index -lt $labels.Count;$index++){
-                    if([string]$status -ceq $labels[$index]){$knownStatus=$index;break}
-                }
-            }
-            switch($knownStatus){
-                0 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: Invalid'}
-                2 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: FirewallOffInProfile'}
-                3 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: CategoryOff'}
-                4 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: DisabledObject'}
-                5 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: InactiveProfile'}
-                6 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalAddressResolutionEmpty'}
-                7 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: RemoteAddressResolutionEmpty'}
-                8 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalPortResolutionEmpty'}
-                9 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: RemotePortResolutionEmpty'}
-                10 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: InterfaceResolutionEmpty'}
-                11 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: ApplicationResolutionEmpty'}
-                12 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: RemoteMachineEmpty'}
-                13 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: RemoteUserEmpty'}
-                14 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalGlobalOpenPortsDisallowed'}
-                15 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalAuthorizedApplicationsDisallowed'}
-                16 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalFirewallRulesDisallowed'}
-                17 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalConsecRulesDisallowed'}
-                18 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: NotTargetPlatform'}
-                19 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: OptimizedOut'}
-                20 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: LocalUserEmpty'}
-                21 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: TransportMachinesEmpty'}
-                22 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: TunnelMachinesEmpty'}
-                23 {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: TupleResolutionEmpty'}
-                default {throw 'Managed DoH plaintext protection is missing from effective Windows Firewall policy: enforcement status unsupported'}
-            }
-        }
+    }
+    if((Get-DNSDohActiveProfileMask) -ne $mask){
+        throw 'Active Windows Firewall profiles changed during managed DoH verification'
     }
 }
 function Enable-DNSDohPlaintextBlock([string]$ID,[string]$SnapshotSHA256) {
     Assert-DNSDohFirewallAvailable
     Assert-DNSDohPlaintextRuleOwnership $ID
     foreach($protocol in @('TCP','UDP')){
-        if(Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore'){continue}
-        if(Get-DNSDohPlaintextRule $ID $protocol 'ActiveStore'){
-            throw 'Managed DoH plaintext protection rule name already exists in effective policy'
+        foreach($profile in (Get-DNSDohFirewallProfileBits).Keys){
+            if(Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore' -Profile $profile){continue}
+            if(Get-DNSDohPlaintextRule $ID $protocol 'ActiveStore' -Profile $profile){
+                throw 'Managed DoH plaintext protection rule name already exists in effective policy'
+            }
+            Assert-DNSRecoverySnapshotUnchanged $SnapshotSHA256
+            $script:externalEffectsPending=$true
+            $name=Get-DNSDohPlaintextRuleName $ID $protocol $profile
+            $warnings=@()
+            $options=@{
+                Name=$name;DisplayName='AccessWeaver DoH plaintext protection'
+                Description=('AccessWeaver DoH plaintext protection '+$ID)
+                PolicyStore='PersistentStore';Direction='Outbound';Action='Block';Enabled='True'
+                Profile=$profile;Protocol=$protocol;RemotePort=53
+                RemoteAddress=@((Get-DNSDohProviders).ServerAddress);Service='Dnscache'
+                ErrorAction='Stop';WarningAction='SilentlyContinue';WarningVariable='warnings'
+            }
+            [void](New-NetFirewallRule @options)
+            if($warnings.Count){throw 'Managed DoH firewall rule creation emitted a provider warning'}
         }
-        Assert-DNSRecoverySnapshotUnchanged $SnapshotSHA256
-        $script:externalEffectsPending=$true
-        [void](New-NetFirewallRule -Name ('AccessWeaver-DoH-Plaintext-'+$protocol+'-'+$ID) -DisplayName 'AccessWeaver DoH plaintext protection' `
-            -Description ('AccessWeaver DoH plaintext protection '+$ID) -PolicyStore PersistentStore -Direction Outbound -Action Block `
-            -Enabled True -Profile Any -Protocol $protocol -RemotePort 53 -RemoteAddress @((Get-DNSDohProviders).ServerAddress) `
-            -Service Dnscache -ErrorAction Stop)
     }
     Assert-DNSDohPlaintextBlock $ID
 }
 function Remove-DNSDohPlaintextBlock([string]$ID,[string]$SnapshotSHA256) {
     if(-not $ID){return}
     Assert-DNSDohPlaintextRuleOwnership $ID
+    $profiles=@('Any')+@((Get-DNSDohFirewallProfileBits).Keys)
     foreach($protocol in @('TCP','UDP')){
-        $owned=Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore'
-        if($owned){
-            Assert-DNSRecoverySnapshotUnchanged $SnapshotSHA256
-            $script:externalEffectsPending=$true
-            $owned | Remove-NetFirewallRule -ErrorAction Stop
-        }
-        if((Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore') -or
-            (Get-DNSDohPlaintextRule $ID $protocol 'ActiveStore')){
-            throw 'Managed DoH plaintext protection could not be removed; retain the recovery snapshot'
+        foreach($profile in $profiles){
+            $owned=Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore' -Profile $profile
+            if($owned){
+                Assert-DNSRecoverySnapshotUnchanged $SnapshotSHA256
+                $script:externalEffectsPending=$true
+                $owned | Remove-NetFirewallRule -ErrorAction Stop
+            }
+            if((Get-DNSDohPlaintextRule $ID $protocol 'PersistentStore' -Profile $profile) -or
+                (Get-DNSDohPlaintextRule $ID $protocol 'ActiveStore' -Profile $profile)){
+                throw 'Managed DoH plaintext protection could not be removed; retain the recovery snapshot'
+            }
         }
     }
     Assert-DNSDohPlaintextRuleOwnership ''
