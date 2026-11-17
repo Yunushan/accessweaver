@@ -69,7 +69,12 @@ The ARM64 receipt is artifact `14293001337` with ZIP SHA-256
 The interrupted transaction case closes the last transaction handle without
 committing. Process termination and reboot still require separate acceptance.
 Production publication, legacy upgrade and uninstall retirement still need
-integration. The installer registration reader now opens each fixed registry
+integration. The disposable fixture stages retirement from an exact transacted
+handle after checking the ownership descriptor, class and complete metadata.
+The ordinary committed record must remain readable before commit and after
+rollback. A successful commit must remove only that registration, and a held
+prior handle must refuse writes. Linked names and mismatched versions are
+covered by separate refusal cases. The installer registration reader now opens each fixed registry
 component without following symbolic links. A linked or unreadable path blocks
 setup and uninstall, while an absent registration remains distinguishable.
 

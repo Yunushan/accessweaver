@@ -20,6 +20,9 @@ function AWRegistryReadDWORDNative(Key: LongWord; const Name: String;
   Reserved: LongWord; var Kind, Data, Bytes: LongWord): LongWord;
   external 'RegQueryValueExW@advapi32.dll stdcall';
 
+function AWRegistryDeleteHeld(Key: LongWord): LongWord;
+  external 'NtDeleteKey@ntdll.dll stdcall';
+
 function AWRegistryTransactionBegin(var Transaction: LongWord): Boolean;
 begin
   Transaction := 0;
@@ -142,4 +145,27 @@ begin
   Result := (AWRegistrySetDWORDNative(Key, 'NoModify', 0, 4, One, 4) = 0) and
     (AWRegistrySetDWORDNative(Key, 'NoRepair', 0, 4, One, 4) = 0) and
     AWRegistryProductValuesMatch(Key, Fields);
+end;
+
+{ Stage removal only on the exact transacted handle. The caller must abort
+  the transaction on any refusal, including unexpected post-delete readback. }
+function AWRegistryStageProductRetirement(Parent, Transaction: LongWord;
+  const Name, ClassTag: String; const Fields: AWRegistryTextValues): Boolean;
+var Key, Status: LongWord;
+begin
+  Result := False; Key := 0;
+  if Transaction = 0 then Exit;
+  if not AWOpenOwnedRegistryChildIn(Parent, Transaction, Name, ClassTag, Key) then Exit;
+  try
+    if AWRegistryProductValuesMatch(Key, Fields) then
+      Result := AWRegistryDeleteHeld(Key) = 0;
+  finally
+    if not AWOwnedRegistryClose(Key) then Result := False;
+  end;
+  if not Result then Exit;
+
+  Status := AWOwnedRegistryOpenInNative(Parent, Name, AWOwnedRegistryOpenLink,
+    $00020119 or $0100, Key, Transaction, 0);
+  Result := (Status = 2) and (Key = 0);
+  if not AWOwnedRegistryClose(Key) then Result := False;
 end;

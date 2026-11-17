@@ -45,8 +45,6 @@ var AWFixtureOwned: array of LongWord;
     AWFixturePassed, AWFixtureCleanup: Boolean;
     AWFixtureCases, AWFixtureDescriptorResult, AWFixtureCleanupResult: String; AWFixtureCaseCount: Integer;
 
-function AWFixtureDeleteHeld(Key: LongWord): LongWord;
-  external 'NtDeleteKey@ntdll.dll stdcall';
 function AWFixtureWriteDWORD(Key: LongWord; const Name: String; Reserved, Kind: LongWord;
   var Data: LongWord; Bytes: LongWord): LongWord;
   external 'RegSetValueExW@advapi32.dll stdcall';
@@ -77,6 +75,18 @@ begin
   Count := GetArrayLength(AWFixtureOwned);
   SetArrayLength(AWFixtureOwned, Count + 1);
   AWFixtureOwned[Count] := Key;
+end;
+
+procedure AWFixtureCloseRetired(var Key: LongWord);
+var I: Integer;
+begin
+  for I := 0 to GetArrayLength(AWFixtureOwned) - 1 do
+    if AWFixtureOwned[I] = Key then begin
+      AWFixtureOwned[I] := 0;
+      if not AWOwnedRegistryClose(Key) then AWFixtureCleanup := False;
+      Exit;
+    end;
+  AWFixtureCleanup := False;
 end;
 
 function AWFixtureRaw(Parent: LongWord; const Name, SDDL: String;
@@ -233,6 +243,65 @@ begin
     (AWOrdinal(Quiet, '"C:\Fixture Folder\AccessWeaver\unins000.exe" /SILENT') = 0);
 end;
 
+procedure AWFixtureRetirementCases(Root: LongWord; var Prior: LongWord);
+var Tx, Unused, Link, Value: LongWord;
+    WrongFields, Fields: AWRegistryTextValues; Ready, LinkReady, Staged, Finished, Absent: Boolean;
+    NativeTarget: String;
+begin
+  Tx := 0; Unused := 0; Link := 0;
+  Ready := (Prior <> 0) and AWFixtureRegistrationMatches(Prior, '2.0.0') and
+    AWRegistryProductValues('2.0.0', AWFixtureDirectory, AWFixtureUninstaller, Fields) and
+    AWRegistryProductValues('1.0.0', AWFixtureDirectory, AWFixtureUninstaller, WrongFields);
+  Staged := False;
+  try
+    if Ready and AWRegistryTransactionBegin(Tx) then
+      Staged := not AWRegistryStageProductRetirement(Root, Tx, 'published', AWFixtureTag, WrongFields);
+  finally
+    Finished := AWRegistryTransactionFinish(Tx, Unused, False);
+  end;
+  AWFixtureCase('retirement-refuses-different-version', Staged and Finished and
+    AWFixtureRegistrationMatches(Prior, '2.0.0'));
+
+  NativeTarget := '\REGISTRY\MACHINE\SOFTWARE\{#FixtureRootName}\published';
+  LinkReady := AWFixtureRaw(Root, 'registration-link', AWOwnedRegistrySDDL, 2, Link) and
+    (AWFixtureWriteText(Link, 'SymbolicLinkValue', 0, 6, NativeTarget, Length(NativeTarget) * 2) = 0);
+  Staged := False;
+  try
+    if Ready and LinkReady and AWRegistryTransactionBegin(Tx) then
+      Staged := not AWRegistryStageProductRetirement(Root, Tx, 'registration-link', AWFixtureTag, Fields);
+  finally
+    Finished := AWRegistryTransactionFinish(Tx, Unused, False);
+  end;
+  AWFixtureCase('retirement-refuses-link-to-registration', Staged and Finished and
+    AWFixtureRegistrationMatches(Prior, '2.0.0'));
+
+  Staged := False;
+  try
+    if Ready and AWRegistryTransactionBegin(Tx) then
+      Staged := AWRegistryStageProductRetirement(Root, Tx, 'published', AWFixtureTag, Fields);
+    AWFixtureCase('staged-retirement-keeps-committed-record', Staged and
+      AWFixtureRegistrationMatches(Prior, '2.0.0'));
+  finally
+    Finished := AWRegistryTransactionFinish(Tx, Unused, False);
+  end;
+  AWFixtureCase('abandoned-retirement-keeps-committed-record', Staged and Finished and
+    AWFixtureRegistrationMatches(Prior, '2.0.0'));
+
+  Staged := False;
+  try
+    if Ready and AWRegistryTransactionBegin(Tx) then
+      Staged := AWRegistryStageProductRetirement(Root, Tx, 'published', AWFixtureTag, Fields);
+  finally
+    Finished := AWRegistryTransactionFinish(Tx, Unused, Staged);
+  end;
+  Absent := Staged and Finished and AWFixtureNoKey(Root, 'published');
+  AWFixtureCase('committed-retirement-removes-exact-key', Absent);
+  Value := 73;
+  AWFixtureCase('retired-handle-cannot-write', Absent and
+    (AWFixtureWriteDWORD(Prior, 'sentinel', 0, 4, Value, 4) = 1018));
+  if Absent then AWFixtureCloseRetired(Prior);
+end;
+
 procedure AWFixtureTransactionCases(Root: LongWord);
 var Tx, Key, Prior: LongWord; Created, Staged, Finished, Opened: Boolean;
 begin
@@ -319,6 +388,7 @@ begin
     Finished := AWRegistryTransactionFinish(Tx, Key, False);
   end;
   AWFixtureCase('transaction-rejects-existing-link', Staged and Finished);
+  AWFixtureRetirementCases(Root, Prior);
 end;
 
 function InitializeSetup: Boolean;
@@ -349,11 +419,13 @@ begin
     { Every deletion uses an exact handle returned by a confirmed NEW creation.
       No recursive traversal, path-based link deletion, or adoption for cleanup. }
     for I := GetArrayLength(AWFixtureOwned) - 1 downto 0 do begin
-      if AWFixtureDeleteHeld(AWFixtureOwned[I]) <> 0 then begin
-        if AWFixtureCleanupResult = 'pass' then AWFixtureCleanupResult := 'held-delete';
-        AWFixtureCleanup := False;
+      if AWFixtureOwned[I] <> 0 then begin
+        if AWRegistryDeleteHeld(AWFixtureOwned[I]) <> 0 then begin
+          if AWFixtureCleanupResult = 'pass' then AWFixtureCleanupResult := 'held-delete';
+          AWFixtureCleanup := False;
+        end;
+        if not AWOwnedRegistryClose(AWFixtureOwned[I]) then AWFixtureCleanup := False;
       end;
-      if not AWOwnedRegistryClose(AWFixtureOwned[I]) then AWFixtureCleanup := False;
     end;
     if RootCreated then begin
       if AWOwnedRegistryOpenNative(Software, '{#FixtureRootName}', AWOwnedRegistryOpenLink,
