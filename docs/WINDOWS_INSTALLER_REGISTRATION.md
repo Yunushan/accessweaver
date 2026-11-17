@@ -154,3 +154,25 @@ exact checked-in fixture before compiling it. If the launcher stops before it
 can validate native results, it retains a source-bound stage receipt with the
 fixed failing stage and numeric process exit when available. The stage receipt
 leaves cleanup unknown and does not credit any case.
+
+
+## Setup publication candidate
+
+The qualification build selects `ProtectedRegistrationQualification` on the
+normal Setup script. It disables Inno's Apps & Features write while retaining
+the generated uninstaller and its data. Setup records the prior registration
+before copying files. It accepts an absent 64-bit product key or a protected
+key with the exact class, descriptor, destination and typed fields. A 32-bit
+record, a registry link and a legacy key fail admission before file copy.
+
+Setup waits until completion to stage the replacement, after checking the
+installed package and holding its uninstaller and data. The transaction creates
+the key only if the expected slot is still absent, or updates it only if every
+captured field still matches. A fresh readback checks the descriptor, class and
+fields and flushes the key before the pending installation record can be retired.
+The record also supplies Inno's previous installation directory for repeat Setup.
+
+The native registry fixture exercises the same staging routine under a
+disposable key. The release builder still uses the existing Inno registration.
+The candidate needs end-to-end Setup execution, migration of older
+registrations and recoverable retirement during uninstall before release use.

@@ -8,7 +8,7 @@ function Get-RegistryFixtureCaseIDs([string]$Source){
     # This is the checked-in, source-pinned fixture. Refuse nonliteral declarations.
     $calls=[regex]::Matches($Source,'(?m)^[ \t]*AWFixtureCase\(')
     $records=[regex]::Matches($Source,"(?m)^[ \t]*AWFixtureCase\('([a-z][a-z0-9-]{0,63})',")
-    if($calls.Count -ne $records.Count -or $records.Count -lt 1 -or $records.Count -gt 48){
+    if($calls.Count -ne $records.Count -or $records.Count -lt 1 -or $records.Count -gt 50){
         throw 'Registry ownership fixture case catalog is invalid'
     }
     $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -44,7 +44,7 @@ if((Test-Path -LiteralPath $build) -or (Test-Path -LiteralPath $receiptDir)){thr
 $producer=@('scripts/test-windows-installer-registry-owned.iss','scripts/windows-installer-registry-owned.iss',
     'scripts/windows-installer-registry-transaction.iss','scripts/windows-installer-registry.iss','scripts/windows-installer-version.iss',
     'scripts/test-windows-installer-registry-owned.ps1','scripts/windows-installer-common.ps1',
-    'scripts/windows-installer.iss','scripts/detect-windows-installer.ps1','internal/workflow/windows.ps1',
+    'scripts/windows-installer.iss','scripts/windows-installer-registry-publication.iss','scripts/detect-windows-installer.ps1','internal/workflow/windows.ps1',
     'scripts/test-windows-installer-contracts.ps1','scripts/test-windows-installer-detection.ps1',
     '.github/workflows/installer-lifecycle.yml')
 $pins=[ordered]@{}
@@ -89,7 +89,7 @@ try {
     } finally {$process.Dispose()}
     $stage='native-report'
     $path=Join-Path $build ('registry-owned-'+$Architecture+'.json')
-    if(-not (Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -gt 4096){
+    if(-not (Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -gt 4608){
         throw 'Registry ownership fixture did not produce a bounded report'
     }
     $result=[IO.File]::ReadAllText($path) | ConvertFrom-Json -AsHashtable

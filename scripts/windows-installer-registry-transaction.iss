@@ -68,6 +68,8 @@ begin
     (AWRegistrySetStringNative(Key, Name, 0, 1, Value, (Length(Value) + 1) * 2) = 0);
 end;
 
+const AWRegistryProductTextCount = 9;
+
 type AWRegistryTextValue = record
        Name, Value: String;
        Maximum: LongWord;
@@ -96,7 +98,7 @@ begin
   if AWOrdinal(ExtractFilePath(Uninstaller), Location) <> 0 then Exit;
   if CompareText(ExtractFileExt(Uninstaller), '.exe') <> 0 then Exit;
   Command := '"' + Uninstaller + '"';
-  SetArrayLength(Fields, 8);
+  SetArrayLength(Fields, AWRegistryProductTextCount);
   AWRegistryTextField(Fields[0], 'DisplayName', Copy('AccessWeaver version ' + Version, 1, 259), 259);
   AWRegistryTextField(Fields[1], 'DisplayVersion', Version, 256);
   AWRegistryTextField(Fields[2], 'InstallLocation', Location, 261);
@@ -105,6 +107,7 @@ begin
   AWRegistryTextField(Fields[5], 'DisplayIcon', Location + 'accessweaver.exe', 300);
   AWRegistryTextField(Fields[6], 'Publisher', 'AccessWeaver contributors', 64);
   AWRegistryTextField(Fields[7], 'URLInfoAbout', 'https://github.com/Yunushan/accessweaver', 128);
+  AWRegistryTextField(Fields[8], 'Inno Setup: App Path', RemoveBackslashUnlessRoot(Directory), 260);
   for I := 0 to GetArrayLength(Fields) - 1 do
     if Length(Fields[I].Value) > Fields[I].Maximum then Exit;
   Result := True;
@@ -123,11 +126,11 @@ var Actual: String; I: Integer; ClassBuffer: String;
     Characters, Children, Values: LongWord;
 begin
   Result := False;
-  if (Key = 0) or (GetArrayLength(Fields) <> 8) then Exit;
+  if (Key = 0) or (GetArrayLength(Fields) <> AWRegistryProductTextCount) then Exit;
   SetLength(ClassBuffer, 128); Characters := 128; Children := 0; Values := 0;
   if AWOwnedRegistryQueryInfo(Key, ClassBuffer, Characters, 0, Children, 0, 0,
        Values, 0, 0, 0, 0) <> 0 then Exit;
-  if (Children <> 0) or (Values <> 10) then Exit;
+  if (Children <> 0) or (Values <> AWRegistryProductTextCount + 2) then Exit;
   for I := 0 to GetArrayLength(Fields) - 1 do
     if not AWReadRegistrationString(Key, Fields[I].Name, $30000002, Fields[I].Maximum, Actual) or
        (AWOrdinal(Actual, Fields[I].Value) <> 0) then Exit;
@@ -138,13 +141,32 @@ function AWRegistryStageProductValues(Key: LongWord; const Fields: AWRegistryTex
 var I: Integer; One: LongWord;
 begin
   Result := False;
-  if (Key = 0) or (GetArrayLength(Fields) <> 8) then Exit;
+  if (Key = 0) or (GetArrayLength(Fields) <> AWRegistryProductTextCount) then Exit;
   for I := 0 to GetArrayLength(Fields) - 1 do
     if not AWRegistrySetString(Key, Fields[I].Name, Fields[I].Value) then Exit;
   One := 1;
   Result := (AWRegistrySetDWORDNative(Key, 'NoModify', 0, 4, One, 4) = 0) and
     (AWRegistrySetDWORDNative(Key, 'NoRepair', 0, 4, One, 4) = 0) and
     AWRegistryProductValuesMatch(Key, Fields);
+end;
+
+{ Keep the pre-copy snapshot distinct from absence. Creation refuses any
+  existing object. An update matches the exact previous fields inside KTM. }
+function AWRegistryStageProductRegistration(Parent, Transaction: LongWord;
+  const Name, ClassTag: String; const Prior, Candidate: AWRegistryTextValues;
+  var Key: LongWord): Boolean;
+var Created: Boolean;
+begin
+  Result := False; Key := 0;
+  if Transaction = 0 then Exit;
+  if GetArrayLength(Prior) = 0 then begin
+    if not AWCreateOwnedRegistryChildIn(Parent, Transaction, Name, ClassTag, Key, Created) then Exit;
+    if not Created then Exit;
+  end else begin
+    if not AWOpenOwnedRegistryChildIn(Parent, Transaction, Name, ClassTag, Key) then Exit;
+    if not AWRegistryProductValuesMatch(Key, Prior) then Exit;
+  end;
+  Result := AWRegistryStageProductValues(Key, Candidate);
 end;
 
 { Stage removal only on the exact transacted handle. The caller must abort

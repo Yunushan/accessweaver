@@ -217,13 +217,6 @@ end;
 const AWFixtureDirectory = 'C:\Fixture Folder\AccessWeaver';
       AWFixtureUninstaller = 'C:\Fixture Folder\AccessWeaver\unins000.exe';
 
-function AWFixtureWriteRegistration(Key: LongWord; const Version: String): Boolean;
-var Fields: AWRegistryTextValues;
-begin
-  Result := AWRegistryProductValues(Version, AWFixtureDirectory, AWFixtureUninstaller, Fields) and
-    AWRegistryStageProductValues(Key, Fields);
-end;
-
 function AWFixtureRegistrationMatches(Key: LongWord; const Version: String): Boolean;
 var Fields: AWRegistryTextValues;
 begin
@@ -442,14 +435,18 @@ begin
 end;
 
 procedure AWFixtureTransactionCases(Root: LongWord);
-var Tx, Key, Prior: LongWord; Created, Staged, Finished, Opened: Boolean;
+var Tx, Key, Prior: LongWord; Staged, Finished, Opened, FieldsReady: Boolean;
+    AbsentFields, FirstFields, NextFields: AWRegistryTextValues;
 begin
   Tx := 0; Key := 0; Prior := 0;
+  SetArrayLength(AbsentFields, 0);
+  FieldsReady := AWRegistryProductValues('1.0.0', AWFixtureDirectory, AWFixtureUninstaller, FirstFields) and
+    AWRegistryProductValues('2.0.0', AWFixtureDirectory, AWFixtureUninstaller, NextFields);
   Staged := False;
   try
-    if AWRegistryTransactionBegin(Tx) then
-      Staged := AWCreateOwnedRegistryChildIn(Root, Tx, 'abandoned', AWFixtureTag, Key, Created) and Created and
-        AWFixtureWriteRegistration(Key, '1.0.0') and AWFixtureRegistrationMatches(Key, '1.0.0');
+    if FieldsReady and AWRegistryTransactionBegin(Tx) then
+      Staged := AWRegistryStageProductRegistration(Root, Tx, 'abandoned', AWFixtureTag,
+        AbsentFields, FirstFields, Key) and AWFixtureRegistrationMatches(Key, '1.0.0');
     AWFixtureCase('new-transacted-registration-staged', Staged and AWFixtureNoKey(Root, 'abandoned'));
   finally
     Finished := AWRegistryTransactionFinish(Tx, Key, False);
@@ -458,10 +455,9 @@ begin
 
   Staged := False; Finished := False;
   try
-    if AWRegistryTransactionBegin(Tx) then
-      Staged := AWCreateOwnedRegistryChildIn(Root, Tx, 'published', AWFixtureTag, Key, Created) and Created and
-        AWFixtureWriteRegistration(Key, '1.0.0') and AWFixtureRegistrationMatches(Key, '1.0.0') and
-        AWFixtureNoKey(Root, 'published');
+    if FieldsReady and AWRegistryTransactionBegin(Tx) then
+      Staged := AWRegistryStageProductRegistration(Root, Tx, 'published', AWFixtureTag,
+        AbsentFields, FirstFields, Key) and AWFixtureNoKey(Root, 'published');
   finally
     Finished := AWRegistryTransactionFinish(Tx, Key, Staged);
   end;
@@ -473,9 +469,8 @@ begin
   Staged := False; Finished := False;
   try
     if Opened and AWRegistryTransactionBegin(Tx) then
-      Staged := AWOpenOwnedRegistryChildIn(Root, Tx, 'published', AWFixtureTag, Key) and
-        AWFixtureRegistrationMatches(Key, '1.0.0') and AWFixtureWriteRegistration(Key, '2.0.0') and
-        AWFixtureRegistrationMatches(Key, '2.0.0');
+      Staged := AWRegistryStageProductRegistration(Root, Tx, 'published', AWFixtureTag,
+        FirstFields, NextFields, Key) and AWFixtureRegistrationMatches(Key, '2.0.0');
     AWFixtureCase('staged-upgrade-preserves-visible-prior', Staged and AWFixtureRegistrationMatches(Prior, '1.0.0'));
   finally
     Finished := AWRegistryTransactionFinish(Tx, Key, False);
@@ -485,13 +480,32 @@ begin
   Staged := False; Finished := False;
   try
     if Opened and AWRegistryTransactionBegin(Tx) then
-      Staged := AWOpenOwnedRegistryChildIn(Root, Tx, 'published', AWFixtureTag, Key) and
-        AWFixtureRegistrationMatches(Key, '1.0.0') and AWFixtureWriteRegistration(Key, '2.0.0') and
-        AWFixtureRegistrationMatches(Key, '2.0.0') and AWFixtureRegistrationMatches(Prior, '1.0.0');
+      Staged := AWRegistryStageProductRegistration(Root, Tx, 'published', AWFixtureTag,
+        FirstFields, NextFields, Key) and AWFixtureRegistrationMatches(Prior, '1.0.0');
   finally
     Finished := AWRegistryTransactionFinish(Tx, Key, Staged);
   end;
   AWFixtureCase('complete-upgrade-visible-after-commit', Staged and Finished and AWFixtureRegistrationMatches(Prior, '2.0.0'));
+
+  Staged := False;
+  try
+    if Opened and AWRegistryTransactionBegin(Tx) then
+      Staged := not AWRegistryStageProductRegistration(Root, Tx, 'published', AWFixtureTag,
+        FirstFields, NextFields, Key);
+  finally
+    Finished := AWRegistryTransactionFinish(Tx, Key, False);
+  end;
+  AWFixtureCase('publication-refuses-changed-prior', Staged and Finished and AWFixtureRegistrationMatches(Prior, '2.0.0'));
+
+  Staged := False;
+  try
+    if Opened and AWRegistryTransactionBegin(Tx) then
+      Staged := not AWRegistryStageProductRegistration(Root, Tx, 'published', AWFixtureTag,
+        AbsentFields, FirstFields, Key) and (Key = 0);
+  finally
+    Finished := AWRegistryTransactionFinish(Tx, Key, False);
+  end;
+  AWFixtureCase('publication-refuses-unexpected-existing-key', Staged and Finished and AWFixtureRegistrationMatches(Prior, '2.0.0'));
 
   Staged := False;
   try
@@ -522,7 +536,8 @@ begin
   Staged := False; Finished := False;
   try
     if AWRegistryTransactionBegin(Tx) then
-      Staged := not AWOpenOwnedRegistryChildIn(Root, Tx, 'link', AWFixtureTag, Key) and (Key = 0);
+      Staged := not AWRegistryStageProductRegistration(Root, Tx, 'link', AWFixtureTag,
+        FirstFields, NextFields, Key) and (Key = 0);
   finally
     Finished := AWRegistryTransactionFinish(Tx, Key, False);
   end;

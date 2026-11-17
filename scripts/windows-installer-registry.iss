@@ -118,8 +118,8 @@ begin
   end;
 end;
 
-function AWOpenMachineUninstallParent(View: LongWord; var Key: LongWord): LongWord;
-var Parent, Child, Status: LongWord; Index: Integer;
+function AWOpenMachineUninstallParent(View, LeafAccess: LongWord; var Key: LongWord): LongWord;
+var Parent, Child, Status, Access: LongWord; Index: Integer;
 begin
   Key := 0;
   Result := AWRegistrationUnsafe;
@@ -127,7 +127,9 @@ begin
   Parent := $80000002;
   try
     for Index := 0 to 4 do begin
-      Status := AWOpenRegistrationComponent(Parent, AWRegistrationAncestor(Index), $0008 or View, Child);
+      Access := $0008 or View;
+      if Index = 4 then Access := Access or LeafAccess;
+      Status := AWOpenRegistrationComponent(Parent, AWRegistrationAncestor(Index), Access, Child);
       if Status <> 0 then begin
         { Absence is meaningful only for the final Uninstall component. }
         if (Index = 4) and ((Status = 2) or (Status = 3)) then Result := 2;
@@ -175,7 +177,7 @@ begin
   Result := ''; Found := False; Version := ''; Location := '';
   Uninstall := 0; Product := 0;
   try
-    Status := AWOpenMachineUninstallParent(View, Uninstall);
+    Status := AWOpenMachineUninstallParent(View, 0, Uninstall);
     if Status = 2 then Exit;
     if Status <> 0 then begin
       Result := 'Cannot inspect machine installation registration. Review access and retry.'; Exit;

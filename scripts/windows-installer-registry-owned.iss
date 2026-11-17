@@ -1,6 +1,6 @@
 { Native registry ownership primitive for the pinned x86 Inno 6.7.1 runtime.
-  Not yet wired into product registration. All children are single components
-  of a caller-held parent. REG_OPTION_OPEN_LINK is used for both create/open,
+  All children are single components of a caller-held parent.
+  REG_OPTION_OPEN_LINK is used for both creation and opening,
   so an existing registry link must never redirect an operation to its target.
   A successful new creation returns an owned handle even if validation fails:
   the caller must close every nonzero output handle on every path. }

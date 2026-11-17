@@ -65,6 +65,9 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\accessweaver.exe
+#ifdef ProtectedRegistrationQualification
+CreateUninstallRegKey=no
+#endif
 CloseApplications=yes
 RestartApplications=no
 SetupLogging=yes
@@ -210,6 +213,12 @@ begin
   Result := (AWOrdinal(Version, '{#ReleaseVersion}') = 0) and
     (AWOrdinal(Directory, Destination) = 0) and (ApprovalPin = AWPendingApprovalPin);
 end;
+
+#ifdef ProtectedRegistrationQualification
+#include "windows-installer-registry-owned.iss"
+#include "windows-installer-registry-transaction.iss"
+#include "windows-installer-registry-publication.iss"
+#endif
 
 function AWPendingInstallValue(const Destination: String): String;
 begin
@@ -676,6 +685,9 @@ begin
   if not AWIsInstallationDirectory(Destination, ExtractFileDir(UninstallerPath)) then Exit;
   if not AWOpenUninstallSubject(UninstallerPath, Uninstaller) then Exit;
   if not AWOpenUninstallSubject(ChangeFileExt(UninstallerPath, '.dat'), UninstallData) then Exit;
+#ifdef ProtectedRegistrationQualification
+  if not AWPublishOwnedProductRegistration(Destination, UninstallerPath) then Exit;
+#endif
   if AWReadRegistration($0100, True, UninstallerPath, Found64, Version, Location) <> '' then Exit;
   if AWReadRegistration($0200, False, '', Found32, Version32, Location32) <> '' then Exit;
   Result := Found64 and not Found32 and (Version = '{#ReleaseVersion}') and
@@ -951,6 +963,10 @@ begin
     if Failure = '' then Failure := AWPayloadReplacementPreflight(Destination);
     if Failure = '' then Failure := AWApprovedUpgradePreflight(Destination, AWPendingApprovalPin);
     if Failure <> '' then RaiseException(Failure);
+#ifdef ProtectedRegistrationQualification
+    if not AWPrepareOwnedProductRegistration(Destination) then
+      RaiseException('Cannot verify a protected AccessWeaver registration or an empty registration slot.');
+#endif
     if not AWPrepareManagedTempRecovery(Destination) then
       RaiseException('Cannot persist the AccessWeaver temporary file baseline.');
     if not AWWriteLifecycleString(AWPendingInstall, AWPendingInstallValue(Destination), True) then
