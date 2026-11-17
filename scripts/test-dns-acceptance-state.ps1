@@ -1001,8 +1001,8 @@ try {
         $refusals=@($productCatalog.entries | Where-Object {
             $_.literal.StartsWith('Managed DoH plaintext protection is missing from effective Windows Firewall policy: ',[StringComparison]::Ordinal)
         })
-        Assert-A ($refusals.Count -eq 31 -and $productCatalog.entries.Count -le 1024) 'source-literal-catalog'
-        foreach($shape in @('repeated Full statuses','mixed Full and InactiveProfile statuses','repeated InactiveProfile statuses')){
+        Assert-A ($refusals.Count -eq 32 -and $productCatalog.entries.Count -le 1024) 'source-literal-catalog'
+        foreach($shape in @('repeated Full statuses','mixed Full and InactiveProfile statuses','repeated InactiveProfile statuses','inactive profile status differs')){
             $literal='Managed DoH plaintext protection is missing from effective Windows Firewall policy: '+$shape
             Assert-A (@($refusals | Where-Object {$_.literal -ceq $literal}).Count -eq 1) 'source-literal-catalog'
         }
