@@ -4365,12 +4365,14 @@ try {
         return $child
     }
     $binary='C:\fixture\ciadpi.exe'
-    $service=@{State='Running';ProcessId=40}
+    $service=@{State='Running';ProcessId=40;PathName='fixture protected service command'}
+    $digest=Get-ManagedServiceCommandDigest $service.PathName
+    $command=$binary+' --split 2'
     $listener=@{LocalAddress='127.0.0.1';LocalPort=1080;OwningProcess=42}
     $listeners=@($listener,@{LocalAddress='0.0.0.0';LocalPort=45;OwningProcess=15})
     $creation=[datetime]::UtcNow
-    $child=@{ProcessId=42;ParentProcessId=40;ExecutablePath=$binary;CreationDate=$creation}
-    $owner=Get-ManagedByeDPILoopbackOwner $binary
+    $child=@{ProcessId=42;ParentProcessId=40;ExecutablePath=$binary;CreationDate=$creation;CommandLine=$command}
+    $owner=Get-ManagedByeDPILoopbackOwner $binary $digest $command
     Assert ($owner -ceq ('40:42:'+$creation.Ticks)) 'Discord proxy readiness identifies the managed listener child'
     foreach($case in @(
         @{row=$service;key='State';value='Stopped'},
@@ -4383,16 +4385,14 @@ try {
         $previous=$case.row[$case.key]
         $case.row[$case.key]=$case.value
         $refused=$false
-        try {Get-ManagedByeDPILoopbackOwner $binary | Out-Null}catch{$refused=$true}
+        try {Get-ManagedByeDPILoopbackOwner $binary $digest $command | Out-Null}catch{$refused=$true}
         finally {$case.row[$case.key]=$previous}
         Assert $refused ('Discord proxy readiness refuses mismatched '+$case.key)
     }
-    $service.PathName='fixture protected service command'
-    $digest=Get-ManagedServiceCommandDigest $service.PathName
-    $child.CommandLine=$binary+' --split 2'
-    Assert ((Get-ManagedByeDPILoopbackOwner $binary $digest $child.CommandLine) -ceq $owner) 'Retained ByeDPI verifies its service registration and running arguments'
     foreach($case in @(
-        @{digest=('A'*64);command=$child.CommandLine;error='Managed ByeDPI registration changed during verification'},
+        @{digest='';command=$command;error='Managed ByeDPI proxy verification requires the recorded service and expected process command'},
+        @{digest=$digest;command='';error='Managed ByeDPI proxy verification requires the recorded service and expected process command'},
+        @{digest=('0'*64);command=$command;error='Managed ByeDPI registration changed during verification'},
         @{digest=$digest;command=($binary+' --split 3');error='Running ByeDPI arguments differ from the reviewed strategy'}
     )){
         $refused=$false
@@ -4404,7 +4404,7 @@ try {
     }
     $listeners+=@(@{LocalAddress='::';LocalPort=1080;OwningProcess=42})
     $refused=$false
-    try {Get-ManagedByeDPILoopbackOwner $binary | Out-Null}catch{$refused=$true}
+    try {Get-ManagedByeDPILoopbackOwner $binary $digest $command | Out-Null}catch{$refused=$true}
     Assert $refused 'Discord proxy readiness refuses an ambiguous loopback listener'
 }
 
@@ -4453,16 +4453,39 @@ try {
     $r=@{engine='byedpi'}
     $trace=[Collections.Generic.List[string]]::new()
     $root=Join-Path $testRoot 'byedpi-probe'
+    $binary=Join-Path $root 'components\byedpi\ciadpi.exe'
+    $configPath=Join-Path $root 'services\byedpi.json'
+    [void][IO.Directory]::CreateDirectory((Split-Path -Parent $binary))
+    [void][IO.Directory]::CreateDirectory((Split-Path -Parent $configPath))
+    [IO.File]::WriteAllText($binary,'inert proxy fixture')
+    $registrationDigest='A'*64
+    $expectedCommand=(Quote-Arg $binary)+' --ip 127.0.0.1 --port 1080 --split 2'
+    if($binary -cnotmatch '[ \t]'){$expectedCommand=$binary+' --ip 127.0.0.1 --port 1080 --split 2'}
     function Enter-ApplicationWorkflow {$trace.Add('lock')}
     function Discord-Directories {return 'C:\fixture\app-1'}
-    function Ensure-Asset {return 'C:\fixture\ciadpi.exe'}
+    function Ensure-Asset {return $binary}
     function Assert-ManagedServiceOwnership {return $null}
-    function Install-EngineService {$trace.Add('service')}
+    function Assert-TrustedItem([string]$Path){
+        if($Path -cnotin @($binary,$configPath)){throw 'Unexpected proxy path'}
+    }
+    function Install-EngineService([string]$Engine,[string]$Path,[string[]]$Arguments,[switch]$PassThru){
+        if($Engine -cne 'byedpi' -or $Path -cne $binary -or -not $PassThru){throw 'Proxy setup did not bind its new registration'}
+        $config=@{name='AccessWeaver-byedpi';binary=$Path;args=$Arguments;directory=(Split-Path -Parent $Path);logPath=(Join-Path $root 'logs\byedpi.log')}
+        [IO.File]::WriteAllText($configPath,($config|ConvertTo-Json -Depth 5))
+        $trace.Add('service')
+        return @{name='AccessWeaver-byedpi';commandSHA256=$registrationDigest}
+    }
     function Firewall {$trace.Add('firewall')}
-    function Assert-ManagedByeDPILoopbackProxy([string]$Binary){
-        if($Binary -cne 'C:\fixture\ciadpi.exe'){throw 'Unexpected proxy binary'}
+    function Assert-ManagedByeDPILoopbackProxy([string]$Path,[string]$Digest,[string]$Raw){
+        if($Path -cne $binary -or $Digest -cne $registrationDigest -or $Raw -cne $expectedCommand){throw 'Fresh proxy probe received a mismatched identity'}
         $trace.Add('probe')
         if($failProbe){throw 'Fixture SOCKS negotiation failed'}
+        return 'fixture owner'
+    }
+    function Get-ManagedByeDPILoopbackOwner([string]$Path,[string]$Digest,[string]$Raw){
+        if($Path -cne $binary -or $Digest -cne $registrationDigest -or $Raw -cne $expectedCommand){throw 'Fresh proxy final check received a mismatched identity'}
+        $trace.Add('confirm')
+        return 'fixture owner'
     }
     function Install-Drover {$trace.Add('drover')}
     function Setup-ProxiFyre([string]$Proxy){
@@ -4470,15 +4493,16 @@ try {
         $trace.Add('proxifyre')
     }
     function Event {}
+    $fixtureBinary=$binary
     function Native([string]$Binary,[string[]]$Arguments,[int]$Timeout){
-        if($Binary -cne 'C:\fixture\ciadpi.exe' -or $Timeout -ne 86400){throw 'Unexpected foreground launch'}
+        if($Binary -cne $fixtureBinary -or $Timeout -ne 86400){throw 'Unexpected foreground launch'}
         $trace.Add('foreground')
     }
     foreach($case in @(
         @{mode='service';label='service';success='service,firewall,probe'},
         @{mode='split';label='split';success='service,firewall,probe,proxifyre'},
-        @{mode='';label='default';success='service,firewall,probe,proxifyre'},
-        @{mode='dll';label='DLL';success='lock,service,firewall,probe,drover'}
+        @{mode=$null;label='default';success='service,firewall,probe,proxifyre'},
+        @{mode='dll';label='DLL';success='lock,service,firewall,probe,drover,confirm'}
     )){
         $r.mode=$case.mode
         foreach($failProbe in @($true,$false)){
@@ -4496,6 +4520,22 @@ try {
     $trace.Clear()
     Install-Method | Out-Null
     Assert (($trace -join ',') -ceq 'foreground') 'One-shot ByeDPI keeps the foreground launch path'
+
+    function Make-Config {$trace.Add('config');return 'fixture config'}
+    function Connect-WireSock([string]$Path){
+        if($Path -cne 'fixture config'){throw 'Unexpected WireSock configuration path'}
+        $trace.Add('connect')
+        return 'fixture connected'
+    }
+    function Refresh-Task {
+        if(-not $r.enabled){throw 'Expected enabled refresh task'}
+        $trace.Add('refresh')
+    }
+    $r=[pscustomobject]@{engine='wiresock';mode='standard';refresh=$true}
+    $trace.Clear()
+    $result=Install-Method
+    Assert ($result.configPath -ceq 'fixture config' -and $result.status -ceq 'fixture connected' -and
+        ($trace -join ',') -ceq 'lock,config,connect,service,firewall,probe,drover,confirm,refresh') 'Standard WireSock verifies its new proxy across Drover deployment before enabling refresh'
 }
 
 # A retained proxy is reused only after ownership, persisted settings and live argv agree.
@@ -4531,6 +4571,7 @@ try {
         if($Path -cne $binary -or $Digest -cne $serviceDigest -or $Raw -cne $expectedCommandLine){throw 'Retained service probe received a mismatched identity'}
         $trace.Add('probe')
         if($case -eq 'probe'){throw 'Fixture SOCKS negotiation failed'}
+        return 'fixture owner'
     }
     function Install-Drover {
         $other=$null
@@ -4542,19 +4583,24 @@ try {
     function Get-ManagedByeDPILoopbackOwner([string]$Path,[string]$Digest,[string]$Raw){
         if($Path -cne $binary -or $Digest -cne $serviceDigest -or $Raw -cne $expectedCommandLine){throw 'Retained service final check received a mismatched identity'}
         $trace.Add('confirm')
+        if($case -eq 'replacement'){return 'replacement owner'}
         return 'fixture owner'
     }
     function Event {}
     $oldEffects=$script:externalEffectsPending
     try {
         foreach($entry in @(
-            @{case='foreign';error='Fixture service ownership mismatch';calls=''},
-            @{case='config';error='Existing ByeDPI service configuration does not match the requested proxy';calls=''},
-            @{case='invalid';error='Existing ByeDPI service configuration could not be read safely';calls=''},
-            @{case='probe';error='Fixture SOCKS negotiation failed';calls='probe'},
-            @{case='matching';error='';calls='probe,drover,confirm'}
+            @{case='foreign';mode='dll';error='Fixture service ownership mismatch';calls=''},
+            @{case='config';mode='dll';error='Existing ByeDPI service configuration does not match the requested proxy';calls=''},
+            @{case='invalid';mode='dll';error='Existing ByeDPI service configuration could not be read safely';calls=''},
+            @{case='probe';mode='dll';error='Fixture SOCKS negotiation failed';calls='probe'},
+            @{case='replacement';mode='dll';error='Managed ByeDPI listener changed during Drover deployment';calls='probe,drover,confirm'},
+            @{case='matching';mode='dll';error='';calls='probe,drover,confirm'},
+            @{case='config';mode='service';error='Existing ByeDPI service configuration does not match the requested proxy';calls=''},
+            @{case='matching';mode='service';error='';calls='probe'}
         )){
             $case=$entry.case
+            $r.mode=$entry.mode
             $json=switch($case){
                 'invalid' {'{'}
                 'config' {$configJSON.Replace('"--split"','"--other"')}
@@ -4566,7 +4612,7 @@ try {
             $errorText=''
             try {[void](Install-Method)}catch{$errorText=$_.Exception.Message}
             Assert ($errorText -ceq $entry.error -and ($trace -join ',') -ceq $entry.calls -and
-                -not $script:externalEffectsPending -and [IO.File]::ReadAllText($configPath) -ceq $json) ('Retained ByeDPI DLL install handles '+$case)
+                -not $script:externalEffectsPending -and [IO.File]::ReadAllText($configPath) -ceq $json) ('Retained ByeDPI '+$r.mode+' install handles '+$case)
         }
     } finally {$script:externalEffectsPending=$oldEffects}
 }

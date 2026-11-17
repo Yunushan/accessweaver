@@ -1870,7 +1870,7 @@ function Disconnect-WireSock {
     Remove-WireSockRefreshTask
     Disconnect-OwnedWireSock $record
 }
-function Install-EngineService([string]$engine,[string]$binary,[string[]]$arguments,[switch]$DeferAutomaticStartup) {
+function Install-EngineService([string]$engine,[string]$binary,[string[]]$arguments,[switch]$DeferAutomaticStartup,[switch]$PassThru) {
     $script:dnsOperationStage='service-host-preparation'
     $serviceName='AccessWeaver-'+$engine
     $existing=Get-Service -Name $serviceName -ErrorAction SilentlyContinue
@@ -1902,7 +1902,7 @@ function Install-EngineService([string]$engine,[string]$binary,[string[]]$argume
     Start-Sleep -Milliseconds 500
     if((Get-Service $serviceName).Status -ne 'Running'){throw ('Engine exited during startup: '+$engine)}
     Event ('Installed and started '+$serviceName)
-    if($DeferAutomaticStartup){return $entry}
+    if($DeferAutomaticStartup -or $PassThru){return $entry}
 }
 function Get-ManagedFirewallRule([string]$Name,[string]$Instance,[switch]$Journal) {
     $match=[regex]::Match($Name,'\AAccessWeaver-(byedpi|proxifyre)-(Inbound|Outbound)\z')
@@ -4552,11 +4552,14 @@ function Assert-ByeDPIArguments([string[]]$arguments) {
     }
 }
 function Get-ManagedByeDPILoopbackOwner([string]$Binary,[string]$ServiceDigest,[string]$CommandLine) {
+    if($ServiceDigest -cnotmatch '\A[A-F0-9]{64}\z' -or -not $CommandLine){
+        throw 'Managed ByeDPI proxy verification requires the recorded service and expected process command'
+    }
     $service=Read-ManagedServiceRegistration 'AccessWeaver-byedpi'
     if($service.State -cne 'Running' -or $service.ProcessId -le 0){
         throw 'Managed ByeDPI service is not running'
     }
-    if($ServiceDigest -and (Get-ManagedServiceCommandDigest $service.PathName) -cne $ServiceDigest){
+    if((Get-ManagedServiceCommandDigest $service.PathName) -cne $ServiceDigest){
         throw 'Managed ByeDPI registration changed during verification'
     }
     $listeners=@(Get-NetTCPConnection -State Listen -ErrorAction Stop | Where-Object {
@@ -4572,7 +4575,7 @@ function Get-ManagedByeDPILoopbackOwner([string]$Binary,[string]$ServiceDigest,[
         $process[0].CreationDate -isnot [datetime]){
         throw 'ByeDPI listener does not belong to the managed service'
     }
-    if($CommandLine -and $process[0].CommandLine -cne $CommandLine){
+    if($process[0].CommandLine -cne $CommandLine){
         throw 'Running ByeDPI arguments differ from the reviewed strategy'
     }
     return '{0}:{1}:{2}' -f $service.ProcessId,$listenerID,$process[0].CreationDate.Ticks
@@ -4591,23 +4594,26 @@ function Assert-ManagedByeDPILoopbackProxy([string]$Binary,[string]$ServiceDiges
         }
     } finally {$client.Dispose()}
     if((Get-ManagedByeDPILoopbackOwner $Binary $ServiceDigest $CommandLine) -cne $owner){throw 'Managed ByeDPI listener changed during verification'}
+    return $owner
 }
-function Install-ByeDPIDrover([string[]]$Arguments) {
+function Install-ManagedByeDPIProxy([string[]]$Arguments,[switch]$ReuseExisting,[switch]$DeployDrover) {
     $name='AccessWeaver-byedpi'
-    # Query uses the native runner, which marks calls as potential external effects.
-    $previousEffects=$script:externalEffectsPending
-    try {$owned=Assert-ManagedServiceOwnership $name}
-    finally {$script:externalEffectsPending=$previousEffects}
-    if($null -eq $owned){
+    $owned=$null
+    if($ReuseExisting){
+        # The native service query records possible external effects by default.
+        $previousEffects=$script:externalEffectsPending
+        try {$owned=Assert-ManagedServiceOwnership $name}
+        finally {$script:externalEffectsPending=$previousEffects}
+    }
+    $reused=$null -ne $owned
+    if($reused){
+        $binary=Join-Path $root ('components\byedpi\'+$assetNames['byedpi'])
+    }else{
         $binary=Ensure-Asset 'byedpi'
-        Install-EngineService 'byedpi' $binary $Arguments
+        $owned=Install-EngineService 'byedpi' $binary $Arguments -PassThru
         Firewall 'byedpi' $binary
-        Assert-ManagedByeDPILoopbackProxy $binary
-        Install-Drover
-        return
     }
 
-    $binary=Join-Path $root ('components\byedpi\'+$assetNames['byedpi'])
     $configPath=Join-Path $root 'services\byedpi.json'
     Assert-TrustedItem $binary
     Assert-TrustedItem $configPath
@@ -4634,10 +4640,17 @@ function Install-ByeDPIDrover([string[]]$Arguments) {
             if($_ -eq '' -or $_ -cmatch '[ \t]'){Quote-Arg $_}
             else {[regex]::Replace($_,'(\\*)"','$1$1\"')}
         }) -join ' '
-        Assert-ManagedByeDPILoopbackProxy $binary $owned.commandSHA256 $commandLine
-        Install-Drover
-        [void](Get-ManagedByeDPILoopbackOwner $binary $owned.commandSHA256 $commandLine)
-        Event 'Reused the running managed ByeDPI service for Discord'
+        $owner=Assert-ManagedByeDPILoopbackProxy $binary $owned.commandSHA256 $commandLine
+        if($DeployDrover){
+            Install-Drover
+            if((Get-ManagedByeDPILoopbackOwner $binary $owned.commandSHA256 $commandLine) -cne $owner){
+                throw 'Managed ByeDPI listener changed during Drover deployment'
+            }
+        }
+        if($reused){
+            if($DeployDrover){Event 'Reused the running managed ByeDPI service for Discord'}
+            else{Event 'Reused the running managed ByeDPI service'}
+        }
     } finally {$configGuard.Dispose()}
 }
 function Install-Method([string]$ScannedEngineSHA256,[string[]]$ScannedLuaSHA256) {
@@ -4650,23 +4663,28 @@ function Install-Method([string]$ScannedEngineSHA256,[string[]]$ScannedLuaSHA256
     }
     if($r.engine -ne 'dnscrypt' -and $r.dns -and $r.dns -ne 'unchanged' -and -not $script:dnsConfigured){Configure-DNS $r.dns}
     switch($r.engine) {
-        'wiresock' {$config=Make-Config;$status=Connect-WireSock $config;if($r.mode -eq 'standard'){$byedpi=Ensure-Asset 'byedpi';Install-EngineService 'byedpi' $byedpi @('--ip','127.0.0.1','--port','1080','--split','2');Firewall 'byedpi' $byedpi;Assert-ManagedByeDPILoopbackProxy $byedpi;Install-Drover};if($r.refresh){$r | Add-Member -NotePropertyName enabled -NotePropertyValue $true -Force;Refresh-Task};return @{configPath=$config;status=$status}}
+        'wiresock' {
+            $config=Make-Config
+            $status=Connect-WireSock $config
+            if($r.mode -eq 'standard'){Install-ManagedByeDPIProxy @('--ip','127.0.0.1','--port','1080','--split','2') -DeployDrover}
+            if($r.refresh){$r | Add-Member -NotePropertyName enabled -NotePropertyValue $true -Force;Refresh-Task}
+            return @{configPath=$config;status=$status}
+        }
         'byedpi' {
             $arguments=@('--ip','127.0.0.1','--port','1080')
             if($r.args){$arguments+=@($r.args)}else{$arguments+=@('--split','2')}
-            if($r.mode -eq 'dll'){
-                Install-ByeDPIDrover $arguments
-                return @{installed=$r.engine}
-            }
-            $binary=Ensure-Asset 'byedpi'
-            if($r.mode -eq 'once'){
-                Event 'One-shot ByeDPI running; cancel this workflow to stop it'
-                [void](Native $binary $arguments -Timeout 86400)
-            }else{
-                Install-EngineService 'byedpi' $binary $arguments
-                Firewall 'byedpi' $binary
-                Assert-ManagedByeDPILoopbackProxy $binary
-                if($r.mode -ne 'service'){Setup-ProxiFyre '127.0.0.1:1080'}
+            switch([string]$r.mode){
+                'dll' {Install-ManagedByeDPIProxy $arguments -ReuseExisting -DeployDrover}
+                'service' {Install-ManagedByeDPIProxy $arguments -ReuseExisting}
+                'once' {
+                    $binary=Ensure-Asset 'byedpi'
+                    Event 'One-shot ByeDPI running; cancel this workflow to stop it'
+                    [void](Native $binary $arguments -Timeout 86400)
+                }
+                default {
+                    Install-ManagedByeDPIProxy $arguments
+                    Setup-ProxiFyre '127.0.0.1:1080'
+                }
             }
         }
         {$_ -in @('zapret','zapret2','goodbyedpi')} {
