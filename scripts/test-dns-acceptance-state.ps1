@@ -32,7 +32,7 @@ $definitions=@($ast.EndBlock.Statements)
 $tokens=$null;$issues=$null;$coordinator=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-doh-scenario.ps1'),[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Native coordinator source did not parse'}
 $definitions+=@($coordinator.EndBlock.Statements)
-$selected=@('New-NativeDNSFailureCatalog','Get-NativeDNSFailureMarker','Get-NativeDNSFailureObservation','Get-NativeDNSStaticFailure','Invoke-NativeDNSStaticFixture','Read-DNSAcceptanceRegistry','Get-DNSAcceptanceRegistryHash','Invoke-NativeDoHScenario','Invoke-NativeDNSJournalScenario','Invoke-NativeDNSMissingSnapshotScenario','Invoke-NativeDNSRollbackScenario','New-NativeDNSFailureResponse','Get-NativeDNSVerificationMarker','Get-NativeDNSForwarderFailure','Get-NativeDNSComponentFailure','Get-NativeDNSComponentRetry','Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Assert-DNSAcceptanceFamilyPreserved','Assert-DNSAcceptanceConfigured','Invoke-DNSAcceptanceRoundTrip')
+$selected=@('Convert-NativeDNSCryptWildcardBaseline','New-NativeDNSFailureCatalog','Get-NativeDNSFailureMarker','Get-NativeDNSFailureObservation','Get-NativeDNSStaticFailure','Invoke-NativeDNSStaticFixture','Read-DNSAcceptanceRegistry','Get-DNSAcceptanceRegistryHash','Invoke-NativeDoHScenario','Invoke-NativeDNSJournalScenario','Invoke-NativeDNSMissingSnapshotScenario','Invoke-NativeDNSRollbackScenario','New-NativeDNSFailureResponse','Get-NativeDNSVerificationMarker','Get-NativeDNSForwarderFailure','Get-NativeDNSComponentFailure','Get-NativeDNSComponentRetry','Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Assert-DNSAcceptanceFamilyPreserved','Assert-DNSAcceptanceConfigured','Invoke-DNSAcceptanceRoundTrip')
 $allowed=$selected+@('ConvertTo-Json','Get-NetAdapter','Get-ItemProperty','Get-DnsClientServerAddress','Get-Command','Get-DnsClientDohServerAddress','Where-Object','Get-Service','Clear-DnsClientCache','Resolve-DnsName')
 foreach($name in $selected){
     $nodes=@($definitions | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
@@ -288,6 +288,14 @@ try {
     New-ACase;$script:registryFailure='IPv6';$capturePhase='';$refused=$false
     try{[void](Read-DNSAcceptanceState ([ref]$capturePhase))}catch{$refused=$true}
     Assert-A ($refused -and $capturePhase -ceq 'registry-error-ipv6') 'capture-stage-refusal'
+    foreach($family in @('IPv4','IPv6')){
+        New-ACase
+        $script:registryAbsent[$script:g1+'/'+$family]=$true
+        $capturePhase='';$refused=$false
+        try{[void](Read-DNSAcceptanceState ([ref]$capturePhase))}
+        catch{$refused=$_.Exception.Message -ceq 'DNS acceptance exposed-family registry state is missing'}
+        Assert-A ($refused -and $capturePhase -ceq ('registry-missing-'+$family.ToLowerInvariant())) 'capture-stage-refusal'
+    }
     foreach($method in @('doh','dnscrypt')){
     foreach($failure in @('none','baseline','capability','selected','configuration','configured-state','ordinary-resolver','restoration','restored-state','restored-resolver','drift-after-query','dual')){
         New-ACase;$script:nativeBefore=Read-DNSAcceptanceState;Set-AConfigured $method;$script:nativeConfigured=Read-DNSAcceptanceState;$script:nativeAfter=Clone-A $script:nativeBefore
@@ -605,6 +613,15 @@ try {
         $result=Invoke-NativeDoHScenario @parameters
         Assert-A ($result.operationCode -ceq 'baseline' -and $script:invalidEffects -eq 0 -and -not $result.configurationAttempted -and -not $result.restorationAttempted) 'failure-native-preflight'
     }
+    $wildcards=Convert-NativeDNSCryptWildcardBaseline @(
+        @{LocalPort=53;LocalAddress='::ffff:0.0.0.0'},
+        @{LocalPort=53;LocalAddress='::'},
+        @{LocalPort=53;LocalAddress='127.0.0.1'}
+    )
+    Assert-A ($wildcards.Count -eq 3 -and $wildcards.outcome -ceq 'observed' -and $wildcards.ipv4 -and $wildcards.ipv6) 'capture-stage-complete'
+    $wildcards=Convert-NativeDNSCryptWildcardBaseline @(@{LocalPort=53;LocalAddress='127.0.0.1'})
+    Assert-A (-not $wildcards.ipv4 -and -not $wildcards.ipv6) 'capture-stage-complete'
+    Reject-A {Convert-NativeDNSCryptWildcardBaseline @(@{LocalPort=53;LocalAddress='invalid'})}
     # Synthetic DNS packets for the fixture's one public query name only.
     $packet=[byte[]]::new(29);$packet[0]=0x12;$packet[1]=0x34;$packet[2]=1;$packet[5]=1;$packet[12]=7;$packet[20]=3;$packet[26]=1;$packet[28]=1
     [Array]::Copy([Text.Encoding]::ASCII.GetBytes('example'),0,$packet,13,7);[Array]::Copy([Text.Encoding]::ASCII.GetBytes('com'),0,$packet,21,3)
@@ -965,9 +982,44 @@ function Second { throw 'Another fixed source refusal' }
 function Duplicate { throw 'PRIVATE_STATIC_REFUSAL' }
 function Dynamic { throw ('PRIVATE_DYNAMIC '+$value) }
 function Variable { throw $value }
+function Stage { $script:dnsOperationStage='service-start' }
+function Unrelated { $script:otherStage='private-stage' }
+function DynamicStage { $script:dnsOperationStage=$value }
 '@
         $catalog=New-NativeDNSFailureCatalog $sample
-        Assert-A ($catalog.entries.Count -eq 2 -and $catalog.maxLength -le 512) 'source-literal-catalog'
+        Assert-A ($catalog.entries.Count -eq 3 -and $catalog.maxLength -le 512) 'source-literal-catalog'
+        $phase='DNSCrypt failure stage: service-start.'
+        $stageFirst=Get-NativeDNSFailureMarker $catalog '' 'PRIVATE DNSCrypt failure stage: service-'
+        $stageSecond=Get-NativeDNSFailureMarker $catalog $stageFirst.suffix ('start.'+[char]10+'PRIVATE')
+        Assert-A ($stageFirst.lines.Count -eq 0 -and $stageSecond.lines.Count -eq 1 -and $stageSecond.lines[0] -eq 6) 'source-literal-marker'
+        Assert-A ((Get-NativeDNSFailureMarker $catalog '' 'DNSCrypt failure stage: service-starting.').lines.Count -eq 0 -and
+            (Get-NativeDNSFailureMarker $catalog '' 'DNSCrypt failure stage: private-stage.').lines.Count -eq 0) 'source-literal-marker'
+        Assert-A (($productCatalog.entries | Where-Object literal -CEQ $phase).lines.Count -eq 1) 'source-literal-catalog'
+
+        $tokens=$null;$issues=$null
+        $worker=[Management.Automation.Language.Parser]::ParseInput($productText,[ref]$tokens,[ref]$issues)
+        $markers=@($worker.FindAll({param($n)
+            $n -is [Management.Automation.Language.AssignmentStatementAst] -and
+            $n.Left.Extent.Text -ceq '$result.error' -and
+            $n.Operator -eq [Management.Automation.Language.TokenKind]::PlusEquals -and
+            $n.Right.Extent.Text.Contains('DNSCrypt failure stage: ')
+        },$true))
+        Assert-A (-not $issues.Count -and $markers.Count -eq 1 -and
+            $markers[0].Parent.Parent -is [Management.Automation.Language.IfStatementAst]) 'source-literal-projection'
+        & {
+            param($Handler)
+            $script:dnsOperationStage='service-start'
+            $result=@{error='PRIVATE_PROVIDER_EXCEPTION'}
+            $r=@{action='dns';dns='dnscrypt'}
+            . ([scriptblock]::Create($Handler.Extent.Text))
+            $serialized=ConvertTo-Json -InputObject @{result=$result} -Compress
+            $observation=Get-NativeDNSFailureMarker $productCatalog '' $serialized
+            Assert-A ($observation.lines.Count -eq 1 -and $result.error.StartsWith('PRIVATE_PROVIDER_EXCEPTION')) 'source-literal-projection'
+            $result.error='PRIVATE_PROVIDER_EXCEPTION'
+            $r.dns='doh'
+            . ([scriptblock]::Create($Handler.Extent.Text))
+            Assert-A ($result.error -ceq 'PRIVATE_PROVIDER_EXCEPTION') 'source-literal-projection'
+        } $markers[0].Parent.Parent
         $expected=@(1,3)
         $message='PRIVATE_STATIC_REFUSAL'
         for($split=0;$split -le $message.Length;$split++){

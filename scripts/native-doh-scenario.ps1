@@ -1,3 +1,21 @@
+function Convert-NativeDNSCryptWildcardBaseline([object[]]$Rows) {
+    $result=@{outcome='observed';ipv4=$false;ipv6=$false}
+    if($Rows.Count -gt 4096){throw 'Native UDP port inventory exceeds its bound'}
+    foreach($row in $Rows){
+        $address=$null
+        if($null -eq $row -or $row.LocalPort -ne 53 -or $row.LocalAddress -isnot [string] -or
+            -not [Net.IPAddress]::TryParse($row.LocalAddress,[ref]$address)){
+            throw 'Native UDP port inventory is invalid'
+        }
+        if($address.IsIPv4MappedToIPv6){$address=$address.MapToIPv4()}
+        switch -CaseSensitive ($address.ToString()){
+            '0.0.0.0' {$result.ipv4=$true}
+            '::' {$result.ipv6=$true}
+        }
+    }
+    return $result
+}
+
 # Pure coordination for native DoH/DNSCrypt: boundaries are explicit callbacks. The hosted
 # driver supplies the source-built CLI, independent state reader and OS resolver.
 function Invoke-NativeDoHScenario([scriptblock]$Apply,[scriptblock]$Capture,[scriptblock]$Resolve,[string]$Method='doh',[string]$ScenarioKind='roundtrip',[scriptblock]$InduceFailure,[scriptblock]$ResolveFailed,[scriptblock]$ResolveRestored) {
@@ -414,7 +432,7 @@ function Get-NativeDNSStaticFailure([Exception]$Exception) {
 }
 
 
-# Source-known literal observations only. These helpers cannot qualify a command
+# Source-known failure stages and literals only. These helpers cannot qualify a command
 # or return error text. The driver hashes source bytes before building a catalog.
 function New-NativeDNSFailureCatalog([string]$SourceText) {
     if(-not $SourceText -or $SourceText.Length -gt 1048576){throw 'DNS diagnostic source bound exceeded'}
@@ -424,12 +442,27 @@ function New-NativeDNSFailureCatalog([string]$SourceText) {
     $entries=[Collections.Generic.List[object]]::new()
     $byText=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
     $maxLength=0
-    foreach($node in $ast.FindAll({param($n) $n -is [Management.Automation.Language.ThrowStatementAst]},$true)){
-        if($node.Pipeline -isnot [Management.Automation.Language.PipelineAst] -or $node.Pipeline.PipelineElements.Count -ne 1){continue}
-        $command=$node.Pipeline.PipelineElements[0]
+    $diagnostics=$ast.FindAll({param($n)
+        $n -is [Management.Automation.Language.ThrowStatementAst] -or
+        ($n -is [Management.Automation.Language.AssignmentStatementAst] -and
+         $n.Left -is [Management.Automation.Language.VariableExpressionAst] -and
+         $n.Left.VariablePath.UserPath -ceq 'script:dnsOperationStage' -and
+         $n.Operator -eq [Management.Automation.Language.TokenKind]::Equals)
+    },$true)
+    foreach($node in $diagnostics){
+        $stage=$node -is [Management.Automation.Language.AssignmentStatementAst]
+        if($stage){$command=$node.Right}
+        else{
+            if($node.Pipeline -isnot [Management.Automation.Language.PipelineAst] -or $node.Pipeline.PipelineElements.Count -ne 1){continue}
+            $command=$node.Pipeline.PipelineElements[0]
+        }
         if($command -isnot [Management.Automation.Language.CommandExpressionAst] -or
             $command.Expression -isnot [Management.Automation.Language.StringConstantExpressionAst]){continue}
         $text=$command.Expression.Value
+        if($stage){
+            if($text -cnotmatch '\A[a-z]+(?:-[a-z]+){0,3}\z' -or $text.Length -gt 40){continue}
+            $text='DNSCrypt failure stage: '+$text+'.'
+        }
         if($text.Length -lt 12 -or $text.Length -gt 512 -or $text.Contains([string][char]10) -or $text.Contains([string][char]13)){continue}
         if(-not $byText.ContainsKey($text)){
             if($entries.Count -ge 1024){throw 'DNS diagnostic literal inventory bound exceeded'}
