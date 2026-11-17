@@ -140,19 +140,32 @@ $(switch -CaseSensitive ($env:AW_DETECTION_FIXTURE){
     $nativeRecord='[AccessWeaver.InstallerLifecycleRecoveryRegistry]::ReadValue()'
     $fixtureRecord=@'
 $(switch -CaseSensitive ($env:AW_DETECTION_FIXTURE){
-    'managed-pending-wrong-version' {'0.1.1-alpha|'+$PSScriptRoot+'|'+('a'*64)}
-    'managed-pending-wrong-path' {$Version+'|'+$PSScriptRoot+'-other|'+('a'*64)}
-    'managed-pending-unmanaged' {$Version+'|'+$PSScriptRoot}
-    'managed-pending-invalid-pin' {$Version+'|'+$PSScriptRoot+'|'+('z'*64)}
+    'managed-pending-wrong-version' {'0.1.1-alpha|'+$PSScriptRoot+'|'+('a'*64);break}
+    'managed-pending-wrong-path' {$Version+'|'+$PSScriptRoot+'-other|'+('a'*64);break}
+    'managed-pending-unmanaged' {$Version+'|'+$PSScriptRoot;break}
+    'managed-pending-invalid-pin' {$Version+'|'+$PSScriptRoot+'|'+('z'*64);break}
+    'managed-pending-legacy-unknown-phase' {$Version+'|'+$PSScriptRoot+'|'+('a'*64)+'|unknown-phase';break}
+    {$_ -clike 'managed-pending-legacy-*'} {$Version+'|'+$PSScriptRoot+'|'+('a'*64)+'|legacy-retirement';break}
     'managed-pending-changed' {
         $pin=if($script:mockReads -eq 0){'a'*64}else{'b'*64}
-        $Version+'|'+$PSScriptRoot+'|'+$pin
+        $Version+'|'+$PSScriptRoot+'|'+$pin;break
     }
     {$_ -clike 'managed-pending-*'} {$Version+'|'+$PSScriptRoot+'|'+('a'*64)}
 })
 '@
     if(([regex]::Matches($mocked,[regex]::Escape($nativeRecord))).Count -ne 2){throw 'Missing bounded registry marker probes'}
     $mocked=$mocked.Replace($nativeRecord,$fixtureRecord)
+    $nativeProduct='[AccessWeaver.InstallerLifecycleRecoveryRegistry]::QueryProductRegistration()'
+    if(([regex]::Matches($mocked,[regex]::Escape($nativeProduct))).Count -ne 1){throw 'Missing no-follow product registration probe'}
+    $fixtureProduct=@'
+$(switch -CaseSensitive ($env:AW_DETECTION_FIXTURE){
+    'managed-pending-legacy-unavailable' {5;break}
+    'managed-pending-legacy-registered' {0;break}
+    {$_ -clike 'managed-pending-legacy-*'} {2;break}
+    default {throw 'Unexpected no-follow product probe'}
+})
+'@
+    $mocked=$mocked.Replace($nativeProduct,$fixtureProduct)
     $signatureCall='Microsoft.PowerShell.Security\Get-AuthenticodeSignature -LiteralPath $Path -ErrorAction Stop'
     if(-not $mocked.Contains($signatureCall)){throw 'Missing installed publisher verification boundary'}
     $fixtureSignature=@'
@@ -188,6 +201,13 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             @{mode='managed-pending-invalid-pin';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
             @{mode='managed-pending-unregistered';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true;registered=$true},
             @{mode='managed-pending-alternate';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true;registered=$true},
+            @{mode='managed-pending-legacy-absent';code=1;count=1;hash=$hash;reportRecovery=$true;matchingPendingStatus=$true},
+            @{mode='managed-pending-legacy-absent';code=1;count=1;hash=$hash;reportRecovery=$true;matchingPendingStatus=$true;registered=$true},
+            @{mode='managed-pending-legacy-registered';code=1;count=1;hash=$hash;reportRecovery=$true;matchingPendingStatus=$true},
+            @{mode='managed-pending-legacy-absent';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true;otherDirectory=$true},
+            @{mode='managed-pending-legacy-absent';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true;approval=('b'*64)},
+            @{mode='managed-pending-legacy-unavailable';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true;registered=$true},
+            @{mode='managed-pending-legacy-unknown-phase';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
             @{mode='managed-pending-changed';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
             @{mode='managed-pending-match';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true;otherDirectory=$true},
             @{mode='marker-becomes-pending';code=1;count=1;hash=$hash;reportRecovery=$true;pendingStatus=$true},
@@ -292,9 +312,9 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             }
             if($case.count -eq 1){
                 if($case.matchingPendingStatus){
-                    if($output[0] -cne 'AccessWeaver managed upgrade pending'){throw 'Unexpected matching recovery status'}
+                    if($output[0] -cne 'AccessWeaver managed upgrade pending'){throw ('Unexpected matching recovery status: '+$case.mode)}
                 }elseif($case.pendingStatus){
-                    if($output[0] -cne 'AccessWeaver installation pending'){throw 'Unexpected opt-in recovery status'}
+                    if($output[0] -cne 'AccessWeaver installation pending'){throw ('Unexpected opt-in recovery status: '+$case.mode)}
                 }elseif($case.inventory){
                     $record=$output[0] | ConvertFrom-Json
                     $schema=if($case.buildInfo){2}else{1}

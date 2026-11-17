@@ -228,6 +228,12 @@ again and rejects changes before committing. Only after the existing pending
 record is durable can Setup retire the old leaf. Publication after file
 verification uses a separate transaction. A retry in the original directory
 requires the same extended argument and can resume after the old leaf is gone.
+Setup persists a distinct legacy-retirement phase before deleting the old
+leaf. The managed detector may report a matching pending upgrade in the
+absence interval only with the exact phase, candidate version and approval,
+a valid matching installation directory, and safe inspection of both registry
+views. Setup can recover the previously verified destination from this
+record when retrying without an explicit directory.
 
 The qualification build overwrites the legacy Inno uninstall log to discard
 its original path-based registry deletion command. Its ownership test covers
@@ -256,3 +262,16 @@ is artifact 14298526970 with ZIP SHA-256
 f95470ccba3eeb8e5a05cc89f56f089f62d25141896c774b7b57b60e6829d156.
 The ARM64 receipt is artifact 14298197506 with ZIP SHA-256
 2b034fdc96ba7f350f2bf992873eaed2e788c5488ef42da43bb4aea1b180a762.
+
+
+The first [interrupted migration run](https://github.com/Yunushan/accessweaver/actions/runs/44014968209)
+passed protected Setup retry and repair, controller binding, protected uninstall,
+and wrong legacy approval refusal on AMD64 and ARM64. Both reached the
+deliberate process exit after retiring the legacy record and verified that
+the prior files were unchanged. The pending detector then returned its
+ordinary pending status because the registry entry was absent. The explicit
+retirement phase addresses that boundary. The AMD64 receipt is artifact
+14298288871 with ZIP SHA-256
+0db9ff6eeaf7ac5b1d0ade92b97c180c6252d8ed0e98a6cb100170431e3a2525.
+The ARM64 receipt is artifact 14298444013 with ZIP SHA-256
+c77c50388acff02b04fde1c528bdeb45cd7f6a3d2f7bb2b6f8a7e219793d79e9.

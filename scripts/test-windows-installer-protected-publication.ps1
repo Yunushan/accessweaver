@@ -116,11 +116,13 @@ function Invoke-ProtectedLegacyMigration($First,$Next,[string]$Interrupted,[stri
             (Digest (Join-Path $install 'BUILD-INFO.json')) -ceq $before.identityFileSHA256 -and
             (Digest $uninstallData) -ceq $dataPin -and (Digest $uninstaller) -ceq $uninstallerPin) 'Interruption did not preserve the old installation before copy'
         Assert-DetectorRefusal 'legacy-retirement-pending' -VerifyMatchingPendingStatus
+        Assert-DetectorRefusal 'legacy-retirement-managed-pending' -VerifyMatchingPendingStatus -UseRegisteredDirectory
         $Report.legacyInterruptionVerified=$true
 
         $Report.stage='legacy-approved-retry'
         $recoveryLog=Join-Path $capsule 'legacy-recovery.log'
-        $null=Native-Record $Next.real ($InstallArguments+@($baselineArgument,('/LOG='+$recoveryLog)))
+        $retryArguments=@($InstallArguments | Where-Object {$_ -notlike '/DIR=*'})
+        $null=Native-Record $Next.real ($retryArguments+@($baselineArgument,('/LOG='+$recoveryLog)))
         Assert-SetupCompletionReadback $recoveryLog
         Assert-Installed $after
         Require ($null -eq (Get-PendingInstallFixtureValue)) 'Approved migration retry left the pending record'

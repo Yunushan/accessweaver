@@ -6716,6 +6716,10 @@ namespace AccessWeaver
     {
         private static readonly IntPtr LocalMachine = new IntPtr(unchecked((int)0x80000002));
         private static readonly string[] Components = { "SOFTWARE", "AccessWeaver", "Installer" };
+        private static readonly string[] ProductRegistration = {
+            "SOFTWARE", "Microsoft", "Windows", "CurrentVersion", "Uninstall",
+            "{B13D4677-4660-4E63-B3DB-03077ACBB092}_is1"
+        };
         private const int NotFound = 2;
         private const int Unsafe = 5;
         private const uint NoExpand = 0x10000000;
@@ -6739,18 +6743,18 @@ namespace AccessWeaver
         private static extern int RegGetValueW(IntPtr key, string subKey, string value,
             uint flags, out uint type, [Out] byte[] data, ref uint size);
 
-        private static int OpenInstallerKey(out IntPtr key)
+        private static int OpenPath(string[] components, uint view, int firstAllowedMissing, out IntPtr key)
         {
             key = IntPtr.Zero;
             IntPtr parent = LocalMachine;
             int status = 0;
-            foreach (string component in Components)
+            for (int index = 0; index < components.Length; index++)
             {
                 IntPtr child;
-                status = RegOpenKeyExW(parent, component, 8, 0x0101, out child);
+                status = RegOpenKeyExW(parent, components[index], 8, view | 1, out child);
                 if (status != 0)
                 {
-                    if (parent == LocalMachine)
+                    if (index < firstAllowedMissing)
                         status = Unsafe;
                     break;
                 }
@@ -6781,10 +6785,26 @@ namespace AccessWeaver
             return status;
         }
 
+        private static int ReadProductView(uint view)
+        {
+            IntPtr key;
+            int status = OpenPath(ProductRegistration, view, 4, out key);
+            if (status == 0 && RegCloseKey(key) != 0)
+                return Unsafe;
+            return status == 3 ? NotFound : status;
+        }
+
+        public static int QueryProductRegistration()
+        {
+            if (ReadProductView(0x0200) != NotFound)
+                return Unsafe;
+            return ReadProductView(0x0100);
+        }
+
         public static int QueryStatus()
         {
             IntPtr key;
-            int status = OpenInstallerKey(out key);
+            int status = OpenPath(Components, 0x0100, 1, out key);
             if (status != 0)
                 return status;
 
@@ -6796,11 +6816,11 @@ namespace AccessWeaver
         public static string ReadValue()
         {
             IntPtr key;
-            if (OpenInstallerKey(out key) != 0)
+            if (OpenPath(Components, 0x0100, 1, out key) != 0)
                 return null;
 
-            // Match Setup's bound for version, directory, approval pin and terminator.
-            byte[] buffer = new byte[1166];
+            // Match Setup's bound including the optional legacy retirement phase.
+            byte[] buffer = new byte[1202];
             uint size = (uint)buffer.Length;
             uint type;
             int status = RegGetValueW(key, null, "PendingInstall", NoExpand | 2, out type, buffer, ref size);

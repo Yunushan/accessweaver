@@ -48,7 +48,11 @@ AppName=AccessWeaver
 AppVersion={#ReleaseVersion}
 AppPublisher=AccessWeaver contributors
 AppPublisherURL=https://github.com/Yunushan/accessweaver
+#ifdef ProtectedRegistrationQualification
+DefaultDirName={code:AWProtectedDefaultDirectory}
+#else
 DefaultDirName={autopf}\AccessWeaver
+#endif
 DefaultGroupName=AccessWeaver
 AllowNoIcons=yes
 ArchitecturesAllowed={#InstallArchitecture}
@@ -88,8 +92,9 @@ Name: "{group}\AccessWeaver"; Filename: "{app}\accessweaver.exe"; Parameters: "u
 
 const
   AWPendingInstall = 'PendingInstall';
+  AWLegacyRetirementMarker = 'legacy-retirement';
 
-var AWInstallFinished, AWPendingRetirementFailed: Boolean;
+var AWInstallFinished, AWPendingRetirementFailed, AWPendingLegacyRetirement: Boolean;
     AWPendingApprovalPin: String;
 
 function AWFlushRegistryKey(Key: LongWord): LongWord;
@@ -106,21 +111,21 @@ begin
   Result := True;
 end;
 
-function AWReadPendingVersion(var Version, Directory, ApprovalPin: String): String;
+function AWReadPendingVersion(var Version, Directory, ApprovalPin: String; var LegacyRetirement: Boolean): String;
 var Key, Status, Kind, Bytes: LongWord;
     Buffer, RecordValue: String; Units, Separator: Integer;
 begin
-  Result := ''; Version := ''; Directory := ''; ApprovalPin := '';
+  Result := ''; Version := ''; Directory := ''; ApprovalPin := ''; LegacyRetirement := False;
   Status := AWOpenLifecycleRegistry($0001, False, Key);
   if (Status = 2) or (Status = 3) then Exit;
   Result := 'Cannot verify the AccessWeaver pending installation record.';
   if Status <> 0 then Exit;
   try
-    { Version, directory, optional approval pin, separators and terminator. }
-    SetLength(Buffer, 583); Bytes := 1166; Kind := 0;
+    { Version, directory, optional approval pin and legacy retirement phase. }
+    SetLength(Buffer, 601); Bytes := 1202; Kind := 0;
     Status := AWGetRegistrationValue(Key, '', AWPendingInstall, $30000002, Kind, Buffer, Bytes);
     if Status = 2 then begin Result := ''; Exit; end;
-    if (Status <> 0) or (Kind <> 1) or (Bytes < 4) or (Bytes > 1166) or ((Bytes mod 2) <> 0) then Exit;
+    if (Status <> 0) or (Kind <> 1) or (Bytes < 4) or (Bytes > 1202) or ((Bytes mod 2) <> 0) then Exit;
     Units := Bytes div 2;
     if Buffer[Units] <> #0 then Exit;
     RecordValue := Copy(Buffer, 1, Units - 1);
@@ -131,8 +136,14 @@ begin
     Separator := Pos('|', Directory);
     if Separator <> 0 then begin
       ApprovalPin := Copy(Directory, Separator + 1, Length(Directory));
-      if not AWSha256Pin(ApprovalPin) then Exit;
       SetLength(Directory, Separator - 1);
+      Separator := Pos('|', ApprovalPin);
+      if Separator <> 0 then begin
+        if AWOrdinal(Copy(ApprovalPin, Separator + 1, Length(ApprovalPin)), AWLegacyRetirementMarker) <> 0 then Exit;
+        LegacyRetirement := True;
+        SetLength(ApprovalPin, Separator - 1);
+      end;
+      if not AWSha256Pin(ApprovalPin) then Exit;
     end;
     if (Directory <> '') and (Length(Directory) <= 260) then Result := '';
   finally
@@ -140,6 +151,16 @@ begin
       Result := 'Cannot verify the AccessWeaver pending installation record.';
   end;
 end;
+
+#ifdef ProtectedRegistrationQualification
+function AWProtectedDefaultDirectory(Param: String): String;
+var Version, Directory, ApprovalPin: String; LegacyRetirement: Boolean;
+begin
+  Result := ExpandConstant('{autopf}\AccessWeaver');
+  if (AWReadPendingVersion(Version, Directory, ApprovalPin, LegacyRetirement) = '') and
+     LegacyRetirement then Result := Directory;
+end;
+#endif
 
 function AWSetLifecycleStringNative(Key: LongWord; const Name: String;
   Reserved, Kind: LongWord; const Data: String; Bytes: LongWord): LongWord;
@@ -208,12 +229,13 @@ begin
 end;
 
 function AWPendingInstallMatches(const Destination: String): Boolean;
-var Version, Directory, ApprovalPin: String;
+var Version, Directory, ApprovalPin: String; LegacyRetirement: Boolean;
 begin
   Result := False;
-  if AWReadPendingVersion(Version, Directory, ApprovalPin) <> '' then Exit;
+  if AWReadPendingVersion(Version, Directory, ApprovalPin, LegacyRetirement) <> '' then Exit;
   Result := (AWOrdinal(Version, '{#ReleaseVersion}') = 0) and
-    (AWOrdinal(Directory, Destination) = 0) and (ApprovalPin = AWPendingApprovalPin);
+    (AWOrdinal(Directory, Destination) = 0) and (ApprovalPin = AWPendingApprovalPin) and
+    (LegacyRetirement = AWPendingLegacyRetirement);
 end;
 
 #ifdef ProtectedRegistrationQualification
@@ -226,12 +248,13 @@ function AWPendingInstallValue(const Destination: String): String;
 begin
   Result := '{#ReleaseVersion}|' + Destination;
   if AWPendingApprovalPin <> '' then Result := Result + '|' + AWPendingApprovalPin;
+  if AWPendingLegacyRetirement then Result := Result + '|' + AWLegacyRetirementMarker;
 end;
 
 function AWPendingInstallAbsent: Boolean;
-var Version, Directory, ApprovalPin: String;
+var Version, Directory, ApprovalPin: String; LegacyRetirement: Boolean;
 begin
-  Result := (AWReadPendingVersion(Version, Directory, ApprovalPin) = '') and (Version = '');
+  Result := (AWReadPendingVersion(Version, Directory, ApprovalPin, LegacyRetirement) = '') and (Version = '');
 end;
 
 function AWRetirePendingInstall(const Destination: String): Boolean;
@@ -271,9 +294,13 @@ begin
 end;
 
 function AWPendingSetupPreflight(const Destination: String): String;
-var Version, Directory, ApprovalPin: String; Ordering: Integer;
+var Version, Directory, ApprovalPin: String; Ordering: Integer; LegacyRetirement: Boolean;
 begin
-  Result := AWReadPendingVersion(Version, Directory, ApprovalPin);
+  Result := AWReadPendingVersion(Version, Directory, ApprovalPin, LegacyRetirement);
+#ifndef ProtectedRegistrationQualification
+  if (Result = '') and LegacyRetirement then
+    Result := 'Finish the incomplete AccessWeaver migration with its original approved installer.';
+#endif
   if (Result <> '') or (Version = '') then Exit;
   if not AWCompare('{#ReleaseVersion}', Version, Ordering) then
     Result := 'The AccessWeaver pending installation version is invalid.'
@@ -827,14 +854,15 @@ end;
 function AWApprovedUpgradePreflight(const Destination: String; var ApprovalPin: String): String;
 var I, Ordering: Integer; Argument, Approval, Version, PayloadPin, SBOMPin, BuildPin,
     Installed, Location, OtherVersion, OtherLocation, PendingVersion, PendingDirectory, PendingPin: String;
-    Present, Found64, Found32: Boolean;
+    Present, Found64, Found32, PendingLegacyRetirement: Boolean;
     Held: AWNativeHandles; Executable, BuildInfo, SBOM: LongWord;
 begin
   ApprovalPin := '';
 #ifdef ProtectedRegistrationQualification
   AWLegacyApproval.Version := '';
 #endif
-  Result := AWReadPendingVersion(PendingVersion, PendingDirectory, PendingPin);
+  AWPendingLegacyRetirement := False;
+  Result := AWReadPendingVersion(PendingVersion, PendingDirectory, PendingPin, PendingLegacyRetirement);
   if Result <> '' then Exit;
   Result := 'Invalid AccessWeaver managed upgrade approval.';
   Present := False;
@@ -906,6 +934,7 @@ begin
           if Found32 then Exit;
           if Found64 and (not AWIsInstallationDirectory(Destination, Location) or
              ((AWOrdinal(Version, Installed) <> 0) and (AWOrdinal('{#ReleaseVersion}', Installed) <> 0))) then Exit;
+          AWPendingLegacyRetirement := PendingLegacyRetirement;
           Result := '';
           Log('AccessWeaver approved upgrade resumed from its pending installation record.');
         except
@@ -1004,6 +1033,7 @@ begin
     try
       if not AWPrepareOwnedProductRegistration(Destination, LegacyHeld) then
         RaiseException('Cannot verify AccessWeaver registration. Migration requires the approved prior installer files and registration.');
+      if AWLegacyPriorInventory <> '' then AWPendingLegacyRetirement := True;
 #endif
       if not AWPrepareManagedTempRecovery(Destination) then
         RaiseException('Cannot persist the AccessWeaver temporary file baseline.');
@@ -1087,12 +1117,12 @@ begin
 end;
 
 function AWUninstallPreflight: String;
-var PendingVersion, PendingDirectory, PendingPin: String;
+var PendingVersion, PendingDirectory, PendingPin: String; PendingLegacyRetirement: Boolean;
 begin
   if not AWLifecycleOwned then begin
     Result := 'The AccessWeaver installation lock is not held. Retry uninstalling.'; Exit;
   end;
-  Result := AWReadPendingVersion(PendingVersion, PendingDirectory, PendingPin);
+  Result := AWReadPendingVersion(PendingVersion, PendingDirectory, PendingPin, PendingLegacyRetirement);
   if (Result = '') and (PendingVersion <> '') then
     Result := 'An AccessWeaver installation is incomplete. Retry the approved installer before uninstalling.';
   if Result = '' then Result := AWUninstallDirectoryPreflight(ExpandConstant('{app}'));
