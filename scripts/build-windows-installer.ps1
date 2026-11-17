@@ -7,7 +7,8 @@ param(
     [string]$SigningTool,
     [string]$PublisherCertificateSHA256,
     [string]$PayloadSigningTool,
-    [string]$PayloadPublisherCertificateSHA256
+    [string]$PayloadPublisherCertificateSHA256,
+    [switch]$ProtectedRegistrationQualification
 )
 $ErrorActionPreference='Stop'
 $project=Split-Path -Parent $PSScriptRoot
@@ -16,6 +17,8 @@ Assert-InstallerReleaseVersion $Version
 $callback=Join-Path $PSScriptRoot 'sign-windows-installer-artifact.ps1'
 $setupScript=Join-Path $PSScriptRoot 'windows-installer.iss'
 $signingArguments=@()
+$setupModeArguments=@()
+if($ProtectedRegistrationQualification){$setupModeArguments+='/DProtectedRegistrationQualification=1'}
 $payloadSigning=Get-InstallerPayloadSigning $SigningTool $PublisherCertificateSHA256 $PayloadSigningTool $PayloadPublisherCertificateSHA256
 $organizationSigning=[bool]($SigningTool -or $PublisherCertificateSHA256)
 if($organizationSigning){
@@ -114,7 +117,7 @@ try {
     $preprocessed=Join-Path $evidence 'setup-preprocessed.iss'
     Assert-InstallerPackageDirectories $stage $setupScript
     $compile={
-        & $Compiler ('/DBuildRoot='+$stage) ('/DReleaseVersion='+$Version) ('/DTargetArch='+$TargetArch) ('/DEvidenceOutput='+$preprocessed) '/DRequireInnoRuntimeNotice' @signingArguments $setupScript
+        & $Compiler ('/DBuildRoot='+$stage) ('/DReleaseVersion='+$Version) ('/DTargetArch='+$TargetArch) ('/DEvidenceOutput='+$preprocessed) '/DRequireInnoRuntimeNotice' @setupModeArguments @signingArguments $setupScript
         if($LASTEXITCODE -ne 0){throw 'Installer compilation failed'}
     }
     $noticeGuard=[IO.File]::Open($runtimeNoticePath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
@@ -130,6 +133,13 @@ try {
         }
     } finally {$noticeGuard.Dispose()}
     $null=Assert-InstallerSetupScript $preprocessed $TargetArch $Version -OrganizationSigning:$organizationSigning
+    if($ProtectedRegistrationQualification){
+        $expanded=[IO.File]::ReadAllText($preprocessed)
+        if($expanded -cnotmatch '(?m)^CreateUninstallRegKey=no\s*$' -or
+           $expanded -cnotmatch '(?m)^UninstallLogMode=overwrite\s*$'){
+            throw 'Compiled Setup did not select the protected registration lifecycle'
+        }
+    }
     $payloadFingerprint=''
     Assert-InstallerPackageDirectories $stage $setupScript $preprocessed ([ref]$payloadFingerprint)
     $compilerOutput | Write-Output

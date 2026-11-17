@@ -1031,8 +1031,10 @@ begin
 #ifdef ProtectedRegistrationQualification
     LegacyClosed := True;
     try
-      if not AWPrepareOwnedProductRegistration(Destination, LegacyHeld) then
+      if not AWPrepareOwnedProductRegistration(Destination, LegacyHeld) then begin
+        Log('AccessWeaver protected registration or legacy approval refused.');
         RaiseException('Cannot verify AccessWeaver registration. Migration requires the approved prior installer files and registration.');
+      end;
       if AWLegacyPriorInventory <> '' then AWPendingLegacyRetirement := True;
 #endif
       if not AWPrepareManagedTempRecovery(Destination) then

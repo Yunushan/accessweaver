@@ -55,6 +55,8 @@ try {
     $hash=(Get-FileHash -LiteralPath $payload -Algorithm SHA256).Hash
     [IO.File]::WriteAllText($uninstaller,'inert uninstaller fixture')
     $uninstallerHash=(Get-FileHash -LiteralPath $uninstaller -Algorithm SHA256).Hash
+    [IO.File]::WriteAllText($uninstallData,'inert uninstall data fixture')
+    $uninstallDataHash=(Get-FileHash -LiteralPath $uninstallData -Algorithm SHA256).Hash
     $noticeBytes=[Text.Encoding]::UTF8.GetBytes('Inert fixture license notice')
     [IO.File]::WriteAllBytes($notice,$noticeBytes)
     $noticeDigest=(Get-FileHash -LiteralPath $notice -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -269,6 +271,10 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             @{mode='publisher-no-certificate';code=0;count=0;hash=$hash;publisher=$publisherHash},
             @{mode='approved';code=0;count=1;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true},
             @{mode='approved';code=0;count=1;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true;buildInfo=$buildInfoHash},
+            @{mode='approved';code=0;count=1;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true;buildInfo=$buildInfoHash;uninstaller=$uninstallerHash;uninstallData=$uninstallDataHash;label='legacy inventory'},
+            @{mode='approved';code=0;count=0;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true;buildInfo=$buildInfoHash;uninstaller=$uninstallerHash;uninstallData=('0'*64);label='wrong uninstall data'},
+            @{mode='approved';code=1;count=0;hash=$hash;uninstallData=$uninstallDataHash;label='uninstall data without executable'},
+            @{mode='approved';code=1;count=0;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true;uninstaller=$uninstallerHash;uninstallData=$uninstallDataHash;label='uninstall inventory without build metadata'},
             @{mode='approved';code=0;count=0;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true;buildInfo=$buildInfoHash;changedBuildInfo=$true},
             @{mode='approved';code=0;count=0;hash=$hash;sbom=$sbomHash;publisher=('0'*64);inventory=$true},
             @{mode='approved';code=1;count=0;hash=$hash;sbom=$sbomHash;inventory=$true},
@@ -297,6 +303,7 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             elseif($case.otherDirectory){$arguments+=@('-InstallDirectory',($testRoot+'-other'))}
             else{$arguments+=@('-InstallDirectory',$testRoot)}
             if($case.uninstaller){$arguments+=@('-UninstallerSHA256',$case.uninstaller)}
+            if($case.uninstallData){$arguments+=@('-UninstallDataSHA256',$case.uninstallData)}
             if($case.sbom){$arguments+=@('-PayloadSBOMSHA256',$case.sbom)}
             if($case.buildInfo){$arguments+=@('-BuildInfoSHA256',$case.buildInfo)}
             if($case.publisher){$arguments+=@('-PayloadPublisherSHA256',$case.publisher)}
@@ -317,9 +324,12 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
                     if($output[0] -cne 'AccessWeaver installation pending'){throw ('Unexpected opt-in recovery status: '+$case.mode)}
                 }elseif($case.inventory){
                     $record=$output[0] | ConvertFrom-Json
-                    $schema=if($case.buildInfo){2}else{1}
-                    if(@($record.PSObject.Properties).Count -ne (5+$schema) -or $record.schemaVersion -ne $schema -or
-                       ($schema -eq 2 -and $record.buildInfoSHA256 -cne $buildInfoHash.ToLowerInvariant()) -or
+                    $schema=if($case.uninstallData){3}elseif($case.buildInfo){2}else{1}
+                    $fieldCount=if($schema -eq 3){9}else{5+$schema}
+                    if(@($record.PSObject.Properties).Count -ne $fieldCount -or $record.schemaVersion -ne $schema -or
+                       ($schema -ge 2 -and $record.buildInfoSHA256 -cne $buildInfoHash.ToLowerInvariant()) -or
+                       ($schema -eq 3 -and ($record.uninstallerSHA256 -cne $uninstallerHash.ToLowerInvariant() -or
+                           $record.uninstallDataSHA256 -cne $uninstallDataHash.ToLowerInvariant())) -or
                        $record.target -cne ('windows/'+$arch) -or $record.version -cne '0.1.0-alpha' -or
                        $record.payloadSHA256 -cne $hash.ToLowerInvariant() -or
                        $record.payloadSBOMSHA256 -cne $sbomHash.ToLowerInvariant() -or

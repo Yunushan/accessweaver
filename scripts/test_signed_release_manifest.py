@@ -164,6 +164,71 @@ class SignedReleaseManifestTests(unittest.TestCase):
         evidence.write_text(json.dumps({**report, **overrides}), encoding="utf-8")
         return evidence, release.digest(evidence)
 
+    def test_legacy_upgrade_uses_the_signed_prior_uninstall_pair_and_exact_endpoint_inventory(self):
+        self.add_windows_installer_property("amd64", release.WINDOWS_BUILD_INFO_PROPERTY, "6" * 64)
+        self.add_windows_installer_property("amd64", release.WINDOWS_PAYLOAD_FINGERPRINT_PROPERTY, "7" * 64)
+        files = release.inventory(self.candidate, self.subjects)
+        prior = dict(zip(release.WINDOWS_LEGACY_PRIOR_FIELDS, ("a" * 64, "b" * 64)))
+        evidence_fields = dict(
+            schemaVersion=15, installMode="upgrade", previousVersion="1.2.2-rc.1",
+            previousPayloadSHA256="d" * 64, userProfilePreservedThroughUpgrade=True,
+            legacyRegistrationMigrated=True, **prior,
+        )
+        for wrong in ({"legacyRegistrationMigrated": False}, {release.WINDOWS_LEGACY_PRIOR_FIELDS[1]: None}):
+            invalid = self.write_reboot_report("legacy-invalid.json", **{**evidence_fields, **wrong})
+            with self.subTest(report=wrong), self.assertRaisesRegex(ValueError, "verified legacy migration"):
+                release.load_detection_evidence(self.candidate, [invalid], files, VERSION)
+        reboot = self.write_reboot_report("legacy-qualified.json", **evidence_fields)
+        entry, = release.load_detection_evidence(self.candidate, [reboot], files, VERSION)
+        self.assertIs(entry[release.WINDOWS_LEGACY_MIGRATION], True)
+        manifest = release.encode_manifest(COMMIT, REF, files, [entry])
+        self.assertEqual(json.loads(manifest)["schemaVersion"], 13)
+        self.assertEqual(json.loads(manifest)["windowsDetection"], [entry])
+        (self.candidate / release.MANIFEST).write_bytes(manifest)
+        (self.candidate / release.SIGNATURE).write_bytes(b"inert authentication fixture")
+        certificate = self.root / "legacy-approval.der"
+        certificate.write_bytes(b"inert approval certificate")
+        inventory = self.root / "prior-inventory.json"
+        fields = {
+            "schemaVersion": 3, "target": entry["target"], "version": entry["previousVersion"],
+            "payloadSHA256": entry["previousPayloadSHA256"], "payloadSBOMSHA256": entry["previousPayloadSBOMSHA256"],
+            "payloadPublisherSHA256": entry["previousPayloadPublisherSHA256"],
+            "buildInfoSHA256": entry[release.WINDOWS_PREVIOUS_BUILD_INFO],
+            "uninstallerSHA256": prior[release.WINDOWS_LEGACY_PRIOR_FIELDS[0]],
+            "uninstallDataSHA256": "9" * 64,
+        }
+        def verify_installed(content, **options):
+            inventory.write_text(json.dumps(content), encoding="utf-8")
+            return self.verify(certificate, release.digest(certificate),
+                               windows_upgrade_inventory=(inventory, release.digest(inventory)), **options)
+
+        with patch.object(release, "authenticate"):
+            update = verify_installed(fields)["managedUpdate"]
+            approval = ",".join((
+                fields["version"], fields["payloadSHA256"], fields["payloadSBOMSHA256"],
+                fields["buildInfoSHA256"], fields["uninstallerSHA256"], fields["uninstallDataSHA256"],
+            ))
+            self.assertEqual(update["windowsSetupBaselineArgument"], "/AWUpgradeFrom=" + approval)
+            self.assertEqual(update["windowsPendingApprovalSHA256"],
+                             hashlib.sha256((approval + "|amd64|" + "7" * 64).encode("ascii")).hexdigest())
+            with self.assertRaisesRegex(ValueError, "requires the qualified Windows uninstaller"):
+                verify_installed({**fields, "uninstallerSHA256": "0" * 64})
+            old_fields = {field: value for field, value in fields.items()
+                          if field not in release.WINDOWS_INSTALLED_UNINSTALL_FIELDS}
+            with self.assertRaisesRegex(ValueError, "independently approved endpoint uninstall-data digest"):
+                verify_installed({**old_fields, "schemaVersion": 2})
+            retry = {
+                "resume_windows_upgrade_setup_sha256": update["installerSHA256"],
+                "resume_windows_upgrade_baseline_argument": update["windowsSetupBaselineArgument"],
+            }
+            self.assertEqual(verify_installed(fields, **retry)["managedUpdate"], update)
+            with self.assertRaisesRegex(ValueError, "differs from the original approved upgrade"):
+                verify_installed({**fields, "uninstallDataSHA256": "8" * 64}, **retry)
+            for revoked in (prior[release.WINDOWS_LEGACY_PRIOR_FIELDS[1]], fields["uninstallDataSHA256"]):
+                with self.subTest(revoked=revoked), self.assertRaisesRegex(ValueError, "revoked"):
+                    policy_pin = self.write_policy({**self.policy, "subjectSHA256": [revoked]})
+                    verify_installed(fields, policy_pin=policy_pin)
+
     def test_setup_baseline_claim_is_required_for_a_current_upgrade_and_rejected_for_clean_install(self):
         files = release.inventory(self.candidate, self.subjects)
         for mode, claim in (("clean", True), ("upgrade", False), ("upgrade", 1), ("upgrade", "true")):

@@ -11,7 +11,8 @@ param(
     [switch]$UpgradeInventory,
     [string]$BuildInfoSHA256 = '',
     [switch]$UseRegisteredDirectory,
-    [string]$PendingApprovalSHA256 = ''
+    [string]$PendingApprovalSHA256 = '',
+    [string]$UninstallDataSHA256 = ''
 )
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
@@ -552,6 +553,8 @@ function Test-AccessWeaverInstallation([string]$directory) {
             if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $uninstaller -Algorithm SHA256).Hash -ine $UninstallerSHA256){return $false}
             $dataPath=[IO.Path]::ChangeExtension($path,'.dat')
             $uninstallData=[AccessWeaver.InstallerFileAccess]::OpenFile($dataPath,512MB,$true)
+            if($UninstallDataSHA256 -and
+                (Microsoft.PowerShell.Utility\Get-FileHash -InputStream $uninstallData -Algorithm SHA256).Hash -ine $UninstallDataSHA256){return $false}
         }
         $confirmed=Read-AccessWeaverRegistration Registry64
         if($null -eq $confirmed -or $confirmed.version -cne $registration.version -or
@@ -597,7 +600,10 @@ try {
        ($PayloadPublisherSHA256 -and $PayloadPublisherSHA256 -notmatch '\A[a-fA-F0-9]{64}\z') -or
        ($PendingApprovalSHA256 -and $PendingApprovalSHA256 -cnotmatch '\A[a-f0-9]{64}\z') -or
        ($UpgradeInventory -and (-not $PayloadSBOMSHA256 -or -not $PayloadPublisherSHA256)) -or
-       ($UninstallerSHA256 -and $UninstallerSHA256 -notmatch '\A[a-fA-F0-9]{64}\z')){
+       ($UninstallerSHA256 -and $UninstallerSHA256 -notmatch '\A[a-fA-F0-9]{64}\z') -or
+       ($UninstallDataSHA256 -and (
+           $UninstallDataSHA256 -notmatch '\A[a-fA-F0-9]{64}\z' -or -not $UninstallerSHA256 -or
+           ($UpgradeInventory -and -not $BuildInfoSHA256)))){
         throw 'Expected pinned Windows payload identity and a matching 64-bit host'
     }
     if($UseRegisteredDirectory -and $InstallDirectory){throw 'Specify either a directory or registered location detection'}
@@ -625,6 +631,11 @@ try {
         if($BuildInfoSHA256){
             $inventory.schemaVersion=2
             $inventory.buildInfoSHA256=$BuildInfoSHA256.ToLowerInvariant()
+        }
+        if($UninstallDataSHA256){
+            $inventory.schemaVersion=3
+            $inventory.uninstallerSHA256=$UninstallerSHA256.ToLowerInvariant()
+            $inventory.uninstallDataSHA256=$UninstallDataSHA256.ToLowerInvariant()
         }
         $inventory | Microsoft.PowerShell.Utility\ConvertTo-Json -Compress
     } else {Microsoft.PowerShell.Utility\Write-Output 'AccessWeaver detected'}

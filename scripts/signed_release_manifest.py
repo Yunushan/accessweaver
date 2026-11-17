@@ -59,6 +59,9 @@ WINDOWS_PREVIOUS_BUILD_INFO = "previousBuildInfoSHA256"
 WINDOWS_SETUP_BASELINE = "setupUpgradeBaselineVerified"
 WINDOWS_SETUP_BASELINE_PREFIX = "/AWUpgradeFrom="
 WINDOWS_SETUP_WRONG_BASELINE = "setupWrongBaselineRefusedWithStatePreserved"
+WINDOWS_LEGACY_MIGRATION = "legacyRegistrationMigrated"
+WINDOWS_LEGACY_PRIOR_FIELDS = ("previousUninstallerSHA256", "previousUninstallDataSHA256")
+WINDOWS_INSTALLED_UNINSTALL_FIELDS = ("uninstallerSHA256", "uninstallDataSHA256")
 WINDOWS_PREVIOUS_TRUST_FIELDS = ("previousPayloadSBOMSHA256", "previousPayloadPublisherSHA256")
 WINDOWS_DOWNGRADE_FIELDS = ("previousSetupSHA256", "previousPublisherSHA256")
 REBOOT_CHECKS = (
@@ -225,7 +228,7 @@ def validate_detection(entries, subjects, version):
     build_info_by_target = {}
     for entry in entries:
         require(isinstance(entry, dict) and all(
-            value is True if key in (WINDOWS_SETUP_BASELINE, WINDOWS_SETUP_WRONG_BASELINE) else isinstance(value, str)
+            value is True if key in (WINDOWS_SETUP_BASELINE, WINDOWS_SETUP_WRONG_BASELINE, WINDOWS_LEGACY_MIGRATION) else isinstance(value, str)
             for key, value in entry.items()
         ),
                 "Malformed Windows detection entry")
@@ -250,8 +253,14 @@ def validate_detection(entries, subjects, version):
                 "Windows incorrect Setup baseline refusal requires approved baseline enforcement")
         require(not baseline_fields or WINDOWS_PREVIOUS_BUILD_INFO in build_info_fields,
                 "Windows Setup baseline evidence requires the approved prior build pins")
+        legacy_fields = {WINDOWS_LEGACY_MIGRATION, *WINDOWS_LEGACY_PRIOR_FIELDS}.intersection(entry)
+        require(not legacy_fields or (
+            legacy_fields == {WINDOWS_LEGACY_MIGRATION, *WINDOWS_LEGACY_PRIOR_FIELDS}
+            and WINDOWS_SETUP_WRONG_BASELINE in baseline_fields and restoration_fields and source_fields
+            and all(re.fullmatch(SHA256, entry[field]) for field in WINDOWS_LEGACY_PRIOR_FIELDS)
+        ), "Malformed Windows legacy migration evidence")
         require(entry.keys() == set(WINDOWS_DETECTION_FIELDS) | trust_fields | publisher_fields
-                | downgrade_fields | build_info_fields | baseline_fields | detector_fields | source_fields | restoration_fields
+                | downgrade_fields | build_info_fields | baseline_fields | detector_fields | source_fields | restoration_fields | legacy_fields
                 and (not trust_fields or trust_fields == set(WINDOWS_PREVIOUS_TRUST_FIELDS)
                      and entry["installMode"] == "upgrade"), "Malformed Windows detection entry")
         if downgrade_fields:
@@ -310,6 +319,12 @@ def validate_bound_reboot_report(report, mode):
         journal = report.get(WINDOWS_RESTORATION_JOURNAL)
         require(isinstance(journal, str) and re.fullmatch(SHA256, journal),
                 "Windows reboot evidence lacks the verified restoration journal digest")
+    if report["schemaVersion"] >= 15:
+        fields.update((WINDOWS_LEGACY_MIGRATION, *WINDOWS_LEGACY_PRIOR_FIELDS))
+        require(mode == "upgrade" and report.get(WINDOWS_LEGACY_MIGRATION) is True
+                and all(isinstance(report.get(field), str) and re.fullmatch(SHA256, report[field])
+                        for field in WINDOWS_LEGACY_PRIOR_FIELDS),
+                "Windows reboot evidence does not bind verified legacy migration and prior uninstaller files")
     require(report.keys() == fields, "Windows reboot evidence differs from the current report schema")
     run_id = report["runID"]
     require(isinstance(run_id, str) and re.fullmatch(r"[a-f0-9]{32}", run_id)
@@ -333,7 +348,7 @@ def load_detection_evidence(directory, evidence, subjects, version, *, include_l
         content = independently_pinned_file(directory, path, fingerprint, maximum=8192)
         report = decode_json(content)
         require(isinstance(report, dict) and type(report.get("schemaVersion")) is int
-                and report["schemaVersion"] in (5, 6, 7, 8, 9, 10, 11, 12, 13, 14) and report.get("stage") == "complete"
+                and report["schemaVersion"] in (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15) and report.get("stage") == "complete"
                 and all(report.get(field) is True for field in REBOOT_CHECKS),
                 "Windows reboot qualification is incomplete")
         architecture = report.get("architecture")
@@ -388,7 +403,7 @@ def load_detection_evidence(directory, evidence, subjects, version, *, include_l
             entry[WINDOWS_DETECTOR] = report[WINDOWS_DETECTOR]
             if report["schemaVersion"] >= 14:
                 entry[WINDOWS_RESTORATION_JOURNAL] = report[WINDOWS_RESTORATION_JOURNAL]
-            if include_lifecycle_sources:
+            if include_lifecycle_sources or report["schemaVersion"] >= 15:
                 entry.update({field: report[field] for field in WINDOWS_LIFECYCLE_SOURCE_FIELDS})
             prior_build_info = report.get(WINDOWS_PREVIOUS_BUILD_INFO)
             if mode == "upgrade":
@@ -397,6 +412,9 @@ def load_detection_evidence(directory, evidence, subjects, version, *, include_l
                     entry[WINDOWS_SETUP_BASELINE] = True
                 if report["schemaVersion"] >= 13:
                     entry[WINDOWS_SETUP_WRONG_BASELINE] = True
+                if report["schemaVersion"] >= 15:
+                    entry[WINDOWS_LEGACY_MIGRATION] = True
+                    entry.update({field: report[field] for field in WINDOWS_LEGACY_PRIOR_FIELDS})
             else:
                 require(prior_build_info == "", "Clean Windows evidence contains prior build metadata")
         if downgrade:
@@ -494,6 +512,8 @@ def encode_manifest(commit, ref, subjects, windows_detection=()):
         schema = 11
     if any(WINDOWS_RESTORATION_JOURNAL in entry for entry in windows_detection):
         schema = 12
+    if any(WINDOWS_LEGACY_MIGRATION in entry for entry in windows_detection):
+        schema = 13
     manifest = {
         "schemaVersion": schema,
         "scope": "accessweaver-signed-desktop-release",
@@ -508,7 +528,7 @@ def encode_manifest(commit, ref, subjects, windows_detection=()):
              + (WINDOWS_PAYLOAD_PUBLISHER,) + WINDOWS_DOWNGRADE_FIELDS
              + (WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO, WINDOWS_SETUP_BASELINE,
                 WINDOWS_SETUP_WRONG_BASELINE, WINDOWS_DETECTOR) + WINDOWS_LIFECYCLE_SOURCE_FIELDS
-             + (WINDOWS_RESTORATION_JOURNAL,) if field in entry}
+             + (WINDOWS_RESTORATION_JOURNAL, WINDOWS_LEGACY_MIGRATION) + WINDOWS_LEGACY_PRIOR_FIELDS if field in entry}
             for entry in sorted(windows_detection, key=detection_key)
         ]
     return (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
@@ -574,11 +594,14 @@ def load_windows_upgrade_inventory(directory, path, fingerprint):
     fields = {"schemaVersion", "target", "version", "payloadSHA256", "payloadSBOMSHA256",
               "payloadPublisherSHA256"}
     require(isinstance(record, dict) and type(record.get("schemaVersion")) is int
-            and record["schemaVersion"] in (1, 2), "Malformed Windows upgrade inventory")
+            and record["schemaVersion"] in (1, 2, 3), "Malformed Windows upgrade inventory")
     digests = ("payloadSHA256", "payloadSBOMSHA256", "payloadPublisherSHA256")
-    if record["schemaVersion"] == 2:
+    if record["schemaVersion"] >= 2:
         fields.add(WINDOWS_BUILD_INFO)
         digests += (WINDOWS_BUILD_INFO,)
+    if record["schemaVersion"] == 3:
+        fields.update(WINDOWS_INSTALLED_UNINSTALL_FIELDS)
+        digests += WINDOWS_INSTALLED_UNINSTALL_FIELDS
     require(record.keys() == fields and record["target"] in ("windows/amd64", "windows/arm64")
             and isinstance(record["version"], str), "Malformed Windows upgrade inventory")
     for field in digests:
@@ -773,6 +796,11 @@ def select_windows_upgrade(detection, update, installed_digest, installed_trust)
         require(WINDOWS_PREVIOUS_BUILD_INFO in entry
                 and entry[WINDOWS_PREVIOUS_BUILD_INFO] == installed_trust.get(WINDOWS_PREVIOUS_BUILD_INFO),
                 "No approved reboot evidence matches the installed Windows build metadata")
+    if WINDOWS_LEGACY_MIGRATION in entry or any(field in installed_trust for field in WINDOWS_LEGACY_PRIOR_FIELDS):
+        require(entry.get(WINDOWS_LEGACY_MIGRATION) is True
+                and installed_trust.get(WINDOWS_LEGACY_PRIOR_FIELDS[0]) == entry[WINDOWS_LEGACY_PRIOR_FIELDS[0]]
+                and WINDOWS_LEGACY_PRIOR_FIELDS[1] in installed_trust,
+                "Legacy migration requires the qualified Windows uninstaller and an independently approved endpoint uninstall-data digest")
     return entry
 
 
@@ -1341,6 +1369,8 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                 and re.fullmatch(r"[a-fA-F0-9]{64}", current_build_info_sha256),
                 "Installed Windows build metadata matching requires all installed trust pins")
         installed_trust[WINDOWS_PREVIOUS_BUILD_INFO] = current_build_info_sha256.lower()
+    if windows_upgrade_inventory is not None and record["schemaVersion"] == 3:
+        installed_trust.update(zip(WINDOWS_LEGACY_PRIOR_FIELDS, (record[field] for field in WINDOWS_INSTALLED_UNINSTALL_FIELDS)))
     if resume_windows_upgrade_setup_sha256 is not None:
         require(isinstance(resume_windows_upgrade_setup_sha256, str)
                 and re.fullmatch(r"[a-fA-F0-9]{64}", resume_windows_upgrade_setup_sha256),
@@ -1438,7 +1468,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                                                "previousPayloadSHA256", "publisherCertificateSHA256")
                     + WINDOWS_PREVIOUS_TRUST_FIELDS + (WINDOWS_PAYLOAD_PUBLISHER,)
                     + WINDOWS_DOWNGRADE_FIELDS + (WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO, WINDOWS_DETECTOR)
-                    + WINDOWS_LIFECYCLE_SOURCE_FIELDS + (WINDOWS_RESTORATION_JOURNAL,) if field in entry
+                    + WINDOWS_LIFECYCLE_SOURCE_FIELDS + (WINDOWS_RESTORATION_JOURNAL,) + WINDOWS_LEGACY_PRIOR_FIELDS if field in entry
                 ) for entry in entries),
                 "Release subject or Windows detection evidence is revoked")
         sboms_verified, macos_detectors, windows_build_info, windows_payload_fingerprints = validate_release_sboms(root, files, commit, version, entries)
@@ -1508,6 +1538,10 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             if baseline_verified:
                 values = (baseline["previousVersion"], baseline["previousPayloadSHA256"],
                           baseline["previousPayloadSBOMSHA256"], baseline[WINDOWS_PREVIOUS_BUILD_INFO])
+                if baseline.get(WINDOWS_LEGACY_MIGRATION) is True:
+                    legacy_inputs = tuple(installed_trust[field] for field in WINDOWS_LEGACY_PRIOR_FIELDS)
+                    require(not revoked_subjects.intersection(legacy_inputs), "Installed Windows legacy uninstaller input is revoked")
+                    values += legacy_inputs
                 argument = WINDOWS_SETUP_BASELINE_PREFIX + ",".join(values)
                 require(resume_windows_upgrade_baseline_argument is None
                         or argument == resume_windows_upgrade_baseline_argument,

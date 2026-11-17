@@ -123,6 +123,7 @@ begin
     Result := (AWFlushRegistryKey(Parent) = 0) and
       AWProductRegistrationAbsent($0100) and AWProductRegistrationAbsent($0200) and
       AWPendingInstallMatches(Destination);
+    if Result then Log('AccessWeaver approved legacy registration retired.');
     if Result then SetArrayLength(AWPriorRegistration, 0);
   finally
     if not AWOwnedRegistryClose(Parent) then Result := False;

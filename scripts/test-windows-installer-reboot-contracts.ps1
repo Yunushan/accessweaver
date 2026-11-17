@@ -4,7 +4,7 @@ $source=Join-Path $PSScriptRoot 'test-windows-installer-reboot.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Reboot fixture failed parsing'}
-foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootSetupLog','Get-RebootUpgradeArguments','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Read-RebootEvidence','Assert-RebootPath','Open-ApprovedRebootScript','Assert-RebootPublisher','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootAccessDescriptor','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootProfileReadable','Assert-RebootInstalledState','Assert-RebootPackageRemoved','Assert-RebootRestorationJournal','Assert-InstalledDetection','Assert-InstalledPublisher')){
+foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootQualificationSchema','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootSetupLog','Get-RebootUpgradeArguments','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Read-RebootEvidence','Assert-RebootPath','Open-ApprovedRebootScript','Assert-RebootPublisher','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootAccessDescriptor','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootProfileReadable','Assert-RebootInstalledState','Assert-RebootPackageRemoved','Assert-RebootRestorationJournal','Assert-InstalledDetection','Assert-InstalledPublisher')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -163,6 +163,30 @@ Assert-Refused {Assert-RebootIdentity $upgraded $upgradeExpected}
 $upgradeExpected.previousSetupSHA256=$olderSetupDigest
 $upgradeExpected.previousPublisherSHA256=$pin
 Assert-RebootIdentity $upgraded $upgradeExpected
+if((Get-RebootQualificationSchema 'clean' '' '') -ne 14 -or
+   (Get-RebootQualificationSchema 'upgrade' ('a'*64) ('b'*64)) -ne 15){throw 'Unexpected reboot evidence selection'}
+Assert-Refused {Get-RebootQualificationSchema 'clean' ('a'*64) ('b'*64)}
+Assert-Refused {Get-RebootQualificationSchema 'upgrade' ('a'*64) ''}
+Assert-Refused {Get-RebootQualificationSchema 'upgrade' '' ('b'*64)}
+$legacyExpected=$upgradeExpected.Clone()
+$legacyExpected.schemaVersion=15
+$legacyExpected.previousUninstallerSHA256='a'*64
+$legacyExpected.previousUninstallDataSHA256='b'*64
+$legacy=$upgraded.Clone()
+$legacy.schemaVersion=15
+$legacy.previousUninstallerSHA256=$legacyExpected.previousUninstallerSHA256
+$legacy.previousUninstallDataSHA256=$legacyExpected.previousUninstallDataSHA256
+$legacy.legacyRegistrationMigrated=$true
+Assert-RebootIdentity $legacy $legacyExpected
+Assert-Refused {Assert-RebootIdentity $legacy $upgradeExpected}
+foreach($field in @('previousUninstallerSHA256','previousUninstallDataSHA256')){
+    $wrongLegacy=$legacy.Clone()
+    $wrongLegacy[$field]='0'*64
+    Assert-Refused {Assert-RebootIdentity $wrongLegacy $legacyExpected}
+}
+$wrongLegacy=$legacy.Clone()
+$wrongLegacy.legacyRegistrationMigrated=$false
+Assert-Refused {Assert-RebootIdentity $wrongLegacy $legacyExpected}
 $unverifiedBaseline=$upgraded.Clone();$unverifiedBaseline.setupUpgradeBaselineVerified=$false
 Assert-Refused {Assert-RebootIdentity $unverifiedBaseline $upgradeExpected}
 foreach($invalid in @($false,1,'true')){
