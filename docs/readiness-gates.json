@@ -144,6 +144,7 @@
             "internal/api/workflow_output_test.go",
             "internal/workflow/metadata_output_test.go",
             "docs/qualification/67068364c8e8-firefox-sustained-rss.json",
+            "docs/qualification/f920bd5d695e-firefox-sustained-rss.json",
             "docs/qualification/bc5bd74965c4-browser-rss-roles.json"
           ]
         },
@@ -199,6 +200,7 @@
             "docs/WINDOWS_INSTALLER_REGISTRATION.md",
             "scripts/test-windows-installer-protected-publication.ps1",
             "docs/qualification/7c6c341a9ab6-native-protected-windows-installer.json",
+            "docs/qualification/f920bd5d695e-native-protected-windows-installer.json",
             "docs/qualification/f920bd5d695e-native-debian-lifecycle.json"
           ]
         }

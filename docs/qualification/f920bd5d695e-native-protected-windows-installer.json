@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "scope": "unsigned-protected-windows-installer-hosted-lifecycle",
+  "repository": "Yunushan/accessweaver",
+  "workflow": ".github/workflows/installer-lifecycle.yml",
+  "sourceCommit": "f920bd5d695e0251e02005c3c0fca90eac2f6890",
+  "sourceRef": "refs/heads/codex/dns-adapter-coverage",
+  "runID": 44068502442,
+  "reportSchemaVersion": 64,
+  "targets": [
+    {
+      "target": "windows/amd64",
+      "runID": 44068502442,
+      "runAttempt": 1,
+      "jobId": 133988349435,
+      "artifactId": 14322611203,
+      "artifactSHA256": "fb0dd039900d466516b0cef72f70f2267355fcf7e891f6543dd68b698013c0b3",
+      "subjectsVerified": [
+        {
+          "file": "accessweaver-0.1.0-alpha-windows-amd64-setup.exe",
+          "sha256": "b12967322756fadaf54d6ae1e16f6043e929b4885431420f2e418eb169004f84"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-windows-amd64-setup.exe.cdx.json",
+          "sha256": "f5114f8926f8295da1bc08e6ad35ab2d5ad9650395725829e0e5d8d5c5eb6a3b"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-windows-amd64-setup.exe",
+          "sha256": "b7dd964270ad81c05a6dd98d7c5b0e38260236aab976a9c31b41b2aebd276745"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-windows-amd64-setup.exe.cdx.json",
+          "sha256": "8060f9b18f82be63d1a3c7ab3ed2acf72bfaf2416d0b2ec5cc88c9a68b0113fb"
+        },
+        {
+          "file": "amd64.json",
+          "sha256": "fe0a1e704c3ada91d86756837b177e1ed7b4ba9ffd17b137ec4a4ce111903858"
+        }
+      ],
+      "lifecycleOperationsVerified": 16,
+      "registryReadBoundariesVerified": 6,
+      "registryAccessRefusalVerified": true,
+      "lateLockedCopyRefusalVerified": true,
+      "hostedNegativeProvenanceChecksVerified": 5,
+      "publisherSignatureVerified": false,
+      "productionQualificationComplete": false
+    },
+    {
+      "target": "windows/arm64",
+      "runID": 44068502442,
+      "runAttempt": 1,
+      "jobId": 133988349930,
+      "artifactId": 14322722859,
+      "artifactSHA256": "07b5b5772498e97ae3f554b1d1e91407cf581a51a5f8e260747c6ba46ad7d918",
+      "subjectsVerified": [
+        {
+          "file": "accessweaver-0.1.0-alpha-windows-arm64-setup.exe",
+          "sha256": "178338ca899e571e5ea51b00c6f25cfb3c5d55443820afa85d17616f7374a524"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-windows-arm64-setup.exe.cdx.json",
+          "sha256": "d1cb6f74a9e15b4bd09b1a54cdfbebbba3a6a9fac9beb50b24b7c7abc92cc906"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-windows-arm64-setup.exe",
+          "sha256": "4ea868092f86ef9bf7e0974d56633f8a85a57c0a581a0fb95edc6c6b989c9222"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-windows-arm64-setup.exe.cdx.json",
+          "sha256": "4d8bc37bbfe58c19337df16dc6d4d59ddfac161ee616190c2bc07be9e49ea8d6"
+        },
+        {
+          "file": "arm64.json",
+          "sha256": "7e395be763dab658b42a1cc1245f4091068de95b2753ab5cf881b92e79d44283"
+        }
+      ],
+      "lifecycleOperationsVerified": 16,
+      "registryReadBoundariesVerified": 6,
+      "registryAccessRefusalVerified": true,
+      "lateLockedCopyRefusalVerified": true,
+      "hostedNegativeProvenanceChecksVerified": 5,
+      "publisherSignatureVerified": false,
+      "productionQualificationComplete": false
+    }
+  ],
+  "publisherSignatureVerified": false,
+  "rebootTested": false,
+  "managedDeploymentQualified": false,
+  "productionQualificationComplete": false
+}

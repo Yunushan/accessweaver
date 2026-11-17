@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "provider-bound-firefox-sustained-rss-regression",
+  "repository": "Yunushan/accessweaver",
+  "workflow": ".github/workflows/browser-soak.yml",
+  "sourceCommit": "f920bd5d695e0251e02005c3c0fca90eac2f6890",
+  "sourceRef": "refs/heads/codex/dns-adapter-coverage",
+  "runID": 44068502398,
+  "qualificationScope": "Two source-bound Firefox observations on disposable Linux AMD64 and ARM64. The observations cover the 15-minute hosted dashboard workload.",
+  "browserPeakRssLimitBytes": 1073741824,
+  "targets": [
+    {
+      "architecture": "amd64",
+      "jobId": 133988350079,
+      "artifactId": 14322033702,
+      "artifactSHA256": "cdfdbe2cb4d3239838cb1e7718ec2ab09dc43e1f7ec6de656ed00759b296a6f0",
+      "inputsVerified": 22,
+      "baselinePassed": true,
+      "stage": "complete",
+      "failureKind": "none",
+      "counts": {
+        "seconds": 900,
+        "requests": 3600,
+        "navigation": 180,
+        "editor": 30,
+        "samples": 901,
+        "elapsedMilliseconds": 900016
+      },
+      "violations": [
+        "browserPeakRssBytes"
+      ],
+      "browserPeak": {
+        "phase": "workload",
+        "second": 812,
+        "rssBytes": 1076846592,
+        "rootBytes": 556228608,
+        "descendantBytes": 520617984,
+        "largestDescendantBytes": 242057216,
+        "descendantProcesses": 6
+      },
+      "controllerPeakRssBytes": 18083840,
+      "binarySHA256": "fe3d6498ff3a5ccefce33a17befcf74a5446d9073684034feb6dd5992405fa65"
+    },
+    {
+      "architecture": "arm64",
+      "jobId": 133988350361,
+      "artifactId": 14323590289,
+      "artifactSHA256": "009c91efbcfbaa2052c352968012a25c57abe8774c8262f27ec4e1dc57a3cf43",
+      "inputsVerified": 22,
+      "baselinePassed": true,
+      "stage": "complete",
+      "failureKind": "none",
+      "counts": {
+        "seconds": 900,
+        "requests": 3600,
+        "navigation": 180,
+        "editor": 30,
+        "samples": 901,
+        "elapsedMilliseconds": 900042
+      },
+      "violations": [
+        "browserPeakRssBytes"
+      ],
+      "browserPeak": {
+        "phase": "workload",
+        "second": 452,
+        "rssBytes": 1114456064,
+        "rootBytes": 557838336,
+        "descendantBytes": 556617728,
+        "largestDescendantBytes": 273567744,
+        "descendantProcesses": 6
+      },
+      "controllerPeakRssBytes": 18337792,
+      "binarySHA256": "5f37b083fea3752139ab379862fbabc277cdf5736e27906b09be9cfc4813d588"
+    }
+  ],
+  "workingDaySoakQualified": false,
+  "nativeInstalledQualified": false,
+  "productionQualificationComplete": false
+}
