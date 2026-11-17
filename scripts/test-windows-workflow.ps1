@@ -2709,9 +2709,11 @@ try {
         function Event {}
         function Save-Journal {}
         function Download {
-            param($url,$hash,$destination,[switch]$Signed,$Publisher,[switch]$ReturnVerifiedHash)
+            param($url,$hash,$destination,[switch]$Signed,$Publisher,[switch]$ReturnVerifiedHash,[switch]$Proxy)
             if(-not $Signed -or $Publisher -cne 'discord' -or -not $ReturnVerifiedHash){throw 'Replacement was not acquired with publisher verification'}
             $state.downloads++
+            if($Proxy){$state.proxyDownloads++}
+            if($state.failDownload){throw 'Synthetic proxy download failure'}
             if($state.downloads -eq 1){$state.installer=$destination}
             [IO.File]::WriteAllText($destination,'verified replacement installer')
             return (Get-AppExecutableDigest $destination)
@@ -2747,12 +2749,13 @@ try {
             [IO.File]::WriteAllText($updater,'replacement updater')
         }
         foreach($mode in @('partial-removal','setup-failure')){
-            $state=@{mode=$mode;downloads=0;removals=0;setups=0;signatureChecks=0;installer='';invalidSignature=$false;processes=@()}
+            $state=@{mode=$mode;downloads=0;proxyDownloads=0;failDownload=$false;removals=0;setups=0;signatureChecks=0;installer='';invalidSignature=$false;processes=@()}
             $workflows=Join-Path $testRoot ('discord-reinstall-'+$mode)
             $script:appRemovalRecoveryRoot=Join-Path $workflows 'application-recovery'
             $root=Join-Path $workflows ((('a'*48))+'\application')
             [void][IO.Directory]::CreateDirectory((Join-Path $root 'downloads'))
-            $r=[pscustomobject]@{action='app-reinstall';engine='discord';clean=$false}
+            $useProxy=$mode -ceq 'partial-removal'
+            $r=[pscustomobject]@{action='app-reinstall';engine='discord';clean=$false;repairProxy=$useProxy}
             $inputData=@{nativeArchitecture='amd64'}
             $base=Get-AppProcessBase 'discord'
             $versionDirectory=Join-Path $base 'app-1.0.0'
@@ -2762,12 +2765,22 @@ try {
             [IO.File]::WriteAllText($image,'original client')
             [IO.File]::WriteAllText($updater,'original updater')
 
+            if($useProxy){
+                $state.failDownload=$true
+                $refused=$false
+                try{Install-App 'discord' -Reinstall}catch{$refused=$_.Exception.Message -ceq 'Synthetic proxy download failure'}
+                Assert ($refused -and $state.proxyDownloads -eq 1 -and $state.downloads -eq 1 -and
+                    $state.removals -eq 0 -and $state.setups -eq 0 -and [IO.File]::Exists($image) -and
+                    [IO.File]::Exists($updater) -and -not (Read-DiscordRemovalRecovery 'discord')) 'Proxy download failure preserves the original Discord install before any removal'
+                $state.failDownload=$false;$state.downloads=0;$state.proxyDownloads=0
+            }
             $interrupted=$false
             $message=if($mode -ceq 'partial-removal'){'Synthetic removal interruption'}else{'Synthetic replacement interruption'}
             try{Install-App 'discord' -Reinstall}catch{$interrupted=$_.Exception.Message -ceq $message}
             $saved=Read-DiscordRemovalRecovery 'discord'
             Assert ($interrupted -and $saved.replacement.job -ceq ('a'*48) -and
-                $saved.replacement.setupAttempted -eq ($mode -ceq 'setup-failure')) ('Discord reinstall retains the approved installer and phase after '+$mode)
+                $saved.replacement.setupAttempted -eq ($mode -ceq 'setup-failure') -and
+                $state.proxyDownloads -eq [int]$useProxy) ('Discord reinstall retains the approved installer and phase after '+$mode)
 
             $root=Join-Path $workflows ((('b'*48))+'\application')
             [void][IO.Directory]::CreateDirectory((Join-Path $root 'downloads'))
@@ -3660,6 +3673,17 @@ try{
     $r=[pscustomobject]@{action='app-repair'}
     $rejected=$false;try{Initialize-Operation}catch{$rejected=$_.Exception.Message -match 'privilege-separated'}
     Assert ($rejected -and $script:machineInitializationCount -eq 0) 'Combined repair blocked before privileged initialization'
+    foreach($invalid in @(
+        @{action='install';engine='byedpi';repairProxy=$true},
+        @{action='app-install';engine='discord';repairProxy=$true},
+        @{action='app-reinstall';engine='discord-ptb';repairProxy=$true},
+        @{action='app-reinstall';engine='discord';repairProxy='true'}
+    )){
+        $r=[pscustomobject]$invalid
+        $rejected=$false
+        try{Initialize-Operation}catch{$rejected=$_.Exception.Message -ceq 'The local repair proxy is available only for stable Discord reinstall'}
+        Assert ($rejected -and $script:machineInitializationCount -eq 0 -and -not $script:fixtureApplicationLocked) 'Repair proxy rejects out-of-scope input before initialization'
+    }
     $inputData=[pscustomobject]@{resultPath=(Join-Path $testRoot 'user-job\result.json')}
     foreach($action in @('app-install','app-remove','app-start','app-reinstall')){
         $r=[pscustomobject]@{action=$action;dns='unchanged'}

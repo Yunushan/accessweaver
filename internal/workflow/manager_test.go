@@ -92,6 +92,29 @@ func TestSplitCordMaintenanceRequiresAdministrator(t *testing.T) {
 	}
 }
 
+func TestRepairProxyRequiresReviewedStableReinstall(t *testing.T) {
+	direct := Request{Action: "app-reinstall", Engine: "discord"}
+	proxy := direct
+	proxy.RepairProxy = true
+	directDigest, directErr := direct.PolicyDigest()
+	proxyDigest, proxyErr := proxy.PolicyDigest()
+	if directErr != nil || proxyErr != nil || directDigest == proxyDigest {
+		t.Fatalf("expected distinct valid policy approvals for proxy and direct reinstall: %v, %v", directErr, proxyErr)
+	}
+	for _, request := range []Request{
+		{Action: "app-install", Engine: "discord", RepairProxy: true},
+		{Action: "app-reinstall", Engine: "discord-ptb", RepairProxy: true},
+		{Action: "app-repair", Engine: "discord", RepairProxy: true},
+		{Action: "install", Engine: "byedpi", RepairProxy: true},
+		{Action: "app-reinstall", Engine: "discord", RepairProxy: true, DownloadURL: "https://example.com/installer"},
+		{Action: "app-reinstall", Engine: "discord", RepairProxy: true, DNS: "doh"},
+	} {
+		if err := request.Validate(); err == nil {
+			t.Fatalf("accepted a proxy outside the fixed reinstall request: %+v", request)
+		}
+	}
+}
+
 func TestDiscordReinstallRejectsReplacementInputs(t *testing.T) {
 	for _, request := range []Request{
 		{Action: "app-reinstall", Engine: "discord-ptb"},

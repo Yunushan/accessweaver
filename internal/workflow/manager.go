@@ -46,6 +46,7 @@ type Request struct {
 	Domains               []string `json:"domains,omitempty"`
 	Enabled               bool     `json:"enabled"`
 	Clean                 bool     `json:"clean"`
+	RepairProxy           bool     `json:"repairProxy,omitempty"`
 	Args                  []string `json:"args,omitempty"`
 	DownloadURL           string   `json:"downloadUrl,omitempty"`
 	SHA256                string   `json:"sha256,omitempty"`
@@ -216,6 +217,9 @@ func (m *Manager) Preview(r Request) (Plan, error) {
 	if r.Action == "app-remove" || r.Action == "app-reinstall" || r.Action == "app-repair" || r.Clean {
 		p.Warnings = append(p.Warnings, "Application removal or reinstall can sign you out.")
 	}
+	if r.RepairProxy {
+		p.Warnings = append(p.Warnings, "Download the official signed Discord installer through a trusted local SOCKS5 proxy at 127.0.0.1:1080.")
+	}
 	if r.Action == "app-reinstall" {
 		p.Warnings = append(p.Warnings, "Retry an interrupted reinstall from the same AccessWeaver state directory to reuse the verified replacement installer. Review the current installation if a client or updater has appeared after replacement setup started.")
 	}
@@ -253,6 +257,9 @@ func (m *Manager) Preview(r Request) (Plan, error) {
 }
 
 func (r Request) Validate() error {
+	if r.RepairProxy && (r.Action != "app-reinstall" || r.Engine != "discord") {
+		return errors.New("the local repair proxy is available only for stable Discord reinstall")
+	}
 	if (r.Action == "app-install" || r.Action == "app-remove" || r.Action == "app-start" || r.Action == "app-reinstall") && r.DNS != "" && r.DNS != "unchanged" {
 		return errors.New("configure system DNS separately from user application operations")
 	}

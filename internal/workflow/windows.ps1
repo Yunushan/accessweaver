@@ -29,7 +29,6 @@ $script:ownsMutex = $false
 $script:journalState = 'running'
 $script:pendingUninstaller = $null
 $script:externalEffectsPending = $false
-$script:repairProxyReady = $false
 if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-state-ready {0}' -f $script:workflowClock.ElapsedMilliseconds))}
 
 function Event([string]$text) { $script:events.Add(([DateTime]::UtcNow.ToString('o')+' '+$text)); [Console]::WriteLine($text); Save-Journal }
@@ -106,6 +105,10 @@ function Initialize-Operation {
     # Check before machine-storage initialization, DNS changes, discovery or
     # process execution. A combined repair cannot cross this boundary safely.
     if($r.action -eq 'app-repair'){throw 'Combined Discord repair is unavailable until a privilege-separated broker is implemented'}
+    if($null -ne $r.repairProxy -and ($r.repairProxy -isnot [bool] -or
+        ($r.repairProxy -and ($r.action -cne 'app-reinstall' -or $r.engine -cne 'discord')))){
+        throw 'The local repair proxy is available only for stable Discord reinstall'
+    }
     if($r.action -in @('app-install','app-remove','app-start','app-reinstall')){
         if($r.engine -eq 'splitcord' -and $r.action -in @('app-install','app-remove')){
             Require-Admin
@@ -912,7 +915,7 @@ function Test-InstallerPublisher([string]$publisher,$signature,[string]$verified
         default {return $false}
     }
 }
-function Download([string]$url,[string]$hash,[string]$destination,[switch]$Signed,[string]$Publisher='',[switch]$ReturnVerifiedHash) {
+function Download([string]$url,[string]$hash,[string]$destination,[switch]$Signed,[string]$Publisher='',[switch]$ReturnVerifiedHash,[switch]$Proxy) {
     if($Signed -and $Publisher -notin @('discord','microsoft','wiresock')){throw 'A signed installer requires an expected publisher category'}
     $hash=Approved-DownloadHash $url $hash
     Allowed-Download $url
@@ -923,7 +926,7 @@ function Download([string]$url,[string]$hash,[string]$destination,[switch]$Signe
     $owned=$false
     $lockedSource=$null
     try {
-        if($script:repairProxyReady){
+        if($Proxy){
             Save-ComponentDownloadAttempt $url $temp $budget -Curl -Proxy
         }else{
             try {Save-ComponentDownloadAttempt $url $temp $budget}catch {
@@ -4963,7 +4966,9 @@ function Install-App([string]$variant,[switch]$Reinstall) {
             $file=Join-Path $workflows ($replacement.job+'\application\downloads\discord-setup.exe')
             $verifiedHash=$replacement.installerSHA256
         }else{
-            $verifiedHash=Download $url '' $file -Signed -Publisher discord -ReturnVerifiedHash
+            $downloadOptions=@{Signed=$true;Publisher='discord';ReturnVerifiedHash=$true}
+            if($Reinstall -and $r.repairProxy){$downloadOptions.Proxy=$true}
+            $verifiedHash=Download $url '' $file @downloadOptions
         }
     }
     # Hold the verified download through any preparatory removal and process creation.
@@ -5880,22 +5885,6 @@ function Start-App([string]$variant) {
         } while($wait.Elapsed.TotalSeconds -lt 10)
         throw 'Application launch could not be verified; inspect its desktop and logs'
     } finally {$guard.Dispose()}
-}
-function Start-RepairProxy {
-    $binary=Ensure-Asset 'byedpi';$name='AccessWeaver-byedpi';$service=Get-Service $name -ErrorAction SilentlyContinue
-    if($service){
-        $recordPath=Join-Path $root 'services\byedpi.json';if(-not (Test-Path -LiteralPath $recordPath)){throw 'Existing ByeDPI service has no ownership record'}
-        $record=Get-Content -LiteralPath $recordPath -Raw|ConvertFrom-Json
-        if($record.name -ne $name -or $record.binary -ne $binary){throw 'Existing ByeDPI service configuration differs; remove it before repair'}
-        if($service.Status -ne 'Running'){
-            $digest=Get-ManagedServiceCommandDigest (Read-ManagedServiceCommand $name)
-            $script:undo.Add(@{kind='started-service';name=$name;commandSHA256=$digest})
-            Save-Journal
-            Start-Service $name
-            $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
-        }
-    }else{Install-EngineService 'byedpi' $binary @('--ip','127.0.0.1','--port','1080','--split','2')}
-    Firewall 'byedpi' $binary;$script:repairProxyReady=$true
 }
 function Preserve-DiscordCache {
     $cache=[IO.Path]::GetFullPath((Join-Path $env:APPDATA 'discord'))
@@ -7200,7 +7189,6 @@ try {
         'app-reinstall' {Install-App $r.engine -Reinstall}
         'app-remove' {@{application=$r.engine;removed=(Remove-App $r.engine)}}
         'app-start' {Start-App $r.engine}
-        'app-repair' {Stop-AppProcesses 'discord';Restore-Drover;[void](Remove-App 'discord');Preserve-DiscordCache;Start-RepairProxy;Install-App 'discord';Install-Drover;@{repaired='discord';proxy='127.0.0.1:1080'}}
         'uninstall' {Invoke-WorkflowUninstall}
         'recover' {Recover-Operation}
         default {throw 'Unknown action'}
@@ -7214,7 +7202,7 @@ try {
         # The CLI receives this checked worker result, while stdout stays in process.log.
         $result.error+=(' DNSCrypt failure stage: '+$script:dnsOperationStage+'.')
     }
-    if($r.action -in @('install','auto-install','connect','config','download','dns','refresh','scan','app-install','app-reinstall','app-repair')){
+    if($r.action -in @('install','auto-install','connect','config','download','dns','refresh','scan','app-install','app-reinstall')){
         $result.rollbackScope='recorded-resources';$result.recordedRollbackComplete=$false
         $result.rollbackErrors=@(Rollback)
         if(-not $result.rollbackErrors.Count){

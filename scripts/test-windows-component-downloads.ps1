@@ -295,7 +295,6 @@ try{
         @{mode='promotion-failure';accept=$false;signed=$false;proxy=$false;calls='dotnet';promotions=1}
     )){
         $script:downloadFixtureState=@{Mode=$downloadCase.mode;Limit=32L;Timeout=$(if($downloadCase.mode -eq 'deadline'){80}else{2000});Budgets=0;Budget=$null;Approvals=0;Allowed=0;Promotions=0;Signatures=0;Events=0;Calls=[Collections.Generic.List[string]]::new();Paths=[Collections.Generic.List[string]]::new();Proxies=[Collections.Generic.List[bool]]::new();Held=$null}
-        $script:repairProxyReady=$downloadCase.proxy
         $downloadDestination=Join-Path $root 'verified.bin'
         $downloadExpectedHash=Get-DownloadFixtureHash (New-DownloadFixtureBytes 32)
         if($downloadCase.mode -eq 'hash-mismatch'){$downloadExpectedHash='a'*64}
@@ -305,8 +304,8 @@ try{
                 if($downloadCase.signed){
                     $fixturePublisher=if($downloadCase.mode -eq 'publisher-other-category'){'discord'}else{'microsoft'}
                     $pin=if($downloadCase.returnHash -or $downloadCase.unpinned){''}else{$downloadExpectedHash}
-                    Download $url $pin $downloadDestination -Signed -Publisher $fixturePublisher -ReturnVerifiedHash:([bool]$downloadCase.returnHash)
-                }else{Download $url $downloadExpectedHash $downloadDestination}
+                    Download $url $pin $downloadDestination -Signed -Publisher $fixturePublisher -ReturnVerifiedHash:([bool]$downloadCase.returnHash) -Proxy:([bool]$downloadCase.proxy)
+                }else{Download $url $downloadExpectedHash $downloadDestination -Proxy:([bool]$downloadCase.proxy)}
             }
             if($downloadCase.accept){
                 $observedHash=& $downloadAction
@@ -686,7 +685,6 @@ namespace AccessWeaverDownloadFixture {
     $script:root=$downloadCurlRoot
     $script:inputData=@{managedPolicy=$false;allowDownloads=$true}
     $script:downloadFixtureState=@{Mode='virtual-curl-wait';Approvals=0;Allowed=0;Promotions=0;Events=0}
-    $script:repairProxyReady=$true
     $script:downloadCurlFactoryCalls=0
     $script:downloadCurlProcess=[AccessWeaverDownloadFixture.Process]::new((New-DownloadFixtureBytes 32))
     $script:downloadCurlProcess.FailCount=2
@@ -694,7 +692,7 @@ namespace AccessWeaverDownloadFixture {
     Set-Item -LiteralPath Function:script:Invoke-ComponentDownloadCurl -Value $script:downloadOriginalCurl
     try{
         $downloadCurlDestination=Join-Path $root 'unpublished.bin'
-        $downloadFailure=Reject-DownloadFixture {Download 'https://github.com/hufrea/byedpi/releases/download/fixture/component.zip' (Get-DownloadFixtureHash (New-DownloadFixtureBytes 32)) $downloadCurlDestination}
+        $downloadFailure=Reject-DownloadFixture {Download 'https://github.com/hufrea/byedpi/releases/download/fixture/component.zip' (Get-DownloadFixtureHash (New-DownloadFixtureBytes 32)) $downloadCurlDestination -Proxy}
         Assert-DownloadFixture ((Test-ComponentDownloadTerminal $downloadFailure) -and $downloadFailure.Message -ceq 'Component download cleanup encountered a failure') 'Download lost the reconciled curl ownership failure'
         Assert-DownloadFixture ($script:downloadCurlFactoryCalls -eq 1 -and $script:downloadCurlProcess.Disposals -eq 1 -and $script:downloadCurlProcess.ConfirmedWaits -eq 1 -and -not $script:downloadCurlProcess.DisposedDuringFailure -and -not $script:downloadCurlProcess.UnjoinedFinalWait) 'Download returned before its same-object curl Wait reconciled'
         Assert-DownloadFixture ($script:downloadFixtureState.Promotions -eq 0 -and $script:downloadFixtureState.Events -eq 0 -and -not [IO.File]::Exists($downloadCurlDestination) -and [IO.Directory]::GetFileSystemEntries($downloadCurlStage.FullName).Length -eq 0) 'Reconciled curl Wait failure promoted bytes or retained a failed partial'
