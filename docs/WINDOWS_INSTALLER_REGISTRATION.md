@@ -176,3 +176,19 @@ The native registry fixture exercises the same staging routine under a
 disposable key. The release builder still uses the existing Inno registration.
 The candidate needs end-to-end Setup execution, migration of older
 registrations and recoverable retirement during uninstall before release use.
+
+
+The [first publication fixture run](https://github.com/Yunushan/accessweaver/actions/runs/44009212448)
+passed 25 of 50 cases with exact cleanup on both architectures. The registry
+writer had applied a child-key name check to `Inno Setup: App Path`. The
+correction admits that exact value name and retains the child-key name check
+for the other names.
+
+At `91ed21af596621a70630b72d23526bfa66c3d778`, the
+[corrected publication run](https://github.com/Yunushan/accessweaver/actions/runs/44009684626)
+passed all 50 assertions on AMD64 and ARM64 with exact cleanup. Both receipts
+matched their archive digests and all fixed source hashes. The AMD64 receipt
+is artifact `14296072039` with ZIP SHA-256
+`0843f21b38d5627939887529cbc6f8cb1940e4fea93aad502575b455dcb8c314`.
+The ARM64 receipt is artifact `14296376305` with ZIP SHA-256
+`563572f69d5f4f585272ac1db3dd5348f379b80c6e34a6331e80b04f310fb1c5`.
