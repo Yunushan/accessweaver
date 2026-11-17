@@ -58,8 +58,20 @@ function Get-FixtureProfileMask {
     }finally{[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($policy)}
 }
 function Get-FixtureRule([string]$Name,[ValidateSet('PersistentStore','ActiveStore')][string]$Store) {
-    $rules=@(Get-NetFirewallRule -PolicyStore $Store -TracePolicyStore:($Store -ceq 'ActiveStore') -WarningAction Stop -ErrorAction Stop |
-        Where-Object Name -IEQ $Name)
+    if($Name -cnotmatch '\AAccessWeaver-DoH-ProfileFixture-[a-f0-9]{32}-(?:TCP|UDP)-(?:Any|ExplicitAll|Domain|Private|Public)\z'){
+        throw 'Invalid fixture firewall rule name'
+    }
+    $query=@{Name=$Name;PolicyStore=$Store;WarningAction='Stop';ErrorAction='Stop'}
+    if($Store -ceq 'ActiveStore'){$query.TracePolicyStore=$true}
+    try{
+        $rules=@(Get-NetFirewallRule @query)
+    }catch{
+        # NetSecurity queries -Name by the CIM InstanceID property.
+        $id=$_.FullyQualifiedErrorId.Split(',')[0]
+        if($_.CategoryInfo.Category -eq [Management.Automation.ErrorCategory]::ObjectNotFound -and
+           $id -cin @('CmdletizationQuery_NotFound_InstanceID','CmdletizationQuery_NotFound_Name')){return}
+        throw
+    }
     if($rules.Count -gt 1 -or ($rules.Count -eq 1 -and $rules[0].Name -cne $Name)){throw 'Ambiguous fixture firewall rule'}
     return $rules
 }
@@ -93,7 +105,7 @@ function Remove-FixtureRule([string]$Name,[string]$Marker) {
     }
 }
 
-$report=[ordered]@{schemaVersion=1;sourceCommit=$source;sourceSHA256=$hashes;target=('windows/'+$architecture);status='profile-read';
+$report=[ordered]@{schemaVersion=2;sourceCommit=$source;sourceSHA256=$hashes;target=('windows/'+$architecture);status='profile-read';
     activeProfileMask=0;cases=@();cleanupVerified=$true;productionQualificationComplete=$false}
 $nonce=[guid]::NewGuid().ToString('N')
 $marker='AccessWeaver DoH firewall profile comparison '+$nonce
@@ -104,11 +116,13 @@ try{
     foreach($protocol in @('TCP','UDP')){
         foreach($option in $profileOptions.Keys){
             $name='AccessWeaver-DoH-ProfileFixture-'+$nonce+'-'+$protocol+'-'+$option
-            $case=[ordered]@{protocol=$protocol;profile=$option;stage='preflight';first=$null;second=$null;cleanupVerified=$false}
+            $case=[ordered]@{protocol=$protocol;profile=$option;stage='preflight-persistent';first=$null;second=$null;failure='none';cleanupVerified=$false}
             $report.cases+=@($case)
             $creationAttempted=$false
             try{
-                if((Get-FixtureRule $name 'PersistentStore') -or (Get-FixtureRule $name 'ActiveStore')){throw 'Fixture identity already exists'}
+                if(Get-FixtureRule $name 'PersistentStore'){throw 'Fixture identity already exists'}
+                $case.stage='preflight-active'
+                if(Get-FixtureRule $name 'ActiveStore'){throw 'Fixture identity already exists'}
                 $case.stage='create'
                 # Documentation destinations keep the temporary rule out of ordinary DNS traffic.
                 $rule=@{Name=$name;DisplayName='AccessWeaver DoH firewall profile comparison';Description=$marker
@@ -124,7 +138,16 @@ try{
                 $case.second=Get-FixtureStatus $name $marker $report.activeProfileMask
                 $case.stage='complete'
             }catch{
-                # The report records fixed stage names. Provider messages can contain runner data.
+                # Provider errors can include local context. Report only fixed classes.
+                $case.failure=switch ($_.CategoryInfo.Category.ToString()){
+                    'PermissionDenied' {'access'}
+                    'SecurityError' {'access'}
+                    'InvalidArgument' {'argument'}
+                    'NotImplemented' {'unsupported'}
+                    'NotInstalled' {'unsupported'}
+                    'ResourceUnavailable' {'unavailable'}
+                    default {'operation'}
+                }
             }finally{
                 try{
                     if($creationAttempted){Remove-FixtureRule $name $marker}
