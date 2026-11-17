@@ -1138,3 +1138,36 @@ jobs:
       - name: Static analysis profile read contracts
         if: inputs.scope == 'profile-read'
         run: go vet ./internal/api ./internal/engine
+
+  required-ci:
+    name: ${{ github.event_name == 'workflow_dispatch' && 'Manual full CI result' || 'AccessWeaver required CI' }}
+    if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.scope == 'full') }}
+    needs:
+      - native-core
+      - browser
+      - windows-audit-storage
+      - darwin-audit-commands
+      - vulnerabilities
+      - test
+      - race
+      - race-arm64
+      - cross-compile
+      - recovery-journal
+      - desktop-support
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Verify every required job group succeeded
+        shell: bash
+        env:
+          REQUIRED_CI_RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          results = json.loads(os.environ["REQUIRED_CI_RESULTS"])
+          if not isinstance(results, list) or not results or any(result != "success" for result in results):
+              raise SystemExit("One or more required CI job groups did not succeed.")
+          PY
