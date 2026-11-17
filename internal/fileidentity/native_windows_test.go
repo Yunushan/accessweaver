@@ -54,6 +54,7 @@ type windowsIdentityCase struct {
 }
 
 type windowsIdentityProbeCounts struct {
+	MeasuredTypes       *windowsIdentityHandleWindow `json:"measuredTypes,omitempty"`
 	Replay              *windowsIdentityHandleReplay `json:"failureReplay,omitempty"`
 	HandlesBefore       uint64                       `json:"handlesBefore"`
 	HandlesAfter        uint64                       `json:"handlesAfter"`
@@ -150,7 +151,7 @@ func reportDisposableWindowsIdentity(t *testing.T, cases []windowsIdentityCase, 
 		Scope                           string                      `json:"scope"`
 		ProductionQualificationComplete bool                        `json:"productionQualificationComplete"`
 	}{
-		SchemaVersion: 3, SourceCommit: commit, RunID: runID, TestName: t.Name(),
+		SchemaVersion: 4, SourceCommit: commit, RunID: runID, TestName: t.Name(),
 		Cases: cases, ProbeCounts: counts,
 		Platform: runtime.GOOS, Arch: runtime.GOARCH, RuntimeGoVersion: runtime.Version(),
 		RunnerArch: os.Getenv("RUNNER_ARCH"), RunnerEnvironment: os.Getenv("RUNNER_ENVIRONMENT"),
@@ -229,9 +230,11 @@ func identityWindowsJunction(t *testing.T, target, path string) {
 	}
 }
 
+var windowsIdentityGetProcessHandleCount = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetProcessHandleCount")
+
 func identityWindowsHandleCount(t *testing.T) uint32 {
 	t.Helper()
-	procedure := windows.NewLazySystemDLL("kernel32.dll").NewProc("GetProcessHandleCount")
+	procedure := windowsIdentityGetProcessHandleCount
 	if procedure.Find() != nil {
 		t.Fatal("fixture handle-count API unavailable")
 	}
@@ -577,6 +580,10 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 			return gcSamples[0].Value.Uint64()
 		}
 		_ = readGCCycles()
+		// Warm the observation APIs before the original workload, so their
+		// first resolution is not counted as a change during the batch.
+		_, _ = identityWindowsHandleKinds(true)
+		_ = identityWindowsHandleCount(t)
 		for iteration := 0; iteration < 32; iteration++ {
 			if _, err := FromPath(path, true); err != nil {
 				t.Fatal("fixture identity warmup failed")
@@ -591,6 +598,7 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 		runtime.GC()
 		beforeThreads, _ := runtime.ThreadCreateProfile(nil)
 		beforeGC := readGCCycles()
+		beforeTypes, _ := identityWindowsHandleKinds(true)
 		before := identityWindowsHandleCount(t)
 		for iteration := 0; iteration < 32; iteration++ {
 			if _, err := FromPath(path, true); err != nil {
@@ -603,7 +611,9 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 		after := identityWindowsHandleCount(t)
 		afterThreads, _ := runtime.ThreadCreateProfile(nil)
 		afterGC := readGCCycles()
+		afterTypes, _ := identityWindowsHandleKinds(true)
 		probeCounts = &windowsIdentityProbeCounts{
+			MeasuredTypes: identityWindowsMeasuredHandleTypes(beforeTypes, afterTypes, before, after),
 			HandlesBefore: uint64(before), HandlesAfter: uint64(after),
 			ThreadRecordsBefore: beforeThreads, ThreadRecordsAfter: afterThreads,
 			GCCyclesBefore: beforeGC, GCCyclesAfter: afterGC,

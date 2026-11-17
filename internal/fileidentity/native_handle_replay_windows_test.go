@@ -4,16 +4,17 @@ package fileidentity
 
 import (
 	"encoding/json"
-	"golang.org/x/sys/windows"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
-// Failure-only replay diagnostics. PSS captures only this test process's handle
+// Process handle attribution for the hosted identity test. PSS captures only this test process's handle
 // metadata (flags 0x34), never object names, memory, thread contexts or traces.
 // Handle values stay in memory. Only seven public PSS_OBJECT_TYPE counts leave
 // this helper: unknown, process, thread, mutant, event, section, semaphore.
@@ -34,7 +35,7 @@ type windowsIdentityPSSHandleEntry struct {
 	Attributes, GrantedAccess, HandleCount, PointerCount, PagedPoolCharge, NonPagedPoolCharge uint32
 	CreationTime                                                                              windows.Filetime
 	TypeNameLength                                                                            uint16
-	TypeName                                                                                  uintptr
+	TypeName                                                                                  *uint16
 	ObjectNameLength                                                                          uint16
 	ObjectName                                                                                uintptr
 	TypeSpecific                                                                              [6]uintptr
@@ -42,7 +43,23 @@ type windowsIdentityPSSHandleEntry struct {
 
 // The Windows SDK PSS_HANDLE_ENTRY is 136 bytes on native AMD64 and ARM64.
 // Never dereference its optional name or type-specific pointer fields.
-func identityWindowsHandleKinds() (values map[uintptr]uint32, complete bool) {
+// The first seven bins retain the PSS_OBJECT_TYPE order used by the replay.
+// File and Token have kernel type names but no dedicated PSS enum value.
+const (
+	windowsIdentityFileHandle      = 7
+	windowsIdentityTokenHandle     = 8
+	windowsIdentityHandleTypeCount = 9
+)
+
+type windowsIdentityHandleWindow struct {
+	SnapshotComplete bool                                   `json:"snapshotComplete"`
+	CountsMatch      bool                                   `json:"countsMatch"`
+	KindsBefore      [windowsIdentityHandleTypeCount]uint32 `json:"kindsBefore"`
+	KindsAfter       [windowsIdentityHandleTypeCount]uint32 `json:"kindsAfter"`
+	NewHandleKinds   [windowsIdentityHandleTypeCount]uint32 `json:"newHandleKinds"`
+}
+
+func identityWindowsHandleKinds(detailed bool) (values map[uintptr]uint32, complete bool) {
 	var entry windowsIdentityPSSHandleEntry
 	if unsafe.Sizeof(entry) != 136 || unsafe.Offsetof(entry.TypeName) != 64 ||
 		unsafe.Offsetof(entry.ObjectName) != 80 || unsafe.Offsetof(entry.TypeSpecific) != 88 {
@@ -57,7 +74,11 @@ func identityWindowsHandleKinds() (values map[uintptr]uint32, complete bool) {
 		}
 	}
 	var snapshot, marker uintptr
-	status, _, _ := capture.Call(uintptr(windows.CurrentProcess()), 0x34, 0, uintptr(unsafe.Pointer(&snapshot)))
+	flags := uintptr(0x34) // HANDLES | HANDLE_BASIC_INFORMATION | HANDLE_TYPE_SPECIFIC_INFORMATION.
+	if detailed {
+		flags = 0x14 // HANDLES | HANDLE_BASIC_INFORMATION, as in the external census.
+	}
+	status, _, _ := capture.Call(uintptr(windows.CurrentProcess()), flags, 0, uintptr(unsafe.Pointer(&snapshot)))
 	if status != 0 || snapshot == 0 {
 		return nil, false
 	}
@@ -84,7 +105,7 @@ func identityWindowsHandleKinds() (values map[uintptr]uint32, complete bool) {
 		if status == 259 {
 			return values, true
 		} // ERROR_NO_MORE_ITEMS
-		if status != 0 || index == 1024 || entry.Handle == 0 || entry.Flags&2 != 0 {
+		if status != 0 || index == 1024 || entry.Handle == 0 || entry.Flags&2 != 0 || entry.ObjectNameLength != 0 {
 			return nil, false
 		}
 		if _, duplicate := values[entry.Handle]; duplicate {
@@ -97,19 +118,63 @@ func identityWindowsHandleKinds() (values map[uintptr]uint32, complete bool) {
 		if kind >= 7 {
 			return nil, false
 		}
+		if detailed && entry.TypeNameLength != 0 && entry.TypeName != nil {
+			if entry.TypeNameLength > 128 || entry.TypeNameLength%2 != 0 {
+				return nil, false
+			}
+			// TypeName is a kernel type label valid until the next walk. Only
+			// fixed categories leave this function, never the label or pointer.
+			switch windows.UTF16ToString(unsafe.Slice(entry.TypeName, int(entry.TypeNameLength/2))) {
+			case "File":
+				kind = windowsIdentityFileHandle
+			case "Token":
+				kind = windowsIdentityTokenHandle
+			case "Process":
+				kind = 1
+			case "Thread":
+				kind = 2
+			case "Mutant":
+				kind = 3
+			case "Event":
+				kind = 4
+			case "Section":
+				kind = 5
+			case "Semaphore":
+				kind = 6
+			}
+		}
 		values[entry.Handle] = kind
 	}
 	return nil, false
+}
+
+func identityWindowsMeasuredHandleTypes(before, after map[uintptr]uint32, beforeCount, afterCount uint32) *windowsIdentityHandleWindow {
+	result := &windowsIdentityHandleWindow{}
+	if before == nil || after == nil {
+		return result
+	}
+	result.SnapshotComplete = true
+	result.CountsMatch = uint32(len(before)) == beforeCount && uint32(len(after)) == afterCount
+	for _, kind := range before {
+		result.KindsBefore[kind]++
+	}
+	for handle, kind := range after {
+		result.KindsAfter[kind]++
+		if previous, known := before[handle]; !known || previous != kind {
+			result.NewHandleKinds[kind]++
+		}
+	}
+	return result
 }
 
 func identityWindowsReplayHandleGrowth(t *testing.T, path, missing string) *windowsIdentityHandleReplay {
 	t.Helper()
 	result := &windowsIdentityHandleReplay{}
 	// Warm and release diagnostic-owned API state before the separate replay.
-	if _, ok := identityWindowsHandleKinds(); !ok {
+	if _, ok := identityWindowsHandleKinds(false); !ok {
 		return result
 	}
-	before, ok := identityWindowsHandleKinds()
+	before, ok := identityWindowsHandleKinds(false)
 	if !ok {
 		return result
 	}
@@ -125,7 +190,7 @@ func identityWindowsReplayHandleGrowth(t *testing.T, path, missing string) *wind
 		}
 	}
 	result.HandlesAfter = identityWindowsHandleCount(t)
-	after, ok := identityWindowsHandleKinds()
+	after, ok := identityWindowsHandleKinds(false)
 	if !ok {
 		return result
 	}

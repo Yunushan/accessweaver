@@ -35,13 +35,62 @@
         "gcCyclesBefore": 1,
         "gcCyclesAfter": 1
       }
+    },
+    {
+      "sourceCommit": "e0b58f4a6659a07c54d160dcfaf48ef78146be7c",
+      "producerSHA256": "33ca4abbef5e277ee64377248c7b03ee5432aae1952c578529487b7716d9059e",
+      "runID": 43989475830,
+      "artifactID": 14289486171,
+      "artifactSHA256": "a384479894e8df3b196cc5be2a1c2a0242ca73384fadaeda3abb63932c464d61",
+      "providerZIPDigestVerified": true,
+      "architecture": "arm64",
+      "probeCounts": {
+        "failureReplay": {
+          "snapshotComplete": true,
+          "handlesBefore": 120,
+          "handlesAfter": 120,
+          "kindsBefore": [
+            86,
+            0,
+            8,
+            2,
+            22,
+            0,
+            2
+          ],
+          "kindsAfter": [
+            86,
+            0,
+            8,
+            2,
+            22,
+            0,
+            2
+          ],
+          "newHandleKinds": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "handlesBefore": 118,
+        "handlesAfter": 120,
+        "threadRecordsBefore": 8,
+        "threadRecordsAfter": 8,
+        "gcCyclesBefore": 1,
+        "gcCyclesAfter": 1
+      }
     }
   ],
   "interpretation": [
     "Each immutable source report passes seven native identity subtests and fails owned-metadata-probes-close-on-success-and-failure.",
     "The measured aggregate handle count grows by two, exceeding the unchanged before+1 threshold, while recorded thread-creation and GC-cycle counts do not change.",
     "These aggregate counters do not identify the new handle types or establish their cause. No threshold relaxation, GC disablement or resource-leak qualification is justified.",
-    "Later passing native cohorts do not erase these failures. Failure-only fixed handle-type replay diagnostics are separately being qualified."
+    "The PR ARM64 failure replay had no new handles. It does not establish the types added in the first measured interval. The next fixture records bounded type counts at both ends of the original measured interval."
   ],
   "rawJobLogsFetched": false,
   "productionQualificationComplete": false,
