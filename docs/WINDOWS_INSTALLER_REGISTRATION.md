@@ -72,6 +72,16 @@ record to the exact candidate setup and independently verified prior package.
 An interruption between transactions leaves the registration absent and the
 durable install recovery record present.
 
+The [two-transaction recovery run](https://github.com/Yunushan/accessweaver/actions/runs/44004076267)
+passed all 46 assertions and confirmed exact fixture cleanup on AMD64 and ARM64
+at `7d6833963933598a0cc84106f83d09f7c8505f91`. Recovery refused a mismatched
+pending candidate and published the complete protected entry for the bound
+candidate. The old writer could no longer mutate it. The AMD64 receipt is
+artifact `14292984104` with ZIP SHA-256
+`17494c38dd457d6cf7b38a74fbd1bb5bf93aa2bddd7c557ab616443202c93205`.
+The ARM64 receipt is artifact `14292889163` with ZIP SHA-256
+`ae1a097ca343c932d0b97a3564d7163a2e89c725c358430947fc8b9b52ca32ee`.
+
 At source `2b875e4b698d51b650042e12f072b85268a2592c`, the
 [hosted registry run](https://github.com/Yunushan/accessweaver/actions/runs/44001985316)
 passed all 31 assertions with exact cleanup on AMD64 and ARM64 using Inno Setup
