@@ -37,5 +37,18 @@
   },
   "reproducedOriginalFailure": false,
   "originalFailureCauseVerified": false,
-  "productionQualificationComplete": false
+  "productionQualificationComplete": false,
+  "exactPRRetry": {
+    "runId": 44048997811,
+    "attempt": 2,
+    "jobId": 133971714920,
+    "headCommit": "4296e45911c1048ce1ce2d9bd114c0036fea13dd",
+    "testedMergeCommit": "9835815e24963e88e6dbe68811203dc95b2745fc",
+    "artifactId": 14319408680,
+    "artifactSHA256": "570fa824f629ac2060cc62a0246462d46870804358d43359406d9abc02ff64bb",
+    "nativeENOSPCCasesVerified": 8,
+    "ownedCleanupVerified": true,
+    "controlledUnmountedDetachVerified": true,
+    "productionQualificationComplete": false
+  }
 }

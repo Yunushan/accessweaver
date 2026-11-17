@@ -60,6 +60,8 @@ A transient `Resource busy` during normal owned-image detach now has a 30-second
 
 The Intel macOS PR job failed after attaching and protecting the image. Its receipt confirms cleanup but contains no exhaustion report or failing native test phase. A focused rerun with the new bounded phase and case diagnostics passed all eight native ENOSPC cases, their signed retries and the controlled unmounted-image detach. The original failure remains unexplained. [Original PR job](https://github.com/Yunushan/accessweaver/actions/runs/44048997811/job/133921762278) and [verified rerun evidence](qualification/a0dfc723051a-intel-apfs-pressure-repeat.json).
 
+The second attempt on the unchanged PR merge commit also passed all eight native ENOSPC cases, the controlled detach, and cleanup. The full PR CI run passed on that attempt. [Exact PR retry](https://github.com/Yunushan/accessweaver/actions/runs/44048997811/attempts/2).
+
 
 ## Experimental native desktop packaging
 
