@@ -38,6 +38,8 @@ The optional driver and its separate AMD64/ARM64 workflow now implement this pro
 
 The dedicated AMD64 comparison branch uses the same wire workflow on the hosted Windows Server 2022 image. Its reports measure the Server 2022 DNS Client and firewall, alongside the Windows Server 2025 and Windows 11 ARM64 results from the standard matrix. [GitHub runner images](https://github.com/actions/runner-images/blob/main/README.md) · [Microsoft DoH client support](https://learn.microsoft.com/en-us/windows-server/networking/dns/doh-client-support)
 
+The Server 2022 comparison at source `ba12b2b85f68a1790dc0fd4f7922b372c8b8bd02` verified the native environment, query binary and 47 source hashes. Configuration refused the mixed `Full` and `InactiveProfile` enforcement statuses before measuring encrypted traffic. The recovery snapshot was removed. [Exact comparison run](https://github.com/Yunushan/accessweaver/actions/runs/44093883267).
+
 ## Format and tool references
 
 Packet Monitor applies all conditions within a filter and combines filters as alternatives; its defaults capture multiple stack components and only a packet prefix. The driver must explicitly narrow the endpoints/components and request whole packets. See [Microsoft's command formatting](https://learn.microsoft.com/en-us/windows-server/networking/technologies/pktmon/pktmon-syntax), [capture options](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/pktmon-start) and [filter syntax](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/pktmon-filter-add).
