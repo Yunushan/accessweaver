@@ -46,6 +46,7 @@ WINDOWS_DETECTION_FAILURE_REASONS = (
     "revocation-policy-expired",
 )
 WINDOWS_PREVIOUS_RESULT_UNVERIFIED = "previous-result-absence-unverified"
+ERROR_SYSTEM_INTEGRITY_POLICY_VIOLATION = 4551
 WINDOWS_PAYLOAD_PUBLISHER = "payloadPublisherCertificateSHA256"
 WINDOWS_BUILD_INFO = "buildInfoSHA256"
 WINDOWS_DETECTOR = "detectorSHA256"
@@ -1878,7 +1879,11 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     }
                     update["setupExitCode"] = None
                     update["installedDetection"] = "unverified"
-                    update["installedDetectionReason"] = reasons[type(error)]
+                    reason = reasons[type(error)]
+                    if (isinstance(error, WindowsSetupLaunchError)
+                            and getattr(error.__cause__, "winerror", None) == ERROR_SYSTEM_INTEGRITY_POLICY_VIOLATION):
+                        reason = "setup-launch-blocked-by-application-control"
+                    update["installedDetectionReason"] = reason
                     if isinstance(error, WindowsSetupDispatchPolicyExpired):
                         report["revocationCheckPassed"] = False
                     if isinstance(error, (WindowsSetupDispatchPolicyExpired, WindowsSetupPreviousResultUnverified)):

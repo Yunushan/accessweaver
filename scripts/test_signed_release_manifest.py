@@ -1797,28 +1797,36 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 failed_start = staging / (attempt_id + ".started.json")
                 failed_result = staging / (attempt_id + ".result.json")
 
-                def fail_dispatch(*args, **kwargs):
-                    with patch.object(release.subprocess, "Popen", side_effect=PermissionError("private path")):
-                        return native_launch(*args, **kwargs)
+                for winerror, reason in (
+                    (5, "setup-launch-failed"),
+                    (4551, "setup-launch-blocked-by-application-control"),
+                ):
+                    with self.subTest(winerror=winerror):
+                        denied = PermissionError("private path")
+                        denied.winerror = winerror
 
-                launch.side_effect = fail_dispatch
-                try:
-                    failure = self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
-                                          windows_upgrade_attempt_id=attempt_id)
-                    update = failure["managedUpdate"]
-                    self.assertIsNone(update["setupExitCode"])
-                    self.assertEqual(update["installedDetection"], "unverified")
-                    self.assertEqual(update["installedDetectionReason"], "setup-launch-failed")
-                    self.assertEqual(update["startReceiptSHA256"], release.digest(failed_start))
-                    self.assertFalse(failed_result.exists())
-                    self.assertNotIn("private path", json.dumps(failure))
-                    detect.assert_not_called()
-                    with self.assertRaises(FileExistsError):
-                        self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
-                                    windows_upgrade_attempt_id=attempt_id)
-                finally:
-                    launch.side_effect = None
-                    failed_start.unlink(missing_ok=True)
+                        def fail_dispatch(*args, **kwargs):
+                            with patch.object(release.subprocess, "Popen", side_effect=denied):
+                                return native_launch(*args, **kwargs)
+
+                        launch.side_effect = fail_dispatch
+                        try:
+                            failure = self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
+                                                  windows_upgrade_attempt_id=attempt_id)
+                            update = failure["managedUpdate"]
+                            self.assertIsNone(update["setupExitCode"])
+                            self.assertEqual(update["installedDetection"], "unverified")
+                            self.assertEqual(update["installedDetectionReason"], reason)
+                            self.assertEqual(update["startReceiptSHA256"], release.digest(failed_start))
+                            self.assertFalse(failed_result.exists())
+                            self.assertNotIn("private path", json.dumps(failure))
+                            detect.assert_not_called()
+                            with self.assertRaises(FileExistsError):
+                                self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
+                                            windows_upgrade_attempt_id=attempt_id)
+                        finally:
+                            launch.side_effect = None
+                            failed_start.unlink(missing_ok=True)
 
                 def fail_wait(*args, **kwargs):
                     process = Mock()
