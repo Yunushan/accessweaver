@@ -180,14 +180,13 @@ fixed failing stage and numeric process exit when available. The stage receipt
 leaves cleanup unknown and does not credit any case.
 
 
-## Setup publication candidate
+## Setup publication
 
-The qualification build selects `ProtectedRegistrationQualification` on the
-normal Setup script. It disables Inno's Apps & Features write while retaining
-the generated uninstaller and its data. Setup records the prior registration
-before copying files. It accepts an absent 64-bit product key or a protected
-key with the exact class, descriptor, destination and typed fields. A 32-bit
-record, a registry link and a legacy key fail admission before file copy.
+Normal Setup disables Inno's Apps & Features write and retains the generated
+uninstaller and its data. Setup records the prior registration before copying
+files. It accepts an absent 64-bit product key or a protected key with the exact
+class, descriptor, destination and typed fields. A 32-bit record, a registry link
+or an unapproved legacy key fails admission before file copy.
 
 Setup waits until completion to stage the replacement, after checking the
 installed package and holding its uninstaller and data. The transaction creates
@@ -197,9 +196,9 @@ fields and flushes the key before the pending installation record can be retired
 The record also supplies Inno's previous installation directory for repeat Setup.
 
 The native registry fixture exercises the same staging routine under a
-disposable key. The release builder still uses the existing Inno registration.
+disposable key.
 
-The qualification uninstaller writes and flushes a repair record after verified
+The uninstaller writes and flushes a repair record after verified
 system restoration, then retires only the exact protected product record in
 KTM. After Inno processes the uninstall log, the uninstaller checks that the
 shipped files, uninstaller, uninstall data and both registry views are absent
@@ -209,12 +208,13 @@ the record because the Inno completion callback runs after its deletion log.
 
 The manual protected-publication workflow exercises real Setup rollback before
 publication, retry, same-version repair using the previous directory, controller
-binding and owned uninstall. Its migration scenario installs a standard older
-Setup, verifies refusal of a wrong uninstall-data pin, then stops the fixture
+binding and owned uninstall. Its migration scenario installs an older Setup
+fixture with the original Inno registration, verifies refusal of a wrong
+uninstall-data pin, then stops the fixture
 after committed legacy retirement and before copying any files. It requires
 detection to recognize the bound pending state, a genuine Setup retry to
 complete publication, the old writer to lose access, and the new installation
-to uninstall cleanly. Native results, reboot recovery, and signed
+to uninstall cleanly. Reboot recovery and organization-signed
 installed-product acceptance remain open.
 
 
@@ -234,13 +234,13 @@ The ARM64 receipt is artifact `14296376305` with ZIP SHA-256
 `563572f69d5f4f585272ac1db3dd5348f379b80c6e34a6331e80b04f310fb1c5`.
 
 
-## Approved legacy migration candidate
+## Approved legacy migration
 
-The protected qualification build accepts an extended `/AWUpgradeFrom` argument
-for the supported legacy Inno 6.7.1 record. Append the independently approved
-SHA-256 values of the prior uninstaller executable and uninstall data to the
-existing version, payload, SBOM and build metadata fields. The standard release
-builder retains its existing four-field argument format.
+Setup compiled with the approved prior inventory accepts an extended
+`/AWUpgradeFrom` argument for the supported legacy Inno 6.7.1 record. Append
+the independently approved SHA-256 values of the prior uninstaller executable
+and uninstall data to the version, payload, SBOM and build metadata fields.
+Ordinary managed upgrades use the four baseline fields.
 
 Setup verifies the legacy App Path, both uninstall commands, version, publisher
 and other expected product values, and refuses a foreign value or child key.
@@ -259,7 +259,7 @@ a valid matching installation directory, and safe inspection of both registry
 views. Setup can recover the previously verified destination from this
 record when retrying without an explicit directory.
 
-The qualification build overwrites the legacy Inno uninstall log to discard
+The migration build overwrites the legacy Inno uninstall log to discard
 its original path-based registry deletion command. Its ownership test covers
 opaque metadata changes, a foreign value, a held legacy writer and the
 separate replacement transaction. Native migration of real older packages must
