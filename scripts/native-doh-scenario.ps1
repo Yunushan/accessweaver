@@ -1,3 +1,21 @@
+function Convert-NativeDNSCryptWildcardBaseline([object[]]$Rows) {
+    $result=@{outcome='observed';ipv4=$false;ipv6=$false}
+    if($Rows.Count -gt 4096){throw 'Native UDP port inventory exceeds its bound'}
+    foreach($row in $Rows){
+        $address=$null
+        if($null -eq $row -or $row.LocalPort -ne 53 -or $row.LocalAddress -isnot [string] -or
+            -not [Net.IPAddress]::TryParse($row.LocalAddress,[ref]$address)){
+            throw 'Native UDP port inventory is invalid'
+        }
+        if($address.IsIPv4MappedToIPv6){$address=$address.MapToIPv4()}
+        switch -CaseSensitive ($address.ToString()){
+            '0.0.0.0' {$result.ipv4=$true}
+            '::' {$result.ipv6=$true}
+        }
+    }
+    return $result
+}
+
 # Pure coordination for native DoH/DNSCrypt: boundaries are explicit callbacks. The hosted
 # driver supplies the source-built CLI, independent state reader and OS resolver.
 function Invoke-NativeDoHScenario([scriptblock]$Apply,[scriptblock]$Capture,[scriptblock]$Resolve,[string]$Method='doh',[string]$ScenarioKind='roundtrip',[scriptblock]$InduceFailure,[scriptblock]$ResolveFailed,[scriptblock]$ResolveRestored) {

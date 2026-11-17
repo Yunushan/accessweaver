@@ -1237,11 +1237,14 @@ try {
         }
         $endpointFailures=@{
             'missing-udp'='listener-endpoint-missing';'missing-ipv6'='listener-endpoint-missing'
-            'wildcard'='listener-endpoint-wildcard';'mapped-wildcard'='listener-endpoint-wildcard'
+            'wildcard'='listener-udp-other-owner';'mapped-wildcard'='listener-udp-other-owner'
+            'same-owner-wildcard'='listener-udp-same-owner';'tcp-wildcard'='listener-tcp-wildcard'
+            'unknown-owner-wildcard'='listener-udp-unknown-owner'
             'duplicate'='listener-endpoint-duplicate';'mixed-pids'='listener-endpoint-conflict'
             'unknown-pid'='listener-endpoint-owner';'invalid-row'='listener-endpoint-row'
         }
-        foreach($fault in @('','missing-udp','missing-ipv6','wildcard','mapped-wildcard','duplicate','mixed-pids','unknown-pid','invalid-row',
+        foreach($fault in @('','missing-udp','missing-ipv6','wildcard','mapped-wildcard','same-owner-wildcard',
+                'unknown-owner-wildcard','tcp-wildcard','duplicate','mixed-pids','unknown-pid','invalid-row',
                 'wrong-host','wrong-child','wrong-parent','reused-parent-pid','host-disappeared','child-disappeared','changed-command','service-stopped')){
             $service=[pscustomobject]@{PathName=$command;State='Running';ProcessId=[uint32]42}
             $hostProcess=[pscustomobject]@{ProcessId=[uint32]42;ExecutablePath=$hostPath;CreationDate=$started}
@@ -1253,6 +1256,9 @@ try {
                 'missing-ipv6' {$tcpRows=@($tcpRows[0])}
                 'wildcard' {$udpRows+=[pscustomobject]@{LocalAddress='::';LocalPort=53;OwningProcess=[uint32]99}}
                 'mapped-wildcard' {$udpRows+=[pscustomobject]@{LocalAddress='::ffff:0.0.0.0';LocalPort=53;OwningProcess=[uint32]99}}
+                'same-owner-wildcard' {$udpRows+=[pscustomobject]@{LocalAddress='::';LocalPort=53;OwningProcess=[uint32]43}}
+                'unknown-owner-wildcard' {$udpRows+=[pscustomobject]@{LocalAddress='::';LocalPort=53;OwningProcess=[uint32]0}}
+                'tcp-wildcard' {$tcpRows+=[pscustomobject]@{LocalAddress='0.0.0.0';LocalPort=53;OwningProcess=[uint32]99}}
                 'duplicate' {$tcpRows+=[pscustomobject]@{LocalAddress='::ffff:127.0.0.1';LocalPort=53;OwningProcess=[uint32]43}}
                 'mixed-pids' {$udpRows[1].OwningProcess=[uint32]99}
                 'unknown-pid' {$udpRows[1].OwningProcess=[uint32]0}

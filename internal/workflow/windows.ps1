@@ -2625,7 +2625,15 @@ function Get-ManagedDNSCryptListenerOwner([string[]]$Servers,[string]$Binary,$En
             if($address.IsIPv4MappedToIPv6){$address=$address.MapToIPv4()}
             $local=$address.ToString()
             if($local -cin @('0.0.0.0','::')){
-                $script:dnsOperationStage='listener-endpoint-wildcard'
+                if($protocol -ceq 'TCP'){
+                    $script:dnsOperationStage='listener-tcp-wildcard'
+                }elseif($endpoint.OwningProcess -isnot [uint32] -or $endpoint.OwningProcess -eq 0){
+                    $script:dnsOperationStage='listener-udp-unknown-owner'
+                }elseif($endpoint.OwningProcess -eq $listenerID){
+                    $script:dnsOperationStage='listener-udp-same-owner'
+                }else{
+                    $script:dnsOperationStage='listener-udp-other-owner'
+                }
                 throw 'Wildcard DNS listener makes loopback ownership ambiguous'
             }
             if($local -cnotin $Servers){continue}

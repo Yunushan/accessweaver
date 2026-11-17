@@ -32,7 +32,7 @@ $definitions=@($ast.EndBlock.Statements)
 $tokens=$null;$issues=$null;$coordinator=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-doh-scenario.ps1'),[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Native coordinator source did not parse'}
 $definitions+=@($coordinator.EndBlock.Statements)
-$selected=@('New-NativeDNSFailureCatalog','Get-NativeDNSFailureMarker','Get-NativeDNSFailureObservation','Get-NativeDNSStaticFailure','Invoke-NativeDNSStaticFixture','Read-DNSAcceptanceRegistry','Get-DNSAcceptanceRegistryHash','Invoke-NativeDoHScenario','Invoke-NativeDNSJournalScenario','Invoke-NativeDNSMissingSnapshotScenario','Invoke-NativeDNSRollbackScenario','New-NativeDNSFailureResponse','Get-NativeDNSVerificationMarker','Get-NativeDNSForwarderFailure','Get-NativeDNSComponentFailure','Get-NativeDNSComponentRetry','Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Assert-DNSAcceptanceFamilyPreserved','Assert-DNSAcceptanceConfigured','Invoke-DNSAcceptanceRoundTrip')
+$selected=@('Convert-NativeDNSCryptWildcardBaseline','New-NativeDNSFailureCatalog','Get-NativeDNSFailureMarker','Get-NativeDNSFailureObservation','Get-NativeDNSStaticFailure','Invoke-NativeDNSStaticFixture','Read-DNSAcceptanceRegistry','Get-DNSAcceptanceRegistryHash','Invoke-NativeDoHScenario','Invoke-NativeDNSJournalScenario','Invoke-NativeDNSMissingSnapshotScenario','Invoke-NativeDNSRollbackScenario','New-NativeDNSFailureResponse','Get-NativeDNSVerificationMarker','Get-NativeDNSForwarderFailure','Get-NativeDNSComponentFailure','Get-NativeDNSComponentRetry','Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Assert-DNSAcceptanceFamilyPreserved','Assert-DNSAcceptanceConfigured','Invoke-DNSAcceptanceRoundTrip')
 $allowed=$selected+@('ConvertTo-Json','Get-NetAdapter','Get-ItemProperty','Get-DnsClientServerAddress','Get-Command','Get-DnsClientDohServerAddress','Where-Object','Get-Service','Clear-DnsClientCache','Resolve-DnsName')
 foreach($name in $selected){
     $nodes=@($definitions | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
@@ -613,6 +613,15 @@ try {
         $result=Invoke-NativeDoHScenario @parameters
         Assert-A ($result.operationCode -ceq 'baseline' -and $script:invalidEffects -eq 0 -and -not $result.configurationAttempted -and -not $result.restorationAttempted) 'failure-native-preflight'
     }
+    $wildcards=Convert-NativeDNSCryptWildcardBaseline @(
+        @{LocalPort=53;LocalAddress='::ffff:0.0.0.0'},
+        @{LocalPort=53;LocalAddress='::'},
+        @{LocalPort=53;LocalAddress='127.0.0.1'}
+    )
+    Assert-A ($wildcards.Count -eq 3 -and $wildcards.outcome -ceq 'observed' -and $wildcards.ipv4 -and $wildcards.ipv6) 'capture-stage-complete'
+    $wildcards=Convert-NativeDNSCryptWildcardBaseline @(@{LocalPort=53;LocalAddress='127.0.0.1'})
+    Assert-A (-not $wildcards.ipv4 -and -not $wildcards.ipv6) 'capture-stage-complete'
+    Reject-A {Convert-NativeDNSCryptWildcardBaseline @(@{LocalPort=53;LocalAddress='invalid'})}
     # Synthetic DNS packets for the fixture's one public query name only.
     $packet=[byte[]]::new(29);$packet[0]=0x12;$packet[1]=0x34;$packet[2]=1;$packet[5]=1;$packet[12]=7;$packet[20]=3;$packet[26]=1;$packet[28]=1
     [Array]::Copy([Text.Encoding]::ASCII.GetBytes('example'),0,$packet,13,7);[Array]::Copy([Text.Encoding]::ASCII.GetBytes('com'),0,$packet,21,3)
