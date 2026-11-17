@@ -26,7 +26,7 @@ function validate(v){
   assert.ok(p.descendantProcesses>0||p.descendantBytes===0&&p.largestDescendantBytes===0);
   assert.ok(v.counts.samples>0);if(v.metrics.browserPeakProcesses!==null)assert.ok(p.descendantProcesses+1<=v.metrics.browserPeakProcesses);
  }
- validateEditorTimings(v.editorTimings,seconds/30);
+ validateEditorTimings(v.editorTimings,seconds/30,true);
  assert.equal(v.editorTimings.length,v.counts.editor);
  if(v.metrics.editorP95Ms!==null)assert.equal(v.metrics.editorP95Ms,P.percentile(v.editorTimings.map(row=>row.totalMs)));
  assert.ok(Array.isArray(v.checkpoints)&&v.checkpoints.length<=10);
@@ -52,7 +52,7 @@ async function hash(file,cap){const fd=await fs.open(file,'r');try{const a=await
 async function writeReport(repo,source,binarySHA256,project,architecture,value){
  validate(value);assert.ok(/^[a-f0-9]{40}$/.test(source)&&/^[a-f0-9]{64}$/.test(binarySHA256)&&['chromium','firefox','webkit'].includes(project)&&['amd64','arm64'].includes(architecture));
  const snapshot=JSON.parse(JSON.stringify(value)),failed=violations(snapshot),sourceSHA256={};for(const file of sources)sourceSHA256[file]=await hash(path.join(repo,file),1<<20);assert.equal(await hash(path.join(repo,'build/browser-tests/accessweaver'),128<<20),binarySHA256);
- const report={schemaVersion:4,sourceCommit:source,sourceSHA256,binarySHA256,project,architecture,scope:'owned-linux-browser-15-minute-soak',...snapshot,violations:failed,outcome:snapshot.baselinePassed&&snapshot.stage==='complete'&&snapshot.failureKind==='none'&&!failed.length?'passed':'failed',workingDaySoakQualified:false,nativeInstalledQualified:false,productionQualificationComplete:false};
+ const report={schemaVersion:5,sourceCommit:source,sourceSHA256,binarySHA256,project,architecture,scope:'owned-linux-browser-15-minute-soak',...snapshot,violations:failed,outcome:snapshot.baselinePassed&&snapshot.stage==='complete'&&snapshot.failureKind==='none'&&!failed.length?'passed':'failed',workingDaySoakQualified:false,nativeInstalledQualified:false,productionQualificationComplete:false};
  const encoded=JSON.stringify(report)+'\n';assert.ok(Buffer.byteLength(encoded)<=16384);const parent=path.join(repo,'build/browser-soak');await fs.mkdir(parent,{recursive:true,mode:0o700});const info=await fs.lstat(parent),real=await fs.realpath(parent);assert.ok(info.isDirectory()&&!info.isSymbolicLink()&&path.dirname(real)===await fs.realpath(path.join(repo,'build')));const fd=await fs.open(path.join(real,'status.json'),'wx',0o600);try{await fd.writeFile(encoded,'utf8')}finally{await fd.close()}return report.outcome;
 }
 async function driveWorkload({start,waitUntil,requests,interact,complete}){

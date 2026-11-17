@@ -7,6 +7,25 @@ test('performance process parsing keeps only counters and rejects foreign or dea
  const result=P.parseStat(stat(),100,42,4096);assert.deepEqual(result,{cpuTicks:30,startTicks:123,rssBytes:81920,threads:4});assert.ok(!JSON.stringify(result).includes('PRIVATE'));
  assert.throws(()=>P.parseStat(stat(),101,42,4096));assert.throws(()=>P.parseStat(stat(),100,43,4096));assert.throws(()=>P.parseStat(stat({0:'Z'}),100,42,4096));assert.throws(()=>P.parseStat(stat({11:'PRIVATE_SYNTHETIC'}),100,42,4096));assert.throws(()=>P.parseStat(stat({19:'9007199254740992'}),100,42,4096));assert.throws(()=>P.parseStat('x'.repeat(16385),100,42,4096));assert.throws(()=>P.parseStat(stat(),100,42,-1));assert.throws(()=>P.liveChild({pid:100,exitCode:null,signalCode:null}));
 });
+test('editor paint timing separates finite animation completion from both frame callbacks',async()=>{
+ const {runInNewContext}=require('node:vm');
+ const times=[0,20,35,65];
+ let frames=0;
+ const page={evaluate:(callback,record)=>runInNewContext('('+callback.toString()+')(record)',{
+  record,
+  performance:{now(){assert.ok(times.length);return times.shift()}},
+  document:{getAnimations(){return [
+   {effect:{getComputedTiming:()=>({iterations:1})},get finished(){return Promise.reject(new Error('cancelled'))}},
+   {effect:{getComputedTiming:()=>({iterations:Infinity})},get finished(){throw new Error('must not wait for an infinite animation')}}
+  ]}},
+  requestAnimationFrame(fn){frames++;queueMicrotask(fn)}
+ })};
+ assert.deepEqual({...await P.paint(page,true)},{finiteAnimations:1,animationWaitMs:20,firstFrameWaitMs:15,secondFrameWaitMs:30});
+ assert.equal(frames,2);
+ assert.equal(times.length,0);
+ assert.equal(await P.paint(page),undefined);
+ assert.equal(frames,4);
+});
 test('performance latency and CPU calculations retain nearest rank and native units',()=>{
  const samples=[9,1,8,2,7,3,6,4,5,10];assert.equal(P.percentile(samples,.5),5);assert.equal(P.percentile(samples),10);assert.deepEqual(samples,[9,1,8,2,7,3,6,4,5,10]);assert.throws(()=>P.percentile([]));assert.throws(()=>P.percentile([Infinity]));
  assert.equal(P.cpuPercent({startTicks:5,cpuTicks:100},{startTicks:5,cpuTicks:150},100,2000),25);assert.throws(()=>P.cpuPercent({startTicks:5,cpuTicks:100},{startTicks:6,cpuTicks:150},100,2000));assert.throws(()=>P.cpuPercent({startTicks:5,cpuTicks:100},{startTicks:5,cpuTicks:90},100,2000));assert.throws(()=>P.cpuPercent({startTicks:5,cpuTicks:100},{startTicks:5,cpuTicks:150},0,2000));assert.throws(()=>P.cpuPercent({startTicks:5,cpuTicks:100},{startTicks:5,cpuTicks:150},100,Infinity));

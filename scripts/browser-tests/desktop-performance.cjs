@@ -41,16 +41,37 @@ async function sampleController(child,identity,pageBytes){
  const directory=await fs.opendir('/proc/'+pid+'/fd');let descriptors=0;try{for(;;){const entry=await directory.read();if(!entry)break;assert.match(entry.name,/^[0-9]+$/,'descriptor census shape differs');if(++descriptors>4096)throw new Error('descriptor census budget exceeded')}}finally{await directory.close()}
  liveChild(child);return {...stat,descriptors};
 }
-async function paint(page){await page.evaluate(async()=>{await Promise.all(document.getAnimations().filter(a=>a.effect?.getComputedTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))})}
+async function paint(page,recordTiming=false){
+ return page.evaluate(async record=>{
+  const paintStarted=record?performance.now():0;
+  const finite=document.getAnimations().filter(a=>a.effect?.getComputedTiming().iterations!==Infinity);
+  await Promise.all(finite.map(a=>a.finished.catch(()=>{})));
+  const animationsFinished=record?performance.now():0;
+  let firstFrame=0,secondFrame=0;
+  await new Promise(resolve=>requestAnimationFrame(()=>{
+   if(record)firstFrame=performance.now();
+   requestAnimationFrame(()=>{
+    if(record)secondFrame=performance.now();
+    resolve();
+   });
+  }));
+  if(record)return {
+   finiteAnimations:finite.length,
+   animationWaitMs:animationsFinished-paintStarted,
+   firstFrameWaitMs:firstFrame-animationsFinished,
+   secondFrameWaitMs:secondFrame-firstFrame
+  };
+ },recordTiming);
+}
 async function measureEditorOpen(page){
  const started=performance.now();
  await page.locator('#new-profile').click();
  const acted=performance.now();
  await page.locator('#editor-modal').waitFor({state:'visible'});
  const visible=performance.now();
- await paint(page);
+ const paintTiming=await paint(page,true);
  const painted=performance.now();
- return {actionMs:acted-started,visibilityMs:visible-acted,paintMs:painted-visible,totalMs:painted-started};
+ return {actionMs:acted-started,visibilityMs:visible-acted,paintMs:painted-visible,totalMs:painted-started,...paintTiming};
 }
 function dashboardReady(count){return typeof state!=='undefined'&&state.coreAuthenticated&&!state.offline&&!state.loading&&Array.isArray(state.profiles)&&state.profiles.length===count&&document.querySelector('#hero-status')?.textContent==='Ready when you are'}
 async function ready(page){await page.waitForFunction(dashboardReady,budgets.profiles,{timeout:10000});await paint(page)}
